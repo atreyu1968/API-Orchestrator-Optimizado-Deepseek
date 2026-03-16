@@ -929,10 +929,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const totalNovelTarget = (project as any).minWordCount;
           const perChapterTarget = projectMinPerChapter || this.calculatePerChapterTarget(totalNovelTarget, allSections.length);
           const perChapterMax = projectMaxPerChapter || Math.round(perChapterTarget * 1.15);
+          const enrichedWB = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
-            worldBible: worldBibleData.world_bible,
+            worldBible: enrichedWB,
             guiaEstilo: fullStyleGuide,
             previousContinuity: optimizedContinuity,
             refinementInstructions,
@@ -1045,7 +1046,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             chapterNumber: sectionData.numero,
             chapterContent: currentContent,
             chapterData: sectionData,
-            worldBible: worldBibleData.world_bible,
+            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
             guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
             previousContinuityState: previousContinuityStateForEditor,
           });
@@ -1157,6 +1158,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         this.callbacks.onChapterComplete(i + 1, wordCount, sectionData.titulo);
         this.callbacks.onAgentStatus("copyeditor", "completed", `${sectionLabel} finalizado (${wordCount} palabras)`);
 
+        await this.enrichWorldBibleFromChapter(project.id, sectionData.numero, extractedContinuityState, finalContent);
         await this.updateWorldBibleTimeline(project.id, worldBible.id, sectionData.numero, sectionData);
         
         const completedChaptersCount = i + 1;
@@ -1488,10 +1490,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const calculatedTarget = this.calculatePerChapterTarget((project as any).minWordCount, totalChaptersResume);
           const perChapterMinResume = (project as any).minWordsPerChapter || calculatedTarget;
           const perChapterMaxResume = (project as any).maxWordsPerChapter || Math.round(perChapterMinResume * 1.15);
+          const enrichedWBResume = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
-            worldBible: worldBibleData.world_bible,
+            worldBible: enrichedWBResume,
             guiaEstilo: fullStyleGuide,
             previousContinuity,
             refinementInstructions,
@@ -1604,7 +1607,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             chapterNumber: sectionData.numero,
             chapterContent: currentContent,
             chapterData: sectionData,
-            worldBible: worldBibleData.world_bible,
+            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
             guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
             previousContinuityState: previousContinuityStateForEditor,
           });
@@ -1694,6 +1697,8 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         const completedCount = freshChapters.filter(c => c.status === "completed").length;
         this.callbacks.onChapterComplete(completedCount, wordCount, sectionData.titulo);
         this.callbacks.onAgentStatus("copyeditor", "completed", `${sectionLabel} finalizado (${wordCount} palabras)`);
+
+        await this.enrichWorldBibleFromChapter(project.id, sectionData.numero, extractedContinuityState, finalContent);
 
         // QA: Continuity Sentinel checkpoint every 5 chapters
         if (completedCount > 0 && completedCount % this.continuityCheckpointInterval === 0) {
@@ -2032,7 +2037,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       const reviewResult = await this.finalReviewer.execute({
         projectTitle: project.title,
         chapters: chaptersForReview,
-        worldBible: worldBibleData.world_bible,
+        worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
         guiaEstilo,
         pasadaNumero: revisionCycle + 1,
         issuesPreviosCorregidos,
@@ -2410,7 +2415,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         const writerResult = await this.ghostwriter.execute({
           chapterNumber: sectionData.numero,
           chapterData: sectionData,
-          worldBible: worldBibleData.world_bible,
+          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
           guiaEstilo,
           previousContinuity,
           refinementInstructions: `CORRECCIONES DEL REVISOR FINAL:\n${revisionInstructions}`,
@@ -2431,7 +2436,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           chapterNumber: sectionData.numero,
           chapterContent,
           chapterData: sectionData,
-          worldBible: worldBibleData.world_bible,
+          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
           guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
         });
 
@@ -2442,7 +2447,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const rewriteResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
-            worldBible: worldBibleData.world_bible,
+            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
             guiaEstilo,
             previousContinuity,
             refinementInstructions,
@@ -2804,7 +2809,7 @@ Responde SOLO con un JSON válido con la estructura:
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
-            worldBible: worldBibleData.world_bible,
+            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
             guiaEstilo: fullStyleGuide,
             previousContinuity,
             refinementInstructions,
@@ -2832,7 +2837,7 @@ Responde SOLO con un JSON válido con la estructura:
             chapterNumber: sectionData.numero,
             chapterContent: currentContent,
             chapterData: sectionData,
-            worldBible: worldBibleData.world_bible,
+            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
             previousContinuityState: previousContinuityStateForEditor,
             guiaEstilo: fullStyleGuide,
           });
@@ -3114,7 +3119,7 @@ Responde SOLO con un JSON válido con la estructura:
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: chapter.chapterNumber,
             chapterData: sectionData,
-            worldBible: worldBibleData.world_bible,
+            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
             guiaEstilo,
             previousContinuity,
             refinementInstructions: regenerationAttempt > 1 
@@ -3807,6 +3812,214 @@ Responde SOLO con un JSON válido con la estructura:
     };
   }
 
+  private async enrichWorldBibleFromChapter(
+    projectId: number,
+    chapterNumber: number,
+    continuityState: any,
+    chapterContent: string
+  ): Promise<void> {
+    if (!continuityState) return;
+    
+    try {
+      const worldBible = await storage.getWorldBibleByProject(projectId);
+      if (!worldBible) return;
+
+      const characters = ((worldBible.characters || []) as any[]).slice();
+      const charStates = continuityState.characterStates || continuityState.character_states || {};
+      
+      const stateEntries = Array.isArray(charStates) 
+        ? charStates.map((c: any) => [c.name || c.personaje || c.nombre, c] as [string, any])
+        : Object.entries(charStates);
+
+      let updated = false;
+
+      for (const [charName, state] of stateEntries) {
+        if (!charName) continue;
+        
+        const existing = characters.find(
+          (c: any) => (c.name || "").toLowerCase() === charName.toLowerCase()
+        );
+        
+        if (existing) {
+          existing.lastLocation = state.location || state.ubicacion || existing.lastLocation;
+          existing.isAlive = state.status !== "dead" && state.estado !== "muerto" && existing.isAlive !== false;
+          existing.currentStatus = state.status || state.estado || existing.currentStatus || "alive";
+          existing.lastSeenChapter = chapterNumber;
+          
+          const items = state.hasItems || state.objetos || state.items || [];
+          if (items.length > 0) {
+            existing.currentItems = items;
+          }
+          
+          const injuries = state.injuries || state.heridas || [];
+          if (injuries.length > 0) {
+            existing.activeInjuries = [
+              ...new Set([...(existing.activeInjuries || []), ...injuries])
+            ];
+          }
+          
+          const knowledge = state.knowledgeGained || state.conocimiento || [];
+          if (knowledge.length > 0) {
+            existing.accumulatedKnowledge = [
+              ...new Set([
+                ...(existing.accumulatedKnowledge || []).slice(-10),
+                ...knowledge
+              ])
+            ].slice(-15);
+          }
+          
+          if (state.emotionalState) {
+            existing.currentEmotionalState = state.emotionalState;
+          }
+          
+          updated = true;
+        } else {
+          characters.push({
+            name: charName,
+            role: "secondary",
+            isAlive: state.status !== "dead" && state.estado !== "muerto",
+            currentStatus: state.status || state.estado || "alive",
+            lastLocation: state.location || state.ubicacion || "",
+            lastSeenChapter: chapterNumber,
+            currentItems: state.hasItems || state.objetos || [],
+            activeInjuries: state.injuries || state.heridas || [],
+            accumulatedKnowledge: state.knowledgeGained || state.conocimiento || [],
+            currentEmotionalState: state.emotionalState || "",
+            aparienciaInmutable: {},
+          });
+          updated = true;
+        }
+      }
+
+      const pendingThreads = continuityState.pendingThreads || [];
+      const resolvedThreads = continuityState.resolvedThreads || [];
+      
+      const worldRules = ((worldBible.worldRules || []) as any[]).slice();
+      
+      if (pendingThreads.length > 0 || resolvedThreads.length > 0) {
+        const threadRule = worldRules.find((r: any) => r.category === "__narrative_threads");
+        if (threadRule) {
+          const existingPending = threadRule.pending || [];
+          const newPending = [...new Set([...existingPending, ...pendingThreads])]
+            .filter((t: string) => !resolvedThreads.includes(t));
+          threadRule.pending = newPending.slice(-20);
+          threadRule.resolved = [
+            ...new Set([...(threadRule.resolved || []), ...resolvedThreads])
+          ].slice(-20);
+          threadRule.lastUpdatedChapter = chapterNumber;
+        } else {
+          worldRules.push({
+            category: "__narrative_threads",
+            rule: "Hilos narrativos activos y resueltos (actualizado automáticamente)",
+            pending: pendingThreads.slice(-20),
+            resolved: resolvedThreads.slice(-20),
+            lastUpdatedChapter: chapterNumber,
+            constraints: [],
+          });
+        }
+        updated = true;
+      }
+
+      if (updated) {
+        await storage.updateWorldBible(worldBible.id, { 
+          characters,
+          worldRules,
+        });
+        console.log(`[WorldBible] Enriched after Cap ${chapterNumber}: ${characters.length} characters tracked`);
+      }
+    } catch (error) {
+      console.warn(`[WorldBible] Failed to enrich after chapter ${chapterNumber}:`, error);
+    }
+  }
+
+  private async getEnrichedWorldBible(projectId: number, baseWorldBible: any): Promise<any> {
+    try {
+      const dbWorldBible = await storage.getWorldBibleByProject(projectId);
+      if (!dbWorldBible) return baseWorldBible;
+      
+      const enrichedCharacters = (dbWorldBible.characters || []) as any[];
+      const enriched = JSON.parse(JSON.stringify(baseWorldBible));
+      
+      if (enrichedCharacters.length === 0) {
+        const dbRulesEarly = (dbWorldBible.worldRules || []) as any[];
+        const threadRuleEarly = dbRulesEarly.find((r: any) => r.category === "__narrative_threads");
+        if (threadRuleEarly) {
+          enriched._hilos_pendientes = threadRuleEarly.pending || [];
+          enriched._hilos_resueltos = threadRuleEarly.resolved || [];
+        }
+        return enriched;
+      }
+
+      const personajes = enriched.personajes || enriched.characters || [];
+      
+      for (const dbChar of enrichedCharacters) {
+        const existing = personajes.find(
+          (p: any) => (p.nombre || p.name || "").toLowerCase() === (dbChar.name || "").toLowerCase()
+        );
+        
+        if (existing) {
+          if (dbChar.lastLocation) {
+            existing.ubicacion_actual = dbChar.lastLocation;
+          }
+          if (dbChar.currentStatus) {
+            existing.estado_actual = dbChar.currentStatus;
+          }
+          if (dbChar.isAlive === false) {
+            existing.vivo = false;
+            existing.estado_actual = "dead";
+          }
+          if (dbChar.currentItems?.length > 0) {
+            existing.objetos_actuales = dbChar.currentItems;
+          }
+          if (dbChar.activeInjuries?.length > 0) {
+            existing.heridas_activas = dbChar.activeInjuries;
+          }
+          if (dbChar.accumulatedKnowledge?.length > 0) {
+            existing.conocimiento_acumulado = dbChar.accumulatedKnowledge;
+          }
+          if (dbChar.currentEmotionalState) {
+            existing.estado_emocional = dbChar.currentEmotionalState;
+          }
+          if (dbChar.lastSeenChapter) {
+            existing.ultimo_capitulo = dbChar.lastSeenChapter;
+          }
+        } else if (dbChar.lastSeenChapter) {
+          personajes.push({
+            nombre: dbChar.name,
+            rol: dbChar.role || "secondary",
+            vivo: dbChar.isAlive !== false,
+            estado_actual: dbChar.currentStatus || "alive",
+            ubicacion_actual: dbChar.lastLocation || "",
+            objetos_actuales: dbChar.currentItems || [],
+            heridas_activas: dbChar.activeInjuries || [],
+            conocimiento_acumulado: dbChar.accumulatedKnowledge || [],
+            estado_emocional: dbChar.currentEmotionalState || "",
+            ultimo_capitulo: dbChar.lastSeenChapter,
+            apariencia_inmutable: dbChar.aparienciaInmutable || {},
+          });
+        }
+      }
+      
+      if (enriched.personajes) {
+        enriched.personajes = personajes;
+      } else {
+        enriched.characters = personajes;
+      }
+
+      const dbRules = (dbWorldBible.worldRules || []) as any[];
+      const threadRule = dbRules.find((r: any) => r.category === "__narrative_threads");
+      if (threadRule) {
+        enriched._hilos_pendientes = threadRule.pending || [];
+        enriched._hilos_resueltos = threadRule.resolved || [];
+      }
+      
+      return enriched;
+    } catch (error) {
+      console.warn(`[WorldBible] Failed to get enriched data:`, error);
+      return baseWorldBible;
+    }
+  }
+
   private async updateWorldBibleTimeline(projectId: number, worldBibleId: number, chapterNumber: number, chapterData: any): Promise<void> {
     const worldBible = await storage.getWorldBibleByProject(projectId);
     if (worldBible) {
@@ -3862,7 +4075,7 @@ Responde SOLO con un JSON válido con la estructura:
           projectTitle: project.title,
           checkpointNumber,
           chaptersInScope: chaptersData,
-          worldBible: worldBibleData.world_bible,
+          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
           previousCheckpointIssues: previousIssues,
         }),
         timeoutPromise
@@ -4007,7 +4220,7 @@ Responde SOLO con un JSON válido con la estructura:
     const result = await this.semanticRepetitionDetector.execute({
       projectTitle: project.title,
       chapters: chaptersData,
-      worldBible: worldBibleData.world_bible,
+      worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
     });
 
     await this.trackTokenUsage(project.id, result.tokenUsage, "El Detector Semántico", "gemini-2.5-flash", undefined, "semantic_analysis");
@@ -4093,7 +4306,7 @@ Responde SOLO con un JSON válido con la estructura:
     const writerResult = await this.ghostwriter.execute({
       chapterNumber: sectionData.numero,
       chapterData: sectionData,
-      worldBible: worldBibleData.world_bible,
+      worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
       guiaEstilo,
       previousContinuity,
       refinementInstructions: `CORRECCIONES DE ${qaLabels[qaSource].toUpperCase()}:\n${correctionInstructions}`,

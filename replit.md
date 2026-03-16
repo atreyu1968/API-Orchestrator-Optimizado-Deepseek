@@ -69,6 +69,7 @@ Preferred communication style: Simple, everyday language.
 - **Appearance Drift Detection**: The Final Reviewer cross-references physical trait descriptions across all chapters against the World Bible's `apariencia_inmutable` canonical data. Inconsistencies generate automatic correction issues.
 - **Pronoun/Title Dead Character Detection**: The Editor now checks for pronoun references to recently-mentioned dead characters, not just proper names. Prevents subtle continuity violations via "he/she" references.
 - **QA Re-execution on Revision Cycles**: Voice/rhythm auditor and semantic repetition detector are no longer unconditionally skipped during revision cycles. They re-run if chapters were actually modified, ensuring quality isn't degraded by rewrites.
+- **Progressive World Bible Enrichment**: After each chapter is completed, the World Bible is automatically updated with character states (location, status, items, injuries, knowledge, emotional state), narrative thread tracking (pending/resolved), and new characters discovered. The Ghostwriter and Editor receive the enriched World Bible for every chapter, minimizing continuity errors at the source and reducing expensive rewrites.
 
 ## External Dependencies
 
