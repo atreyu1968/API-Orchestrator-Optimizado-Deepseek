@@ -11,8 +11,6 @@ set -e
 #
 # Variables de entorno opcionales:
 #   GEMINI_API_KEY          - (Requerido) API key de Google Gemini
-#   DEEPSEEK_API_KEY        - (Opcional) API key de DeepSeek
-#   DEEPSEEK_TRANSLATOR_API_KEY - (Opcional) API key de DeepSeek Translator
 #   LITAGENTS_PASSWORD      - (Opcional) Contrasena de acceso
 #   CF_TUNNEL_TOKEN         - (Opcional) Token de Cloudflare Tunnel
 # ============================================================
@@ -56,14 +54,6 @@ while [[ $# -gt 0 ]]; do
             GEMINI_API_KEY="${1#*=}"
             shift
             ;;
-        --deepseek-key=*)
-            DEEPSEEK_API_KEY="${1#*=}"
-            shift
-            ;;
-        --deepseek-translator-key=*)
-            DEEPSEEK_TRANSLATOR_API_KEY="${1#*=}"
-            shift
-            ;;
         --password=*)
             LITAGENTS_PASSWORD="${1#*=}"
             shift
@@ -78,8 +68,6 @@ while [[ $# -gt 0 ]]; do
             echo "Opciones:"
             echo "  --unattended, -u              Instalación sin interacción"
             echo "  --gemini-key=KEY              API key de Google Gemini (requerido)"
-            echo "  --deepseek-key=KEY            API key de DeepSeek (opcional)"
-            echo "  --deepseek-translator-key=KEY API key DeepSeek Translator (opcional)"
             echo "  --password=PASS               Contrasena de acceso (opcional)"
             echo "  --cf-token=TOKEN              Token de Cloudflare Tunnel (opcional)"
             echo "  --help, -h                    Mostrar esta ayuda"
@@ -108,8 +96,6 @@ fi
 
 # Guardar variables de entorno proporcionadas antes de cargar config existente
 PROVIDED_GEMINI_API_KEY="${GEMINI_API_KEY:-}"
-PROVIDED_DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}"
-PROVIDED_DEEPSEEK_TRANSLATOR_API_KEY="${DEEPSEEK_TRANSLATOR_API_KEY:-}"
 PROVIDED_LITAGENTS_PASSWORD="${LITAGENTS_PASSWORD:-}"
 PROVIDED_CF_TUNNEL_TOKEN="${CF_TUNNEL_TOKEN:-}"
 
@@ -131,8 +117,6 @@ if [ -f "$CONFIG_DIR/env" ]; then
     
     # Restaurar variables proporcionadas (tienen prioridad sobre las existentes)
     [ -n "$PROVIDED_GEMINI_API_KEY" ] && GEMINI_API_KEY="$PROVIDED_GEMINI_API_KEY"
-    [ -n "$PROVIDED_DEEPSEEK_API_KEY" ] && DEEPSEEK_API_KEY="$PROVIDED_DEEPSEEK_API_KEY"
-    [ -n "$PROVIDED_DEEPSEEK_TRANSLATOR_API_KEY" ] && DEEPSEEK_TRANSLATOR_API_KEY="$PROVIDED_DEEPSEEK_TRANSLATOR_API_KEY"
     [ -n "$PROVIDED_LITAGENTS_PASSWORD" ] && LITAGENTS_PASSWORD="$PROVIDED_LITAGENTS_PASSWORD"
     [ -n "$PROVIDED_CF_TUNNEL_TOKEN" ] && CF_TUNNEL_TOKEN="$PROVIDED_CF_TUNNEL_TOKEN"
 else
@@ -164,9 +148,6 @@ if [ "$IS_UPDATE" = false ]; then
         fi
         print_success "Usando GEMINI_API_KEY desde variable de entorno"
         
-        # Las opcionales pueden estar vacías
-        DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}"
-        DEEPSEEK_TRANSLATOR_API_KEY="${DEEPSEEK_TRANSLATOR_API_KEY:-}"
         LITAGENTS_PASSWORD="${LITAGENTS_PASSWORD:-}"
         CF_TOKEN="${CF_TUNNEL_TOKEN:-}"
     else
@@ -181,15 +162,6 @@ if [ "$IS_UPDATE" = false ]; then
             exit 1
         fi
         GEMINI_API_KEY="$INPUT_GEMINI_KEY"
-        
-        echo ""
-        echo "(Opcional) Si tienes API keys de DeepSeek, ingrésalas ahora."
-        echo "Presiona Enter para omitir."
-        read -p "DEEPSEEK_API_KEY (opcional): " INPUT_DEEPSEEK_KEY
-        DEEPSEEK_API_KEY="${INPUT_DEEPSEEK_KEY:-}"
-        
-        read -p "DEEPSEEK_TRANSLATOR_API_KEY (opcional): " INPUT_DEEPSEEK_TRANSLATOR_KEY
-        DEEPSEEK_TRANSLATOR_API_KEY="${INPUT_DEEPSEEK_TRANSLATOR_KEY:-}"
         
         echo ""
         echo "=== Configuracion de Seguridad ==="
@@ -357,8 +329,6 @@ PORT=$APP_PORT
 DATABASE_URL=$DATABASE_URL
 SESSION_SECRET=$SESSION_SECRET
 GEMINI_API_KEY=$GEMINI_API_KEY
-DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
-DEEPSEEK_TRANSLATOR_API_KEY=$DEEPSEEK_TRANSLATOR_API_KEY
 LITAGENTS_PASSWORD=$LITAGENTS_PASSWORD
 SECURE_COOKIES=false
 LITAGENTS_INBOX_DIR=$APP_DIR/inbox
@@ -417,6 +387,14 @@ sudo -u "$APP_USER" npm run build 2>&1 | tail -5
 
 print_status "Ejecutando migraciones de base de datos..."
 sudo -u "$APP_USER" npm run db:push 2>&1 | tail -3
+
+print_status "Aplicando migraciones SQL adicionales..."
+for migration in "$APP_DIR"/migrations/*.sql; do
+    if [ -f "$migration" ]; then
+        print_status "  $(basename "$migration")..."
+        sudo -u "$APP_USER" psql "$DATABASE_URL" -f "$migration" 2>/dev/null || true
+    fi
+done
 
 print_success "Aplicación compilada"
 
@@ -615,34 +593,52 @@ fi
 print_header "PASO 13: Creando scripts de utilidad"
 
 # Script de actualización
-cat > "$APP_DIR/update.sh" << 'EOF'
+cat > "$APP_DIR/update.sh" << 'UPDATEEOF'
 #!/bin/bash
 set -e
 
+APP_DIR="/var/www/litagents"
+APP_USER="litagents"
+
 echo "=== Actualizando LitAgents ==="
 
-cd /var/www/litagents
+cd "$APP_DIR"
+
+# Cargar variables de entorno
+set -a
 source /etc/litagents/env
+set +a
 
 echo "1. Obteniendo últimos cambios..."
-git fetch --all
-git reset --hard origin/main
+sudo -u "$APP_USER" git fetch --all
+sudo -u "$APP_USER" git reset --hard origin/main
 
 echo "2. Instalando dependencias..."
-npm install --legacy-peer-deps
+sudo -u "$APP_USER" npm install --legacy-peer-deps
 
-echo "3. Ejecutando migraciones..."
-npm run db:push
+echo "3. Ejecutando migraciones de base de datos..."
+DB_USER_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+DB_PASS_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
+DB_HOST_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|p')
+DB_PORT_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:[^@]*@[^:]*:\([^/]*\)/.*|\1|p')
+DB_NAME_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^/]*/\(.*\)|\1|p')
+
+for migration in "$APP_DIR"/migrations/*.sql; do
+    if [ -f "$migration" ]; then
+        echo "   Aplicando $(basename "$migration")..."
+        PGPASSWORD="$DB_PASS_PARSED" psql -U "$DB_USER_PARSED" -h "$DB_HOST_PARSED" -p "$DB_PORT_PARSED" "$DB_NAME_PARSED" -f "$migration" 2>/dev/null || true
+    fi
+done
 
 echo "4. Compilando aplicación..."
-npm run build
+sudo -u "$APP_USER" npm run build
 
 echo "5. Reiniciando servicio..."
 sudo systemctl restart litagents
 
 echo "=== Actualización completada ==="
 systemctl status litagents --no-pager -l
-EOF
+UPDATEEOF
 
 chmod +x "$APP_DIR/update.sh"
 chown "$APP_USER:$APP_USER" "$APP_DIR/update.sh"

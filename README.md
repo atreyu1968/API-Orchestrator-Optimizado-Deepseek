@@ -1,66 +1,93 @@
 # LitAgents - Sistema de Orquestacion de Agentes Literarios IA
 
-Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion y produccion de novelas completas.
+Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando Google Gemini.
 
 ## Caracteristicas Principales
 
-- **Generador de Novelas (LitAgents 2.0)**: Pipeline basado en escenas con 6 agentes especializados
-- **Re-editor de Manuscritos (LitEditors)**: Editor de desarrollo con auditoria forense de consistencia
-- **Traductor de Novelas (LitTranslators 2.0)**: Sistema de traduccion literaria con revision nativa
-- **World Bible**: Base de datos de consistencia para personajes, ubicaciones y reglas del mundo
-- **Seguimiento de Costos**: Tracking granular de uso de tokens por proyecto
+- **Generador de Novelas**: Pipeline completo con 9+ agentes especializados para escribir novelas de principio a fin
+- **Re-editor de Manuscritos (LitEditors)**: Importa y edita profesionalmente manuscritos externos en multiples idiomas
+- **Traductor de Novelas (LitTranslators)**: Sistema de traduccion literaria con revision nativa
+- **World Bible Progresiva**: Base de datos de consistencia que se enriquece automaticamente capitulo a capitulo
+- **Notas del Autor**: Instrucciones personalizadas para que los agentes eviten errores conocidos
+- **Zero Continuity Errors**: Validacion inmediata post-escritura, deteccion de personajes muertos, filtraciones de conocimiento y drift de apariencia
+- **Seguimiento de Costos**: Tracking granular de uso de tokens por proyecto y modelo
 - **Autenticacion**: Proteccion con contrasena para instalaciones en servidor propio
-
-## Novedades v2.1
-
-### Native Beta Reader (Revisor Nativo)
-- **Revision como hablante nativo**: Analiza traducciones desde la perspectiva de un lector nativo del idioma destino
-- **Soporte multi-idioma**: Espanol, Ingles, Frances, Aleman, Italiano, Portugues, Catalan
-- **Feedback por genero literario**: Expectativas especificas para Romance, Fantasia, Misterio, Thriller, Ciencia Ficcion, Horror, Literaria, Historica
-- **Correcciones automaticas**: Aplica correcciones directamente al texto traducido
-- **Panel de resumen**: Muestra puntuaciones de calidad, fluidez, genero y adaptacion cultural
-
-### Sistema de Autenticacion
-- **Proteccion con contrasena**: Configurable durante la instalacion
-- **Sesiones seguras**: Cookies HTTPOnly con expiracion de 24 horas
-- **Desactivable en Replit**: Se desactiva automaticamente cuando se ejecuta en Replit
-
-### Mejoras en el Generador (LitAgents 2.1)
-- **Modulo de Consistencia Universal**: Inyeccion de restricciones antes de la planificacion Y escritura
-- **Guardian de Consistencia**: Validacion despues de cada capitulo con reescritura forzada si hay violaciones
-- **Zero-tolerance rewrites**: El sistema garantiza que no se produzcan errores de continuidad
-
-### Mejoras en el Re-editor (LitEditors)
-- **Forensic Consistency Auditor**: Detecta errores de consistencia existentes en manuscritos
-- **Beta Reader comercial**: Analisis de viabilidad comercial con comparaciones de mercado
 
 ## Agentes del Sistema
 
-### Generador (LitAgents 2.0)
-| Agente | Funcion |
-|--------|---------|
-| Global Architect | Planificacion de estructura narrativa |
-| Chapter Architect | Diseno de escenas por capitulo (recibe restricciones de consistencia) |
-| Ghostwriter V2 | Escritura creativa de escenas (recibe restricciones de consistencia) |
-| Smart Editor | Edicion y refinamiento |
-| Summarizer | Generacion de resumenes |
-| Narrative Director | Control de coherencia narrativa |
+### Generador de Novelas
+| Agente | Modelo | Funcion |
+|--------|--------|---------|
+| Arquitecto Global | Gemini 3 Pro | Planificacion de estructura narrativa y World Bible |
+| Ghostwriter | Gemini 3 Pro | Escritura creativa de capitulos completos |
+| Editor | Gemini 2.5 Flash | Evaluacion de calidad y plan quirurgico de correcciones |
+| Corrector (Copyeditor) | Gemini 2.5 Flash | Correccion de estilo y gramatica |
+| Revisor Final | Gemini 3 Pro | Evaluacion completa del manuscrito con auditoria forense |
+| Centinela de Continuidad | Gemini 2.5 Flash | Validacion de consistencia post-escritura |
+| Auditor de Voz y Ritmo | Gemini 2.5 Flash | Deteccion de problemas de ritmo narrativo |
+| Detector de Repeticiones | Gemini 2.5 Flash | Deteccion de repeticiones semanticas y lexicas |
+| Validador de Arcos | Gemini 2.5 Flash | Verificacion de arcos narrativos de personajes |
+
+### Expansion y Reestructuracion
+| Agente | Modelo | Funcion |
+|--------|--------|---------|
+| Analizador de Expansion | Gemini 2.5 Flash | Identifica capitulos cortos y gaps narrativos |
+| Expansor de Capitulos | Gemini 3 Pro | Expande capitulos cortos manteniendo coherencia |
+| Generador de Capitulos Nuevos | Gemini 3 Pro | Inserta capitulos nuevos para llenar gaps |
+| Reestructurador | Gemini 2.5 Flash | Reordena capitulos para mejor pacing |
 
 ### Re-editor (LitEditors)
-| Agente | Funcion |
-|--------|---------|
-| Forensic Consistency Auditor | Deteccion de errores de consistencia |
-| Beta Reader | Analisis de viabilidad comercial |
-| Copyeditor | Correccion de estilo |
-| Final Reviewer | Evaluacion final |
+| Agente | Modelo | Funcion |
+|--------|--------|---------|
+| Analizador de Manuscritos | Gemini 2.0 Flash | Extraccion y analisis de manuscritos importados |
+| Revisor Final | Gemini 3 Pro | Evaluacion forense de consistencia |
+| Corrector | Gemini 2.5 Flash | Correccion de estilo |
 
-### Traductor (LitTranslators 2.0)
-| Agente | Funcion |
-|--------|---------|
-| Strategist | Analisis de estilo y tipografia |
-| Drafter | Traduccion inicial preservando contexto |
-| Proofreader | Revision y correccion |
-| Native Beta Reader | Revision como hablante nativo con feedback por genero |
+### Traductor (LitTranslators)
+| Agente | Modelo | Funcion |
+|--------|--------|---------|
+| Traductor | Gemini 2.5 Flash | Traduccion literaria preservando estilo |
+| Revisor Nativo | Gemini 2.5 Flash | Revision como hablante nativo del idioma destino |
+
+## Distribucion de Modelos (Calidad/Costo)
+
+- **Gemini 3 Pro Preview**: Tareas creativas y de razonamiento profundo (escritura, planificacion, revision final)
+- **Gemini 2.5 Flash**: Tareas de edicion, validacion, correccion y traduccion (rapido y economico)
+- **Gemini 2.0 Flash**: Analisis basico de manuscritos importados (el mas rapido)
+
+## Funcionalidades Avanzadas
+
+### Sistema de Continuidad
+- **Validacion inmediata post-escritura**: Cada capitulo se valida antes de pasar al Editor
+- **Deteccion de personajes muertos**: 30+ verbos de accion con excepciones para flashbacks
+- **Deteccion de pronombres/titulos**: Detecta referencias por pronombre a personajes muertos
+- **Prevencion de filtracion de conocimiento**: Los personajes no pueden usar informacion que no poseen
+- **Deteccion de drift de apariencia**: Verifica rasgos fisicos contra la World Bible
+- **Tracking de objetos**: Previene uso de objetos que el personaje no posee
+
+### World Bible Progresiva
+- Se actualiza automaticamente despues de cada capitulo
+- Tracking de estado de personajes: ubicacion, heridas, objetos, conocimiento, emociones
+- Hilos narrativos pendientes y resueltos
+- Decisiones de trama, lesiones persistentes y linea temporal
+- El Ghostwriter recibe toda la informacion en formato estructurado y legible
+
+### Notas del Autor
+- Instrucciones personalizadas para evitar errores conocidos
+- Categorias: continuidad, personaje, trama, estilo, mundo
+- Niveles de prioridad: critica, alta, normal, baja
+- Se inyectan en los prompts del Ghostwriter y Editor como restricciones obligatorias
+
+### Sistema de Calidad
+- Pausa automatica tras multiples evaluaciones no perfectas
+- Aprobacion requiere puntuacion 9+ sin problemas criticos
+- Tracking de hashes de issues para evitar re-reportar problemas resueltos
+- QA re-ejecuta auditores si hay capitulos modificados en el ciclo
+
+### Exportacion
+- Markdown limpio sin artefactos de codigo
+- Etiquetas de capitulo localizadas (7 idiomas: es, en, fr, de, it, pt, ca)
+- Soporte para Prologo, Epilogo y Nota del Autor
 
 ## Requisitos del Sistema
 
@@ -68,36 +95,16 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion y p
 - 4GB RAM minimo (8GB recomendado)
 - 20GB espacio en disco
 - Conexion a internet
+- API key de Google Gemini
 
 ## Preparacion del Servidor Ubuntu
 
-Antes de instalar LitAgents, asegurate de que tu servidor Ubuntu este actualizado.
-
-### Actualizar el sistema
-
 ```bash
-# Actualizar lista de paquetes
-sudo apt update
+# Actualizar sistema
+sudo apt update && sudo apt upgrade -y
 
-# Actualizar todos los paquetes instalados
-sudo apt upgrade -y
-
-# (Opcional) Actualizar el sistema completo incluyendo kernel
-sudo apt full-upgrade -y
-
-# Limpiar paquetes obsoletos
-sudo apt autoremove -y
-```
-
-### Instalar herramientas necesarias
-
-```bash
-# Instalar curl, git y otras herramientas basicas
-sudo apt install -y curl git wget nano build-essential
-
-# Verificar instalacion
-curl --version
-git --version
+# Instalar herramientas basicas
+sudo apt install -y curl git wget build-essential
 ```
 
 ## Instalacion Rapida
@@ -115,20 +122,17 @@ sudo bash install.sh
 
 ### Opcion B: Instalacion Desatendida (Sin Interaccion)
 
-Ideal para automatizacion y scripts de despliegue:
-
 ```bash
 # Clonar repositorio
 git clone https://github.com/atreyu1968/escritorasdgemini.git
 cd escritorasdgemini
 
-# Instalacion con variables de entorno
+# Instalacion minima
 sudo GEMINI_API_KEY="tu-api-key-aqui" bash install.sh --unattended
 
-# O con todos los parametros opcionales
+# Con contrasena y Cloudflare Tunnel
 sudo GEMINI_API_KEY="tu-api-key" \
      LITAGENTS_PASSWORD="tu-contrasena" \
-     DEEPSEEK_API_KEY="opcional" \
      CF_TUNNEL_TOKEN="token-cloudflare-opcional" \
      bash install.sh --unattended
 ```
@@ -146,22 +150,13 @@ Ver todas las opciones: `bash install.sh --help`
 
 ### Durante la instalacion interactiva
 
-El instalador te pedira las siguientes configuraciones:
+El instalador te pedira:
 
-**Google Gemini (Principal)**
-- `GEMINI_API_KEY`: API key de Google Gemini para todos los agentes
+1. **GEMINI_API_KEY** (obligatorio): API key de Google Gemini
+2. **LITAGENTS_PASSWORD** (opcional): Contrasena para proteger el acceso
+3. **Cloudflare Tunnel Token** (opcional): Para acceso HTTPS externo
 
-**DeepSeek (Opcional - 3 claves separadas para gestion de cuotas)**
-- `DEEPSEEK_API_KEY`: Para generacion de novelas
-- `DEEPSEEK_TRANSLATOR_API_KEY`: Para traduccion de manuscritos
-
-**Seguridad:**
-- `LITAGENTS_PASSWORD`: Contrasena para proteger el acceso (opcional)
-
-**Otras opciones:**
-- `Cloudflare Tunnel Token`: Para acceso HTTPS externo (opcional)
-
-### 3. Acceder a la aplicacion
+### Acceder a la aplicacion
 
 ```
 http://TU_IP_SERVIDOR
@@ -169,36 +164,10 @@ http://TU_IP_SERVIDOR
 
 Si configuraste una contrasena, veras una pantalla de login antes de acceder.
 
-## Configuracion Manual de API Keys
+## Obtener API Key de Gemini
 
-Si omitiste las claves durante la instalacion:
-
-```bash
-# Editar configuracion
-sudo nano /etc/litagents/env
-
-# Agregar/modificar estas lineas:
-GEMINI_API_KEY=tu_clave_gemini
-DEEPSEEK_API_KEY=tu_clave_deepseek
-DEEPSEEK_TRANSLATOR_API_KEY=tu_clave_traductor
-LITAGENTS_PASSWORD=tu_contrasena
-
-# Guardar y salir (Ctrl+O, Enter, Ctrl+X)
-
-# Reiniciar servicio
-sudo systemctl restart litagents
-```
-
-## Obtener API Keys
-
-### Google Gemini (Principal)
 1. Visita https://aistudio.google.com/apikey
 2. Crea un proyecto y habilita la API
-3. Genera una API key
-
-### DeepSeek (Opcional)
-1. Visita https://platform.deepseek.com/
-2. Crea una cuenta y agrega creditos
 3. Genera una API key
 
 ## Comandos de Administracion
@@ -216,36 +185,96 @@ sudo systemctl restart litagents
 # Detener servicio
 sudo systemctl stop litagents
 
-# Iniciar servicio
-sudo systemctl start litagents
+# Actualizar a la ultima version
+sudo /var/www/litagents/update.sh
+
+# Crear backup de la base de datos
+sudo /var/www/litagents/backup.sh
 ```
 
 ## Actualizacion
 
-Para actualizar a la ultima version:
-
 ```bash
-cd /var/www/litagents
-sudo bash install.sh
+sudo /var/www/litagents/update.sh
 ```
 
-El instalador detectara la instalacion existente y preservara:
-- Credenciales de base de datos
-- API keys configuradas
-- Proyectos existentes
+El script de actualizacion:
+1. Descarga los ultimos cambios del repositorio
+2. Instala nuevas dependencias
+3. Ejecuta migraciones de base de datos
+4. Recompila la aplicacion
+5. Reinicia el servicio
+
+Las credenciales y proyectos existentes se preservan automaticamente.
+
+## Configuracion Manual
+
+```bash
+# Editar configuracion
+sudo nano /etc/litagents/env
+
+# Reiniciar servicio despues de cambios
+sudo systemctl restart litagents
+```
 
 ## Estructura de Archivos
 
 ```
 /var/www/litagents/                    # Codigo de la aplicacion
+/var/www/litagents/inbox/              # Manuscritos a importar
+/var/www/litagents/exports/            # Archivos exportados
+/var/www/litagents/inbox/processed/    # Manuscritos ya procesados
 /etc/litagents/env                     # Configuracion y variables de entorno
 /etc/systemd/system/litagents.service  # Servicio systemd
 /etc/nginx/sites-available/litagents   # Configuracion Nginx
+/var/log/litagents/                    # Logs de la aplicacion
 ```
 
-## Acceso Externo con Cloudflare Tunnel
+## Sistema de Archivos del Servidor
 
-Si necesitas acceso externo con HTTPS:
+En servidores donde no es posible subir archivos desde el navegador, LitAgents permite importar manuscritos directamente desde el sistema de archivos.
+
+### Como Subir Archivos al Servidor
+
+```bash
+# Usando SCP (desde tu maquina local)
+scp mi_manuscrito.docx usuario@tu-servidor:/var/www/litagents/inbox/
+
+# Usando SFTP
+sftp usuario@tu-servidor
+cd /var/www/litagents/inbox
+put mi_manuscrito.docx
+```
+
+### Formatos Soportados
+
+- `.docx` - Microsoft Word (recomendado)
+- `.doc` - Microsoft Word antiguo
+- `.txt` - Texto plano
+- `.md` - Markdown
+
+### Flujo de Trabajo
+
+1. Copia el archivo al directorio `inbox`
+2. Abre la interfaz web y ve a "Importar Manuscrito"
+3. Selecciona la pestana "Archivos del Servidor"
+4. Haz clic en el archivo para cargarlo
+5. Configura titulo e idioma y pulsa "Importar"
+
+## Variables de Entorno
+
+| Variable | Descripcion | Requerido |
+|----------|-------------|-----------|
+| `DATABASE_URL` | URL de conexion PostgreSQL | Si (auto) |
+| `SESSION_SECRET` | Secreto para sesiones | Si (auto) |
+| `GEMINI_API_KEY` | API key de Google Gemini | Si |
+| `LITAGENTS_PASSWORD` | Contrasena de acceso | Opcional |
+| `SECURE_COOKIES` | true/false para cookies seguras | Si (auto) |
+| `PORT` | Puerto de la aplicacion | Si (auto: 5000) |
+| `LITAGENTS_INBOX_DIR` | Directorio de entrada de archivos | Opcional (auto) |
+| `LITAGENTS_EXPORTS_DIR` | Directorio de exportaciones | Opcional (auto) |
+
+## Acceso Externo con Cloudflare Tunnel
 
 1. Crea un tunel en https://one.dash.cloudflare.com/
 2. Obten el token del tunel
@@ -289,65 +318,6 @@ Sin HTTPS, debe ser `SECURE_COOKIES=false`.
 sudo chown -R litagents:litagents /var/www/litagents
 ```
 
-## Variables de Entorno
-
-| Variable | Descripcion | Requerido |
-|----------|-------------|-----------|
-| `DATABASE_URL` | URL de conexion PostgreSQL | Si (auto) |
-| `SESSION_SECRET` | Secreto para sesiones | Si (auto) |
-| `GEMINI_API_KEY` | API key de Google Gemini | Si |
-| `DEEPSEEK_API_KEY` | API key de DeepSeek | Opcional |
-| `DEEPSEEK_TRANSLATOR_API_KEY` | API key de DeepSeek - Traductor | Opcional |
-| `LITAGENTS_PASSWORD` | Contrasena de acceso | Opcional |
-| `SECURE_COOKIES` | true/false para cookies seguras | Si (auto) |
-| `PORT` | Puerto de la aplicacion | Si (auto: 5000) |
-| `LITAGENTS_INBOX_DIR` | Directorio de entrada de archivos | Opcional (auto) |
-| `LITAGENTS_EXPORTS_DIR` | Directorio de exportaciones | Opcional (auto) |
-
-## Sistema de Archivos del Servidor
-
-En servidores donde no es posible subir archivos desde el navegador, LitAgents permite importar manuscritos directamente desde el sistema de archivos.
-
-### Directorios
-
-| Directorio | Ubicacion | Proposito |
-|------------|-----------|-----------|
-| Entrada (inbox) | `/var/www/litagents/inbox/` | Coloca aqui los manuscritos a importar |
-| Exportaciones | `/var/www/litagents/exports/` | Aqui se guardan los archivos exportados |
-| Procesados | `/var/www/litagents/inbox/processed/` | Archivos ya procesados |
-
-### Como Subir Archivos al Servidor
-
-```bash
-# Usando SCP (desde tu maquina local)
-scp mi_manuscrito.docx usuario@tu-servidor:/var/www/litagents/inbox/
-
-# Usando SFTP
-sftp usuario@tu-servidor
-cd /var/www/litagents/inbox
-put mi_manuscrito.docx
-
-# Si estas en el servidor directamente
-cp /ruta/al/archivo.docx /var/www/litagents/inbox/
-```
-
-### Formatos Soportados
-
-- `.docx` - Microsoft Word (recomendado)
-- `.doc` - Microsoft Word antiguo
-- `.txt` - Texto plano
-- `.md` - Markdown
-
-### Flujo de Trabajo
-
-1. Copia el archivo al directorio `inbox`
-2. Abre la interfaz web y ve a "Importar Manuscrito"
-3. Selecciona la pestana "Archivos del Servidor"
-4. Haz clic en el archivo para cargarlo
-5. Configura titulo e idioma y pulsa "Importar"
-
-Los archivos procesados se mueven automaticamente a la carpeta `processed`.
-
 ## Backup de Base de Datos
 
 ```bash
@@ -358,7 +328,7 @@ sudo /var/www/litagents/backup.sh
 sudo -u postgres pg_dump litagents_db > backup_$(date +%Y%m%d).sql
 
 # Restaurar backup
-sudo -u postgres psql litagents_db < backup_20240101.sql
+sudo -u postgres psql litagents_db < backup.sql
 ```
 
 ## Desinstalacion
@@ -386,10 +356,10 @@ sudo systemctl restart nginx
 
 ## Stack Tecnologico
 
-- **Frontend**: React + TypeScript + Vite
-- **Backend**: Node.js + Express
+- **Frontend**: React + TypeScript + Vite + shadcn/ui
+- **Backend**: Node.js + Express + TypeScript
 - **Base de datos**: PostgreSQL + Drizzle ORM
-- **IA**: Google Gemini API (principal), DeepSeek (opcional)
+- **IA**: Google Gemini API (Gemini 3 Pro, 2.5 Flash, 2.0 Flash)
 - **Proxy**: Nginx
 - **Proceso**: systemd
 
