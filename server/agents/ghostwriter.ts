@@ -313,6 +313,29 @@ export class GhostwriterAgent extends BaseAgent {
     parts.push(`📖 WORLD BIBLE COMPLETA (REFERENCIA OBLIGATORIA)`);
     parts.push(`═══════════════════════════════════════════════════════════════════`);
 
+    mappedKeys.add('_author_notes');
+    if (Array.isArray(wb._author_notes) && wb._author_notes.length > 0) {
+      parts.push(`\n⚠️⚠️⚠️ INSTRUCCIONES DEL AUTOR (OBLIGATORIAS) ⚠️⚠️⚠️`);
+      parts.push(`Las siguientes notas son restricciones EXPLÍCITAS del autor. DEBES respetarlas SIEMPRE:`);
+      const priorityOrder: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
+      const sorted = [...wb._author_notes].sort((a: any, b: any) => 
+        (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2)
+      );
+      for (const note of sorted) {
+        if (!note) continue;
+        const priorityLabel = note.priority === "critical" ? "🔴 CRÍTICA" : 
+                              note.priority === "high" ? "🟠 ALTA" : 
+                              note.priority === "normal" ? "🟢" : "⚪";
+        const catLabel = note.category === "continuity" ? "Continuidad" :
+                        note.category === "character" ? "Personaje" :
+                        note.category === "plot" ? "Trama" :
+                        note.category === "style" ? "Estilo" :
+                        note.category === "worldbuilding" ? "Mundo" : note.category || "";
+        parts.push(`  ${priorityLabel} [${catLabel}]: ${note.text}`);
+      }
+      parts.push(``);
+    }
+
     const personajes = wb.personajes || wb.characters || [];
     mappedKeys.add('personajes'); mappedKeys.add('characters');
     if (Array.isArray(personajes) && personajes.length > 0) {

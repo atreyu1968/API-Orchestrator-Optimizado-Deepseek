@@ -106,7 +106,7 @@ export default function WorldBiblePage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <WorldBibleDisplay worldBible={worldBible || null} />
+              <WorldBibleDisplay worldBible={worldBible || null} projectId={currentProject?.id} />
             </CardContent>
           </Card>
         );

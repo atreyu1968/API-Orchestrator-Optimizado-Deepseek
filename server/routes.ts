@@ -1333,6 +1333,89 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/projects/:id/author-notes", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const worldBible = await storage.getWorldBibleByProject(id);
+      if (!worldBible) {
+        return res.json([]);
+      }
+      res.json((worldBible.authorNotes as any[]) || []);
+    } catch (error) {
+      console.error("Error fetching author notes:", error);
+      res.status(500).json({ error: "Failed to fetch author notes" });
+    }
+  });
+
+  app.post("/api/projects/:id/author-notes", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { text, category, priority } = req.body;
+      if (!text || !category) {
+        return res.status(400).json({ error: "text and category are required" });
+      }
+      const worldBible = await storage.getWorldBibleByProject(id);
+      if (!worldBible) {
+        return res.status(404).json({ error: "World Bible not found" });
+      }
+      const notes = ((worldBible.authorNotes as any[]) || []).slice();
+      const newNote = {
+        id: Date.now().toString(),
+        text,
+        category,
+        priority: priority || "normal",
+        active: true,
+        createdAt: new Date().toISOString(),
+      };
+      notes.push(newNote);
+      await storage.updateWorldBible(worldBible.id, { authorNotes: notes });
+      res.json(newNote);
+    } catch (error) {
+      console.error("Error adding author note:", error);
+      res.status(500).json({ error: "Failed to add author note" });
+    }
+  });
+
+  app.patch("/api/projects/:id/author-notes/:noteId", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const noteId = req.params.noteId;
+      const updates = req.body;
+      const worldBible = await storage.getWorldBibleByProject(projectId);
+      if (!worldBible) {
+        return res.status(404).json({ error: "World Bible not found" });
+      }
+      const notes = ((worldBible.authorNotes as any[]) || []).slice();
+      const idx = notes.findIndex((n: any) => n.id === noteId);
+      if (idx === -1) {
+        return res.status(404).json({ error: "Note not found" });
+      }
+      notes[idx] = { ...notes[idx], ...updates };
+      await storage.updateWorldBible(worldBible.id, { authorNotes: notes });
+      res.json(notes[idx]);
+    } catch (error) {
+      console.error("Error updating author note:", error);
+      res.status(500).json({ error: "Failed to update author note" });
+    }
+  });
+
+  app.delete("/api/projects/:id/author-notes/:noteId", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const noteId = req.params.noteId;
+      const worldBible = await storage.getWorldBibleByProject(projectId);
+      if (!worldBible) {
+        return res.status(404).json({ error: "World Bible not found" });
+      }
+      const notes = ((worldBible.authorNotes as any[]) || []).filter((n: any) => n.id !== noteId);
+      await storage.updateWorldBible(worldBible.id, { authorNotes: notes });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting author note:", error);
+      res.status(500).json({ error: "Failed to delete author note" });
+    }
+  });
+
   app.get("/api/projects/:id/thought-logs", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);

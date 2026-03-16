@@ -1,8 +1,16 @@
+import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Clock, Users, BookOpen, Shield, Heart, Skull, GitBranch, Activity } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Clock, Users, BookOpen, Shield, Heart, Skull, GitBranch, Activity, AlertTriangle, Plus, Trash2, Power, PowerOff, PenLine } from "lucide-react";
+import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { WorldBible, Character, TimelineEvent, WorldRule, PlotOutline } from "@shared/schema";
 
 // Helper function to safely convert any value to a displayable string
@@ -63,8 +71,225 @@ interface PersistentInjury {
   problema?: string;
 }
 
+interface AuthorNote {
+  id: string;
+  text: string;
+  category: string;
+  priority: string;
+  active: boolean;
+  createdAt: string;
+}
+
+const NOTE_CATEGORIES = [
+  { value: "continuity", label: "Continuidad" },
+  { value: "character", label: "Personaje" },
+  { value: "plot", label: "Trama" },
+  { value: "style", label: "Estilo" },
+  { value: "worldbuilding", label: "Mundo" },
+  { value: "other", label: "Otro" },
+];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  continuity: "text-orange-600 bg-orange-100 dark:bg-orange-900/30",
+  character: "text-blue-600 bg-blue-100 dark:bg-blue-900/30",
+  plot: "text-purple-600 bg-purple-100 dark:bg-purple-900/30",
+  style: "text-green-600 bg-green-100 dark:bg-green-900/30",
+  worldbuilding: "text-amber-600 bg-amber-100 dark:bg-amber-900/30",
+  other: "text-gray-600 bg-gray-100 dark:bg-gray-900/30",
+};
+
+function AuthorNotesTab({ projectId }: { projectId: number }) {
+  const [showForm, setShowForm] = useState(false);
+  const [text, setText] = useState("");
+  const [category, setCategory] = useState("continuity");
+  const [priority, setPriority] = useState("normal");
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: notes = [], isLoading } = useQuery<AuthorNote[]>({
+    queryKey: ["/api/projects", projectId, "author-notes"],
+    enabled: !!projectId,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async (note: { text: string; category: string; priority: string }) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/author-notes`, note);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "author-notes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "world-bible"] });
+      setText("");
+      setShowForm(false);
+      toast({ title: "Nota guardada" });
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ noteId, active }: { noteId: string; active: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/projects/${projectId}/author-notes/${noteId}`, { active });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "author-notes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "world-bible"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (noteId: string) => {
+      const res = await apiRequest("DELETE", `/api/projects/${projectId}/author-notes/${noteId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "author-notes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "world-bible"] });
+      toast({ title: "Nota eliminada" });
+    },
+  });
+
+  if (isLoading) {
+    return <div className="py-8 text-center text-muted-foreground text-sm">Cargando notas...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Instrucciones y restricciones que los agentes respetarán al escribir y revisar.
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setShowForm(!showForm)}
+          data-testid="button-add-author-note"
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          Añadir nota
+        </Button>
+      </div>
+
+      {showForm && (
+        <Card data-testid="form-author-note">
+          <CardContent className="pt-4 space-y-3">
+            <Textarea
+              placeholder="Ej: El personaje María no puede caminar desde el capítulo 5 porque se rompió la pierna..."
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={3}
+              data-testid="input-author-note-text"
+            />
+            <div className="flex gap-2 flex-wrap">
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger className="w-[160px]" data-testid="select-author-note-category">
+                  <SelectValue placeholder="Categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  {NOTE_CATEGORIES.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={priority} onValueChange={setPriority}>
+                <SelectTrigger className="w-[140px]" data-testid="select-author-note-priority">
+                  <SelectValue placeholder="Prioridad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="critical">Crítica</SelectItem>
+                  <SelectItem value="high">Alta</SelectItem>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="low">Baja</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                onClick={() => addMutation.mutate({ text, category, priority })}
+                disabled={!text.trim() || addMutation.isPending}
+                data-testid="button-save-author-note"
+              >
+                Guardar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {notes.length === 0 && !showForm && (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <PenLine className="h-12 w-12 text-muted-foreground/30 mb-4" />
+          <p className="text-muted-foreground text-sm">Sin notas del autor</p>
+          <p className="text-muted-foreground/60 text-xs mt-1">
+            Añade instrucciones para que los agentes eviten errores conocidos
+          </p>
+        </div>
+      )}
+
+      <ScrollArea className="h-[400px]">
+        <div className="space-y-2 pr-4">
+          {notes.map((note) => {
+            const catLabel = NOTE_CATEGORIES.find(c => c.value === note.category)?.label || note.category;
+            const colorClass = CATEGORY_COLORS[note.category] || CATEGORY_COLORS.other;
+            const priorityIcon = note.priority === "critical" ? "🔴" : 
+                                 note.priority === "high" ? "🟠" : 
+                                 note.priority === "normal" ? "🟢" : "⚪";
+            return (
+              <Card 
+                key={note.id} 
+                className={`${!note.active ? "opacity-50" : ""}`}
+                data-testid={`author-note-${note.id}`}
+              >
+                <CardContent className="py-3 px-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-xs">{priorityIcon}</span>
+                        <Badge variant="secondary" className={`text-xs ${colorClass}`}>
+                          {catLabel}
+                        </Badge>
+                        {!note.active && (
+                          <Badge variant="outline" className="text-xs">Desactivada</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm">{note.text}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {new Date(note.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        onClick={() => toggleMutation.mutate({ noteId: note.id, active: !note.active })}
+                        title={note.active ? "Desactivar" : "Activar"}
+                        data-testid={`button-toggle-note-${note.id}`}
+                      >
+                        {note.active ? <Power className="h-3.5 w-3.5" /> : <PowerOff className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-destructive"
+                        onClick={() => deleteMutation.mutate(note.id)}
+                        data-testid={`button-delete-note-${note.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
 interface WorldBibleDisplayProps {
   worldBible: WorldBible | null;
+  projectId?: number;
 }
 
 function TimelineTab({ events }: { events: TimelineEvent[] }) {
@@ -467,7 +692,7 @@ function PlotTab({ plotOutline }: { plotOutline: PlotOutline | null }) {
   );
 }
 
-export function WorldBibleDisplay({ worldBible }: WorldBibleDisplayProps) {
+export function WorldBibleDisplay({ worldBible, projectId }: WorldBibleDisplayProps) {
   if (!worldBible) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -489,6 +714,7 @@ export function WorldBibleDisplay({ worldBible }: WorldBibleDisplayProps) {
   const plotDecisions = (worldBible.plotDecisions || []) as PlotDecision[];
   const persistentInjuries = (worldBible.persistentInjuries || []) as PersistentInjury[];
 
+  const authorNotes = ((worldBible.authorNotes || []) as any[]);
   const hasDecisions = plotDecisions.length > 0;
   const hasInjuries = persistentInjuries.length > 0;
 
@@ -525,6 +751,15 @@ export function WorldBibleDisplay({ worldBible }: WorldBibleDisplayProps) {
             <Badge variant="secondary" className="ml-1 text-xs">{persistentInjuries.length}</Badge>
           )}
         </TabsTrigger>
+        {projectId && (
+          <TabsTrigger value="author-notes" className="gap-1.5">
+            <AlertTriangle className="h-4 w-4" />
+            Notas del Autor
+            {authorNotes.length > 0 && (
+              <Badge variant="secondary" className="ml-1 text-xs">{authorNotes.length}</Badge>
+            )}
+          </TabsTrigger>
+        )}
       </TabsList>
       
       <TabsContent value="plot">
@@ -550,6 +785,12 @@ export function WorldBibleDisplay({ worldBible }: WorldBibleDisplayProps) {
       <TabsContent value="injuries">
         <PersistentInjuriesTab injuries={persistentInjuries} />
       </TabsContent>
+
+      {projectId && (
+        <TabsContent value="author-notes">
+          <AuthorNotesTab projectId={projectId} />
+        </TabsContent>
+      )}
     </Tabs>
   );
 }

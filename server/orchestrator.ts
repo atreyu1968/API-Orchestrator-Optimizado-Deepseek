@@ -3953,6 +3953,8 @@ Responde SOLO con un JSON válido con la estructura:
         if (persistentInjuriesEarly.length > 0) enriched._persistent_injuries = persistentInjuriesEarly;
         const timelineEarly = (dbWorldBible.timeline || []) as any[];
         if (timelineEarly.length > 0) enriched._timeline = timelineEarly;
+        const authorNotesEarly = ((dbWorldBible.authorNotes || []) as any[]).filter((n: any) => n.active !== false);
+        if (authorNotesEarly.length > 0) enriched._author_notes = authorNotesEarly;
         return enriched;
       }
 
@@ -4032,6 +4034,11 @@ Responde SOLO con un JSON válido con la estructura:
       const timeline = (dbWorldBible.timeline || []) as any[];
       if (timeline.length > 0) {
         enriched._timeline = timeline;
+      }
+
+      const authorNotes = ((dbWorldBible.authorNotes || []) as any[]).filter((n: any) => n.active !== false);
+      if (authorNotes.length > 0) {
+        enriched._author_notes = authorNotes;
       }
       
       return enriched;

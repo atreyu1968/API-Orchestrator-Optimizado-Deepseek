@@ -165,6 +165,7 @@ export const worldBibles = pgTable("world_bibles", {
   plotOutline: jsonb("plot_outline").default({}),
   plotDecisions: jsonb("plot_decisions").default([]),
   persistentInjuries: jsonb("persistent_injuries").default([]),
+  authorNotes: jsonb("author_notes").default([]),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

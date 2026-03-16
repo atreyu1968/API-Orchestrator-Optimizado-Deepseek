@@ -267,6 +267,19 @@ VALIDA que este capítulo sea COHERENTE con el estado anterior:
 ═══════════════════════════════════════════════════════════════════
 ` : "";
 
+    let authorNotesSection = "";
+    const authorNotes = input.worldBible?._author_notes;
+    if (Array.isArray(authorNotes) && authorNotes.length > 0) {
+      const lines = ["\n⚠️⚠️⚠️ INSTRUCCIONES DEL AUTOR (OBLIGATORIAS) ⚠️⚠️⚠️",
+        "Verifica que el capítulo RESPETE estas restricciones explícitas del autor:"];
+      for (const n of authorNotes) {
+        if (!n) continue;
+        const pr = n.priority === "critical" ? "🔴 CRÍTICA" : n.priority === "high" ? "🟠 ALTA" : "🟢";
+        lines.push(`  ${pr} [${n.category}]: ${n.text}`);
+      }
+      authorNotesSection = lines.join("\n");
+    }
+
     const prompt = `
 DOCUMENTOS DE REFERENCIA:
 
@@ -275,6 +288,7 @@ ${input.guiaEstilo}
 
 2. WORLD BIBLE (Datos Canónicos):
 ${JSON.stringify(input.worldBible, null, 2)}
+${authorNotesSection}
 
 3. ${planArquitecto}
 
