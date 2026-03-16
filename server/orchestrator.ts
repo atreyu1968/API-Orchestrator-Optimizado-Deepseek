@@ -290,26 +290,46 @@ export class Orchestrator {
     const contentLower = chapterContent.toLowerCase();
 
     characterStates.forEach((state, name) => {
-      // Defensive guard: skip entries without valid name
       if (!name || typeof name !== 'string' || name.trim().length === 0) return;
       
       const nameLower = name.toLowerCase();
       const nameInContent = contentLower.includes(nameLower);
 
       if (!state.alive && nameInContent) {
+        const actionVerbs = [
+          "dijo", "habló", "respondió", "caminó", "corrió", "miró",
+          "sonrió", "asintió", "se levantó", "susurró", "gritó",
+          "preguntó", "ordenó", "murmuró", "rió", "lloró",
+          "agarró", "tomó", "lanzó", "empujó", "tiró",
+          "entró", "salió", "subió", "bajó", "se sentó",
+          "negó", "afirmó", "pensó", "sintió", "observó",
+        ];
+
         const actionPatterns = [
-          `${nameLower} dijo`, `${nameLower} habló`, `${nameLower} respondió`,
-          `${nameLower} caminó`, `${nameLower} corrió`, `${nameLower} miró`,
-          `${nameLower} sonrió`, `${nameLower} asintió`, `${nameLower} se levantó`,
+          ...actionVerbs.map(v => `${nameLower} ${v}`),
+          ...actionVerbs.map(v => `${nameLower} se ${v}`),
           `—dijo ${nameLower}`, `—respondió ${nameLower}`, `—exclamó ${nameLower}`,
+          `—murmuró ${nameLower}`, `—gritó ${nameLower}`, `—susurró ${nameLower}`,
+          `—preguntó ${nameLower}`, `—ordenó ${nameLower}`,
         ];
         
-        for (const pattern of actionPatterns) {
-          if (contentLower.includes(pattern)) {
-            violations.push(
-              `PERSONAJE MUERTO ACTUANDO: "${name}" murió en el Capítulo ${state.lastSeen} pero aparece realizando acciones en este capítulo. Buscar y eliminar: "${pattern}"`
-            );
-            break;
+        const deadButFlashbackPatterns = [
+          "recordó a " + nameLower, "recuerdo de " + nameLower,
+          "memoria de " + nameLower, "fantasma de " + nameLower,
+          "espíritu de " + nameLower, "sueño con " + nameLower,
+          "la voz de " + nameLower + " resonó", "imagen de " + nameLower,
+        ];
+        
+        const isFlashbackContext = deadButFlashbackPatterns.some(p => contentLower.includes(p));
+        
+        if (!isFlashbackContext) {
+          for (const pattern of actionPatterns) {
+            if (contentLower.includes(pattern)) {
+              violations.push(
+                `PERSONAJE MUERTO ACTUANDO: "${name}" murió en el Capítulo ${state.lastSeen} pero aparece realizando acciones en este capítulo. Buscar y eliminar: "${pattern}"`
+              );
+              break;
+            }
           }
         }
       }
@@ -323,10 +343,15 @@ export class Orchestrator {
           }
         }
         
-        const hasPhysicalAction = contentLower.includes(`${nameLower} corrió`) ||
-                                   contentLower.includes(`${nameLower} luchó`) ||
-                                   contentLower.includes(`${nameLower} saltó`) ||
-                                   contentLower.includes(`${nameLower} golpeó`);
+        const physicalVerbs = [
+          "corrió", "luchó", "saltó", "golpeó", "trepó",
+          "escaló", "nadó", "peleó", "atacó", "esquivó",
+          "cargó", "levantó", "arrastró", "empujó",
+        ];
+        
+        const hasPhysicalAction = physicalVerbs.some(v => 
+          contentLower.includes(`${nameLower} ${v}`) || contentLower.includes(`${nameLower} se ${v}`)
+        );
         
         if (hasPhysicalAction && !injuryMentioned) {
           violations.push(
@@ -360,20 +385,26 @@ export class Orchestrator {
     const FULL_CONTEXT_CHAPTERS = 2;
     const SUMMARY_CONTEXT_CHAPTERS = 5;
 
-    // Build accumulated character state from all completed chapters
     const characterStates: Map<string, { alive: boolean; location: string; injuries: string[]; lastSeen: number }> = new Map();
+    const characterItems: Map<string, string[]> = new Map();
     const keyEvents: string[] = [];
 
     for (const chapter of sortedChapters) {
       const state = chapter.continuityState as any;
       if (state?.character_states) {
         for (const char of state.character_states) {
-          characterStates.set(char.name || char.personaje, {
+          const charName = char.name || char.personaje;
+          if (!charName) continue;
+          characterStates.set(charName, {
             alive: char.alive !== false && char.status !== "dead" && char.estado !== "muerto",
             location: char.location || char.ubicacion || "desconocida",
             injuries: char.injuries || char.heridas || [],
             lastSeen: chapter.chapterNumber,
           });
+          const items = char.hasItems || char.objetos || char.items || [];
+          if (items.length > 0) {
+            characterItems.set(charName, items);
+          }
         }
       }
       if (state?.key_events) {
@@ -381,18 +412,31 @@ export class Orchestrator {
       }
     }
 
-    // Build mandatory constraints from character states
     const mandatoryConstraints: string[] = [];
     characterStates.forEach((state, name) => {
       if (!state.alive) {
-        mandatoryConstraints.push(`⛔ ${name}: MUERTO (Cap ${state.lastSeen}) - NO puede aparecer activo`);
-      } else if (state.injuries.length > 0) {
-        mandatoryConstraints.push(`⚠️ ${name}: Heridas activas [${state.injuries.join(", ")}] - DEBEN mencionarse`);
-      }
-      if (state.location && state.alive) {
-        mandatoryConstraints.push(`📍 ${name}: Última ubicación = ${state.location}`);
+        mandatoryConstraints.push(`⛔ ${name}: MUERTO (Cap ${state.lastSeen}) - NO puede aparecer activo ni hablar`);
+      } else {
+        if (state.injuries.length > 0) {
+          mandatoryConstraints.push(`⚠️ ${name}: Heridas activas [${state.injuries.join(", ")}] - DEBEN afectar sus acciones`);
+        }
+        if (state.location) {
+          mandatoryConstraints.push(`📍 ${name}: Última ubicación = ${state.location}`);
+        }
+        const items = characterItems.get(name);
+        if (items && items.length > 0) {
+          mandatoryConstraints.push(`🎒 ${name}: Posee [${items.join(", ")}] - NO usar objetos que no tiene`);
+        }
       }
     });
+
+    if (keyEvents.length > 0) {
+      mandatoryConstraints.push(`\n📜 EVENTOS RECIENTES QUE DEBEN RESPETARSE:`);
+      const recentEvents = keyEvents.slice(-8);
+      recentEvents.forEach(event => {
+        mandatoryConstraints.push(`  → ${event}`);
+      });
+    }
 
     for (let i = sortedChapters.length - 1; i >= 0; i--) {
       const chapter = sortedChapters[i];
@@ -913,13 +957,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
               await new Promise(resolve => setTimeout(resolve, 10000));
               continue;
             } else {
-              // Final attempt exhausted - save content but mark as needs_expansion
-              console.warn(`[Orchestrator] ⚠️ CAPÍTULO CORTO: ${sectionLabel} tiene ${contentWordCount}/${TARGET_MIN}-${TARGET_MAX} palabras. Marcando para expansión.`);
+              console.warn(`[Orchestrator] ⚠️ CAPÍTULO CORTO: ${sectionLabel} tiene ${contentWordCount}/${TARGET_MIN}-${TARGET_MAX} palabras. Marcando para expansión pero pasando por Editor.`);
               this.callbacks.onAgentStatus("ghostwriter", "warning", 
-                `${sectionLabel} guardado con ${contentWordCount} palabras (objetivo: ${TARGET_MIN}-${TARGET_MAX}). Requiere expansión.`
+                `${sectionLabel} guardado con ${contentWordCount} palabras (objetivo: ${TARGET_MIN}-${TARGET_MAX}). Pasando a revisión de calidad.`
               );
               
-              // Track token usage even for short chapters
               await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", sectionData.numero, "chapter_write_short");
               
               if (writerResult.thoughtSignature) {
@@ -932,19 +974,14 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 });
               }
               
-              // Mark chapter as needing expansion - will be handled specially
               await storage.updateChapter(chapter.id, {
                 content: currentContent,
                 wordCount: contentWordCount,
-                status: "needs_expansion",
                 needsRevision: true,
                 revisionReason: `Capítulo corto: ${contentWordCount}/${TARGET_MIN}-${TARGET_MAX} palabras después de ${refinementAttempts + 1} intentos`
               });
               
-              // Emit chapter status change callback
               this.callbacks.onChapterStatusChange(sectionData.numero, "needs_expansion");
-              
-              continue; // Skip to next chapter without editor pass
             }
           }
           
@@ -1480,13 +1517,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
               await new Promise(resolve => setTimeout(resolve, 10000));
               continue;
             } else {
-              // Final attempt exhausted - save content but mark as needs_expansion
-              console.warn(`[Orchestrator] ⚠️ CAPÍTULO CORTO: ${sectionLabel} tiene ${contentWordCount}/${TARGET_MIN}-${TARGET_MAX} palabras. Marcando para expansión.`);
+              console.warn(`[Orchestrator] ⚠️ CAPÍTULO CORTO: ${sectionLabel} tiene ${contentWordCount}/${TARGET_MIN}-${TARGET_MAX} palabras. Marcando para expansión pero pasando por Editor.`);
               this.callbacks.onAgentStatus("ghostwriter", "warning", 
-                `${sectionLabel} guardado con ${contentWordCount} palabras (objetivo: ${TARGET_MIN}-${TARGET_MAX}). Requiere expansión.`
+                `${sectionLabel} guardado con ${contentWordCount} palabras (objetivo: ${TARGET_MIN}-${TARGET_MAX}). Pasando a revisión de calidad.`
               );
               
-              // Track token usage even for short chapters
               await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", sectionData.numero, "chapter_write_short");
               
               if (writerResult.thoughtSignature) {
@@ -1499,19 +1534,14 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 });
               }
               
-              // Mark chapter as needing expansion - will be handled specially
               await storage.updateChapter(chapter.id, {
                 content: currentContent,
                 wordCount: contentWordCount,
-                status: "needs_expansion",
                 needsRevision: true,
                 revisionReason: `Capítulo corto: ${contentWordCount}/${TARGET_MIN}-${TARGET_MAX} palabras después de ${refinementAttempts + 1} intentos`
               });
               
-              // Emit chapter status change callback
               this.callbacks.onChapterStatusChange(sectionData.numero, "needs_expansion");
-              
-              continue; // Skip to next chapter without editor pass
             }
           }
           
@@ -3752,11 +3782,26 @@ Responde SOLO con un JSON válido con la estructura:
       ]);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error(`[Orchestrator] Continuity Sentinel error/timeout: ${errorMsg}`);
+      const isTimeout = errorMsg.includes("Sentinel timeout");
+      console.error(`[Orchestrator] Continuity Sentinel ${isTimeout ? "TIMEOUT" : "ERROR"}: ${errorMsg}`);
+      
+      if (isTimeout) {
+        this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
+          `⚠️ Checkpoint #${checkpointNumber} excedió el tiempo límite. Se marcará para revisión en la siguiente pasada.`
+        );
+        this.callbacks.onError?.(`Continuity Sentinel timeout en checkpoint #${checkpointNumber} (${chaptersInScope.length} capítulos). Capítulos no verificados: ${chaptersInScope.map(c => c.chapterNumber).join(", ")}.`);
+        const uncheckdChapters = chaptersInScope.map(c => c.chapterNumber);
+        return { 
+          passed: false, 
+          issues: [`[MAYOR] Checkpoint #${checkpointNumber} no pudo completarse por timeout. Capítulos ${uncheckdChapters.join(", ")} requieren verificación manual o en la revisión final.`], 
+          chaptersToRevise: [] 
+        };
+      }
+      
       this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
-        `Checkpoint #${checkpointNumber} omitido por timeout/error. Continuando...`
+        `Checkpoint #${checkpointNumber} falló por error. Continuando con precaución...`
       );
-      return { passed: true, issues: [], chaptersToRevise: [] };
+      return { passed: false, issues: [`[MAYOR] Error en checkpoint: ${errorMsg}`], chaptersToRevise: [] };
     }
 
     await this.trackTokenUsage(project.id, result.tokenUsage, "El Centinela", "gemini-3-pro-preview", undefined, "continuity_check");

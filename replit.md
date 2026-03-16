@@ -61,7 +61,10 @@ Preferred communication style: Simple, everyday language.
 - **Fast-Track Resume System**: Optimizes project resumption from `awaiting_instructions` by skipping unnecessary pipeline stages and directly engaging `runFinalReviewOnly()` with user instructions.
 - **Translation Export Improvements**: Markdown exports now: (1) strip code fences/JSON artifacts from AI output, (2) omit trailing dividers after the last chapter, and (3) use localized chapter labels (Prologue, Epilogue, Author's Note, Chapter) based on project language for 7 languages (es, en, fr, de, it, pt, ca).
 - **Immediate Continuity Validation**: Validates each chapter immediately after writing, before the Editor stage. Detects dead characters acting, ignored injuries, and location inconsistencies. If violations are found, forces a targeted rewrite with specific correction instructions before proceeding.
-- **Mandatory Continuity Constraints**: The Ghostwriter now receives prominent, structured constraints at the top of its context listing dead characters, active injuries, and last known locations, with clear warnings that violations will trigger automatic rejection.
+- **Mandatory Continuity Constraints**: The Ghostwriter now receives prominent, structured constraints at the top of its context listing dead characters, active injuries, last known locations, possessed objects, and recent key events, with clear warnings that violations will trigger automatic rejection.
+- **Enhanced Continuity Validation**: Dead character detection uses 30+ action verbs (vs original 12) with flashback-aware exceptions. Injury detection uses 14 physical verbs. Object tracking prevents characters from using items they don't possess.
+- **Short Chapter Quality Gate**: Short chapters (below word target) no longer skip the Editor review. They still get marked for expansion but must pass quality checks before proceeding.
+- **Continuity Sentinel Reliability**: Sentinel timeouts no longer silently pass. Failed checkpoints are logged as warnings and flagged for manual review or re-verification in the final review pass.
 
 ## External Dependencies
 
