@@ -70,6 +70,25 @@ export interface OrphanChapter {
   recomendacion: "eliminar" | "reubicar_como_flashback" | "integrar_en_otro";
 }
 
+export interface AppearanceDrift {
+  character: string;
+  trait: string;
+  description_a: string;
+  chapter_a: number;
+  description_b: string;
+  chapter_b: number;
+  canonical_value?: string;
+}
+
+export interface KnowledgeLeak {
+  character: string;
+  information: string;
+  chapter_where_used: number;
+  chapter_where_revealed: number;
+  who_actually_knows: string;
+  severity: "CRITICAL" | "MAJOR" | "MINOR";
+}
+
 export interface FinalReviewerResult {
   veredicto: "APROBADO" | "APROBADO_CON_RESERVAS" | "REQUIERE_REVISION";
   resumen_general: string;
@@ -80,6 +99,8 @@ export interface FinalReviewerResult {
   capitulos_para_reescribir: number[];
   plot_decisions?: PlotDecision[];
   persistent_injuries?: PersistentInjury[];
+  appearance_drift?: AppearanceDrift[];
+  knowledge_leaks?: KnowledgeLeak[];
   orphan_chapters?: OrphanChapter[];
 }
 
@@ -238,7 +259,19 @@ Debes detectar y reportar estos problemas que SOLO se ven leyendo toda la novela
    - Si la lesión es IGNORADA después, reportar como inconsistencia CRÍTICA
    - Opciones de corrección: (a) hacer la lesión superficial, (b) añadir referencias a la discapacidad
 
-3. **CAPÍTULOS HUÉRFANOS (orphan_chapters)**:
+3. **APARIENCIA FÍSICA INCONSISTENTE (appearance_drift)**:
+   - Busca TODAS las descripciones de rasgos físicos de cada personaje a lo largo de la novela
+   - Color de ojos, color de pelo, cicatrices, rasgos distintivos → DEBEN ser idénticos en todos los capítulos
+   - Ejemplo: "ojos grises" en Cap 3 pero "ojos verdes" en Cap 17 → INCONSISTENCIA CRÍTICA
+   - Compara con la ficha de "apariencia_inmutable" del World Bible
+   - Reportar con cita textual EXACTA de las dos descripciones contradictorias
+
+4. **FILTRACIÓN DE CONOCIMIENTO (knowledge_leaks)**:
+   - ¿Algún personaje actúa con información que NO debería tener?
+   - Ejemplo: Personaje A solo estuvo en la reunión donde se reveló el secreto, pero Personaje B (que no estaba) lo menciona dos capítulos después sin que nadie se lo haya dicho
+   - Reportar como MAYOR si afecta decisiones de trama
+
+5. **CAPÍTULOS HUÉRFANOS (orphan_chapters)**:
    - ¿Hay capítulos que no aportan nada a la trama principal?
    - ¿Hay objetos/llaves/pistas introducidos que NUNCA se usan después?
    - Ejemplo: Cap 44 introduce una llave que nunca se usa → capítulo huérfano
@@ -315,6 +348,27 @@ SALIDA OBLIGATORIA (JSON):
       "capitulos_verificados": [39, 40, 41, 45, 50],
       "consistencia": "ignorada",
       "problema": "Arnald usa ambos brazos normalmente en el clímax sin mención de la lesión"
+    }
+  ],
+  "appearance_drift": [
+    {
+      "character": "Elena",
+      "trait": "color de ojos",
+      "description_a": "sus ojos grises brillaban",
+      "chapter_a": 3,
+      "description_b": "lo miró con sus ojos verdes",
+      "chapter_b": 17,
+      "canonical_value": "grises (según World Bible)"
+    }
+  ],
+  "knowledge_leaks": [
+    {
+      "character": "Marco",
+      "information": "sabe que el tesoro está bajo la iglesia",
+      "chapter_where_used": 22,
+      "chapter_where_revealed": 18,
+      "who_actually_knows": "Solo Ana estuvo presente cuando se reveló en Cap 18",
+      "severity": "CRITICAL"
     }
   ],
   "orphan_chapters": [

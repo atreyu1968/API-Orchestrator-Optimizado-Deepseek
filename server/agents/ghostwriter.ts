@@ -218,6 +218,16 @@ ANTES de escribir UNA SOLA LÍNEA de prosa, DEBES verificar el estado de CADA pe
    - Si soltó un arma → NO la tiene hasta que la recupere
    - Si perdió algo → NO puede usarlo
 
+4. CONOCIMIENTO DE PERSONAJES: ¿Qué sabe cada personaje?
+   - Cada personaje SOLO puede actuar/hablar con la información que ÉL ha adquirido
+   - Si el LECTOR sabe un secreto pero el PERSONAJE no estuvo presente → el personaje NO LO SABE
+   - Verificar knowledgeGained del estado anterior: un personaje NO puede mencionar/reaccionar a información que solo otro personaje descubrió
+   - Esto aplica también a pronombres: si "ella" dice algo que solo "él" sabe → VIOLACIÓN
+
+5. APARIENCIA INMUTABLE: Consulta apariencia_inmutable del World Bible
+   - Rasgos físicos (ojos, pelo, cicatrices, estatura) NUNCA cambian sin justificación narrativa explícita
+   - Si describes un rasgo físico, DEBE coincidir exactamente con la ficha canónica
+
 ⚠️ Si detectas CUALQUIER conflicto entre el estado anterior y lo que pide la escaleta:
    - NO escribas el capítulo
    - Indica el conflicto en tu respuesta

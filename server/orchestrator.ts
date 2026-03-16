@@ -95,6 +95,7 @@ export class Orchestrator {
   private requiredConsecutiveHighScores = 2; // Must achieve 9+ this many times in a row
   private continuityCheckpointInterval = 5;
   private currentProjectGenre = "";
+  private chaptersRewrittenInCurrentCycle = 0;
   
   private cumulativeTokens = {
     inputTokens: 0,
@@ -387,12 +388,14 @@ export class Orchestrator {
 
     const characterStates: Map<string, { alive: boolean; location: string; injuries: string[]; lastSeen: number }> = new Map();
     const characterItems: Map<string, string[]> = new Map();
+    const characterKnowledge: Map<string, string[]> = new Map();
     const keyEvents: string[] = [];
 
     for (const chapter of sortedChapters) {
       const state = chapter.continuityState as any;
-      if (state?.character_states) {
-        for (const char of state.character_states) {
+      if (state?.character_states || state?.characterStates) {
+        const chars = state.character_states || Object.entries(state.characterStates || {}).map(([name, data]: [string, any]) => ({ name, ...data }));
+        for (const char of chars) {
           const charName = char.name || char.personaje;
           if (!charName) continue;
           characterStates.set(charName, {
@@ -405,10 +408,16 @@ export class Orchestrator {
           if (items.length > 0) {
             characterItems.set(charName, items);
           }
+          const knowledge = char.knowledgeGained || char.conocimiento || [];
+          if (knowledge.length > 0) {
+            const existing = characterKnowledge.get(charName) || [];
+            characterKnowledge.set(charName, [...existing, ...knowledge]);
+          }
         }
       }
-      if (state?.key_events) {
-        keyEvents.push(...state.key_events.slice(-2));
+      if (state?.key_events || state?.keyReveals) {
+        const events = state.key_events || state.keyReveals || [];
+        keyEvents.push(...events.slice(-2));
       }
     }
 
@@ -429,6 +438,20 @@ export class Orchestrator {
         }
       }
     });
+
+    const knowledgeConstraints: string[] = [];
+    characterKnowledge.forEach((knowledge, name) => {
+      if (characterStates.get(name)?.alive && knowledge.length > 0) {
+        const uniqueKnowledge = [...new Set(knowledge)].slice(-5);
+        knowledgeConstraints.push(`🧠 ${name} SABE: [${uniqueKnowledge.join("; ")}] - SOLO puede actuar/hablar basándose en lo que sabe`);
+      }
+    });
+    
+    if (knowledgeConstraints.length > 0) {
+      mandatoryConstraints.push(`\n🔒 CONOCIMIENTO DE PERSONAJES (NO filtrar información entre personajes):`);
+      mandatoryConstraints.push(...knowledgeConstraints);
+      mandatoryConstraints.push(`⛔ Un personaje NO PUEDE saber/decir algo que solo otro personaje descubrió`);
+    }
 
     if (keyEvents.length > 0) {
       mandatoryConstraints.push(`\n📜 EVENTOS RECIENTES QUE DEBEN RESPETARSE:`);
@@ -1193,15 +1216,15 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         }
       }
 
-      // QA: Voice & Rhythm Auditor - SKIP if already in final review phase to prevent cost inflation
       const projectStateForVoice = await storage.getProject(project.id);
-      const skipVoiceAudit = (projectStateForVoice?.revisionCycle || 0) > 0;
+      const revisionCycleForVoice = projectStateForVoice?.revisionCycle || 0;
+      const skipVoiceAudit = revisionCycleForVoice > 0 && this.chaptersRewrittenInCurrentCycle === 0;
       
       if (skipVoiceAudit) {
         this.callbacks.onAgentStatus("voice-auditor", "skipped", 
-          `Auditor de voz omitido - ya ejecutado previamente`
+          `Auditor de voz omitido - sin capítulos modificados desde la última pasada`
         );
-        console.log(`[Orchestrator] Skipping voice auditor for project ${project.id} - already completed`);
+        console.log(`[Orchestrator] Skipping voice auditor for project ${project.id} - no chapters revised`);
       } else {
         const allCompletedChapters = await storage.getChaptersByProject(project.id);
         const completedForAnalysis = allCompletedChapters.filter(c => c.status === "completed" && c.content);
@@ -1241,17 +1264,16 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         }
       }
 
-      // QA: Semantic Repetition Detector - SKIP if already in final review phase to prevent cost inflation
-      // MAX 2 attempts to fix semantic issues, then accept with warnings
       const currentProjectState = await storage.getProject(project.id);
-      const skipSemanticDetector = (currentProjectState?.revisionCycle || 0) > 0;
+      const revisionCycleForSemantic = currentProjectState?.revisionCycle || 0;
+      const skipSemanticDetector = revisionCycleForSemantic > 0 && this.chaptersRewrittenInCurrentCycle === 0;
       const MAX_SEMANTIC_ATTEMPTS = 2;
       
       if (skipSemanticDetector) {
         this.callbacks.onAgentStatus("semantic-detector", "skipped", 
-          `Detector semántico omitido - ya ejecutado previamente`
+          `Detector semántico omitido - sin capítulos modificados desde la última pasada`
         );
-        console.log(`[Orchestrator] Skipping semantic detector for project ${project.id} - already completed`);
+        console.log(`[Orchestrator] Skipping semantic detector for project ${project.id} - no chapters revised`);
       } else {
         let semanticAttempt = 0;
         let semanticPassed = false;
@@ -1732,15 +1754,15 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         }
       }
 
-      // QA: Voice & Rhythm Auditor after all chapters complete - SKIP if already in final review phase
       const projectForVoiceCheck = await storage.getProject(project.id);
-      const skipVoiceAuditor = (projectForVoiceCheck?.revisionCycle || 0) > 0;
+      const revisionCycleForVoiceResume = projectForVoiceCheck?.revisionCycle || 0;
+      const skipVoiceAuditor = revisionCycleForVoiceResume > 0 && this.chaptersRewrittenInCurrentCycle === 0;
       
       if (skipVoiceAuditor) {
         this.callbacks.onAgentStatus("voice-auditor", "skipped", 
-          `Auditor de voz omitido - proyecto ya en fase de revisión final`
+          `Auditor de voz omitido - sin capítulos modificados desde la última pasada`
         );
-        console.log(`[Orchestrator] Skipping voice auditor for project ${project.id} - already in final review phase`);
+        console.log(`[Orchestrator] Skipping voice auditor for project ${project.id} - no chapters revised`);
       } else {
         const allCompletedChapters = await storage.getChaptersByProject(project.id);
         const completedForAnalysis = allCompletedChapters.filter(c => c.status === "completed" && c.content);
@@ -1780,17 +1802,16 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         }
       }
 
-      // QA: Semantic Repetition Detector - SKIP if already in final review phase (revisionCycle > 0)
-      // MAX 2 attempts to fix semantic issues, then accept with warnings
       const updatedProject = await storage.getProject(project.id);
-      const alreadyInFinalReview = (updatedProject?.revisionCycle || 0) > 0;
+      const revisionCycleForSemanticResume = updatedProject?.revisionCycle || 0;
+      const skipSemanticResume = revisionCycleForSemanticResume > 0 && this.chaptersRewrittenInCurrentCycle === 0;
       const MAX_SEMANTIC_ATTEMPTS_RESUME = 2;
       
-      if (alreadyInFinalReview) {
+      if (skipSemanticResume) {
         this.callbacks.onAgentStatus("semantic-detector", "skipped", 
-          `Detector semántico omitido - proyecto ya en fase de revisión final (ciclo ${updatedProject?.revisionCycle})`
+          `Detector semántico omitido - sin capítulos modificados desde la última pasada`
         );
-        console.log(`[Orchestrator] Skipping semantic detector for project ${project.id} - already in final review phase`);
+        console.log(`[Orchestrator] Skipping semantic detector for project ${project.id} - no chapters revised`);
       } else {
         let semanticAttemptResume = 0;
         let semanticPassedResume = false;
@@ -1990,6 +2011,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
     let previousScores: number[] = []; // Track score history
     
     while (revisionCycle < this.maxFinalReviewCycles) {
+      this.chaptersRewrittenInCurrentCycle = 0;
       const consecutiveInfo = consecutiveHighScores > 0 
         ? ` [${consecutiveHighScores}/${this.requiredConsecutiveHighScores} puntuaciones 9+ consecutivas]`
         : "";
@@ -2069,6 +2091,25 @@ ${chapterSummaries || "Sin capítulos disponibles"}
               agentRole: "final-reviewer",
             });
           }
+
+          if (result.appearance_drift && result.appearance_drift.length > 0) {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              message: `Final Reviewer detectó ${result.appearance_drift.length} inconsistencias de apariencia física`,
+              agentRole: "final-reviewer",
+            });
+          }
+
+          if (result.knowledge_leaks && result.knowledge_leaks.length > 0) {
+            const criticalCount = result.knowledge_leaks.filter(l => l.severity === "CRITICAL").length;
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: criticalCount > 0 ? "warning" : "info",
+              message: `Final Reviewer detectó ${result.knowledge_leaks.length} filtraciones de conocimiento (${criticalCount} críticas)`,
+              agentRole: "final-reviewer",
+            });
+          }
           
           if (needsUpdate) {
             await storage.updateWorldBible(worldBible.id, updates);
@@ -2125,6 +2166,45 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           }
         }
         
+        if (result.appearance_drift) {
+          for (const drift of result.appearance_drift) {
+            const newIssue = {
+              capitulos_afectados: [drift.chapter_a, drift.chapter_b],
+              categoria: "continuidad_fisica" as const,
+              descripcion: `APARIENCIA INCONSISTENTE: ${drift.character} tiene ${drift.trait} descrito como "${drift.description_a}" en Cap ${drift.chapter_a} pero como "${drift.description_b}" en Cap ${drift.chapter_b}. ${drift.canonical_value ? `Valor canónico: ${drift.canonical_value}` : ""}`,
+              severidad: "critica" as const,
+              elementos_a_preservar: "Preservar toda la trama y diálogos. Solo corregir la descripción física.",
+              instrucciones_correccion: `Corregir la descripción en Cap ${drift.chapter_b} para que coincida con ${drift.canonical_value || `la descripción de Cap ${drift.chapter_a}: "${drift.description_a}"`}. Buscar y corregir TODAS las menciones del rasgo en ese capítulo.`
+            };
+            result.issues = result.issues || [];
+            result.issues.push(newIssue);
+            if (!result.capitulos_para_reescribir?.includes(drift.chapter_b)) {
+              result.capitulos_para_reescribir = result.capitulos_para_reescribir || [];
+              result.capitulos_para_reescribir.push(drift.chapter_b);
+            }
+          }
+        }
+
+        if (result.knowledge_leaks) {
+          const criticalLeaks = result.knowledge_leaks.filter(l => l.severity === "CRITICAL" || l.severity === "MAJOR");
+          for (const leak of criticalLeaks) {
+            const newIssue = {
+              capitulos_afectados: [leak.chapter_where_used],
+              categoria: "continuidad_fisica" as const,
+              descripcion: `FILTRACIÓN DE CONOCIMIENTO: ${leak.character} sabe "${leak.information}" en Cap ${leak.chapter_where_used}, pero esta información solo se reveló a ${leak.who_actually_knows} en Cap ${leak.chapter_where_revealed}.`,
+              severidad: leak.severity === "CRITICAL" ? "critica" as const : "mayor" as const,
+              elementos_a_preservar: "Preservar la trama general. Modificar solo los diálogos/pensamientos donde el personaje usa información que no debería tener.",
+              instrucciones_correccion: `OPCIÓN A: Añadir una escena breve antes donde ${leak.who_actually_knows} transmite la información a ${leak.character}. OPCIÓN B: Eliminar/reemplazar el diálogo donde ${leak.character} usa la información por algo que sí podría saber. Elegir la opción que requiera menos cambios.`
+            };
+            result.issues = result.issues || [];
+            result.issues.push(newIssue);
+            if (!result.capitulos_para_reescribir?.includes(leak.chapter_where_used)) {
+              result.capitulos_para_reescribir = result.capitulos_para_reescribir || [];
+              result.capitulos_para_reescribir.push(leak.chapter_where_used);
+            }
+          }
+        }
+
         // Crear issues para capítulos huérfanos
         if (result.orphan_chapters) {
           for (const orphan of result.orphan_chapters) {
@@ -2398,6 +2478,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           revisionReason: null,
         });
 
+        this.chaptersRewrittenInCurrentCycle++;
         this.callbacks.onChapterComplete(chapterNum, wordCount, sectionData.titulo);
         this.callbacks.onAgentStatus("copyeditor", "completed", 
           `${sectionLabel} corregido y finalizado (${wordCount} palabras)`
@@ -3376,12 +3457,18 @@ Responde SOLO con un JSON válido con la estructura:
       parts.push(`\nVEREDICTO: ${editorResult.veredicto}`);
     }
     
-    // CRÍTICO: Errores de continuidad (el problema del cap 16)
     if (editorResult.errores_continuidad && editorResult.errores_continuidad.length > 0) {
       parts.push(`\n🚨 ERRORES DE CONTINUIDAD (CRÍTICO - CORREGIR PRIMERO):\n${editorResult.errores_continuidad.map(e => `  ❌ ${e}`).join("\n")}`);
     }
+
+    if (editorResult.filtracion_conocimiento && editorResult.filtracion_conocimiento.length > 0) {
+      parts.push(`\n🚨 FILTRACIÓN DE CONOCIMIENTO (CRÍTICO - CORREGIR):\n${editorResult.filtracion_conocimiento.map(e => `  ❌ ${e}`).join("\n")}`);
+    }
+
+    if (editorResult.inconsistencias_objetos && editorResult.inconsistencias_objetos.length > 0) {
+      parts.push(`\n🚨 INCONSISTENCIAS DE OBJETOS (CRÍTICO - CORREGIR):\n${editorResult.inconsistencias_objetos.map(e => `  ❌ ${e}`).join("\n")}`);
+    }
     
-    // Problemas de verosimilitud (deus ex machina, coincidencias)
     if (editorResult.problemas_verosimilitud && editorResult.problemas_verosimilitud.length > 0) {
       parts.push(`\n🚨 PROBLEMAS DE VEROSIMILITUD (CRÍTICO):\n${editorResult.problemas_verosimilitud.map(p => `  ❌ ${p}`).join("\n")}`);
     }
@@ -4028,6 +4115,7 @@ Responde SOLO con un JSON válido con la estructura:
         revisionReason: null,
       });
 
+      this.chaptersRewrittenInCurrentCycle++;
       this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
       this.callbacks.onAgentStatus("ghostwriter", "completed", 
         `${sectionLabel} reescrito correctamente`

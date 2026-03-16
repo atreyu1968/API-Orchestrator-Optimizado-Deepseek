@@ -65,6 +65,10 @@ Preferred communication style: Simple, everyday language.
 - **Enhanced Continuity Validation**: Dead character detection uses 30+ action verbs (vs original 12) with flashback-aware exceptions. Injury detection uses 14 physical verbs. Object tracking prevents characters from using items they don't possess.
 - **Short Chapter Quality Gate**: Short chapters (below word target) no longer skip the Editor review. They still get marked for expansion but must pass quality checks before proceeding.
 - **Continuity Sentinel Reliability**: Sentinel timeouts no longer silently pass. Failed checkpoints are logged as warnings and flagged for manual review or re-verification in the final review pass.
+- **Knowledge Leakage Prevention**: Character knowledge tracking (`knowledgeGained`) is now enforced as mandatory constraints for the Ghostwriter. The Editor and Final Reviewer detect when characters use information they shouldn't have access to.
+- **Appearance Drift Detection**: The Final Reviewer cross-references physical trait descriptions across all chapters against the World Bible's `apariencia_inmutable` canonical data. Inconsistencies generate automatic correction issues.
+- **Pronoun/Title Dead Character Detection**: The Editor now checks for pronoun references to recently-mentioned dead characters, not just proper names. Prevents subtle continuity violations via "he/she" references.
+- **QA Re-execution on Revision Cycles**: Voice/rhythm auditor and semantic repetition detector are no longer unconditionally skipped during revision cycles. They re-run if chapters were actually modified, ensuring quality isn't degraded by rewrites.
 
 ## External Dependencies
 

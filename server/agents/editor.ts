@@ -45,6 +45,8 @@ export interface EditorResult {
   fortalezas: string[];
   debilidades_criticas: string[];
   errores_continuidad?: string[];
+  filtracion_conocimiento?: string[];
+  inconsistencias_objetos?: string[];
   frases_repetidas?: string[];
   problemas_ritmo?: string[];
   problemas_verosimilitud?: string[];
@@ -141,6 +143,13 @@ PROTOCOLO DE EVALUACIÓN INTEGRADO
    Si se proporciona el ESTADO DE CONTINUIDAD del capítulo anterior, verifica:
    - ¿Los personajes aparecen en ubicaciones coherentes?
    - ¿Los estados de personajes (vivo/muerto/herido) son consistentes?
+   - ¿Los personajes MUERTOS son referidos SOLO en flashbacks/recuerdos y NUNCA realizan acciones?
+     ATENCIÓN: Verifica también pronombres y títulos, no solo nombres propios.
+     Si el narrador dice "él susurró" justo después de referirse a un personaje muerto → VIOLACIÓN.
+   - ¿Algún personaje SABE información que no debería saber aún?
+     Compara lo que cada personaje dice/piensa con su "knowledgeGained" del estado anterior.
+     Si un personaje revela información que solo otro personaje descubrió → VIOLACIÓN.
+   - ¿Los OBJETOS son coherentes? Si un personaje perdió una espada, ¿la usa de nuevo sin recuperarla?
    - Error de continuidad grave: -1 punto (máximo -2 por múltiples errores)
 
 4. REPETICIÓN LÉXICA:
@@ -189,6 +198,8 @@ SALIDA JSON OBLIGATORIA:
   "fortalezas": [],
   "debilidades_criticas": [],
   "errores_continuidad": ["Inconsistencias físicas con cita exacta"],
+  "filtracion_conocimiento": ["Personaje X sabe/dice Y pero solo Z lo descubrió en Cap N"],
+  "inconsistencias_objetos": ["Personaje X usa objeto Y pero lo perdió/no lo tiene"],
   "frases_repetidas": ["Expresiones repetidas"],
   "problemas_ritmo": ["Escenas sin setup"],
   "problemas_verosimilitud": ["Deus ex machina, coincidencias forzadas"],
