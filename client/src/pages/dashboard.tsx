@@ -154,7 +154,10 @@ export default function Dashboard() {
     if (!currentProject?.id) return;
     
     fetch(`/api/projects/${currentProject.id}/activity-logs?limit=200`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((historicalLogs: Array<{ id: number; level: string; message: string; agentRole?: string; createdAt: string }>) => {
         const levelToType: Record<string, LogEntry["type"]> = {
           info: "info",

@@ -15,6 +15,13 @@
       "when": 1768641912225,
       "tag": "0001_natural_bromley",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773679923583,
+      "tag": "0002_remarkable_wilson_fisk",
+      "breakpoints": true
     }
   ]
 }

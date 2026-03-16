@@ -685,7 +685,11 @@ export async function registerRoutes(
         },
       });
 
-      orchestrator.generateNovel(project).catch(console.error);
+      orchestrator.generateNovel(project).catch(async (err) => {
+        console.error("Background generation failed:", err);
+        await storage.updateProject(id, { status: "error" });
+        await persistActivityLog(id, "error", `Error fatal en generación: ${err instanceof Error ? err.message : String(err)}`, "orchestrator");
+      });
 
     } catch (error) {
       console.error("Error starting generation:", error);
@@ -774,7 +778,11 @@ export async function registerRoutes(
         },
       });
 
-      orchestrator.resumeNovel(project).catch(console.error);
+      orchestrator.resumeNovel(project).catch(async (err) => {
+        console.error("Background resume failed:", err);
+        await storage.updateProject(id, { status: "error" });
+        await persistActivityLog(id, "error", `Error fatal al reanudar: ${err instanceof Error ? err.message : String(err)}`, "orchestrator");
+      });
 
     } catch (error) {
       console.error("Error resuming generation:", error);
@@ -846,7 +854,11 @@ export async function registerRoutes(
         },
       });
 
-      orchestrator.runFinalReviewOnly(project).catch(console.error);
+      orchestrator.runFinalReviewOnly(project).catch(async (err) => {
+        console.error("Background final review failed:", err);
+        await storage.updateProject(id, { status: "error" });
+        await persistActivityLog(id, "error", `Error fatal en revisión final: ${err instanceof Error ? err.message : String(err)}`, "orchestrator");
+      });
 
     } catch (error) {
       console.error("Error starting final review:", error);
@@ -946,7 +958,11 @@ export async function registerRoutes(
 
       // Get updated project with new chapter count
       const updatedProject = await storage.getProject(id);
-      orchestrator.extendNovel(updatedProject!, maxExistingChapter, targetChapters).catch(console.error);
+      orchestrator.extendNovel(updatedProject!, maxExistingChapter, targetChapters).catch(async (err) => {
+        console.error("Background extension failed:", err);
+        await storage.updateProject(id, { status: "error" });
+        await persistActivityLog(id, "error", `Error fatal al extender: ${err instanceof Error ? err.message : String(err)}`, "orchestrator");
+      });
 
     } catch (error) {
       console.error("Error extending project:", error);
@@ -1014,7 +1030,11 @@ export async function registerRoutes(
         },
       });
 
-      orchestrator.runContinuitySentinelForce(project).catch(console.error);
+      orchestrator.runContinuitySentinelForce(project).catch(async (err) => {
+        console.error("Background sentinel failed:", err);
+        await storage.updateProject(id, { status: "error" });
+        await persistActivityLog(id, "error", `Error fatal en sentinel: ${err instanceof Error ? err.message : String(err)}`, "orchestrator");
+      });
 
     } catch (error) {
       console.error("Error starting forced sentinel:", error);
@@ -1083,7 +1103,11 @@ export async function registerRoutes(
         },
       });
 
-      orchestrator.regenerateTruncatedChapters(project, minWordCount).catch(console.error);
+      orchestrator.regenerateTruncatedChapters(project, minWordCount).catch(async (err) => {
+        console.error("Background regeneration failed:", err);
+        await storage.updateProject(id, { status: "error" });
+        await persistActivityLog(id, "error", `Error fatal al regenerar capítulos: ${err instanceof Error ? err.message : String(err)}`, "orchestrator");
+      });
 
     } catch (error) {
       console.error("Error starting truncated chapters regeneration:", error);
@@ -1096,6 +1120,10 @@ export async function registerRoutes(
     const REGENERATION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes max
     const projectId = parseInt(req.params.id);
     const chapterNumber = parseInt(req.params.chapterNumber);
+    
+    if (isNaN(projectId) || isNaN(chapterNumber)) {
+      return res.status(400).json({ error: "Invalid project ID or chapter number" });
+    }
     
     try {
       const project = await storage.getProject(projectId);
@@ -1248,29 +1276,39 @@ export async function registerRoutes(
   });
 
   app.get("/api/projects/:id/stream", (req: Request, res: Response) => {
-    const id = parseInt(req.params.id);
-
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders();
-
-    if (!activeStreams.has(id)) {
-      activeStreams.set(id, new Set());
-    }
-    activeStreams.get(id)!.add(res);
-
-    res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
-
-    req.on("close", () => {
-      const streams = activeStreams.get(id);
-      if (streams) {
-        streams.delete(res);
-        if (streams.size === 0) {
-          activeStreams.delete(id);
-        }
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid project ID" });
       }
-    });
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.flushHeaders();
+
+      if (!activeStreams.has(id)) {
+        activeStreams.set(id, new Set());
+      }
+      activeStreams.get(id)!.add(res);
+
+      res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
+
+      req.on("close", () => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          streams.delete(res);
+          if (streams.size === 0) {
+            activeStreams.delete(id);
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error setting up SSE stream:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Failed to setup stream" });
+      }
+    }
   });
 
   app.get("/api/projects/:id/chapters", async (req: Request, res: Response) => {
@@ -5532,26 +5570,36 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   });
 
   app.get("/api/reedit-projects/:id/stream", (req: Request, res: Response) => {
-    const projectId = parseInt(req.params.id);
-
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders();
-
-    if (!activeReeditStreams.has(projectId)) {
-      activeReeditStreams.set(projectId, new Set());
-    }
-    activeReeditStreams.get(projectId)!.add(res);
-
-    res.write(`data: ${JSON.stringify({ type: "connected", projectId })}\n\n`);
-
-    req.on("close", () => {
-      activeReeditStreams.get(projectId)?.delete(res);
-      if (activeReeditStreams.get(projectId)?.size === 0) {
-        activeReeditStreams.delete(projectId);
+    try {
+      const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) {
+        return res.status(400).json({ error: "Invalid project ID" });
       }
-    });
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.flushHeaders();
+
+      if (!activeReeditStreams.has(projectId)) {
+        activeReeditStreams.set(projectId, new Set());
+      }
+      activeReeditStreams.get(projectId)!.add(res);
+
+      res.write(`data: ${JSON.stringify({ type: "connected", projectId })}\n\n`);
+
+      req.on("close", () => {
+        activeReeditStreams.get(projectId)?.delete(res);
+        if (activeReeditStreams.get(projectId)?.size === 0) {
+          activeReeditStreams.delete(projectId);
+        }
+      });
+    } catch (error) {
+      console.error("Error setting up reedit SSE stream:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Failed to setup stream" });
+      }
+    }
   });
 
   app.post("/api/reedit-projects/:id/resume", async (req: Request, res: Response) => {
