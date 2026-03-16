@@ -3947,6 +3947,12 @@ Responde SOLO con un JSON válido con la estructura:
           enriched._hilos_pendientes = threadRuleEarly.pending || [];
           enriched._hilos_resueltos = threadRuleEarly.resolved || [];
         }
+        const plotDecisionsEarly = (dbWorldBible.plotDecisions || []) as any[];
+        if (plotDecisionsEarly.length > 0) enriched._plot_decisions = plotDecisionsEarly;
+        const persistentInjuriesEarly = (dbWorldBible.persistentInjuries || []) as any[];
+        if (persistentInjuriesEarly.length > 0) enriched._persistent_injuries = persistentInjuriesEarly;
+        const timelineEarly = (dbWorldBible.timeline || []) as any[];
+        if (timelineEarly.length > 0) enriched._timeline = timelineEarly;
         return enriched;
       }
 
@@ -4011,6 +4017,21 @@ Responde SOLO con un JSON válido con la estructura:
       if (threadRule) {
         enriched._hilos_pendientes = threadRule.pending || [];
         enriched._hilos_resueltos = threadRule.resolved || [];
+      }
+
+      const plotDecisions = (dbWorldBible.plotDecisions || []) as any[];
+      if (plotDecisions.length > 0) {
+        enriched._plot_decisions = plotDecisions;
+      }
+
+      const persistentInjuries = (dbWorldBible.persistentInjuries || []) as any[];
+      if (persistentInjuries.length > 0) {
+        enriched._persistent_injuries = persistentInjuries;
+      }
+
+      const timeline = (dbWorldBible.timeline || []) as any[];
+      if (timeline.length > 0) {
+        enriched._timeline = timeline;
       }
       
       return enriched;

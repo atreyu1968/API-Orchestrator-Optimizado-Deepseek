@@ -301,9 +301,193 @@ export class GhostwriterAgent extends BaseAgent {
     });
   }
 
+  private formatWorldBibleForPrompt(wb: any): string {
+    if (!wb || typeof wb !== 'object') {
+      return `CONTEXTO DEL MUNDO (World Bible): ${JSON.stringify(wb || {})}`;
+    }
+    
+    const parts: string[] = [];
+    const mappedKeys = new Set<string>();
+    
+    parts.push(`═══════════════════════════════════════════════════════════════════`);
+    parts.push(`📖 WORLD BIBLE COMPLETA (REFERENCIA OBLIGATORIA)`);
+    parts.push(`═══════════════════════════════════════════════════════════════════`);
+
+    const personajes = wb.personajes || wb.characters || [];
+    mappedKeys.add('personajes'); mappedKeys.add('characters');
+    if (Array.isArray(personajes) && personajes.length > 0) {
+      parts.push(`\n👥 PERSONAJES (${personajes.length}):`);
+      for (const p of personajes) {
+        const name = p.nombre || p.name || "Sin nombre";
+        const role = p.rol || p.role || "";
+        parts.push(`\n  ▸ ${name} (${role})`);
+        
+        const perfil = p.perfil_psicologico || p.psychologicalProfile || "";
+        if (perfil) parts.push(`    Perfil: ${typeof perfil === 'string' ? perfil : JSON.stringify(perfil)}`);
+        
+        const arco = p.arco || p.arco_transformacion || p.arc || "";
+        if (arco) parts.push(`    Arco: ${typeof arco === 'string' ? arco : JSON.stringify(arco)}`);
+        
+        const relaciones = p.relaciones || p.relationships || [];
+        if (relaciones.length > 0) parts.push(`    Relaciones: ${JSON.stringify(relaciones)}`);
+        
+        const ap = p.apariencia_inmutable || p.aparienciaInmutable || {};
+        if (ap && Object.keys(ap).length > 0) {
+          const traits = [];
+          if (ap.ojos) traits.push(`ojos: ${ap.ojos}`);
+          if (ap.cabello) traits.push(`cabello: ${ap.cabello}`);
+          if (ap.altura || ap.estatura) traits.push(`altura: ${ap.altura || ap.estatura}`);
+          if (ap.edad || ap.edad_aparente) traits.push(`edad: ${ap.edad || ap.edad_aparente}`);
+          const rasgos = ap.rasgos_distintivos || ap.rasgosDistintivos || [];
+          if (rasgos.length > 0) traits.push(`rasgos: ${rasgos.join(", ")}`);
+          if (traits.length > 0) parts.push(`    🔒 Apariencia INMUTABLE: ${traits.join(" | ")}`);
+        }
+        
+        if (p.estado_actual || p.currentStatus) {
+          const status = p.estado_actual || p.currentStatus;
+          const icon = status === "dead" || p.vivo === false || p.isAlive === false ? "💀" : 
+                       status === "injured" ? "🩹" : "✅";
+          parts.push(`    ${icon} Estado: ${status}`);
+        }
+        if (p.ubicacion_actual || p.lastLocation) {
+          parts.push(`    📍 Ubicación actual: ${p.ubicacion_actual || p.lastLocation}`);
+        }
+        if (p.objetos_actuales?.length > 0 || p.currentItems?.length > 0) {
+          parts.push(`    🎒 Objetos: [${(p.objetos_actuales || p.currentItems).join(", ")}]`);
+        }
+        if (p.heridas_activas?.length > 0 || p.activeInjuries?.length > 0) {
+          parts.push(`    🩹 Heridas activas: [${(p.heridas_activas || p.activeInjuries).join(", ")}]`);
+        }
+        if (p.conocimiento_acumulado?.length > 0 || p.accumulatedKnowledge?.length > 0) {
+          const knowledge = p.conocimiento_acumulado || p.accumulatedKnowledge;
+          parts.push(`    🧠 Sabe: [${knowledge.join("; ")}]`);
+        }
+        if (p.estado_emocional || p.currentEmotionalState) {
+          parts.push(`    💭 Emocional: ${p.estado_emocional || p.currentEmotionalState}`);
+        }
+        if (p.ultimo_capitulo || p.lastSeenChapter) {
+          parts.push(`    📄 Última aparición: Cap ${p.ultimo_capitulo || p.lastSeenChapter}`);
+        }
+      }
+    }
+
+    const lugares = wb.lugares || wb.locations || [];
+    mappedKeys.add('lugares'); mappedKeys.add('locations');
+    if (Array.isArray(lugares) && lugares.length > 0) {
+      parts.push(`\n🏛️ LUGARES:`);
+      for (const l of lugares) {
+        if (!l) continue;
+        const name = l.nombre || l.name || "";
+        const desc = l.descripcion || l.description || l.ambiente || "";
+        parts.push(`  ▸ ${name}: ${typeof desc === 'string' ? desc : JSON.stringify(desc)}`);
+      }
+    }
+
+    const reglas = wb.reglas_lore || wb.rules || wb.world_rules || wb.worldRules || [];
+    mappedKeys.add('reglas_lore'); mappedKeys.add('rules'); mappedKeys.add('world_rules'); mappedKeys.add('worldRules');
+    if (Array.isArray(reglas) && reglas.length > 0) {
+      parts.push(`\n📜 REGLAS DEL MUNDO:`);
+      for (const r of reglas) {
+        if (!r) continue;
+        const cat = r.categoria || r.category || "";
+        const rule = r.regla || r.rule || r.descripcion || "";
+        if (cat !== "__narrative_threads") {
+          parts.push(`  ▸ [${cat}] ${rule}`);
+          const constraints = r.restricciones || r.constraints || [];
+          if (Array.isArray(constraints) && constraints.length > 0) parts.push(`    Restricciones: ${constraints.join(", ")}`);
+        }
+      }
+    }
+
+    const lexico = wb.lexico_historico || wb.historicalVocabulary || null;
+    mappedKeys.add('lexico_historico'); mappedKeys.add('historicalVocabulary');
+    if (lexico && typeof lexico === 'object' && Object.keys(lexico).length > 0) {
+      parts.push(`\n📝 LÉXICO HISTÓRICO:`);
+      if (lexico.autorizado || lexico.allowed) {
+        parts.push(`  Autorizado: ${JSON.stringify(lexico.autorizado || lexico.allowed)}`);
+      }
+      if (lexico.prohibido || lexico.forbidden) {
+        parts.push(`  Prohibido: ${JSON.stringify(lexico.prohibido || lexico.forbidden)}`);
+      }
+    }
+
+    mappedKeys.add('_hilos_pendientes'); mappedKeys.add('_hilos_resueltos');
+    if (Array.isArray(wb._hilos_pendientes) && wb._hilos_pendientes.length > 0) {
+      parts.push(`\n🔄 HILOS NARRATIVOS PENDIENTES:`);
+      wb._hilos_pendientes.forEach((h: string) => parts.push(`  ▸ ${h}`));
+    }
+    if (Array.isArray(wb._hilos_resueltos) && wb._hilos_resueltos.length > 0) {
+      parts.push(`\n✅ HILOS NARRATIVOS RESUELTOS:`);
+      wb._hilos_resueltos.forEach((h: string) => parts.push(`  ▸ ${h}`));
+    }
+
+    mappedKeys.add('_plot_decisions');
+    if (Array.isArray(wb._plot_decisions) && wb._plot_decisions.length > 0) {
+      parts.push(`\n⚖️ DECISIONES DE TRAMA ESTABLECIDAS (NO contradecir):`);
+      for (const d of wb._plot_decisions) {
+        if (!d) continue;
+        parts.push(`  ▸ ${d.decision || d.descripcion || JSON.stringify(d)} (Cap ${d.capitulo_establecido || "?"})`);
+      }
+    }
+
+    mappedKeys.add('_persistent_injuries');
+    if (Array.isArray(wb._persistent_injuries) && wb._persistent_injuries.length > 0) {
+      parts.push(`\n🩹 LESIONES PERSISTENTES DETECTADAS:`);
+      for (const inj of wb._persistent_injuries) {
+        if (!inj) continue;
+        parts.push(`  ▸ ${inj.personaje || "?"}: ${inj.tipo_lesion || "?"} (Cap ${inj.capitulo_ocurre || "?"}) → ${inj.efecto_esperado || "?"}`);
+      }
+    }
+
+    mappedKeys.add('_timeline');
+    if (Array.isArray(wb._timeline) && wb._timeline.length > 0) {
+      parts.push(`\n📅 LÍNEA TEMPORAL:`);
+      for (const t of wb._timeline) {
+        if (!t) continue;
+        parts.push(`  ▸ Cap ${t.chapter || "?"}: ${t.event || "?"} [${Array.isArray(t.characters) ? t.characters.join(", ") : ""}]`);
+      }
+    }
+
+    mappedKeys.add('premisa'); mappedKeys.add('estructura_tres_actos');
+    mappedKeys.add('escaleta_capitulos'); mappedKeys.add('terminos_anacronicos_prohibidos');
+    if (wb.premisa) {
+      parts.push(`\n📌 PREMISA: ${typeof wb.premisa === 'string' ? wb.premisa : JSON.stringify(wb.premisa)}`);
+    }
+    if (wb.estructura_tres_actos) {
+      parts.push(`\n🎭 ESTRUCTURA: ${JSON.stringify(wb.estructura_tres_actos)}`);
+    }
+
+    const unmappedKeys = Object.keys(wb).filter(k => !mappedKeys.has(k));
+    if (unmappedKeys.length > 0) {
+      parts.push(`\n📋 DATOS ADICIONALES:`);
+      for (const key of unmappedKeys) {
+        try {
+          const val = wb[key];
+          if (val !== null && val !== undefined && val !== "" && 
+              !(Array.isArray(val) && val.length === 0) &&
+              !(typeof val === 'object' && !Array.isArray(val) && Object.keys(val).length === 0)) {
+            const str = typeof val === 'string' ? val : JSON.stringify(val);
+            if (str.length < 2000) {
+              parts.push(`  ${key}: ${str}`);
+            } else {
+              parts.push(`  ${key}: ${str.substring(0, 2000)}...`);
+            }
+          }
+        } catch {
+          parts.push(`  ${key}: [datos disponibles]`);
+        }
+      }
+    }
+
+    parts.push(`\n═══════════════════════════════════════════════════════════════════`);
+    return parts.join("\n");
+  }
+
   async execute(input: GhostwriterInput): Promise<AgentResponse> {
+    const worldBibleFormatted = this.formatWorldBibleForPrompt(input.worldBible);
+    
     let prompt = `
-    CONTEXTO DEL MUNDO (World Bible): ${JSON.stringify(input.worldBible)}
+    ${worldBibleFormatted}
     GUÍA DE ESTILO: ${input.guiaEstilo}
     
     ${input.previousContinuity ? `

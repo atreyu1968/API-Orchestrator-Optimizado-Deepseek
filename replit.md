@@ -70,6 +70,7 @@ Preferred communication style: Simple, everyday language.
 - **Pronoun/Title Dead Character Detection**: The Editor now checks for pronoun references to recently-mentioned dead characters, not just proper names. Prevents subtle continuity violations via "he/she" references.
 - **QA Re-execution on Revision Cycles**: Voice/rhythm auditor and semantic repetition detector are no longer unconditionally skipped during revision cycles. They re-run if chapters were actually modified, ensuring quality isn't degraded by rewrites.
 - **Progressive World Bible Enrichment**: After each chapter is completed, the World Bible is automatically updated with character states (location, status, items, injuries, knowledge, emotional state), narrative thread tracking (pending/resolved), and new characters discovered. The Ghostwriter and Editor receive the enriched World Bible for every chapter, minimizing continuity errors at the source and reducing expensive rewrites.
+- **Full World Bible Access for Ghostwriter**: The Ghostwriter receives a structured, human-readable World Bible instead of raw JSON. Includes all character profiles with immutable appearance, dynamic state (location, items, injuries, knowledge, emotions), places, world rules, historical vocabulary, narrative threads, plot decisions, persistent injuries, and the complete timeline. All data from the database is merged before each chapter write.
 
 ## External Dependencies
 
