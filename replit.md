@@ -75,6 +75,7 @@ Preferred communication style: Simple, everyday language.
 - **Full-Text Sliding Context Window**: The Ghostwriter's context window now includes actual chapter text (last 8000 characters) for the 2 most recent chapters, plus 500-character excerpts for the next 5. Previously only continuityState JSON was passed, preventing the AI from detecting repetitions. Older chapters still get title-only references.
 - **Cross-Chapter Anti-Repetition System**: Explicit anti-repetition constraints are injected into both the Ghostwriter (7 specific rules covering structure, dialogue, revelations, endings, and literary devices) and the Editor (new `repeticiones_trama` detection field). The Editor receives up to 3 previous chapters' text (last 4000 chars each) specifically for cross-chapter comparison. Refinement instructions now include `repeticiones_trama` feedback when detected.
 - **Mandatory Constraint Anti-Repetition Block**: When key events exist in continuity state, an anti-repetition block is injected into the mandatory constraints warning against reusing the same discovery/confrontation/revelation patterns.
+- **PWA Support**: The app is a Progressive Web App with `manifest.json`, service worker (`sw.js`), and 192/512 icons. Supports install-to-home-screen, offline fallback for cached assets, and Apple touch icon. The HTML is set to `lang="es"` for Spanish.
 
 ## External Dependencies
 
