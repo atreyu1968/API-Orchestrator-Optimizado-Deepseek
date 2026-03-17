@@ -1098,7 +1098,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               );
               
               refinementAttempts++;
-              refinementInstructions = `🚨 VIOLACIÓN DE CONTINUIDAD CRÍTICA 🚨\n\nTu capítulo contiene los siguientes errores que DEBEN corregirse:\n\n${continuityCheck.violations.map((v, idx) => `${idx + 1}. ${v}`).join("\n\n")}\n\nReescribe el capítulo CORRIGIENDO estos errores. El resto del contenido está bien, solo corrige las violaciones de continuidad.`;
+              refinementInstructions = `🚨 VIOLACIÓN DE CONTINUIDAD CRÍTICA 🚨\n\nTu capítulo contiene los siguientes errores que DEBEN corregirse:\n\n${continuityCheck.violations.map((v, idx) => `${idx + 1}. ${v}`).join("\n\n")}\n\nCORRIGE SOLO los pasajes con violaciones de continuidad. PRESERVA INTACTO todo el resto del capítulo — prosa, diálogos, descripciones y estructura que funcionan. NO reescribas desde cero.`;
               await new Promise(resolve => setTimeout(resolve, 5000));
               continue;
             }
@@ -1691,7 +1691,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               );
               
               refinementAttempts++;
-              refinementInstructions = `🚨 VIOLACIÓN DE CONTINUIDAD CRÍTICA 🚨\n\nTu capítulo contiene los siguientes errores que DEBEN corregirse:\n\n${continuityCheck.violations.map((v, idx) => `${idx + 1}. ${v}`).join("\n\n")}\n\nReescribe el capítulo CORRIGIENDO estos errores. El resto del contenido está bien, solo corrige las violaciones de continuidad.`;
+              refinementInstructions = `🚨 VIOLACIÓN DE CONTINUIDAD CRÍTICA 🚨\n\nTu capítulo contiene los siguientes errores que DEBEN corregirse:\n\n${continuityCheck.violations.map((v, idx) => `${idx + 1}. ${v}`).join("\n\n")}\n\nCORRIGE SOLO los pasajes con violaciones de continuidad. PRESERVA INTACTO todo el resto del capítulo — prosa, diálogos, descripciones y estructura que funcionan. NO reescribas desde cero.`;
               await new Promise(resolve => setTimeout(resolve, 5000));
               continue;
             }
@@ -2589,6 +2589,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousContinuity,
             refinementInstructions,
             authorName,
+            isRewrite: true,
             minWordCount: perChapterMinQA,
             maxWordCount: perChapterMaxQA,
             extendedGuideContent: styleGuideContent || undefined,
@@ -3640,14 +3641,20 @@ Responde SOLO con un JSON válido con la estructura:
       parts.push(`\n═══════════════════════════════════════════════════════════════════`);
       parts.push(`PLAN QUIRÚRGICO DE CORRECCIÓN (SEGUIR AL PIE DE LA LETRA)`);
       parts.push(`═══════════════════════════════════════════════════════════════════`);
+      if (plan.preservar) {
+        parts.push(`\n🛡️ PRESERVAR INTACTO (NO TOCAR ESTOS ELEMENTOS):\n${plan.preservar}`);
+      }
       if (plan.diagnostico) {
         parts.push(`\n📌 DIAGNÓSTICO:\n${plan.diagnostico}`);
       }
       if (plan.procedimiento) {
-        parts.push(`\n📌 PROCEDIMIENTO PASO A PASO:\n${plan.procedimiento}`);
+        parts.push(`\n📌 PROCEDIMIENTO QUIRÚRGICO (solo modificar lo indicado):\n${plan.procedimiento}`);
       }
       if (plan.objetivo) {
         parts.push(`\n📌 OBJETIVO FINAL:\n${plan.objetivo}`);
+      }
+      if (plan.palabras_objetivo) {
+        parts.push(`\n📌 PALABRAS OBJETIVO: ${plan.palabras_objetivo} (NUNCA reducir por debajo del original)`);
       }
     }
     
@@ -3662,9 +3669,11 @@ Responde SOLO con un JSON válido con la estructura:
     }
 
     parts.push(`\n═══════════════════════════════════════════════════════════════════`);
-    parts.push(`INSTRUCCIÓN FINAL: Reescribe el capítulo corrigiendo TODOS los problemas`);
-    parts.push(`listados arriba. Prioriza errores de continuidad y verosimilitud.`);
+    parts.push(`INSTRUCCIÓN FINAL: CORRIGE los problemas listados arriba SIN reescribir desde cero.`);
+    parts.push(`CONSERVA TODO el texto que funciona bien. Solo MODIFICA los pasajes con problemas.`);
+    parts.push(`Prioriza errores de continuidad y verosimilitud.`);
     parts.push(`USA SOLO el vocabulario de época permitido. EVITA términos prohibidos.`);
+    parts.push(`NO reduzcas la extensión del capítulo — mantén o aumenta el número de palabras.`);
     parts.push(`═══════════════════════════════════════════════════════════════════`);
 
     return parts.join("\n");
