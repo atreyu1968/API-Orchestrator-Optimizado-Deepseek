@@ -23,7 +23,7 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 | Agente | Modelo | Funcion |
 |--------|--------|---------|
 | Arquitecto Global | Gemini 3 Pro | Planificacion de estructura narrativa y World Bible |
-| Ghostwriter | Gemini 3 Pro | Escritura creativa de capitulos completos |
+| Ghostwriter | Gemini 2.5 Flash | Escritura creativa de capitulos completos (con thinking) |
 | Editor | Gemini 2.5 Flash | Evaluacion de calidad y plan quirurgico de correcciones |
 | Corrector (Copyeditor) | Gemini 2.5 Flash | Correccion de estilo y gramatica |
 | Revisor Final | Gemini 3 Pro | Evaluacion completa del manuscrito con auditoria forense |
@@ -55,8 +55,8 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 
 ## Distribucion de Modelos (Calidad/Costo)
 
-- **Gemini 3 Pro Preview**: Tareas creativas y de razonamiento profundo (escritura, planificacion, revision final)
-- **Gemini 2.5 Flash**: Tareas de edicion, validacion, correccion y traduccion (rapido y economico)
+- **Gemini 3 Pro Preview**: Tareas de razonamiento profundo (planificacion, revision final, correccion avanzada)
+- **Gemini 2.5 Flash (con thinking)**: Escritura creativa, edicion, validacion, correccion y traduccion (equilibrio calidad/costo)
 - **Gemini 2.0 Flash**: Analisis basico de manuscritos importados (el mas rapido)
 
 ## Funcionalidades Avanzadas
