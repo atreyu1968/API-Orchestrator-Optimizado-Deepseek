@@ -192,14 +192,22 @@ export default function ConfigPage() {
 
   const statusLabels: Record<string, string> = {
     idle: "En espera",
+    planning: "Planificando",
     generating: "Generando",
     completed: "Completado",
+    error: "Error",
+    awaiting_instructions: "Esperando instrucciones",
+    archived: "Archivado",
   };
 
   const statusColors: Record<string, string> = {
     idle: "bg-muted text-muted-foreground",
+    planning: "bg-blue-500/20 text-blue-600 dark:text-blue-400",
     generating: "bg-chart-2/20 text-chart-2",
     completed: "bg-green-500/20 text-green-600 dark:text-green-400",
+    error: "bg-red-500/20 text-red-600 dark:text-red-400",
+    awaiting_instructions: "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400",
+    archived: "bg-gray-500/20 text-gray-500",
   };
 
   return (
@@ -314,7 +322,19 @@ export default function ConfigPage() {
                           <Button 
                             variant="ghost" 
                             size="icon"
-                            onClick={() => setEditingProject(project)}
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`/api/projects/${project.id}`);
+                                if (res.ok) {
+                                  const fullProject = await res.json();
+                                  setEditingProject(fullProject);
+                                } else {
+                                  setEditingProject(project);
+                                }
+                              } catch {
+                                setEditingProject(project);
+                              }
+                            }}
                             data-testid={`button-edit-${project.id}`}
                           >
                             <Pencil className="h-4 w-4" />

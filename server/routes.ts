@@ -89,8 +89,9 @@ export async function registerRoutes(
   app.get("/api/projects", async (req: Request, res: Response) => {
     try {
       const projects = await storage.getAllProjects();
-      const lightweight = projects.map(({ finalReviewResult, ...rest }) => ({
+      const lightweight = projects.map(({ finalReviewResult, premise, ...rest }) => ({
         ...rest,
+        premise: null,
         finalReviewResult: finalReviewResult ? { 
           veredicto: (finalReviewResult as any).veredicto,
           puntuacion_global: (finalReviewResult as any).puntuacion_global,
