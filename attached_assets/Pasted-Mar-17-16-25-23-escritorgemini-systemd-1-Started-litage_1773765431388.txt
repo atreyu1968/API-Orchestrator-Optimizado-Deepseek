@@ -1,0 +1,53 @@
+Mar 17 16:25:23 escritorgemini systemd[1]: Started litagents.service - LitAgents Application.
+root@escritorgemini:~# sudo journalctl -u litagents -n 50 --no-pager
+Mar 17 12:15:08 escritorgemini systemd[1]: litagents.service: Consumed 1.455s CPU time, 71.7M memory peak.
+Mar 17 12:15:08 escritorgemini systemd[1]: Started litagents.service - LitAgents Application.
+Mar 17 12:15:36 escritorgemini systemd[1]: Stopping litagents.service - LitAgents Application...
+Mar 17 12:15:36 escritorgemini systemd[1]: litagents.service: Killing process 104684 (node) with signal SIGKILL.
+Mar 17 12:15:36 escritorgemini systemd[1]: litagents.service: Deactivated successfully.
+Mar 17 12:15:36 escritorgemini systemd[1]: Stopped litagents.service - LitAgents Application.
+Mar 17 12:15:36 escritorgemini systemd[1]: litagents.service: Consumed 1.161s CPU time, 72.7M memory peak.
+Mar 17 12:15:36 escritorgemini systemd[1]: Started litagents.service - LitAgents Application.
+Mar 17 15:18:48 escritorgemini systemd[1]: Stopping litagents.service - LitAgents Application...
+Mar 17 15:18:48 escritorgemini systemd[1]: litagents.service: Killing process 105182 (node) with signal SIGKILL.
+Mar 17 15:18:48 escritorgemini systemd[1]: litagents.service: Deactivated successfully.
+Mar 17 15:18:48 escritorgemini systemd[1]: Stopped litagents.service - LitAgents Application.
+Mar 17 15:18:48 escritorgemini systemd[1]: litagents.service: Consumed 3.035s CPU time, 68.2M memory peak.
+Mar 17 15:18:48 escritorgemini systemd[1]: Started litagents.service - LitAgents Application.
+Mar 17 15:28:42 escritorgemini systemd[1]: Stopping litagents.service - LitAgents Application...
+Mar 17 15:28:42 escritorgemini systemd[1]: litagents.service: Killing process 106306 (node) with signal SIGKILL.
+Mar 17 15:28:42 escritorgemini systemd[1]: litagents.service: Deactivated successfully.
+Mar 17 15:28:42 escritorgemini systemd[1]: Stopped litagents.service - LitAgents Application.
+Mar 17 15:28:42 escritorgemini systemd[1]: litagents.service: Consumed 2.312s CPU time, 79.2M memory peak.
+Mar 17 15:28:42 escritorgemini systemd[1]: Started litagents.service - LitAgents Application.
+Mar 17 15:49:43 escritorgemini systemd[1]: Stopping litagents.service - LitAgents Application...
+Mar 17 15:49:43 escritorgemini systemd[1]: litagents.service: Killing process 106635 (node) with signal SIGKILL.
+Mar 17 15:49:43 escritorgemini systemd[1]: litagents.service: Deactivated successfully.
+Mar 17 15:49:43 escritorgemini systemd[1]: Stopped litagents.service - LitAgents Application.
+Mar 17 15:49:43 escritorgemini systemd[1]: litagents.service: Consumed 1.743s CPU time, 70M memory peak.
+Mar 17 15:49:43 escritorgemini systemd[1]: Started litagents.service - LitAgents Application.
+Mar 17 16:00:06 escritorgemini systemd[1]: Stopping litagents.service - LitAgents Application...
+Mar 17 16:00:06 escritorgemini systemd[1]: litagents.service: Killing process 107014 (node) with signal SIGKILL.
+Mar 17 16:00:06 escritorgemini systemd[1]: litagents.service: Deactivated successfully.
+Mar 17 16:00:06 escritorgemini systemd[1]: Stopped litagents.service - LitAgents Application.
+Mar 17 16:00:06 escritorgemini systemd[1]: litagents.service: Consumed 1.297s CPU time, 70M memory peak.
+Mar 17 16:00:06 escritorgemini systemd[1]: Started litagents.service - LitAgents Application.
+Mar 17 16:05:30 escritorgemini systemd[1]: Stopping litagents.service - LitAgents Application...
+Mar 17 16:05:30 escritorgemini systemd[1]: litagents.service: Killing process 107342 (node) with signal SIGKILL.
+Mar 17 16:05:30 escritorgemini systemd[1]: litagents.service: Deactivated successfully.
+Mar 17 16:05:30 escritorgemini systemd[1]: Stopped litagents.service - LitAgents Application.
+Mar 17 16:05:30 escritorgemini systemd[1]: litagents.service: Consumed 1.279s CPU time, 72M memory peak.
+Mar 17 16:05:30 escritorgemini systemd[1]: Started litagents.service - LitAgents Application.
+Mar 17 16:16:50 escritorgemini systemd[1]: Stopping litagents.service - LitAgents Application...
+Mar 17 16:16:50 escritorgemini systemd[1]: litagents.service: Killing process 107651 (node) with signal SIGKILL.
+Mar 17 16:16:50 escritorgemini systemd[1]: litagents.service: Deactivated successfully.
+Mar 17 16:16:50 escritorgemini systemd[1]: Stopped litagents.service - LitAgents Application.
+Mar 17 16:16:50 escritorgemini systemd[1]: litagents.service: Consumed 1.660s CPU time, 74.1M memory peak.
+Mar 17 16:16:50 escritorgemini systemd[1]: Started litagents.service - LitAgents Application.
+Mar 17 16:25:23 escritorgemini systemd[1]: Stopping litagents.service - LitAgents Application...
+Mar 17 16:25:23 escritorgemini systemd[1]: litagents.service: Killing process 107982 (node) with signal SIGKILL.
+Mar 17 16:25:23 escritorgemini systemd[1]: litagents.service: Deactivated successfully.
+Mar 17 16:25:23 escritorgemini systemd[1]: Stopped litagents.service - LitAgents Application.
+Mar 17 16:25:23 escritorgemini systemd[1]: litagents.service: Consumed 1.539s CPU time, 73.6M memory peak.
+Mar 17 16:25:23 escritorgemini systemd[1]: Started litagents.service - LitAgents Application.
+root@escritorgemini:~# 
