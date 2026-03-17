@@ -17,7 +17,6 @@ import {
   Brain, 
   Globe, 
   Settings,
-  Feather,
   User,
   Upload,
   Download,
@@ -55,8 +54,8 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="border-b border-sidebar-border p-4">
         <Link href="/" className="flex items-center gap-3">
-          <div className="p-2 rounded-md bg-primary text-primary-foreground">
-            <Feather className="h-5 w-5" />
+          <div className="rounded-md overflow-hidden">
+            <img src="/favicon.jpg" alt="LitAgents" className="h-9 w-9 object-cover" />
           </div>
           <div>
             <h1 className="font-semibold text-lg">LitAgents</h1>
