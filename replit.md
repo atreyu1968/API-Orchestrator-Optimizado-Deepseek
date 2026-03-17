@@ -66,6 +66,12 @@ Preferred communication style: Simple, everyday language.
 - Anti-AI filter with per-language crutch word lists.
 - Extensive cleanup of AI-generated contamination (style guides, checklists, JSON artifacts).
 
+#### Word Count Validation & Expansion
+- 10% flexible tolerance: `FLEXIBLE_MIN = TARGET_MIN × 0.90`, `FLEXIBLE_MAX = TARGET_MAX × 1.10`.
+- `MAX_WORD_COUNT_RETRIES = 5` dedicated retries using separate `wordCountRetries` counter (independent from editor's `refinementAttempts`). After 5 retries, continues forward.
+- **Expansion mode**: When a chapter is short, the system passes existing content as `previousChapterContent` with expansion-specific instructions (not rewrite-from-scratch). The ghostwriter receives the short draft as "BORRADOR ANTERIOR" and is instructed to expand with sensory details, dialogue, internal monologue, and transitions — never deleting what works.
+- Applied to both generate and resume code paths.
+
 #### Novel Generation & Editing
 - **Manuscript Expansion/Reordering**: Agents for expanding chapters, inserting new ones, and reordering chapters for narrative flow. Includes automatic internal header syncing.
 - **Automatic Pause & Approval**: System pauses for user input on non-perfect evaluations. Requires a single score of 9+ with no critical issues for project approval.

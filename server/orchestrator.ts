@@ -977,14 +977,14 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const { context: slidingContext, characterStates } = this.buildSlidingContextWindow(chapters, i, allSections);
           const optimizedContinuity = slidingContext || previousContinuity;
 
-          const isRewrite = refinementAttempts > 0;
-          // Use per-chapter limits if set, otherwise calculate from total novel target
+          const isRewrite = refinementAttempts > 0 || wordCountRetries > 0;
           const projectMinPerChapter = (project as any).minWordsPerChapter;
           const projectMaxPerChapter = (project as any).maxWordsPerChapter;
           const totalNovelTarget = (project as any).minWordCount;
           const perChapterTarget = projectMinPerChapter || this.calculatePerChapterTarget(totalNovelTarget, allSections.length);
           const perChapterMax = projectMaxPerChapter || Math.round(perChapterTarget * 1.15);
           const enrichedWB = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreads, seriesKeyEvents);
+          const previousContent = isRewrite ? (bestVersion.content || undefined) : undefined;
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
@@ -997,7 +997,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             minWordCount: perChapterTarget,
             maxWordCount: perChapterMax,
             extendedGuideContent: extendedGuideContent || undefined,
-            previousChapterContent: isRewrite ? bestVersion.content : undefined,
+            previousChapterContent: previousContent,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -1014,24 +1014,52 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const contentWordCount = currentContent.split(/\s+/).filter((w: string) => w.length > 0).length;
           
           if (contentWordCount < ABSOLUTE_MIN) {
-            wordCountRetries++;
-            console.warn(`[Orchestrator] Capítulo severamente truncado: ${contentWordCount} palabras < ${ABSOLUTE_MIN}. Reintentando (${wordCountRetries})...`);
-            this.callbacks.onAgentStatus("ghostwriter", "warning", 
-              `${sectionLabel} truncado (${contentWordCount} palabras). Reintentando...`
-            );
-            refinementInstructions = `CRÍTICO: Tu respuesta fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con ${TARGET_MIN}-${TARGET_MAX} palabras.`;
-            await new Promise(resolve => setTimeout(resolve, 10000));
-            continue;
-          }
-          
-          if (contentWordCount < FLEXIBLE_MIN) {
+            if (contentWordCount > bestVersion.content.split(/\s+/).filter((w: string) => w.length > 0).length) {
+              bestVersion.content = currentContent;
+              bestVersion.continuityState = currentContinuityState;
+            }
             if (wordCountRetries < MAX_WORD_COUNT_RETRIES) {
               wordCountRetries++;
-              console.warn(`[Orchestrator] Capítulo corto: ${contentWordCount} palabras < ${FLEXIBLE_MIN} mínimo flexible (${TARGET_MIN} -10%). Intento ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}. Reintentando...`);
+              console.warn(`[Orchestrator] Capítulo severamente truncado: ${contentWordCount} palabras < ${ABSOLUTE_MIN}. Reintentando (${wordCountRetries}/${MAX_WORD_COUNT_RETRIES})...`);
               this.callbacks.onAgentStatus("ghostwriter", "warning", 
-                `${sectionLabel} muy corto (${contentWordCount}/${TARGET_MIN}-${TARGET_MAX} palabras). Reintento ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
+                `${sectionLabel} truncado (${contentWordCount} palabras). Reintentando ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
               );
-              refinementInstructions = `CRÍTICO: Tu capítulo tiene solo ${contentWordCount} palabras pero el rango aceptable es ${TARGET_MIN}-${TARGET_MAX} palabras. DEBES expandir cada beat con más descripciones sensoriales, diálogos extensos y monólogo interno. NO resumas - NARRA cada momento con detalle. Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}, NO puedes entregar menos de ${FLEXIBLE_MIN} palabras.`;
+              refinementInstructions = `CRÍTICO: Tu respuesta fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con ${TARGET_MIN}-${TARGET_MAX} palabras.`;
+              await new Promise(resolve => setTimeout(resolve, 10000));
+              continue;
+            } else {
+              console.warn(`[Orchestrator] ⚠️ ${sectionLabel} severamente truncado (${contentWordCount} palabras) después de ${MAX_WORD_COUNT_RETRIES} intentos. Continuando con mejor resultado.`);
+              this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                `${sectionLabel}: ${contentWordCount} palabras tras ${MAX_WORD_COUNT_RETRIES} intentos truncados. Continuando...`
+              );
+              if (bestVersion.content && bestVersion.content.split(/\s+/).filter((w: string) => w.length > 0).length > contentWordCount) {
+                currentContent = bestVersion.content;
+              }
+            }
+          }
+          
+          if (contentWordCount < FLEXIBLE_MIN && contentWordCount >= ABSOLUTE_MIN) {
+            if (contentWordCount > bestVersion.content.split(/\s+/).filter((w: string) => w.length > 0).length) {
+              bestVersion.content = currentContent;
+              bestVersion.continuityState = currentContinuityState;
+            }
+            if (wordCountRetries < MAX_WORD_COUNT_RETRIES) {
+              wordCountRetries++;
+              console.warn(`[Orchestrator] Capítulo corto: ${contentWordCount} palabras < ${FLEXIBLE_MIN} mínimo flexible (${TARGET_MIN} -10%). Intento ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}. Expandiendo...`);
+              this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                `${sectionLabel} muy corto (${contentWordCount}/${TARGET_MIN}-${TARGET_MAX} palabras). Expandiendo ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
+              );
+              refinementInstructions = `EXPANSIÓN OBLIGATORIA — NO REESCRIBAS DESDE CERO:
+Tu borrador anterior tiene ${contentWordCount} palabras pero necesita ${TARGET_MIN}-${TARGET_MAX} palabras.
+ESTRATEGIA DE EXPANSIÓN (aplica TODAS):
+1. CONSERVA TODO el texto existente — no elimines ni resumas nada
+2. EXPANDE las escenas de diálogo: añade réplicas adicionales, reacciones corporales, silencios significativos
+3. PROFUNDIZA el monólogo interno de los personajes: pensamientos, recuerdos, asociaciones
+4. ENRIQUECE las descripciones sensoriales: olores, texturas, sonidos ambientales, temperatura
+5. DESARROLLA las transiciones entre beats: no saltes de una acción a otra, narra el movimiento
+6. AÑADE micro-escenas de tensión o distensión entre los beats principales
+PROHIBIDO: Eliminar pasajes que funcionan, resumir lo que ya estaba narrado, reescribir desde cero.
+Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               await new Promise(resolve => setTimeout(resolve, 10000));
               continue;
             } else {
@@ -1543,13 +1571,13 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
             : baseStyleGuide;
 
-          const isRewrite = refinementAttempts > 0;
-          // Use project's per-chapter settings, fallback to calculated from total
+          const isRewrite = refinementAttempts > 0 || wordCountRetries > 0;
           const totalChaptersResume = existingChapters.length || project.chapterCount || 1;
           const calculatedTarget = this.calculatePerChapterTarget((project as any).minWordCount, totalChaptersResume);
           const perChapterMinResume = (project as any).minWordsPerChapter || calculatedTarget;
           const perChapterMaxResume = (project as any).maxWordsPerChapter || Math.round(perChapterMinResume * 1.15);
           const enrichedWBResume = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsResume, seriesKeyEventsResume);
+          const previousContent = isRewrite ? (bestVersion.content || undefined) : undefined;
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
@@ -1562,7 +1590,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             minWordCount: perChapterMinResume,
             maxWordCount: perChapterMaxResume,
             extendedGuideContent: extendedGuideContent || undefined,
-            previousChapterContent: isRewrite ? bestVersion.content : undefined,
+            previousChapterContent: previousContent,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -1579,24 +1607,52 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const contentWordCount = currentContent.split(/\s+/).filter((w: string) => w.length > 0).length;
           
           if (contentWordCount < ABSOLUTE_MIN) {
-            wordCountRetries++;
-            console.warn(`[Orchestrator] Capítulo severamente truncado: ${contentWordCount} palabras < ${ABSOLUTE_MIN}. Reintentando (${wordCountRetries})...`);
-            this.callbacks.onAgentStatus("ghostwriter", "warning", 
-              `${sectionLabel} truncado (${contentWordCount} palabras). Reintentando...`
-            );
-            refinementInstructions = `CRÍTICO: Tu respuesta fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con ${TARGET_MIN}-${TARGET_MAX} palabras.`;
-            await new Promise(resolve => setTimeout(resolve, 10000));
-            continue;
-          }
-          
-          if (contentWordCount < FLEXIBLE_MIN) {
+            if (contentWordCount > bestVersion.content.split(/\s+/).filter((w: string) => w.length > 0).length) {
+              bestVersion.content = currentContent;
+              bestVersion.continuityState = currentContinuityState;
+            }
             if (wordCountRetries < MAX_WORD_COUNT_RETRIES) {
               wordCountRetries++;
-              console.warn(`[Orchestrator] Capítulo corto: ${contentWordCount} palabras < ${FLEXIBLE_MIN} mínimo flexible (${TARGET_MIN} -10%). Intento ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}. Reintentando...`);
+              console.warn(`[Orchestrator] Capítulo severamente truncado: ${contentWordCount} palabras < ${ABSOLUTE_MIN}. Reintentando (${wordCountRetries}/${MAX_WORD_COUNT_RETRIES})...`);
               this.callbacks.onAgentStatus("ghostwriter", "warning", 
-                `${sectionLabel} muy corto (${contentWordCount}/${TARGET_MIN}-${TARGET_MAX} palabras). Reintento ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
+                `${sectionLabel} truncado (${contentWordCount} palabras). Reintentando ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
               );
-              refinementInstructions = `CRÍTICO: Tu capítulo tiene solo ${contentWordCount} palabras pero el rango aceptable es ${TARGET_MIN}-${TARGET_MAX} palabras. DEBES expandir cada beat con más descripciones sensoriales, diálogos extensos y monólogo interno. NO resumas - NARRA cada momento con detalle. Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}, NO puedes entregar menos de ${FLEXIBLE_MIN} palabras.`;
+              refinementInstructions = `CRÍTICO: Tu respuesta fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con ${TARGET_MIN}-${TARGET_MAX} palabras.`;
+              await new Promise(resolve => setTimeout(resolve, 10000));
+              continue;
+            } else {
+              console.warn(`[Orchestrator] ⚠️ ${sectionLabel} severamente truncado (${contentWordCount} palabras) después de ${MAX_WORD_COUNT_RETRIES} intentos. Continuando con mejor resultado.`);
+              this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                `${sectionLabel}: ${contentWordCount} palabras tras ${MAX_WORD_COUNT_RETRIES} intentos truncados. Continuando...`
+              );
+              if (bestVersion.content && bestVersion.content.split(/\s+/).filter((w: string) => w.length > 0).length > contentWordCount) {
+                currentContent = bestVersion.content;
+              }
+            }
+          }
+          
+          if (contentWordCount < FLEXIBLE_MIN && contentWordCount >= ABSOLUTE_MIN) {
+            if (contentWordCount > bestVersion.content.split(/\s+/).filter((w: string) => w.length > 0).length) {
+              bestVersion.content = currentContent;
+              bestVersion.continuityState = currentContinuityState;
+            }
+            if (wordCountRetries < MAX_WORD_COUNT_RETRIES) {
+              wordCountRetries++;
+              console.warn(`[Orchestrator] Capítulo corto: ${contentWordCount} palabras < ${FLEXIBLE_MIN} mínimo flexible (${TARGET_MIN} -10%). Intento ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}. Expandiendo...`);
+              this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                `${sectionLabel} muy corto (${contentWordCount}/${TARGET_MIN}-${TARGET_MAX} palabras). Expandiendo ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
+              );
+              refinementInstructions = `EXPANSIÓN OBLIGATORIA — NO REESCRIBAS DESDE CERO:
+Tu borrador anterior tiene ${contentWordCount} palabras pero necesita ${TARGET_MIN}-${TARGET_MAX} palabras.
+ESTRATEGIA DE EXPANSIÓN (aplica TODAS):
+1. CONSERVA TODO el texto existente — no elimines ni resumas nada
+2. EXPANDE las escenas de diálogo: añade réplicas adicionales, reacciones corporales, silencios significativos
+3. PROFUNDIZA el monólogo interno de los personajes: pensamientos, recuerdos, asociaciones
+4. ENRIQUECE las descripciones sensoriales: olores, texturas, sonidos ambientales, temperatura
+5. DESARROLLA las transiciones entre beats: no saltes de una acción a otra, narra el movimiento
+6. AÑADE micro-escenas de tensión o distensión entre los beats principales
+PROHIBIDO: Eliminar pasajes que funcionan, resumir lo que ya estaba narrado, reescribir desde cero.
+Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               await new Promise(resolve => setTimeout(resolve, 10000));
               continue;
             } else {
