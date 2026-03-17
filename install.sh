@@ -380,19 +380,24 @@ source "$CONFIG_DIR/env"
 set +a
 
 print_status "Ejecutando npm install..."
-sudo -u "$APP_USER" npm install --legacy-peer-deps 2>&1 | tail -5
+sudo -u "$APP_USER" --preserve-env=HOME,PATH npm install --legacy-peer-deps 2>&1 | tail -5
 
 print_status "Compilando aplicación..."
-sudo -u "$APP_USER" npm run build 2>&1 | tail -5
+sudo -u "$APP_USER" --preserve-env=HOME,PATH,NODE_ENV npm run build 2>&1 | tail -5
 
-print_status "Ejecutando migraciones de base de datos..."
-sudo -u "$APP_USER" npm run db:push 2>&1 | tail -3
+print_status "Ejecutando migraciones de schema (drizzle-kit push)..."
+sudo -u "$APP_USER" --preserve-env=DATABASE_URL npm run db:push 2>&1 | tail -3
 
 print_status "Aplicando migraciones SQL adicionales..."
+DB_USER_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+DB_PASS_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
+DB_HOST_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|p')
+DB_PORT_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:[^@]*@[^:]*:\([^/]*\)/.*|\1|p')
+DB_NAME_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^/]*/\(.*\)|\1|p')
 for migration in "$APP_DIR"/migrations/*.sql; do
     if [ -f "$migration" ]; then
         print_status "  $(basename "$migration")..."
-        sudo -u "$APP_USER" psql "$DATABASE_URL" -f "$migration" 2>/dev/null || true
+        sudo -u "$APP_USER" PGPASSWORD="$DB_PASS_PARSED" psql -U "$DB_USER_PARSED" -h "$DB_HOST_PARSED" -p "$DB_PORT_PARSED" "$DB_NAME_PARSED" -f "$migration" 2>/dev/null || true
     fi
 done
 
@@ -599,14 +604,15 @@ set -e
 
 APP_DIR="/var/www/litagents"
 APP_USER="litagents"
+CONFIG_FILE="/etc/litagents/env"
 
 echo "=== Actualizando LitAgents ==="
 
 cd "$APP_DIR"
 
-# Cargar variables de entorno
+# Cargar variables de entorno y exportarlas para subprocesos
 set -a
-source /etc/litagents/env
+source "$CONFIG_FILE"
 set +a
 
 echo "1. Obteniendo últimos cambios..."
@@ -614,30 +620,40 @@ sudo -u "$APP_USER" git fetch --all
 sudo -u "$APP_USER" git reset --hard origin/main
 
 echo "2. Instalando dependencias..."
-sudo -u "$APP_USER" npm install --legacy-peer-deps
+sudo -u "$APP_USER" --preserve-env=HOME,PATH npm install --legacy-peer-deps
 
-echo "3. Ejecutando migraciones de base de datos..."
-DB_USER_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
-DB_PASS_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
-DB_HOST_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|p')
-DB_PORT_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:[^@]*@[^:]*:\([^/]*\)/.*|\1|p')
-DB_NAME_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^/]*/\(.*\)|\1|p')
+echo "3. Compilando aplicación..."
+sudo -u "$APP_USER" --preserve-env=HOME,PATH,NODE_ENV npm run build
 
+echo "4. Ejecutando migraciones de schema (drizzle-kit push)..."
+sudo -u "$APP_USER" --preserve-env=DATABASE_URL npm run db:push
+
+echo "5. Aplicando migraciones SQL adicionales..."
 for migration in "$APP_DIR"/migrations/*.sql; do
     if [ -f "$migration" ]; then
         echo "   Aplicando $(basename "$migration")..."
-        PGPASSWORD="$DB_PASS_PARSED" psql -U "$DB_USER_PARSED" -h "$DB_HOST_PARSED" -p "$DB_PORT_PARSED" "$DB_NAME_PARSED" -f "$migration" 2>/dev/null || true
+        sudo -u "$APP_USER" PGPASSWORD="$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')" \
+            psql -U "$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')" \
+            -h "$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|p')" \
+            -p "$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:[^@]*@[^:]*:\([^/]*\)/.*|\1|p')" \
+            "$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^/]*/\(.*\)|\1|p')" \
+            -f "$migration" 2>/dev/null || true
     fi
 done
 
-echo "4. Compilando aplicación..."
-sudo -u "$APP_USER" npm run build
-
-echo "5. Reiniciando servicio..."
+echo "6. Reiniciando servicio..."
 sudo systemctl restart litagents
 
-echo "=== Actualización completada ==="
-systemctl status litagents --no-pager -l
+sleep 3
+
+if systemctl is-active --quiet litagents; then
+    echo "=== Actualización completada correctamente ==="
+    systemctl status litagents --no-pager -l
+else
+    echo "=== ERROR: El servicio no arrancó ==="
+    journalctl -u litagents -n 30 --no-pager
+    exit 1
+fi
 UPDATEEOF
 
 chmod +x "$APP_DIR/update.sh"
