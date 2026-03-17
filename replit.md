@@ -39,6 +39,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Feature Specifications
 - **Optimized Re-edit Pipeline (v4.0)**: Publication-quality manuscript re-editing with 12 specialized agents. Fixed critical bug where final review corrections were silently dropped (`capituloReescrito` mismatch). All agents now use detected language instead of hardcoded Spanish. Editor uses deep 7-category analysis with thinking. CopyEditor upgraded to Gemini Pro with World Bible context, adjacent chapter awareness, and period-appropriate language. StructuralFixer upgraded to Gemini Pro with thinking. Architect sees 3000 chars per chapter (was 500). QA context windows expanded (Continuity: 15K, Voice: 10K, WorldBible: 12K per chapter).
+- **Manuscript Import Pipeline**: Imported manuscripts can be sent directly to the Re-editor (creates reedit project with all chapters) or to the Translator (creates completed reedit project visible in export page). Both routes filter empty chapters, use `editedContent || originalContent` fallback, and sort properly (prologue first, epilogue/author note last).
 - **Manuscript Expansion/Reordering**: Agents for expanding chapters, inserting new ones, and reordering chapters for narrative flow. Includes automatic internal header syncing.
 - **Automatic Pause & Approval**: System pauses for user input on non-perfect evaluations. Requires a single score of 9+ with no critical issues for project approval.
 - **Issue Tracking**: Issue hash tracking prevents re-reporting of resolved issues.

@@ -2649,6 +2649,146 @@ ${series.seriesGuide.substring(0, 50000)}`;
     }
   });
 
+  app.post("/api/imported-manuscripts/:id/send-to-reedit", async (req: Request, res: Response) => {
+    try {
+      const manuscriptId = parseInt(req.params.id);
+      const { instructions, expandChapters, insertNewChapters, targetMinWordsPerChapter } = req.body;
+
+      const manuscript = await storage.getImportedManuscript(manuscriptId);
+      if (!manuscript) {
+        return res.status(404).json({ error: "Manuscript not found" });
+      }
+
+      const chapters = await storage.getImportedChaptersByManuscript(manuscriptId);
+      if (chapters.length === 0) {
+        return res.status(400).json({ error: "Manuscript has no chapters" });
+      }
+
+      const totalWords = chapters.reduce((acc, c) => acc + (c.wordCount || 0), 0);
+      const reeditProject = await storage.createReeditProject({
+        title: manuscript.title,
+        originalFileName: manuscript.originalFileName,
+        detectedLanguage: manuscript.detectedLanguage || "es",
+        totalChapters: chapters.length,
+        totalWordCount: totalWords,
+        expandChapters: expandChapters === true,
+        insertNewChapters: insertNewChapters === true,
+        targetMinWordsPerChapter: targetMinWordsPerChapter || 2000,
+        architectInstructions: instructions?.trim() || null,
+      });
+
+      const sortedChapters = [...chapters].sort((a, b) => {
+        const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
+        const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
+        return orderA - orderB;
+      });
+
+      const validChapters = sortedChapters.filter(ch => {
+        const c = (ch.editedContent || ch.originalContent || "").trim();
+        return c.length > 0;
+      });
+
+      if (validChapters.length === 0) {
+        return res.status(400).json({ error: "No chapters with content found" });
+      }
+
+      for (const chapter of validChapters) {
+        const content = (chapter.editedContent || chapter.originalContent || "").trim();
+        await storage.createReeditChapter({
+          projectId: reeditProject.id,
+          chapterNumber: chapter.chapterNumber,
+          originalChapterNumber: chapter.chapterNumber,
+          title: chapter.title,
+          originalContent: content,
+          status: "pending",
+          wordCount: content.split(/\s+/).filter((w: string) => w.length > 0).length,
+        });
+      }
+
+      await storage.updateReeditProject(reeditProject.id, { totalChapters: validChapters.length });
+
+      console.log(`[Import] Sent manuscript ${manuscriptId} -> reedit project ${reeditProject.id} with ${validChapters.length} chapters`);
+
+      res.json({
+        success: true,
+        reeditProjectId: reeditProject.id,
+        title: reeditProject.title,
+        chaptersCloned: validChapters.length,
+      });
+    } catch (error: any) {
+      console.error("Error sending manuscript to reedit:", error);
+      res.status(500).json({ error: error.message || "Failed to send to reedit" });
+    }
+  });
+
+  app.post("/api/imported-manuscripts/:id/send-to-translator", async (req: Request, res: Response) => {
+    try {
+      const manuscriptId = parseInt(req.params.id);
+
+      const manuscript = await storage.getImportedManuscript(manuscriptId);
+      if (!manuscript) {
+        return res.status(404).json({ error: "Manuscript not found" });
+      }
+
+      const chapters = await storage.getImportedChaptersByManuscript(manuscriptId);
+      if (chapters.length === 0) {
+        return res.status(400).json({ error: "Manuscript has no chapters" });
+      }
+
+      const sortedChapters = [...chapters].sort((a, b) => {
+        const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
+        const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
+        return orderA - orderB;
+      });
+
+      const validChapters = sortedChapters.filter(ch => {
+        const c = (ch.editedContent || ch.originalContent || "").trim();
+        return c.length > 0;
+      });
+
+      if (validChapters.length === 0) {
+        return res.status(400).json({ error: "No chapters with content found" });
+      }
+
+      const totalWords = validChapters.reduce((acc, c) => acc + (c.wordCount || 0), 0);
+      const reeditProject = await storage.createReeditProject({
+        title: manuscript.title,
+        originalFileName: manuscript.originalFileName,
+        detectedLanguage: manuscript.detectedLanguage || "es",
+        totalChapters: validChapters.length,
+        totalWordCount: totalWords,
+      });
+
+      for (const chapter of validChapters) {
+        const content = (chapter.editedContent || chapter.originalContent || "").trim();
+        await storage.createReeditChapter({
+          projectId: reeditProject.id,
+          chapterNumber: chapter.chapterNumber,
+          originalChapterNumber: chapter.chapterNumber,
+          title: chapter.title,
+          originalContent: content,
+          editedContent: content,
+          status: "completed",
+          wordCount: content.split(/\s+/).filter((w: string) => w.length > 0).length,
+        });
+      }
+
+      await storage.updateReeditProject(reeditProject.id, { status: "completed", currentStage: "completed" });
+
+      console.log(`[Import] Sent manuscript ${manuscriptId} -> translator (reedit project ${reeditProject.id} completed) with ${validChapters.length} chapters`);
+
+      res.json({
+        success: true,
+        reeditProjectId: reeditProject.id,
+        title: reeditProject.title,
+        chaptersReady: validChapters.length,
+      });
+    } catch (error: any) {
+      console.error("Error sending manuscript to translator:", error);
+      res.status(500).json({ error: error.message || "Failed to send to translator" });
+    }
+  });
+
   app.get("/api/imported-manuscripts/:id/cost", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);

@@ -26,6 +26,8 @@ import {
   Pencil,
   Download,
   HardDrive,
+  Send,
+  BookOpen,
 } from "lucide-react";
 import type { ImportedManuscript, ImportedChapter } from "@shared/schema";
 
@@ -410,6 +412,34 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
     },
   });
 
+  const sendToReeditMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/imported-manuscripts/${manuscriptId}/send-to-reedit`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/reedit-projects'] });
+      toast({ title: "Enviado al Reeditor", description: `Proyecto de re-edición #${data.reeditProjectId} creado con ${data.chaptersCloned} capítulos. Ve a la sección Re-editar para procesarlo.` });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const sendToTranslatorMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/imported-manuscripts/${manuscriptId}/send-to-translator`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects/completed'] });
+      toast({ title: "Listo para traducir", description: `"${data.title}" disponible en Exportar/Traducir con ${data.chaptersReady} capítulos.` });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const totalCost = manuscript ? calculateCost(
     manuscript.totalInputTokens || 0,
     manuscript.totalOutputTokens || 0,
@@ -440,17 +470,36 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
           <h2 className="text-2xl font-semibold">{manuscript.title}</h2>
           <p className="text-muted-foreground">{manuscript.originalFileName}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button 
             onClick={() => editAllMutation.mutate()}
             disabled={editAllMutation.isPending || manuscript.status === "processing" || chapters.every(c => c.status === "completed")}
             data-testid="button-edit-all-chapters"
           >
             {editAllMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <Pencil className="h-4 w-4 mr-2" />
             Editar Todos
           </Button>
-          <Button 
+          <Button
             variant="secondary"
+            onClick={() => sendToReeditMutation.mutate()}
+            disabled={sendToReeditMutation.isPending || chapters.length === 0}
+            data-testid="button-send-to-reedit"
+          >
+            {sendToReeditMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BookOpen className="h-4 w-4 mr-2" />}
+            Enviar al Reeditor
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => sendToTranslatorMutation.mutate()}
+            disabled={sendToTranslatorMutation.isPending || chapters.length === 0}
+            data-testid="button-send-to-translator"
+          >
+            {sendToTranslatorMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Languages className="h-4 w-4 mr-2" />}
+            Enviar al Traductor
+          </Button>
+          <Button 
+            variant="outline"
             onClick={() => {
               const md = generateMarkdownExport(manuscript, chapters);
               const filename = `${manuscript.title.replace(/[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ\s]/g, "").replace(/\s+/g, "_")}.md`;
