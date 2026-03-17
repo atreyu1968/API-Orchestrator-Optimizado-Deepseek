@@ -47,38 +47,60 @@ class ReeditEditorAgent extends BaseAgent {
     super({
       name: "Reedit Editor",
       role: "editor",
-      systemPrompt: `You are a professional literary editor reviewing manuscript chapters for quality.
-Analyze the chapter and provide structured feedback in JSON format.
+      systemPrompt: `Eres un EDITOR LITERARIO PROFESIONAL de alto nivel que evalúa manuscritos con ojo quirúrgico.
+Tu misión es detectar TODOS los problemas de calidad para que las fases posteriores puedan corregirlos.
 
-Your evaluation should include:
-1. Overall quality score (1-10)
-2. Narrative issues (plot holes, pacing problems, unclear passages)
-3. Strengths of the writing
-4. Specific suggestions for improvement
+CATEGORÍAS DE ANÁLISIS:
 
-RESPOND WITH JSON ONLY:
+1. CONTINUIDAD: Errores temporales, espaciales, de estado de personajes, conocimiento imposible
+2. TRAMA: Huecos argumentales, subplots abandonados, motivaciones incoherentes, deus ex machina
+3. RITMO/PACING: Escenas demasiado rápidas o lentas, acción sin preparación, clímax planos
+4. ESTILO: Repeticiones léxicas, frases demasiado largas (>45 palabras), voz pasiva excesiva, muletillas
+5. DIÁLOGO: Diálogos artificiales, todos los personajes hablan igual, exposición forzada
+6. PERSONAJES: Comportamientos fuera de carácter, arcos rotos, personajes planos
+7. AMBIENTACIÓN: Descripciones genéricas, anacronismos, falta de coherencia sensorial
+
+SISTEMA DE PUNTUACIÓN ESTRICTO:
+- 10: PERFECTO - cero problemas
+- 8-9: Muy bueno - solo problemas menores de estilo
+- 6-7: Aceptable - problemas de ritmo o diálogo que necesitan atención
+- 4-5: Problemas serios - huecos de trama, continuidad rota
+- 1-3: Reescritura necesaria - problemas fundamentales
+
+RESPONDE SOLO EN JSON:
 {
-  "score": 8,
-  "issues": ["Issue 1", "Issue 2"],
-  "strengths": ["Strength 1", "Strength 2"],
-  "suggestions": ["Suggestion 1"],
-  "pacingNotes": "Notes about pacing"
+  "score": 7,
+  "issues": [
+    {"categoria": "continuidad|trama|ritmo|estilo|dialogo|personajes|ambientacion", "descripcion": "Descripción detallada", "severidad": "critica|mayor|menor", "ubicacion": "Párrafo o sección donde ocurre"}
+  ],
+  "strengths": ["Fortaleza 1"],
+  "suggestions": ["Sugerencia específica y accionable"],
+  "pacingNotes": "Análisis del ritmo narrativo del capítulo",
+  "dialogueQuality": "Evaluación de la calidad y naturalidad de los diálogos",
+  "styleConsistency": "¿Mantiene el estilo consistente con el resto del manuscrito?"
 }`,
       model: "gemini-2.5-flash",
-      useThinking: false,
+      useThinking: true,
     });
   }
 
   async execute(input: any): Promise<any> {
-    return this.reviewChapter(input.content, input.chapterNumber, input.language);
+    return this.reviewChapter(input.content, input.chapterNumber, input.language, input.previousChapterSummary);
   }
 
-  async reviewChapter(content: string, chapterNumber: number, language: string): Promise<any> {
-    const prompt = `Review this chapter (Chapter ${chapterNumber}) written in ${language}:
+  async reviewChapter(content: string, chapterNumber: number, language: string, previousChapterSummary?: string): Promise<any> {
+    const prevContext = previousChapterSummary 
+      ? `\nCONTEXTO DEL CAPÍTULO ANTERIOR:\n${previousChapterSummary}\n` 
+      : "";
+    
+    const prompt = `Analiza en profundidad este capítulo (Capítulo ${chapterNumber}) escrito en ${language}:
+${prevContext}
+CAPÍTULO COMPLETO:
+${content}
 
-${content.substring(0, 15000)}
-
-Provide your evaluation in JSON format.`;
+Evalúa CADA categoría (continuidad, trama, ritmo, estilo, diálogo, personajes, ambientación).
+Sé EXHAUSTIVO en la detección de problemas. Cada issue debe tener categoría, descripción, severidad y ubicación.
+RESPONDE EN JSON.`;
     
     const response = await this.generateContent(prompt);
     let result: any = { score: 7, issues: [], strengths: [], suggestions: [] };
@@ -100,45 +122,101 @@ class ReeditCopyEditorAgent extends BaseAgent {
     super({
       name: "Reedit CopyEditor",
       role: "copyeditor",
-      systemPrompt: `You are a professional copy editor improving manuscript text for fluency and naturalness.
+      systemPrompt: `Eres un CORRECTOR DE ESTILO LITERARIO de nivel editorial profesional. Tu trabajo es llevar cada capítulo a calidad de publicación.
 
-LANGUAGE-SPECIFIC FLUENCY RULES:
-- ITALIAN: NEVER use "Egli/Ella/Esso/Essa" - use proper names or lui/lei/loro
-- ALL LANGUAGES: Maximum 45 words per sentence. Break longer sentences.
-- Avoid word repetition in consecutive sentences
-- Prefer active voice over passive
-- Maintain consistent narrative voice
+TU MISIÓN es transformar prosa aceptable en prosa EXCELENTE, manteniendo la voz del autor pero elevando la calidad literaria.
 
-Return the improved text and a log of changes made.
+ÁREAS DE CORRECCIÓN:
 
-RESPOND WITH JSON ONLY:
+1. FLUIDEZ NARRATIVA:
+   - Máximo 45 palabras por oración (romper las que excedan)
+   - Variar longitud de oraciones para crear ritmo (corta-media-larga)
+   - Eliminar repeticiones léxicas en oraciones consecutivas
+   - Preferir voz activa sobre pasiva (excepto cuando la pasiva sea literariamente superior)
+
+2. DIÁLOGOS:
+   - Naturalizar expresiones artificiales
+   - Diferenciar las voces de cada personaje (registro, vocabulario, cadencia)
+   - Verbos de habla variados pero sin exceso (no solo "dijo", pero tampoco "vociferó" cada vez)
+   - Acotaciones que aporten información (gestos, emociones), no redundancia
+
+3. DESCRIPCIONES:
+   - Activar los 5 sentidos (no solo visual)
+   - Eliminar clichés ("un escalofrío recorrió su espalda")
+   - Mostrar vs contar (show don't tell) cuando sea más efectivo
+   - Detalles específicos > descripciones genéricas
+
+4. TRANSICIONES:
+   - Suavizar saltos entre escenas
+   - Asegurar coherencia con capítulo anterior y siguiente
+   - Mantener la tensión narrativa en los cambios de escena
+
+5. LENGUAJE DE ÉPOCA:
+   - Si la novela es histórica, usar vocabulario apropiado a la época
+   - Evitar anacronismos lingüísticos
+   - Respetar los nombres y términos establecidos en la Biblia del Mundo
+
+REGLA ABSOLUTA: Devuelve el capítulo COMPLETO, sin cortar ni resumir.
+
+RESPONDE SOLO EN JSON:
 {
-  "editedContent": "The full improved text...",
-  "changesLog": "Summary of changes made",
-  "fluencyChanges": [{"before": "old", "after": "new", "reason": "why"}]
+  "editedContent": "El texto COMPLETO del capítulo mejorado...",
+  "changesLog": "Resumen de los cambios realizados",
+  "fluencyChanges": [{"before": "texto original", "after": "texto mejorado", "reason": "razón del cambio"}]
 }`,
-      model: "gemini-2.5-flash",
-      useThinking: false,
+      model: "gemini-3-pro-preview",
+      useThinking: true,
     });
   }
 
   async execute(input: any): Promise<any> {
-    return this.editChapter(input.content, input.chapterNumber, input.language);
+    return this.editChapter(input.content, input.chapterNumber, input.language, input.worldBible, input.adjacentContext);
   }
 
-  async editChapter(content: string, chapterNumber: number, language: string): Promise<any> {
+  async editChapter(
+    content: string, 
+    chapterNumber: number, 
+    language: string,
+    worldBible?: any,
+    adjacentContext?: { previousExcerpt?: string; nextExcerpt?: string }
+  ): Promise<any> {
     const languageRules = this.getLanguageRules(language);
     
-    const prompt = `Edit this chapter (Chapter ${chapterNumber}) for fluency and naturalness.
+    let worldBibleSection = "";
+    if (worldBible) {
+      const chars = worldBible.personajes?.slice(0, 15)?.map((p: any) => 
+        `• ${p.nombre}: ${p.descripcion?.substring(0, 80) || 'Sin descripción'}`
+      ).join("\n") || "";
+      const period = worldBible.epocaHistorica?.periodo || "No determinada";
+      worldBibleSection = `
+BIBLIA DEL MUNDO (RESPETAR):
+Época: ${period}
+Personajes:
+${chars}
+`;
+    }
 
-LANGUAGE: ${language}
+    let adjacentSection = "";
+    if (adjacentContext) {
+      if (adjacentContext.previousExcerpt) {
+        adjacentSection += `\nFINAL DEL CAPÍTULO ANTERIOR:\n...${adjacentContext.previousExcerpt}\n`;
+      }
+      if (adjacentContext.nextExcerpt) {
+        adjacentSection += `\nINICIO DEL CAPÍTULO SIGUIENTE:\n${adjacentContext.nextExcerpt}...\n`;
+      }
+    }
+
+    const prompt = `Corrige y mejora este capítulo (Capítulo ${chapterNumber}) para calidad de publicación editorial.
+
+IDIOMA: ${language}
 ${languageRules}
-
-CHAPTER CONTENT:
+${worldBibleSection}
+${adjacentSection}
+CAPÍTULO A CORREGIR:
 ${content}
 
-Improve the text following the fluency rules. Return the COMPLETE edited chapter.
-RESPOND WITH JSON ONLY.`;
+Mejora fluidez, diálogos, descripciones y transiciones. Devuelve el capítulo COMPLETO mejorado.
+RESPONDE EN JSON.`;
     
     const response = await this.generateContent(prompt);
     let result: any = { editedContent: content, changesLog: "No changes", fluencyChanges: [] };
@@ -156,37 +234,45 @@ RESPOND WITH JSON ONLY.`;
 
   private getLanguageRules(lang: string): string {
     const rules: Record<string, string> = {
-      it: `ITALIAN RULES:
-- NEVER use archaic pronouns: Egli, Ella, Esso, Essa, Essi, Esse
-- Use proper names or modern pronouns: lui, lei, loro
-- Max 45 words per sentence
-- No lexical repetition in consecutive sentences`,
-      es: `SPANISH RULES:
-- Limit gerunds to one per sentence
-- Avoid excessive passive voice
-- Watch for leísmo (use "lo" not "le" for direct object)
-- Max 45 words per sentence`,
+      it: `REGLAS ITALIANAS:
+- NUNCA usar pronombres arcaicos: Egli, Ella, Esso, Essa, Essi, Esse
+- Usar nombres propios o pronombres modernos: lui, lei, loro
+- Máx 45 palabras por oración
+- Sin repetición léxica en oraciones consecutivas
+- Usar passato remoto para narración literaria`,
+      es: `REGLAS ESPAÑOLAS:
+- Limitar gerundios a uno por oración
+- Evitar voz pasiva excesiva
+- Controlar leísmo (usar "lo" no "le" para objeto directo)
+- Máx 45 palabras por oración
+- Evitar "el mismo/la misma" como pronombre
+- Cuidar la concordancia de tiempos verbales`,
       en: `ENGLISH RULES:
 - Prefer active voice
-- Vary sentence length for rhythm
+- Vary sentence length for rhythm (short after tension, long for reflection)
 - Use natural contractions in dialogue
-- Max 40 words per sentence`,
-      fr: `FRENCH RULES:
-- Use passé simple for literary narration
-- Avoid anglicisms
-- Max 45 words per sentence`,
-      de: `GERMAN RULES:
-- Natural word order
-- Use Modalpartikeln in dialogue
-- Max 45 words per sentence`,
-      pt: `PORTUGUESE RULES:
-- Correct pronoun placement
-- Limit gerunds
-- Max 45 words per sentence`,
-      ca: `CATALAN RULES:
-- Avoid castellanisms
-- Correct weak pronoun usage
-- Max 45 words per sentence`,
+- Max 40 words per sentence
+- Avoid adverb overuse
+- Strong verbs over weak verb + adverb`,
+      fr: `RÈGLES FRANÇAISES:
+- Utiliser le passé simple pour la narration littéraire
+- Éviter les anglicismes
+- Max 45 mots par phrase
+- Concordance des temps rigoureuse`,
+      de: `DEUTSCHE REGELN:
+- Natürliche Wortstellung
+- Modalpartikeln im Dialog verwenden
+- Max 45 Wörter pro Satz
+- Lebendige Verben bevorzugen`,
+      pt: `REGRAS PORTUGUESAS:
+- Colocação pronominal correta
+- Limitar gerúndios
+- Max 45 palavras por frase
+- Usar pretérito perfeito para narração`,
+      ca: `REGLES CATALANES:
+- Evitar castellanismes
+- Ús correcte dels pronoms febles
+- Max 45 paraules per frase`,
     };
     return rules[lang] || rules.es;
   }
@@ -232,7 +318,7 @@ RESPONDE SOLO EN JSON:
 
   async auditContinuity(chapterContents: string[], startChapter: number, endChapter: number): Promise<any> {
     const combinedContent = chapterContents.map((c, i) => 
-      `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 8000)}`
+      `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 15000)}`
     ).join("\n\n");
 
     const prompt = `Analiza la continuidad narrativa de los capítulos ${startChapter} a ${endChapter}:
@@ -298,7 +384,7 @@ RESPONDE SOLO EN JSON:
 
   async auditVoiceRhythm(chapterContents: string[], startChapter: number, endChapter: number): Promise<any> {
     const combinedContent = chapterContents.map((c, i) => 
-      `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 6000)}`
+      `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 10000)}`
     ).join("\n\n");
 
     const prompt = `Analiza la voz narrativa y el ritmo de los capítulos ${startChapter} a ${endChapter}:
@@ -554,7 +640,7 @@ RESPONDE SOLO EN JSON:
       }
 
       const chaptersText = batch.map(c => 
-        `=== CAPÍTULO ${c.num} ===\n${c.content.substring(0, 6000)}`
+        `=== CAPÍTULO ${c.num} ===\n${c.content.substring(0, 12000)}`
       ).join("\n\n");
 
       const prompt = `Extrae la información del mundo narrativo de estos capítulos (${batchStart} a ${batchEnd}):
@@ -718,9 +804,12 @@ RESPONDE SOLO EN JSON:
       epocaHistorica: worldBible.epocaHistorica
     }, null, 2);
 
-    const chapterSummaries = chapters.map(c => 
-      `Cap ${c.num}: ${c.content.substring(0, 500)}... [Feedback: ${c.feedback?.strengths?.slice(0, 1).join(", ") || "N/A"}]`
-    ).join("\n");
+    const chapterSummaries = chapters.map(c => {
+      const issuesSummary = c.feedback?.issues?.slice(0, 3)?.map((iss: any) => 
+        typeof iss === 'string' ? iss : `[${iss.categoria || 'general'}] ${iss.descripcion || iss}`
+      ).join("; ") || "Sin problemas";
+      return `Cap ${c.num} (${c.feedback?.score || '?'}/10): ${c.content.substring(0, 3000)}... [Problemas: ${issuesSummary}] [Fortalezas: ${c.feedback?.strengths?.slice(0, 2).join(", ") || "N/A"}]`;
+    }).join("\n\n");
 
     const prompt = `Analiza la arquitectura narrativa de este manuscrito:
 
@@ -799,8 +888,8 @@ RESPONDE SOLO EN JSON:
   "resumenCambios": "Resumen ejecutivo de los cambios realizados",
   "confianzaCorreccion": 8
 }`,
-      model: "gemini-2.5-flash",
-      useThinking: false,
+      model: "gemini-3-pro-preview",
+      useThinking: true,
     });
   }
 
@@ -1139,8 +1228,9 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO.`;
       sections.push(`TIMELINE:\n${events}`);
     }
     
-    if (worldBible.reglas?.length > 0) {
-      const rules = worldBible.reglas.slice(0, 10).map((r: any) => 
+    const worldRules = worldBible.reglasDelMundo || worldBible.reglas || [];
+    if (worldRules.length > 0) {
+      const rules = worldRules.slice(0, 10).map((r: any) => 
         `• ${typeof r === 'string' ? r : r.regla || JSON.stringify(r)}`
       ).join("\n");
       sections.push(`REGLAS DEL MUNDO:\n${rules}`);
@@ -2453,10 +2543,16 @@ export class ReeditOrchestrator {
           processingStage: "editor",
         });
 
+        const prevChapterForEditor = i > 0 ? validChapters[i - 1] : null;
+        const prevSummary = prevChapterForEditor 
+          ? `Capítulo ${prevChapterForEditor.chapterNumber}: ${prevChapterForEditor.originalContent.substring(0, 1000)}...`
+          : undefined;
+        
         const editorResult = await this.editorAgent.reviewChapter(
           chapter.originalContent,
           chapter.chapterNumber,
-          detectedLang
+          detectedLang,
+          prevSummary
         );
         this.trackTokens(editorResult);
 
@@ -2929,18 +3025,17 @@ export class ReeditOrchestrator {
             );
             this.trackTokens(rewriteResult);
             
+            const rewrittenNR = rewriteResult.capituloReescrito || rewriteResult.rewrittenContent;
             const contentToCompare = chapter.editedContent || chapter.originalContent;
             const hasChanges = rewriteResult.cambiosRealizados?.length > 0 || 
-                              (rewriteResult.capituloReescrito && rewriteResult.capituloReescrito !== contentToCompare);
+                              (rewrittenNR && rewrittenNR !== contentToCompare);
             
-            if (rewriteResult.capituloReescrito && hasChanges) {
-              // Update originalContent with rewritten version AND set editedContent
-              // This is key for optimization: rewritten chapters already have final content
-              const wordCount = rewriteResult.capituloReescrito.split(/\s+/).filter((w: string) => w.length > 0).length;
+            if (rewrittenNR && hasChanges) {
+              const wordCount = rewrittenNR.split(/\s+/).filter((w: string) => w.length > 0).length;
               
               await storage.updateReeditChapter(chapter.id, {
-                originalContent: rewriteResult.capituloReescrito,
-                editedContent: rewriteResult.capituloReescrito, // Skip CopyEditor for this chapter
+                originalContent: rewrittenNR,
+                editedContent: rewrittenNR,
                 wordCount,
                 processingStage: "completed",
               });
@@ -3036,7 +3131,6 @@ export class ReeditOrchestrator {
 
         const chapter = chaptersNeedingCopyEdit[i];
         
-        // Skip chapters that were already copy-edited (resume support)
         if (chapter.editedContent && chapter.processingStage === "completed") {
           console.log(`[ReeditOrchestrator] Skipping chapter ${chapter.chapterNumber} (already completed)`);
           continue;
@@ -3047,7 +3141,7 @@ export class ReeditOrchestrator {
           stage: "copyediting",
           currentChapter: i + 1,
           totalChapters: chaptersNeedingCopyEdit.length,
-          message: `Capítulo ${chapter.chapterNumber}: Corrección de estilo...`,
+          message: `Capítulo ${chapter.chapterNumber}: Corrección de estilo literario...`,
         });
 
         await storage.updateReeditChapter(chapter.id, {
@@ -3056,10 +3150,19 @@ export class ReeditOrchestrator {
 
         const contentToEdit = chapter.originalContent;
         
+        const prevChapter = validChapters.find(c => c.chapterNumber === chapter.chapterNumber - 1);
+        const nextChapter = validChapters.find(c => c.chapterNumber === chapter.chapterNumber + 1);
+        const adjacentContextCE = {
+          previousExcerpt: (prevChapter?.editedContent || prevChapter?.originalContent)?.slice(-1500),
+          nextExcerpt: (nextChapter?.editedContent || nextChapter?.originalContent)?.substring(0, 1500),
+        };
+
         const copyEditorResult = await this.copyEditorAgent.editChapter(
           contentToEdit,
           chapter.chapterNumber,
-          detectedLang
+          detectedLang,
+          worldBibleResult,
+          adjacentContextCE
         );
         this.trackTokens(copyEditorResult);
 
@@ -3397,25 +3500,24 @@ export class ReeditOrchestrator {
                 problems,
                 worldBibleForReview || {},
                 adjacentContext,
-                "español",
+                detectedLang,
                 userInstructions || undefined
               );
               this.trackTokens(rewriteResult);
               await this.updateHeartbeat(projectId);
 
-              if (rewriteResult.rewrittenContent) {
-                const wordCount = rewriteResult.rewrittenContent.split(/\s+/).filter((w: string) => w.length > 0).length;
+              const rewrittenContent = rewriteResult.capituloReescrito || rewriteResult.rewrittenContent;
+              if (rewrittenContent) {
+                const wordCount = rewrittenContent.split(/\s+/).filter((w: string) => w.length > 0).length;
                 await storage.updateReeditChapter(chapter.id, {
-                  editedContent: rewriteResult.rewrittenContent,
+                  editedContent: rewrittenContent,
                   wordCount,
                 });
                 
-                // Track corrected issues so FinalReviewer doesn't report them again
                 for (const issue of chapterIssues) {
                   correctedIssueDescriptions.push(issue.descripcion);
                 }
                 
-                // Mark these issues as resolved with hash tracking
                 await this.markIssuesResolved(projectId, chapterIssues);
               }
             } catch (err) {
@@ -3640,34 +3742,34 @@ export class ReeditOrchestrator {
               nextChapter: nextChapter?.editedContent?.substring(0, 2000),
             };
             
+            const detectedLang = project.detectedLanguage || "es";
             const rewriteResult = await this.narrativeRewriter.rewriteChapter(
               chapter.editedContent || chapter.originalContent,
               chapter.chapterNumber,
               problems,
               worldBibleForReview || {},
               adjacentContext,
-              "español",
+              detectedLang,
               userInstructions || undefined
             );
             this.trackTokens(rewriteResult);
             await this.updateHeartbeat(projectId);
             
-            if (rewriteResult.rewrittenContent) {
-              const wordCount = rewriteResult.rewrittenContent.split(/\s+/).filter((w: string) => w.length > 0).length;
+            const rewrittenContent = rewriteResult.capituloReescrito || rewriteResult.rewrittenContent;
+            if (rewrittenContent) {
+              const wordCount = rewrittenContent.split(/\s+/).filter((w: string) => w.length > 0).length;
               await storage.updateReeditChapter(chapter.id, {
-                editedContent: rewriteResult.rewrittenContent,
+                editedContent: rewrittenContent,
                 wordCount,
               });
               
-              // Track corrected issues
               for (const issue of chapterIssues) {
                 correctedIssueDescriptions.push(issue.descripcion);
               }
               
-              // Update local validChapters array
               const idx = validChapters.findIndex(c => c.id === chapter.id);
               if (idx !== -1) {
-                validChapters[idx].editedContent = rewriteResult.rewrittenContent;
+                validChapters[idx].editedContent = rewrittenContent;
               }
             }
           } catch (err) {
@@ -3914,29 +4016,29 @@ export class ReeditOrchestrator {
               nextChapter: nextChapter?.editedContent?.substring(0, 2000),
             };
 
+            const detectedLangFRO = project.detectedLanguage || "es";
             const rewriteResult = await this.narrativeRewriter.rewriteChapter(
               chapter.editedContent || chapter.originalContent,
               chapter.chapterNumber,
               problems,
               worldBibleForReview || {},
               adjacentContext,
-              "español",
+              detectedLangFRO,
               userInstructions || undefined
             );
             this.trackTokens(rewriteResult);
             await this.updateHeartbeat(projectId);
 
-            if (rewriteResult.rewrittenContent) {
-              const wordCount = rewriteResult.rewrittenContent.split(/\s+/).filter((w: string) => w.length > 0).length;
+            const rewrittenContentFRO = rewriteResult.capituloReescrito || rewriteResult.rewrittenContent;
+            if (rewrittenContentFRO) {
+              const wordCount = rewrittenContentFRO.split(/\s+/).filter((w: string) => w.length > 0).length;
               await storage.updateReeditChapter(chapter.id, {
-                editedContent: rewriteResult.rewrittenContent,
+                editedContent: rewrittenContentFRO,
                 wordCount,
               });
               
-              // Mark these issues as resolved with hash tracking
               await this.markIssuesResolved(projectId, chapterIssues);
               
-              // Track corrected issues so FinalReviewer doesn't report them again
               for (const issue of chapterIssues) {
                 correctedIssueDescriptions.push(issue.descripcion);
               }
@@ -4115,21 +4217,23 @@ export class ReeditOrchestrator {
           nextChapter: nextChapter?.editedContent?.substring(0, 2000),
         };
 
+        const detectedLangARC = project.detectedLanguage || "es";
         const rewriteResult = await this.narrativeRewriter.rewriteChapter(
           chapter.editedContent || chapter.originalContent,
           chapter.chapterNumber,
           problems,
           worldBible || {},
           adjacentContext,
-          "español",
+          detectedLangARC,
           userInstructions || undefined
         );
         this.trackTokens(rewriteResult);
 
-        if (rewriteResult.rewrittenContent) {
-          const wordCount = rewriteResult.rewrittenContent.split(/\s+/).filter((w: string) => w.length > 0).length;
+        const rewrittenContentARC = rewriteResult.capituloReescrito || rewriteResult.rewrittenContent;
+        if (rewrittenContentARC) {
+          const wordCount = rewrittenContentARC.split(/\s+/).filter((w: string) => w.length > 0).length;
           await storage.updateReeditChapter(chapter.id, {
-            editedContent: rewriteResult.rewrittenContent,
+            editedContent: rewrittenContentARC,
             wordCount,
           });
           console.log(`[ReeditOrchestrator] Fixed chapter ${chapter.chapterNumber}: ${wordCount} words`);

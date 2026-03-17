@@ -171,9 +171,9 @@ export abstract class BaseAgent {
             temperature,
             topP: 0.95,
             maxOutputTokens: 65536,
-            ...(useThinking && modelToUse === "gemini-3-pro-preview" ? {
+            ...(useThinking && (modelToUse === "gemini-3-pro-preview" || modelToUse === "gemini-2.5-flash") ? {
               thinkingConfig: {
-                thinkingBudget: 2048,
+                thinkingBudget: modelToUse === "gemini-3-pro-preview" ? 2048 : 1024,
                 includeThoughts: true,
               },
             } : {}),
