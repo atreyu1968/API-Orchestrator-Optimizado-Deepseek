@@ -191,6 +191,28 @@ export class QueueManager {
       console.log("[QueueManager] Queue was running with no project. AUTO-RESTARTING to process queue...");
       this.isRunning = false;
       this.isPaused = false;
+      
+      // Check for orphaned "generating" projects with no queue item
+      try {
+        const allProjects = await storage.getAllProjects();
+        const orphanedProjects = allProjects.filter((p: Project) => p.status === "generating");
+        for (const orphan of orphanedProjects) {
+          const existingItem = await storage.getQueueItemByProject(orphan.id);
+          if (!existingItem) {
+            console.log(`[QueueManager] Found orphaned generating project ${orphan.id} "${orphan.title}" with no queue item - creating one`);
+            await storage.addToQueue({
+              projectId: orphan.id,
+              status: "waiting",
+              position: 0,
+            });
+            // Also set to paused so resume logic triggers properly
+            await storage.updateProject(orphan.id, { status: "paused" });
+          }
+        }
+      } catch (e) {
+        console.error("[QueueManager] Failed to check for orphaned projects:", e);
+      }
+      
       setTimeout(async () => {
         try {
           console.log("[QueueManager] Auto-starting queue (was running with no project)");
@@ -260,7 +282,7 @@ export class QueueManager {
               this.currentProjectId = null;
             }
             
-            // Reset queue item to waiting (handle any status that's not already waiting)
+            // Reset queue item to waiting, or CREATE one if missing
             const queueItem = await storage.getQueueItemByProject(project.id);
             if (queueItem && queueItem.status !== "waiting") {
               await storage.updateQueueItem(queueItem.id, {
@@ -268,6 +290,13 @@ export class QueueManager {
                 startedAt: null,
                 completedAt: null,
                 errorMessage: `Auto-recovery after ${Math.round(timeSinceActivity / 60000)} min (status was: ${project.status})`,
+              });
+            } else if (!queueItem) {
+              console.log(`[QueueManager] No queue item found for project ${project.id} - creating one for auto-recovery`);
+              await storage.addToQueue({
+                projectId: project.id,
+                status: "waiting",
+                position: 0,
               });
             }
             

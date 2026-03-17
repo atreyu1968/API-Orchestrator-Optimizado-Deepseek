@@ -695,15 +695,16 @@ export class GhostwriterAgent extends BaseAgent {
     
     ${chapterData.conflicto_central ? `
     CONFLICTO CENTRAL DE ESTE CAPÍTULO:
-    - Tipo: ${chapterData.conflicto_central.tipo || "externo"}
-    - Descripción: ${chapterData.conflicto_central.descripcion || ""}
-    - Lo que está en juego: ${chapterData.conflicto_central.stakes || ""}
+    ${typeof chapterData.conflicto_central === 'string' 
+      ? chapterData.conflicto_central 
+      : `- Tipo: ${chapterData.conflicto_central.tipo || "externo"}\n    - Descripción: ${chapterData.conflicto_central.descripcion || ""}\n    - Lo que está en juego: ${chapterData.conflicto_central.stakes || ""}`}
     ` : ""}
     
     ${chapterData.giro_emocional ? `
     ARCO EMOCIONAL DEL LECTOR:
-    - Al inicio del capítulo: ${chapterData.giro_emocional.emocion_inicio || "neutral"}
-    - Al final del capítulo: ${chapterData.giro_emocional.emocion_final || "intrigado"}
+    ${typeof chapterData.giro_emocional === 'string'
+      ? chapterData.giro_emocional
+      : `- Al inicio del capítulo: ${chapterData.giro_emocional.emocion_inicio || "neutral"}\n    - Al final del capítulo: ${chapterData.giro_emocional.emocion_final || "intrigado"}`}
     ` : ""}
     
     ${chapterData.arcos_que_avanza && chapterData.arcos_que_avanza.length > 0 ? `

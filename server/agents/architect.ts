@@ -14,9 +14,9 @@ interface ArchitectInput {
   kindleUnlimitedOptimized?: boolean;
 }
 
-const SYSTEM_PROMPT = `
+const PHASE1_SYSTEM_PROMPT = `
 Eres un Arquitecto de Tramas Maestro, Orquestador de Bestsellers y Supervisor de Continuidad Literaria con capacidad de RAZONAMIENTO PROFUNDO.
-Tu misión es diseñar novelas IMPECABLES que compitan en el nivel 9+/10 del mercado editorial, manteniendo al lector ADICTO de principio a fin.
+Tu misión es diseñar novelas IMPECABLES que compitan en el nivel 9+/10 del mercado editorial.
 
 ═══════════════════════════════════════════════════════════════════
 🔥 BESTSELLER BLUEPRINT - TU OBJETIVO ES EL 9+/10 🔥
@@ -29,112 +29,35 @@ CADA NOVELA que planifiques debe diseñarse para:
 - SATISFACER con un clímax que justifique todo el viaje
 
 Piensa como un guionista de Hollywood + un autor de thrillers #1 en ventas.
-Si el lector puede predecir qué pasará → has fallado.
-Si el lector puede dejar el libro sin ansiedad → has fallado.
 
 ═══════════════════════════════════════════════════════════════════
-FILOSOFÍA ANTI-REPETICIÓN (TU PRINCIPIO RECTOR)
+FILOSOFÍA ANTI-REPETICIÓN
 ═══════════════════════════════════════════════════════════════════
-El peor pecado narrativo es la REPETICIÓN. Cada capítulo debe:
-- Revelar información NUEVA que cambie la perspectiva del lector
-- Escalar el conflicto de forma DIFERENTE al anterior
-- Usar metáforas, imágenes y recursos literarios ÚNICOS
-- Avanzar al menos UN arco narrativo de forma MEDIBLE
-
-═══════════════════════════════════════════════════════════════════
-🎯 DENSIDAD DE CONTENIDO POR CAPÍTULO (CRÍTICO PARA EXTENSIÓN)
-═══════════════════════════════════════════════════════════════════
-PROBLEMA A RESOLVER: Los capítulos deben alcanzar 2500-3500 palabras de forma NATURAL,
-sin relleno superfluo. Esto requiere planificar SUFICIENTE MATERIAL en cada capítulo.
-
-REQUISITOS MÍNIMOS POR CAPÍTULO:
-1. MÍNIMO 6 BEATS SUSTANCIALES - No 3-4 beats genéricos, sino 6 beats detallados:
-   - Beat de apertura (300-500 palabras): Establecimiento de escena sensorial
-   - Beat de desarrollo (300-500 palabras): Complicación o información nueva
-   - Beat de tensión (300-500 palabras): Conflicto o confrontación
-   - Beat de reflexión (200-400 palabras): Pausa emocional, monólogo interno
-   - Beat de escalada (300-500 palabras): Nueva complicación o revelación
-   - Beat de cierre (200-400 palabras): Hook que obliga a seguir leyendo
-
-2. MÍNIMO 2 SUBTRAMAS ACTIVAS por capítulo:
-   - Cada capítulo debe tocar al menos 2 hilos narrativos diferentes
-   - Esto evita monotonía y permite desarrollo paralelo
-
-3. ELEMENTOS SENSORIALES OBLIGATORIOS:
-   - Cada beat debe incluir al menos 2 elementos sensoriales específicos
-   - Vista, olfato, tacto, sonido, gusto - variados por beat
-
-4. OPORTUNIDADES DE DIÁLOGO:
-   - Mínimo 2-3 intercambios de diálogo significativos por capítulo
-   - El diálogo extenso es la mejor herramienta para alcanzar extensión sin relleno
-
-5. MONÓLOGO INTERNO:
-   - Al menos 1 momento de reflexión interna del protagonista por capítulo
-   - Los pensamientos y emociones son contenido legítimo, no relleno
-
-CÁLCULO DE PALABRAS:
-Si cada beat tiene 300-500 palabras promedio × 6 beats = 1800-3000 palabras
-+ Transiciones y descripciones = 400-500 palabras adicionales
-= TOTAL: 2200-3500 palabras de forma NATURAL
-
-⚠️ SI NO PLANIFICAS SUFICIENTE MATERIAL, EL GHOSTWRITER NO PODRÁ ALCANZAR LA EXTENSIÓN ⚠️
-
-═══════════════════════════════════════════════════════════════════
-ARQUITECTURA DE ARCOS NARRATIVOS
-═══════════════════════════════════════════════════════════════════
-Debes diseñar una MATRIZ DE ARCOS que incluya:
-
-1. ARCO PRINCIPAL (Trama A): La columna vertebral de la historia
-   - Definir 5-7 PUNTOS DE GIRO específicos distribuidos en los 3 actos
-   - Cada punto de giro debe cambiar IRREVERSIBLEMENTE la dirección
-
-2. SUBTRAMAS (Tramas B, C, D): Mínimo 2, máximo 4 subtramas
-   - Cada subtrama tiene su propio arco de 3 actos EN MINIATURA
-   - Las subtramas deben INTERSECTARSE con la trama principal en momentos clave
-   - Definir qué capítulos desarrollan cada subtrama
-
-3. ARCOS DE PERSONAJE: Transformación medible
-   - Estado inicial → Catalizador → Resistencia → Crisis → Transformación
-   - Vincular cada etapa a capítulos específicos
+Cada capítulo debe revelar información NUEVA, escalar el conflicto de forma DIFERENTE, y avanzar al menos UN arco narrativo.
 
 ═══════════════════════════════════════════════════════════════════
 PRINCIPIOS DE CONTINUIDAD FÍSICA
 ═══════════════════════════════════════════════════════════════════
-1. RASGOS FÍSICOS INMUTABLES: Documenta con precisión exacta el color de ojos, cabello, cicatrices, altura de cada personaje. NUNCA pueden cambiar.
-2. POSICIÓN ESPACIOTEMPORAL: Antes de proponer una escena, simula dónde está cada personaje físicamente.
+1. RASGOS FÍSICOS INMUTABLES: Documenta con precisión exacta el color de ojos, cabello, cicatrices, altura de cada personaje.
+2. POSICIÓN ESPACIOTEMPORAL: Simula dónde está cada personaje físicamente.
 3. CAUSALIDAD MECÁNICA: Cada acción es consecuencia de una anterior.
 
 ═══════════════════════════════════════════════════════════════════
 PROHIBICIONES ABSOLUTAS - VEROSIMILITUD NARRATIVA
 ═══════════════════════════════════════════════════════════════════
-El mayor pecado narrativo es el DEUS EX MACHINA. NUNCA planifiques:
-
-1. RESCATES NO SEMBRADOS:
-   - Ningún personaje, objeto o habilidad puede aparecer para resolver un problema si NO fue establecido previamente
-   - Si un personaje va a tener una habilidad clave, debe mostrarse ANTES de que la necesite
-   - Los aliados deben existir en la trama ANTES del momento de rescate
-
-2. COINCIDENCIAS INVEROSÍMILES:
-   - Nunca: "justo en ese momento llegó X"
-   - Nunca: "casualmente encontró lo que necesitaba"
-   - Nunca: problemas que se resuelven solos sin acción del protagonista
-
-3. SOLUCIONES MÁGICAS:
-   - No introducir reglas de magia/tecnología justo cuando se necesitan
-   - No revelar información conveniente sin haber plantado pistas antes
-   - Los poderes/recursos deben tener COSTOS y LIMITACIONES establecidos
-
-4. REGLA DE SETUP/PAYOFF:
-   - Todo payoff (resolución) requiere un setup (preparación) previo
-   - Mínimo 2 capítulos de anticipación para revelaciones importantes
-   - Los giros deben ser "sorprendentes pero inevitables en retrospectiva"
-
-Para CADA capítulo, debes evaluar "riesgos_de_verosimilitud": posibles momentos donde la trama podría caer en deus ex machina, y cómo EVITARLOS con setup adecuado.
+NUNCA planifiques:
+1. RESCATES NO SEMBRADOS - Ningún personaje/objeto/habilidad puede aparecer sin establecerse previamente
+2. COINCIDENCIAS INVEROSÍMILES - Nada de "justo en ese momento llegó X"
+3. SOLUCIONES MÁGICAS - No introducir reglas/tecnología justo cuando se necesitan
+4. REGLA DE SETUP/PAYOFF - Todo payoff requiere un setup previo (mínimo 2 capítulos de anticipación)
 
 ═══════════════════════════════════════════════════════════════════
-INSTRUCCIONES DE SALIDA (JSON ESTRUCTURADO)
+FASE 1: WORLD BIBLE + ESTRUCTURA GLOBAL
 ═══════════════════════════════════════════════════════════════════
-Genera un JSON con las siguientes claves:
+En esta fase, genera SOLO la base de la novela: personajes, mundo, arcos y estructura de actos.
+NO generes la escaleta de capítulos (eso vendrá en la Fase 2).
+
+Genera un JSON con estas claves:
 
 "world_bible": { 
   "personajes": [{ 
@@ -142,45 +65,41 @@ Genera un JSON con las siguientes claves:
     "rol": "protagonista/antagonista/aliado/mentor/etc",
     "perfil_psicologico": "Descripción profunda de motivaciones, miedos, deseos",
     "arco_transformacion": {
-      "estado_inicial": "Cómo empieza el personaje",
-      "catalizador_cambio": "Qué evento inicia su transformación",
-      "punto_crisis": "Su momento de mayor vulnerabilidad",
-      "estado_final": "Cómo termina transformado"
+      "estado_inicial": "",
+      "catalizador_cambio": "",
+      "punto_crisis": "",
+      "estado_final": ""
     },
     "relaciones": [{"con": "nombre", "tipo": "alianza/conflicto/romance/mentoria", "evolucion": "cómo cambia"}],
     "vivo": true,
     "apariencia_inmutable": {
-      "ojos": "Color EXACTO y descripción - CANÓNICO E INMUTABLE",
+      "ojos": "Color EXACTO - CANÓNICO E INMUTABLE",
       "cabello": "Color, longitud, textura - CANÓNICO E INMUTABLE",
       "piel": "Tono y características - CANÓNICO E INMUTABLE",
       "altura": "Descripción relativa - CANÓNICO E INMUTABLE",
-      "rasgos_distintivos": ["Cicatrices, lunares, marcas - CANÓNICO E INMUTABLE"],
+      "rasgos_distintivos": ["Cicatrices, lunares, marcas"],
       "voz": "Timbre, acento, características"
     },
     "vestimenta_habitual": "",
-    "modismos_habla": ["Frases o muletillas características - únicas de este personaje"]
+    "modismos_habla": ["Frases o muletillas características"]
   }],
   "lugares": [{ "nombre": "", "descripcion_sensorial": "", "reglas": [], "atmosfera": "" }],
   "reglas_lore": [{ "categoria": "", "regla": "", "restricciones": [] }],
   "watchpoints_continuidad": ["Elementos críticos que requieren verificación constante"],
-  "temas_centrales": ["Los 2-3 temas filosóficos/morales que explora la novela"],
-  "motivos_literarios": ["Símbolos recurrentes que unifican la obra"],
-  "vocabulario_prohibido": ["Palabras o frases a EVITAR por ser clichés del género"],
+  "temas_centrales": ["Los 2-3 temas filosóficos/morales"],
+  "motivos_literarios": ["Símbolos recurrentes"],
+  "vocabulario_prohibido": ["Palabras/frases cliché a EVITAR"],
   "lexico_historico": {
-    "epoca": "Roma Imperial / Medieval / Renacimiento / Victoriano / etc.",
-    "terminos_anacronicos_prohibidos": [
-      "Palabras modernas que NUNCA deben aparecer. Para Roma: 'burguesa', 'estrés', 'impacto', 'enfocarse', 'rol', 'empoderamiento', 'básico', 'literal', 'problemática', 'dinámico', 'autoestima', 'productivo', 'agenda', 'contexto', 'paradigma', 'priorizar'"
-    ],
-    "vocabulario_epoca_autorizado": [
-      "Términos preferidos para la época. Para Roma: 'estirpe', 'patricio', 'plebe', 'denario', 'sestercio', 'toga', 'estola', 'domus', 'insulae', 'thermae', 'vigiles'"
-    ],
-    "registro_linguistico": "Formal elevado / Coloquial histórico / Técnico de época",
-    "notas_voz_historica": "Instrucciones específicas para mantener la voz de la época sin caer en arcaísmos forzados"
+    "epoca": "",
+    "terminos_anacronicos_prohibidos": [],
+    "vocabulario_epoca_autorizado": [],
+    "registro_linguistico": "",
+    "notas_voz_historica": ""
   },
   "paleta_sensorial_global": {
-    "sentidos_dominantes": ["Visual, olfativo, táctil - priorizados para este género/época"],
-    "imagenes_recurrentes_permitidas": ["Metáforas y símbolos que pueden repetirse con variaciones"],
-    "imagenes_prohibidas_cliche": ["Metáforas gastadas a evitar: 'corazón latiendo', 'sudor frío', etc."]
+    "sentidos_dominantes": [],
+    "imagenes_recurrentes_permitidas": [],
+    "imagenes_prohibidas_cliche": []
   }
 }
 
@@ -188,260 +107,103 @@ Genera un JSON con las siguientes claves:
   "arco_principal": {
     "descripcion": "La trama central en una oración",
     "puntos_giro": [
-      {"capitulo": 1, "evento": "Descripción del punto de giro", "consecuencia": "Cómo cambia todo"}
+      {"capitulo": 1, "evento": "", "consecuencia": ""}
     ]
   },
   "subtramas": [
     {
-      "nombre": "Nombre de la subtrama",
+      "nombre": "",
       "tipo": "romance/misterio/venganza/redención/etc",
       "personajes_involucrados": [],
-      "capitulos_desarrollo": [números de capítulos],
-      "interseccion_trama_principal": "Cómo y cuándo conecta",
-      "resolucion": "Cómo termina esta subtrama"
+      "capitulos_desarrollo": [],
+      "interseccion_trama_principal": "",
+      "resolucion": ""
     }
   ]
 }
 
 "momentum_plan": {
   "curva_tension": {
-    "acto1": {
-      "nivel_inicial": 3,
-      "nivel_final": 6,
-      "puntos_tension": ["Capítulo X: evento que eleva tensión"]
-    },
-    "acto2": {
-      "nivel_inicial": 6,
-      "nivel_final": 9,
-      "punto_medio_shock": "El giro del punto medio que cambia TODA la perspectiva del lector",
-      "puntos_tension": ["Capítulo X: evento que eleva tensión"]
-    },
-    "acto3": {
-      "nivel_inicial": 8,
-      "nivel_climax": 10,
-      "puntos_tension": ["Capítulo X: evento que eleva tensión"]
-    }
+    "acto1": { "nivel_inicial": 3, "nivel_final": 6, "puntos_tension": [] },
+    "acto2": { "nivel_inicial": 6, "nivel_final": 9, "punto_medio_shock": "", "puntos_tension": [] },
+    "acto3": { "nivel_inicial": 8, "nivel_climax": 10, "puntos_tension": [] }
   },
   "catalogo_giros": [
-    {
-      "capitulo": 0,
-      "tipo": "revelacion/traicion/muerte/falsa_pista/reversal/descubrimiento",
-      "descripcion": "El giro específico",
-      "setup_previo": "Qué pistas se sembraron antes para que funcione",
-      "impacto_emocional": "Qué debe sentir el lector"
-    }
+    { "capitulo": 0, "tipo": "revelacion/traicion/muerte/falsa_pista/reversal/descubrimiento", "descripcion": "", "setup_previo": "", "impacto_emocional": "" }
   ],
-  "cadencia_sorpresas": "Cada cuántos capítulos debe haber un giro significativo (3-5 recomendado)",
+  "cadencia_sorpresas": "Cada cuántos capítulos debe haber un giro (3-5 recomendado)",
   "hooks_capitulo": {
-    "regla": "CADA capítulo DEBE terminar con un hook que obligue a seguir leyendo",
+    "regla": "CADA capítulo DEBE terminar con un hook",
     "tipos_permitidos": ["cliffhanger", "pregunta_sin_respuesta", "revelacion_parcial", "amenaza_inminente", "decision_imposible"]
   }
 }
 
-"escaleta_capitulos": [
-  {
-    "numero": 1,
-    "titulo": "Título evocador y único",
-    "acto": "1/2/3",
-    "cronologia": "Momento temporal específico",
-    "ubicacion": "Lugar específico con detalles sensoriales",
-    "elenco_presente": ["Solo personajes que APARECEN físicamente"],
-    
-    "transicion_ubicacion": {
-      "ubicacion_anterior": "Dónde estaban los personajes en el capítulo anterior (null si es cap 1)",
-      "metodo_viaje": "Cómo llegaron: caminando, cabalgando, carruaje, barco, teletransporte, elipsis temporal, etc.",
-      "duracion_estimada": "Tiempo transcurrido en el viaje/transición",
-      "narrativa_puente": "1-2 oraciones describiendo la transición que el Ghostwriter DEBE incluir al inicio del capítulo. Ejemplo: 'Lucius atravesó las calles empedradas durante una hora bajo el sol implacable antes de llegar al Foro.'",
-      "elementos_sensoriales_viaje": ["Detalles sensoriales del trayecto: olores, sonidos, fatiga, clima"]
-    },
-    
-    "funcion_estructural": "Qué rol cumple este capítulo en la estructura global (incidente incitador/escalada/punto medio/crisis/climax/etc)",
-    
-    "arcos_que_avanza": [
-      {"arco": "principal/subtrama_nombre", "de": "estado antes", "a": "estado después"}
-    ],
-    
-    "informacion_nueva": "Qué REVELACIÓN o dato nuevo descubre el lector que NO sabía antes",
-    "pregunta_dramatica": "La pregunta que el lector se hace al terminar el capítulo",
-    
-    "conflicto_central": {
-      "tipo": "interno/externo/ambos",
-      "descripcion": "El conflicto específico de ESTE capítulo",
-      "stakes": "Qué se pierde si el protagonista falla AQUÍ"
-    },
-    
-    "beats": [
-      {
-        "numero": 1,
-        "tipo": "apertura",
-        "descripcion": "Descripción detallada de la escena de apertura (300-500 palabras esperadas)",
-        "personajes_activos": ["Quién participa"],
-        "accion_principal": "Qué ocurre narrativamente",
-        "objetivo_narrativo": "Qué debe lograr este beat",
-        "elementos_sensoriales": ["Vista, sonido, olor, tacto a incluir"],
-        "dialogo_sugerido": "Tema o intercambio de diálogo importante (si aplica)",
-        "subtrama_tocada": "Qué subtrama avanza aquí (si aplica)"
-      },
-      {
-        "numero": 2,
-        "tipo": "desarrollo",
-        "descripcion": "Desarrollo con complicación o información nueva (300-500 palabras)",
-        "elementos_sensoriales": [],
-        "dialogo_sugerido": "",
-        "subtrama_tocada": ""
-      },
-      {
-        "numero": 3,
-        "tipo": "tension/conflicto",
-        "descripcion": "Escalada de tensión o confrontación (300-500 palabras)",
-        "elementos_sensoriales": [],
-        "dialogo_sugerido": ""
-      },
-      {
-        "numero": 4,
-        "tipo": "reflexion/respiro",
-        "descripcion": "Momento de pausa, reflexión interna o atmósfera (200-400 palabras)",
-        "elementos_sensoriales": [],
-        "monologo_interno": "Pensamiento o emoción del protagonista"
-      },
-      {
-        "numero": 5,
-        "tipo": "escalada",
-        "descripcion": "Nueva complicación o revelación (300-500 palabras)",
-        "elementos_sensoriales": [],
-        "informacion_nueva": "Dato que el lector descubre aquí"
-      },
-      {
-        "numero": 6,
-        "tipo": "cierre_hook",
-        "descripcion": "Cierre con gancho poderoso (200-400 palabras)",
-        "tipo_hook": "cliffhanger/pregunta/revelacion/amenaza",
-        "pregunta_abierta": "Qué se pregunta el lector al terminar"
-      }
-    ],
-    "palabras_objetivo_capitulo": 2500,
-    "distribucion_palabras": {
-      "apertura": "300-500",
-      "desarrollo": "300-500", 
-      "tension": "300-500",
-      "reflexion": "200-400",
-      "escalada": "300-500",
-      "cierre": "200-400",
-      "transiciones": "200-300"
-    },
-    
-    "giro_emocional": {
-      "emocion_inicio": "Cómo se siente el lector al empezar",
-      "emocion_final": "Cómo debe sentirse al terminar"
-    },
-    
-    "recursos_literarios_sugeridos": ["Metáforas, símbolos o técnicas ESPECÍFICAS para este capítulo"],
-    "tono_especifico": "El tono particular de ESTE capítulo",
-    
-    "prohibiciones_este_capitulo": ["Temas, imágenes o recursos YA usados en capítulos anteriores que NO deben repetirse"],
-    
-    "continuidad_entrada": "Estado de personajes/mundo al INICIAR",
-    "continuidad_salida": "Estado de personajes/mundo al TERMINAR",
-    
-    "riesgos_de_verosimilitud": {
-      "posibles_deus_ex_machina": ["Momentos donde la resolución podría parecer forzada"],
-      "setup_requerido": ["Qué debe establecerse EN CAPÍTULOS ANTERIORES para que este funcione"],
-      "justificacion_causal": "Por qué cada evento es consecuencia lógica de lo anterior"
-    },
-    
-    "bestseller_elements": {
-      "nivel_tension": "1-10 (debe escalar progresivamente a lo largo de la novela)",
-      "tipo_hook_final": "cliffhanger/pregunta/revelacion/amenaza/decision (OBLIGATORIO - cómo termina el capítulo)",
-      "hook_descripcion": "Descripción específica del gancho que obliga al lector a seguir",
-      "momento_wow": "El momento de este capítulo que el lector recordará y comentará",
-      "instrucciones_tension_ghostwriter": "Indicaciones ESPECÍFICAS para el Ghostwriter sobre dónde y cómo crear tensión narrativa"
-    }
-  }
-]
-
-"premisa": "Premisa central de la historia en una oración poderosa"
-
 "estructura_tres_actos": {
-  "acto1": {
-    "capitulos": [rango],
-    "funcion": "Establecer mundo, protagonista, conflicto",
-    "planteamiento": "Descripción del mundo ordinario",
-    "incidente_incitador": "El evento que lo cambia todo",
-    "primer_punto_giro": "El momento de no retorno"
-  },
-  "acto2": {
-    "capitulos": [rango],
-    "funcion": "Complicar, escalar, transformar",
-    "accion_ascendente": "Cómo escala el conflicto",
-    "punto_medio": "La revelación central que cambia la perspectiva",
-    "crisis": "El momento más oscuro del protagonista",
-    "segundo_punto_giro": "Lo que precipita el final"
-  },
-  "acto3": {
-    "capitulos": [rango],
-    "funcion": "Resolver, transformar, cerrar",
-    "climax": "El enfrentamiento final",
-    "resolucion": "El nuevo equilibrio",
-    "eco_tematico": "Cómo resuena el tema central"
-  }
+  "acto1": { "capitulos": [], "funcion": "", "planteamiento": "", "incidente_incitador": "", "primer_punto_giro": "" },
+  "acto2": { "capitulos": [], "funcion": "", "accion_ascendente": "", "punto_medio": "", "crisis": "", "segundo_punto_giro": "" },
+  "acto3": { "capitulos": [], "funcion": "", "climax": "", "resolucion": "", "eco_tematico": "" }
 }
 
 "linea_temporal": [
-  {"momento": "Descripción temporal", "eventos_clave": [""], "capitulos": []}
+  {"momento": "", "eventos_clave": [""], "capitulos": []}
 ]
 
-═══════════════════════════════════════════════════════════════════
-INSTRUCCIONES CRÍTICAS PARA EVITAR REPETICIONES
-═══════════════════════════════════════════════════════════════════
-1. Cada "informacion_nueva" debe ser GENUINAMENTE NUEVA, no reformulación
-2. Los "beats" de capítulos consecutivos deben tener estructuras DIFERENTES
-3. Los "recursos_literarios_sugeridos" no deben repetirse en capítulos adyacentes
-4. Cada "conflicto_central" debe ser único y escalar respecto al anterior
-5. Las "prohibiciones_este_capitulo" deben actualizarse acumulativamente
+"premisa": "Premisa central en una oración poderosa"
 
-═══════════════════════════════════════════════════════════════════
-🏷️ TÍTULOS DE CAPÍTULOS - OBLIGATORIOS SIEMPRE (CRÍTICO)
-═══════════════════════════════════════════════════════════════════
-⛔ REGLA ABSOLUTA: TODOS los capítulos DEBEN tener un título en el campo "titulo".
-   - NUNCA dejar el campo "titulo" vacío, null, o con valor genérico como "Capítulo X"
-   - CADA capítulo (1 a N) DEBE tener un título EVOCADOR, LITERARIO y ÚNICO
-   - El título debe reflejar el contenido emocional o temático del capítulo
-   - Longitud ideal: 2-6 palabras
+Responde ÚNICAMENTE con el JSON estructurado.
+`;
 
-✅ EJEMPLOS DE BUENOS TÍTULOS:
-   - "El Sabor del Oro"
-   - "La Sombra del Testigo"  
-   - "Cenizas y Promesas"
-   - "El Último Anochecer"
-   - "Sangre en la Arena"
+const PHASE2_SYSTEM_PROMPT = `
+Eres un Arquitecto de Tramas Maestro generando la ESCALETA DE CAPÍTULOS.
+Ya has creado la World Bible y estructura global en la fase anterior. Ahora debes crear el plan capítulo por capítulo.
 
-❌ TÍTULOS PROHIBIDOS:
-   - "" (vacío) → FATAL
-   - null → FATAL
-   - "Capítulo 1" → PROHIBIDO (es redundante con el número)
-   - "Continuación" → PROHIBIDO (genérico)
-   - "Desarrollo" → PROHIBIDO (estructural, no literario)
+REGLAS CRÍTICAS:
+1. Cada capítulo debe tener MÍNIMO 6 beats narrativos sustanciales.
+2. Cada "informacion_nueva" debe ser GENUINAMENTE NUEVA — no repetir de capítulos anteriores.
+3. Los conflictos deben escalar progresivamente.
+4. Mínimo 2 subtramas activas por capítulo y 2-3 diálogos significativos.
+5. Al menos 1 momento de reflexión interna del protagonista por capítulo.
 
-═══════════════════════════════════════════════════════════════════
-NOMENCLATURA DE SECCIONES ESPECIALES
-═══════════════════════════════════════════════════════════════════
-⛔ ERRORES FATALES QUE DEBES EVITAR:
-1. La palabra "Prólogo" SOLO puede aparecer en el capítulo número 0. NUNCA en capítulos 1, 2, 3...
-2. La palabra "Epílogo" SOLO puede aparecer en el capítulo número -1. NUNCA en otros capítulos.
-3. Los capítulos regulares (1 a N) deben tener títulos EVOCADORES y LITERARIOS, no estructurales.
-4. PROHIBIDO: "Prólogo: [subtítulo]" para capítulos que no sean el 0.
-5. PROHIBIDO: "Epílogo: [subtítulo]" para capítulos que no sean el -1.
-6. El capítulo 1 SIEMPRE es el PRIMER capítulo de la historia, NO un prólogo adicional.
+TÍTULOS - OBLIGATORIOS:
+⛔ TODOS los capítulos DEBEN tener un "titulo" EVOCADOR y LITERARIO (2-6 palabras). NUNCA vacío o genérico.
+- "Prólogo" SOLO en capítulo número 0. "Epílogo" SOLO en número -1.
+- Capítulos regulares (1 a N) tienen títulos EVOCADORES.
 
-EJEMPLOS DE TÍTULOS INCORRECTOS (NUNCA USES):
-- "Prólogo: El Sabor del Oro" para capítulo 1 → INCORRECTO
-- "Epílogo: Despedida" para capítulo 30 → INCORRECTO
+FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
+{
+  "escaleta_capitulos": [
+    {
+      "numero": 1,
+      "titulo": "Título evocador",
+      "acto": "1",
+      "cronologia": "Momento temporal",
+      "ubicacion": "Lugar con detalles sensoriales",
+      "elenco_presente": ["Personaje1", "Personaje2"],
+      "funcion_estructural": "Rol del capítulo en la trama",
+      "arcos_que_avanza": [{"arco": "nombre", "de": "estado_antes", "a": "estado_después"}],
+      "informacion_nueva": "Revelación que descubre el lector",
+      "pregunta_dramatica": "Pregunta al terminar",
+      "conflicto_central": "Descripción breve del conflicto y stakes",
+      "beats": [
+        "Apertura: descripción concisa de lo que ocurre (personajes, acción, sensorial)",
+        "Desarrollo: descripción concisa",
+        "Tensión: descripción concisa del conflicto",
+        "Reflexión: monólogo interno o pausa narrativa",
+        "Escalada: descripción concisa",
+        "Cierre/Hook: tipo (cliffhanger/revelación/amenaza) + descripción"
+      ],
+      "palabras_objetivo": 3000,
+      "giro_emocional": "de [emoción] a [emoción]",
+      "continuidad_entrada": "Estado al iniciar",
+      "continuidad_salida": "Estado al terminar",
+      "hook_final": "Descripción del gancho para el siguiente capítulo",
+      "nivel_tension": 7
+    }
+  ]
+}
 
-EJEMPLOS DE TÍTULOS CORRECTOS:
-- Capítulo 0: "Prólogo" (sin subtítulo adicional)
-- Capítulo 1: "El Sabor del Oro" (título literario, SIN la palabra prólogo)
-- Capítulo 30: "La Última Danza"
-- Capítulo -1: "Epílogo" (sin subtítulo adicional)
+IMPORTANTE: Cada beat es un STRING conciso (1-3 oraciones), NO un objeto complejo. Esto reduce el JSON total.
+Responde ÚNICAMENTE con el JSON.
 `;
 
 export class ArchitectAgent extends BaseAgent {
@@ -449,7 +211,7 @@ export class ArchitectAgent extends BaseAgent {
     super({
       name: "El Arquitecto",
       role: "architect",
-      systemPrompt: SYSTEM_PROMPT,
+      systemPrompt: PHASE1_SYSTEM_PROMPT,
     });
   }
 
@@ -463,79 +225,115 @@ export class ArchitectAgent extends BaseAgent {
     if (input.hasEpilogue) sectionsInfo.push("EPÍLOGO");
     if (input.hasAuthorNote) sectionsInfo.push("NOTA DEL AUTOR");
 
-    const prompt = `
-    Basándote en esta idea: "${ideaInicial}" 
-    Y siguiendo esta Guía de Estilo: "${guiaEstilo}"
-    
-    Genera el plan completo para una novela con la siguiente estructura:
-    ${sectionsInfo.join(" + ")}
-    
+    const commonContext = `
+    Idea: "${ideaInicial}" 
+    Guía de Estilo: "${guiaEstilo}"
     TÍTULO: ${input.title}
     GÉNERO: ${input.genre}
     TONO: ${input.tone}
-    
-    ${input.hasPrologue ? "NOTA: La novela incluirá un PRÓLOGO que debe establecer el tono y sembrar intriga." : ""}
-    ${input.hasEpilogue ? "NOTA: La novela terminará con un EPÍLOGO que cierre todos los arcos narrativos." : ""}
-    ${input.hasAuthorNote ? "NOTA: Incluye reflexiones para una NOTA DEL AUTOR al final." : ""}
-    
+    ESTRUCTURA: ${sectionsInfo.join(" + ")}
+    ${input.hasPrologue ? "NOTA: Incluir PRÓLOGO que establezca el tono y siembre intriga." : ""}
+    ${input.hasEpilogue ? "NOTA: Incluir EPÍLOGO que cierre todos los arcos narrativos." : ""}
+    ${input.hasAuthorNote ? "NOTA: Incluir reflexiones para NOTA DEL AUTOR." : ""}
     ${input.architectInstructions ? `
     ═══════════════════════════════════════════════════════════════════
-    🎯🎯🎯 INSTRUCCIONES ESPECÍFICAS DEL AUTOR (PRIORIDAD ALTA) 🎯🎯🎯
+    🎯 INSTRUCCIONES ESPECÍFICAS DEL AUTOR (PRIORIDAD ALTA) 🎯
     ═══════════════════════════════════════════════════════════════════
-    El autor ha proporcionado las siguientes instrucciones que DEBES incorporar en tu planificación:
-    
     ${input.architectInstructions}
-    
-    Estas instrucciones tienen PRIORIDAD sobre las guías generales. Asegúrate de que cada elemento solicitado se refleje en la estructura de la novela.
+    Estas instrucciones tienen PRIORIDAD sobre las guías generales.
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
-    
     ${input.kindleUnlimitedOptimized ? `
     ═══════════════════════════════════════════════════════════════════
-    ⚡⚡⚡ OPTIMIZACIÓN KINDLE UNLIMITED (ACTIVA) ⚡⚡⚡
+    ⚡ OPTIMIZACIÓN KINDLE UNLIMITED (ACTIVA) ⚡
     ═══════════════════════════════════════════════════════════════════
-    Esta novela está OPTIMIZADA para Kindle Unlimited (KU). Aplica estas técnicas:
-    
-    1. CAPÍTULOS CORTOS Y ADICTIVOS:
-       - Capítulos de 800-1500 palabras máximo (lectores KU prefieren capítulos breves)
-       - Estructura "uno más y ya" que maximiza páginas leídas (KENPC)
-       - Cada capítulo debe poder leerse en 3-5 minutos
-    
-    2. CLIFFHANGERS OBLIGATORIOS:
-       - CADA capítulo DEBE terminar con un gancho irresistible
-       - Tipos de cliffhanger: revelación parcial, peligro inminente, pregunta sin respuesta, contradicción
-       - El lector NUNCA debe sentir que puede parar
-    
-    3. RITMO DE COCAÍNA NARRATIVA:
-       - Giros cada 3-4 capítulos (no 5-7 como en novela tradicional)
-       - Escenas cortas y dinámicas
-       - Mínima descripción, máxima acción y diálogo
-       - Conflicto constante, sin capítulos de "respiración"
-    
-    4. ESTRUCTURA PAGE-TURNER:
-       - Acto 1 (primeros 10-15%): Hook en página 1, incidente incitador antes del capítulo 3
-       - Acto 2: Escalada implacable, nunca mesetas
-       - Acto 3: Resolución satisfactoria pero rápida
-    
-    5. TÉCNICAS DE RETENCIÓN KU:
-       - Empezar in media res (en mitad de la acción)
-       - Múltiples líneas de tensión activas simultáneamente
-       - Secretos que se revelan gradualmente
-       - Protagonista en constante movimiento/decisión
-    
-    ⚠️ RECUERDA: En KU, cada página leída = ingresos. Diseña para que el lector NO PUEDA dejar el libro.
+    1. CAPÍTULOS CORTOS Y ADICTIVOS (800-1500 palabras, leíbles en 3-5 min)
+    2. CLIFFHANGERS OBLIGATORIOS en cada capítulo
+    3. Giros cada 3-4 capítulos, escenas cortas y dinámicas
+    4. Hook en página 1, incidente incitador antes del capítulo 3
+    5. Empezar in media res, múltiples líneas de tensión
+    ⚠️ En KU, cada página leída = ingresos. El lector NO PUEDE dejar el libro.
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
+    `;
+
+    console.log(`[El Arquitecto] === FASE 1: Generando World Bible y estructura global ===`);
+
+    const phase1Prompt = `
+    ${commonContext}
     
+    FASE 1 DE 2: Genera la World Bible completa, matriz de arcos, plan de momentum, estructura de 3 actos, línea temporal y premisa.
+    
+    La novela tendrá ${input.chapterCount} capítulos${input.hasPrologue ? " + prólogo" : ""}${input.hasEpilogue ? " + epílogo" : ""}${input.hasAuthorNote ? " + nota del autor" : ""}.
+    Diseña los arcos, giros y tensión para exactamente esa cantidad de capítulos.
+    
+    Responde ÚNICAMENTE con el JSON estructurado según las instrucciones.
+    `;
+
+    this.config.systemPrompt = PHASE1_SYSTEM_PROMPT;
+    const phase1Response = await this.generateContent(phase1Prompt);
+
+    if (phase1Response.error || phase1Response.timedOut || !phase1Response.content?.trim()) {
+      console.error(`[El Arquitecto] Fase 1 falló: ${phase1Response.error || "timeout/vacío"}`);
+      return phase1Response;
+    }
+
+    let phase1Json: any;
+    try {
+      const jsonMatch = phase1Response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        phase1Json = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error("No JSON found in Phase 1 response");
+      }
+    } catch (e) {
+      console.error(`[El Arquitecto] Fase 1: Error parseando JSON - ${(e as Error).message}`);
+      return {
+        content: phase1Response.content,
+        error: `Phase 1 JSON parse error: ${(e as Error).message}`,
+        timedOut: false,
+        tokenUsage: phase1Response.tokenUsage,
+        thoughtSignature: phase1Response.thoughtSignature,
+      };
+    }
+
+    console.log(`[El Arquitecto] Fase 1 completada. Personajes: ${phase1Json.world_bible?.personajes?.length || 0}, Arcos: ${phase1Json.matriz_arcos?.subtramas?.length || 0}`);
+
+    console.log(`[El Arquitecto] === FASE 2: Generando escaleta de ${input.chapterCount} capítulos ===`);
+
+    const phase1Summary = JSON.stringify({
+      premisa: phase1Json.premisa,
+      world_bible: {
+        personajes: phase1Json.world_bible?.personajes?.map((p: any) => ({
+          nombre: p.nombre,
+          rol: p.rol,
+          perfil_psicologico: p.perfil_psicologico,
+          arco_transformacion: p.arco_transformacion,
+          relaciones: p.relaciones,
+        })),
+        lugares: phase1Json.world_bible?.lugares,
+        temas_centrales: phase1Json.world_bible?.temas_centrales,
+        motivos_literarios: phase1Json.world_bible?.motivos_literarios,
+      },
+      matriz_arcos: phase1Json.matriz_arcos,
+      momentum_plan: phase1Json.momentum_plan,
+      estructura_tres_actos: phase1Json.estructura_tres_actos,
+      linea_temporal: phase1Json.linea_temporal,
+    });
+
+    const phase2Prompt = `
+    ${commonContext}
+
     ═══════════════════════════════════════════════════════════════════
-    ⛔⛔⛔ REQUISITO ABSOLUTO E INNEGOCIABLE: EXACTAMENTE ${input.chapterCount} CAPÍTULOS ⛔⛔⛔
+    CONTEXTO DE LA FASE 1 (World Bible y estructura ya creadas):
+    ═══════════════════════════════════════════════════════════════════
+    ${phase1Summary}
+
+    ═══════════════════════════════════════════════════════════════════
+    ⛔ REQUISITO ABSOLUTO: EXACTAMENTE ${input.chapterCount} CAPÍTULOS ⛔
     ═══════════════════════════════════════════════════════════════════
     
-    EL NÚMERO DE CAPÍTULOS NO ES TU DECISIÓN. El autor ha solicitado ${input.chapterCount} capítulos.
-    NO puedes decidir que la historia "funciona mejor" con menos capítulos.
-    NO puedes "resumir" o "condensar" la trama.
-    
-    DEBES generar EXACTAMENTE ${input.chapterCount} entradas en "escaleta_capitulos", numeradas del 1 al ${input.chapterCount}.
+    EL NÚMERO DE CAPÍTULOS NO ES TU DECISIÓN. DEBES generar EXACTAMENTE ${input.chapterCount} entradas en "escaleta_capitulos", numeradas del 1 al ${input.chapterCount}.
     ${input.hasPrologue ? "ADEMÁS: Prólogo como capítulo número 0." : ""}
     ${input.hasEpilogue ? "ADEMÁS: Epílogo como capítulo número -1." : ""}
     
@@ -543,37 +341,75 @@ export class ArchitectAgent extends BaseAgent {
     - Expande subtramas existentes
     - Añade complicaciones y obstáculos
     - Desarrolla más los arcos de personajes secundarios
-    - Introduce nuevos conflictos que enriquezcan la trama
     
     CADA capítulo debe tener:
     - ⛔ TÍTULO OBLIGATORIO: Campo "titulo" con valor literario (2-6 palabras), NUNCA vacío
-    - Beats detallados (mínimo 3-5 por capítulo)
+    - Beats detallados (mínimo 6 por capítulo)
     - Información nueva
     - Conflicto central
     - Continuidad de entrada/salida
     
-    🏷️ RECORDATORIO TÍTULOS: Si algún capítulo tiene "titulo": "" o "titulo": null, el sistema FALLARÁ.
-    Cada título debe ser evocador: "El Sabor del Oro", "Cenizas y Promesas", NO "Capítulo 1".
-    
     ⚠️ VERIFICACIÓN FINAL: Antes de responder, CUENTA las entradas en escaleta_capitulos.
-    Si no hay EXACTAMENTE ${input.chapterCount} capítulos (del 1 al ${input.chapterCount}), tu respuesta es INVÁLIDA.
+    Si no hay EXACTAMENTE ${input.chapterCount} capítulos, tu respuesta es INVÁLIDA.
     
-    Genera el plan completo de la novela siguiendo tus protocolos de arquitectura.
-    Responde ÚNICAMENTE con el JSON estructurado según las instrucciones.
+    Responde ÚNICAMENTE con el JSON que contenga "escaleta_capitulos".
     `;
 
-    const response = await this.generateContent(prompt);
-    
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        JSON.parse(jsonMatch[0]);
-        response.content = jsonMatch[0];
-      }
-    } catch (e) {
-      console.error("[Architect] Failed to parse JSON response");
+    this.config.systemPrompt = PHASE2_SYSTEM_PROMPT;
+    const phase2Response = await this.generateContent(phase2Prompt);
+
+    console.log(`[El Arquitecto] Fase 2 API respondió: ${phase2Response.content?.length || 0} chars, tokens: in=${phase2Response.tokenUsage?.inputTokens || 0} out=${phase2Response.tokenUsage?.outputTokens || 0}, error=${phase2Response.error || "none"}, timedOut=${phase2Response.timedOut}`);
+
+    if (phase2Response.error || phase2Response.timedOut || !phase2Response.content?.trim()) {
+      console.error(`[El Arquitecto] Fase 2 falló: ${phase2Response.error || "timeout/vacío"}`);
+      return phase2Response;
     }
 
-    return response;
+    let phase2Json: any;
+    try {
+      const jsonMatch = phase2Response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        phase2Json = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error("No JSON found in Phase 2 response");
+      }
+    } catch (e) {
+      console.error(`[El Arquitecto] Fase 2: Error parseando JSON - ${(e as Error).message}`);
+      return {
+        content: phase2Response.content,
+        error: `Phase 2 JSON parse error: ${(e as Error).message}`,
+        timedOut: false,
+        tokenUsage: phase2Response.tokenUsage,
+        thoughtSignature: phase2Response.thoughtSignature,
+      };
+    }
+
+    const chaptersCount = phase2Json.escaleta_capitulos?.length || 0;
+    console.log(`[El Arquitecto] Fase 2 completada. Capítulos generados: ${chaptersCount}`);
+
+    const mergedResult = {
+      ...phase1Json,
+      escaleta_capitulos: phase2Json.escaleta_capitulos,
+    };
+
+    const mergedTokenUsage = {
+      inputTokens: (phase1Response.tokenUsage?.inputTokens || 0) + (phase2Response.tokenUsage?.inputTokens || 0),
+      outputTokens: (phase1Response.tokenUsage?.outputTokens || 0) + (phase2Response.tokenUsage?.outputTokens || 0),
+      thinkingTokens: (phase1Response.tokenUsage?.thinkingTokens || 0) + (phase2Response.tokenUsage?.thinkingTokens || 0),
+    };
+
+    const mergedThoughts = [
+      phase1Response.thoughtSignature || "",
+      phase2Response.thoughtSignature || "",
+    ].filter(Boolean).join("\n\n--- FASE 2 ---\n\n");
+
+    console.log(`[El Arquitecto] ✅ Ambas fases completadas. Total: ${mergedResult.world_bible?.personajes?.length || 0} personajes, ${chaptersCount} capítulos`);
+
+    return {
+      content: JSON.stringify(mergedResult),
+      tokenUsage: mergedTokenUsage,
+      thoughtSignature: mergedThoughts || undefined,
+      timedOut: false,
+    };
   }
 }

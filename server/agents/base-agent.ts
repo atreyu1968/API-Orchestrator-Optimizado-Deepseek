@@ -34,8 +34,22 @@ const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000;
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 5000;
 
+const NETWORK_ERROR_MAX_RETRIES = 5;
+const NETWORK_ERROR_DELAYS_MS = [10000, 20000, 30000, 45000, 60000];
+
 const RATE_LIMIT_MAX_RETRIES = 5;
 const RATE_LIMIT_DELAYS_MS = [30000, 60000, 90000, 120000, 180000];
+
+function isNetworkError(error: any): boolean {
+  const message = (error?.message || String(error)).toLowerCase();
+  return message.includes("fetch failed") ||
+    message.includes("econnreset") ||
+    message.includes("econnrefused") ||
+    message.includes("etimedout") ||
+    message.includes("socket hang up") ||
+    message.includes("network") ||
+    message.includes("enotfound");
+}
 
 function isRateLimitError(error: any): boolean {
   const errorStr = String(error?.message || error || "");
@@ -141,8 +155,9 @@ export abstract class BaseAgent {
     let lastError: Error | null = null;
     const temperature = options?.temperature ?? 1.0;
     let rateLimitAttempts = 0;
+    let networkErrorAttempts = 0;
     
-    const maxAttempts = MAX_RETRIES + RATE_LIMIT_MAX_RETRIES + 1;
+    const maxAttempts = MAX_RETRIES + RATE_LIMIT_MAX_RETRIES + NETWORK_ERROR_MAX_RETRIES + 1;
     
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (projectId && isProjectCancelled(projectId)) {
@@ -170,7 +185,7 @@ export abstract class BaseAgent {
           config: {
             temperature,
             topP: 0.95,
-            maxOutputTokens: 65536,
+            maxOutputTokens: modelToUse === "gemini-3-pro-preview" ? 100000 : 65536,
             ...(useThinking && (modelToUse === "gemini-3-pro-preview" || modelToUse === "gemini-2.5-flash") ? {
               thinkingConfig: {
                 thinkingBudget: modelToUse === "gemini-3-pro-preview" ? 2048 : 1024,
@@ -265,6 +280,22 @@ export abstract class BaseAgent {
           return {
             content: "",
             error: `RATE_LIMIT: ${errorMessage}`,
+            timedOut: false,
+          };
+        }
+
+        if (isNetworkError(error)) {
+          networkErrorAttempts++;
+          if (networkErrorAttempts <= NETWORK_ERROR_MAX_RETRIES) {
+            const delayMs = NETWORK_ERROR_DELAYS_MS[Math.min(networkErrorAttempts - 1, NETWORK_ERROR_DELAYS_MS.length - 1)];
+            console.log(`[${this.config.name}] Network error (attempt ${networkErrorAttempts}/${NETWORK_ERROR_MAX_RETRIES}): ${errorMessage}. Waiting ${delayMs / 1000}s before retry...`);
+            await sleep(delayMs);
+            continue;
+          }
+          console.error(`[${this.config.name}] Network error persists after ${NETWORK_ERROR_MAX_RETRIES} retries: ${errorMessage}`);
+          return {
+            content: "",
+            error: `NETWORK_ERROR: ${errorMessage}`,
             timedOut: false,
           };
         }

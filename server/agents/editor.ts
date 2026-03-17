@@ -247,12 +247,12 @@ export class EditorAgent extends BaseAgent {
 PLAN DEL ARQUITECTO PARA ESTE CAPÍTULO:
 - Título: ${chapterData.titulo}
 - Función estructural: ${chapterData.funcion_estructural || "No especificada"}
-- Beats obligatorios: ${chapterData.beats?.join(" → ") || "No especificados"}
+- Beats obligatorios: ${Array.isArray(chapterData.beats) ? chapterData.beats.map((b: any) => typeof b === 'string' ? b : (b.tipo || b.descripcion || '')).join(" → ") : "No especificados"}
 - Objetivo narrativo: ${chapterData.objetivo_narrativo || "No especificado"}
 - Información nueva a revelar: ${chapterData.informacion_nueva || "Ninguna específica"}
 - Pregunta dramática: ${chapterData.pregunta_dramatica || "No especificada"}
-- Conflicto central: ${chapterData.conflicto_central ? `${chapterData.conflicto_central.tipo} - ${chapterData.conflicto_central.descripcion} (Stakes: ${chapterData.conflicto_central.stakes})` : "No especificado"}
-- Giro emocional: ${chapterData.giro_emocional ? `De "${chapterData.giro_emocional.emocion_inicio}" a "${chapterData.giro_emocional.emocion_final}"` : "No especificado"}
+- Conflicto central: ${chapterData.conflicto_central ? (typeof chapterData.conflicto_central === 'string' ? chapterData.conflicto_central : `${chapterData.conflicto_central.tipo} - ${chapterData.conflicto_central.descripcion} (Stakes: ${chapterData.conflicto_central.stakes})`) : "No especificado"}
+- Giro emocional: ${chapterData.giro_emocional ? (typeof chapterData.giro_emocional === 'string' ? chapterData.giro_emocional : `De "${chapterData.giro_emocional.emocion_inicio}" a "${chapterData.giro_emocional.emocion_final}"`) : "No especificado"}
 - Tono específico: ${chapterData.tono_especifico || "Según guía general"}
 - Recursos literarios sugeridos: ${chapterData.recursos_literarios_sugeridos?.join(", ") || "Ninguno específico"}
 - PROHIBICIONES para este capítulo: ${chapterData.prohibiciones_este_capitulo?.join(", ") || "Ninguna específica"}
