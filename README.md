@@ -8,7 +8,7 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 
 - **Generador de Novelas**: Pipeline completo con 13+ agentes especializados para escribir novelas de principio a fin
 - **Re-editor de Manuscritos (LitEditors)**: Importa y edita profesionalmente manuscritos externos en multiples idiomas
-- **Traductor de Novelas (LitTranslators)**: Sistema de traduccion literaria con revision nativa
+- **Adaptacion Literaria Profesional (LitTranslators)**: Sistema de adaptacion literaria (no traduccion literal) con resultado listo para publicacion
 - **World Bible Progresiva**: Base de datos de consistencia que se enriquece automaticamente capitulo a capitulo
 - **Notas del Autor**: Instrucciones personalizadas para que los agentes eviten errores conocidos
 - **Zero Continuity Errors**: Validacion inmediata post-escritura, deteccion de personajes muertos, filtraciones de conocimiento y drift de apariencia
@@ -47,10 +47,10 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 | Revisor Final | Gemini 3 Pro | Evaluacion forense de consistencia |
 | Corrector | Gemini 2.5 Flash | Correccion de estilo |
 
-### Traductor (LitTranslators)
+### Adaptacion Literaria Profesional (LitTranslators)
 | Agente | Modelo | Funcion |
 |--------|--------|---------|
-| Traductor | Gemini 2.5 Flash | Traduccion literaria preservando estilo |
+| Adaptador Literario | Gemini 2.5 Flash | Recreacion literaria profesional lista para publicacion |
 | Revisor Nativo | Gemini 2.5 Flash | Revision como hablante nativo del idioma destino |
 
 ## Distribucion de Modelos (Calidad/Costo)
@@ -93,6 +93,16 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 - Aprobacion requiere puntuacion 9+ sin problemas criticos
 - Tracking de hashes de issues para evitar re-reportar problemas resueltos
 - QA re-ejecuta auditores si hay capitulos modificados en el ciclo
+
+### Adaptacion Literaria Profesional
+- **No es traduccion, es recreacion**: El sistema no traduce literalmente — recrea cada capitulo como si un autor nativo lo hubiera escrito desde cero en el idioma destino
+- **Adaptacion de expresiones**: Modismos, refranes y expresiones se adaptan a equivalentes naturales del idioma destino (no se traducen literalmente)
+- **Voces de personajes diferenciadas**: Cada personaje mantiene su voz propia adaptada a los recursos del idioma destino
+- **Reglas editoriales por idioma**: Tipografia, puntuacion, dialogos y convenciones especificas para cada uno de los 7 idiomas soportados (es, en, fr, de, it, pt, ca)
+- **Filtro anti-IA**: Lista de palabras muleta por idioma que la IA tiene prohibido usar, forzando vocabulario literario mas rico y humano
+- **Resultado listo para publicacion**: El texto resultante no necesita revision editorial adicional — sale listo para imprimir
+- **Contenido editado como fuente**: Siempre usa la version editada y pulida del capitulo, no el borrador original
+- **Reanudacion robusta**: Si una adaptacion se interrumpe, se retoma exactamente donde se quedo sin duplicar ni perder capitulos
 
 ### Exportacion
 - Markdown limpio sin artefactos de codigo
