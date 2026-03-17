@@ -471,6 +471,20 @@ export class GhostwriterAgent extends BaseAgent {
       }
     }
 
+    mappedKeys.add('_series_hilos_no_resueltos'); mappedKeys.add('_series_eventos_clave_previos');
+    if (Array.isArray(wb._series_hilos_no_resueltos) && wb._series_hilos_no_resueltos.length > 0) {
+      parts.push(`\n═══════════════════════════════════════════════════════════════════`);
+      parts.push(`🔴 HILOS NO RESUELTOS DE LIBROS ANTERIORES DE LA SERIE`);
+      parts.push(`═══════════════════════════════════════════════════════════════════`);
+      parts.push(`Estos hilos DEBEN progresar o resolverse. NO ignorarlos:`);
+      wb._series_hilos_no_resueltos.forEach((h: string, i: number) => parts.push(`  ${i + 1}. ${h}`));
+      parts.push(`⛔ Si un hilo de estos es relevante para este capítulo, DEBES hacer referencia a él o avanzarlo.`);
+    }
+    if (Array.isArray(wb._series_eventos_clave_previos) && wb._series_eventos_clave_previos.length > 0) {
+      parts.push(`\n📚 EVENTOS CLAVE DE LIBROS ANTERIORES (contexto de serie):`);
+      wb._series_eventos_clave_previos.slice(0, 15).forEach((e: string) => parts.push(`  ▸ ${e}`));
+    }
+
     mappedKeys.add('premisa'); mappedKeys.add('estructura_tres_actos');
     mappedKeys.add('escaleta_capitulos'); mappedKeys.add('terminos_anacronicos_prohibidos');
     if (wb.premisa) {

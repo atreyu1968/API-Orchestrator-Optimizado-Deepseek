@@ -590,9 +590,17 @@ ${seriesData.seriesGuide}
             console.log(`[Orchestrator] Using series guide for "${seriesData.title}" (${seriesData.seriesGuide.split(/\s+/).length} words)`);
           }
 
+          const currentOrder = project.seriesOrder || 1;
           const fullContinuity = await storage.getSeriesFullContinuity(project.seriesId);
-          const previousVolumes = fullContinuity.projectSnapshots.filter(s => s.projectId !== project.id);
-          const manuscriptSnapshots = fullContinuity.manuscriptSnapshots;
+          const seriesProjectsForCtx = await storage.getProjectsBySeries(project.seriesId);
+          const previousVolumes = fullContinuity.projectSnapshots.filter(s => {
+            if (s.projectId === project.id) return false;
+            const matchingProject = seriesProjectsForCtx.find(p => p.id === s.projectId);
+            return (matchingProject?.seriesOrder || 999) < currentOrder;
+          });
+          const manuscriptSnapshots = fullContinuity.manuscriptSnapshots.filter(
+            ms => (ms.seriesOrder || 999) < currentOrder
+          );
           
           const allSeriesManuscripts = await storage.getImportedManuscriptsBySeries(project.seriesId);
           const manuscriptsWithoutAnalysis = allSeriesManuscripts.filter(m => !m.continuitySnapshot);
@@ -610,11 +618,13 @@ VOLÚMENES ANTERIORES DE LA SERIE (${totalPreviousVolumes} libros)
             
             const allVolumes: Array<{ order: number | null; content: string }> = [];
             
+            const seriesProjects = await storage.getProjectsBySeries(project.seriesId);
             for (const snapshot of previousVolumes) {
+              const matchingProject = seriesProjects.find(p => p.id === snapshot.projectId);
               allVolumes.push({
-                order: null,
+                order: matchingProject?.seriesOrder ?? null,
                 content: `
---- VOLUMEN AI (Project ID: ${snapshot.projectId}) ---
+--- VOLUMEN ${matchingProject?.seriesOrder || "?"}: "${matchingProject?.title || `Project ${snapshot.projectId}`}" (AI) ---
 Sinopsis: ${snapshot.synopsis || "No disponible"}
 Estado de personajes: ${JSON.stringify(snapshot.characterStates)}
 Hilos no resueltos: ${JSON.stringify(snapshot.unresolvedThreads)}
@@ -659,7 +669,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
               });
             }
             
-            allVolumes.sort((a, b) => (a.order || 0) - (b.order || 0));
+            allVolumes.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
             for (const vol of allVolumes) {
               seriesContextContent += vol.content;
             }
@@ -914,6 +924,14 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       let previousContinuityStateForEditor: any = null;
       let accumulatedContinuityIssues: string[] = [];
       
+      let seriesUnresolvedThreads: string[] = [];
+      let seriesKeyEvents: string[] = [];
+      if (project.seriesId) {
+        const { threads, events } = await this.loadSeriesThreadsAndEvents(project);
+        seriesUnresolvedThreads = threads;
+        seriesKeyEvents = events;
+      }
+      
       const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
       const fullStyleGuide = styleGuideContent 
         ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
@@ -965,7 +983,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const totalNovelTarget = (project as any).minWordCount;
           const perChapterTarget = projectMinPerChapter || this.calculatePerChapterTarget(totalNovelTarget, allSections.length);
           const perChapterMax = projectMaxPerChapter || Math.round(perChapterTarget * 1.15);
-          const enrichedWB = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
+          const enrichedWB = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreads, seriesKeyEvents);
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
@@ -1402,8 +1420,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       );
 
       if (finalReviewApproved) {
-        await storage.updateProject(project.id, { status: "completed" });
-        this.callbacks.onProjectComplete();
+        await this.finalizeCompletedProject(project);
       } else {
         await storage.updateProject(project.id, { status: "failed_final_review" });
         this.callbacks.onError("El manuscrito no pasó la revisión final después de múltiples intentos.");
@@ -1473,8 +1490,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
       if (pendingChapters.length === 0) {
         this.callbacks.onAgentStatus("orchestrator", "completed", "Todos los capítulos ya están completados.");
-        await storage.updateProject(project.id, { status: "completed" });
-        this.callbacks.onProjectComplete();
+        await this.finalizeCompletedProject(project);
         return;
       }
 
@@ -1497,7 +1513,14 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
       const worldBibleData = this.reconstructWorldBibleData(worldBible, project);
       
-      // Initialize characterStates for continuity validation
+      let seriesUnresolvedThreadsResume: string[] = [];
+      let seriesKeyEventsResume: string[] = [];
+      if (project.seriesId) {
+        const { threads, events } = await this.loadSeriesThreadsAndEvents(project);
+        seriesUnresolvedThreadsResume = threads;
+        seriesKeyEventsResume = events;
+      }
+      
       const characterStates: Map<string, { alive: boolean; location: string; injuries: string[]; lastSeen: number }> = new Map();
 
       for (const chapter of pendingChapters) {
@@ -1528,7 +1551,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const calculatedTarget = this.calculatePerChapterTarget((project as any).minWordCount, totalChaptersResume);
           const perChapterMinResume = (project as any).minWordsPerChapter || calculatedTarget;
           const perChapterMaxResume = (project as any).maxWordsPerChapter || Math.round(perChapterMinResume * 1.15);
-          const enrichedWBResume = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
+          const enrichedWBResume = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsResume, seriesKeyEventsResume);
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
@@ -1958,8 +1981,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       );
 
       if (finalReviewApproved) {
-        await storage.updateProject(project.id, { status: "completed" });
-        this.callbacks.onProjectComplete();
+        await this.finalizeCompletedProject(project);
       } else {
         await storage.updateProject(project.id, { status: "failed_final_review" });
         this.callbacks.onError("El manuscrito no pasó la revisión final después de múltiples intentos.");
@@ -2052,8 +2074,44 @@ ${chapterSummaries || "Sin capítulos disponibles"}
   ): Promise<boolean> {
     let revisionCycle = 0;
     let issuesPreviosCorregidos: string[] = [];
-    let consecutiveHighScores = 0; // Track consecutive scores >= 9
-    let previousScores: number[] = []; // Track score history
+    let consecutiveHighScores = 0;
+    let previousScores: number[] = [];
+    
+    let seriesUnresolvedThreadsQA: string[] = [];
+    let seriesKeyEventsQA: string[] = [];
+    let seriesContextForReview: any = undefined;
+    if (project.seriesId) {
+      try {
+        const { threads: loadedThreads, events: loadedEvents } = await this.loadSeriesThreadsAndEvents(project);
+        seriesUnresolvedThreadsQA = loadedThreads;
+        seriesKeyEventsQA = loadedEvents;
+        const seriesData = await storage.getSeries(project.seriesId);
+        if (seriesData) {
+          const milestones = await storage.getMilestonesBySeries(project.seriesId);
+          const plotThreads = await storage.getPlotThreadsBySeries(project.seriesId);
+          const unresolvedThreadsFromPrev = loadedThreads;
+          const keyEventsFromPrev = loadedEvents;
+
+          const volumeNumber = project.seriesOrder || 1;
+          const totalVolumes = seriesData.totalPlannedBooks || 10;
+          const volumeMilestones = milestones.filter(m => m.volumeNumber === volumeNumber);
+
+          seriesContextForReview = {
+            seriesTitle: seriesData.title,
+            volumeNumber,
+            totalVolumes,
+            unresolvedThreadsFromPrevBooks: unresolvedThreadsFromPrev,
+            keyEventsFromPrevBooks: keyEventsFromPrev,
+            milestones: volumeMilestones.map(m => ({ description: m.description, isRequired: m.isRequired })),
+            plotThreads: plotThreads.map(t => ({ threadName: t.threadName, status: t.status, importance: t.importance })),
+            isLastVolume: volumeNumber >= totalVolumes,
+          };
+          console.log(`[Orchestrator] Series context for Final Reviewer: vol ${volumeNumber}/${totalVolumes}, ${unresolvedThreadsFromPrev.length} unresolved threads, ${volumeMilestones.length} milestones, ${plotThreads.length} plot threads, isLast=${volumeNumber >= totalVolumes}`);
+        }
+      } catch (err) {
+        console.warn(`[Orchestrator] Failed to load series context for final review:`, err);
+      }
+    }
     
     while (revisionCycle < this.maxFinalReviewCycles) {
       this.chaptersRewrittenInCurrentCycle = 0;
@@ -2081,6 +2139,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         guiaEstilo,
         pasadaNumero: revisionCycle + 1,
         issuesPreviosCorregidos,
+        seriesContext: seriesContextForReview,
       });
 
       await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "gemini-3-pro-preview", undefined, "final_review");
@@ -2455,7 +2514,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         const writerResult = await this.ghostwriter.execute({
           chapterNumber: sectionData.numero,
           chapterData: sectionData,
-          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsQA, seriesKeyEventsQA),
           guiaEstilo,
           previousContinuity,
           refinementInstructions: `CORRECCIONES DEL REVISOR FINAL:\n${revisionInstructions}`,
@@ -2489,7 +2548,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const rewriteResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
-            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsQA, seriesKeyEventsQA),
             guiaEstilo,
             previousContinuity,
             refinementInstructions,
@@ -2601,12 +2660,9 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       );
 
       if (approved) {
-        await storage.updateProject(project.id, { 
-          status: "completed",
-          finalReviewResult: { approved }
-        });
+        await storage.updateProject(project.id, { finalReviewResult: { approved } });
         this.callbacks.onAgentStatus("final-reviewer", "completed", "Revisión final aprobada");
-        this.callbacks.onProjectComplete();
+        await this.finalizeCompletedProject(project);
       } else {
         await storage.updateProject(project.id, { 
           status: "failed_final_review",
@@ -2805,7 +2861,14 @@ Responde SOLO con un JSON válido con la estructura:
 
       let previousContinuityStateForEditor: any = lastCompletedChapter?.continuityState || null;
 
-      // Get the newly created pending chapters
+      let seriesUnresolvedThreadsExt: string[] = [];
+      let seriesKeyEventsExt: string[] = [];
+      if (project.seriesId) {
+        const { threads, events } = await this.loadSeriesThreadsAndEvents(project);
+        seriesUnresolvedThreadsExt = threads;
+        seriesKeyEventsExt = events;
+      }
+
       const allChapters = await storage.getChaptersByProject(project.id);
       const pendingChapters = allChapters
         .filter(c => c.status === "pending" && c.chapterNumber > fromChapter)
@@ -2851,7 +2914,7 @@ Responde SOLO con un JSON válido con la estructura:
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
-            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsExt, seriesKeyEventsExt),
             guiaEstilo: fullStyleGuide,
             previousContinuity,
             refinementInstructions,
@@ -2931,12 +2994,10 @@ Responde SOLO con un JSON válido con la estructura:
         previousContinuityStateForEditor = extractedContinuityState;
       }
 
-      // Mark project as completed
-      await storage.updateProject(project.id, { status: "completed" });
       this.callbacks.onAgentStatus("orchestrator", "completed", 
         `Extensión completada: ${pendingChapters.length} capítulos generados`
       );
-      this.callbacks.onProjectComplete();
+      await this.finalizeCompletedProject(project);
 
     } catch (error) {
       console.error("[Orchestrator:Extend] Error:", error);
@@ -2997,8 +3058,7 @@ Responde SOLO con un JSON válido con la estructura:
         this.callbacks.onAgentStatus("continuity-sentinel", "completed", 
           "No se encontraron issues de continuidad"
         );
-        await storage.updateProject(project.id, { status: "completed" });
-        this.callbacks.onProjectComplete();
+        await this.finalizeCompletedProject(project);
         return;
       }
 
@@ -3045,8 +3105,7 @@ Responde SOLO con un JSON válido con la estructura:
         );
       }
 
-      await storage.updateProject(project.id, { status: "completed" });
-      this.callbacks.onProjectComplete();
+      await this.finalizeCompletedProject(project);
     } catch (error) {
       console.error("Force continuity sentinel error:", error);
       this.callbacks.onError(`Error en Centinela forzado: ${error instanceof Error ? error.message : "Error desconocido"}`);
@@ -3099,9 +3158,16 @@ Responde SOLO con un JSON válido con la estructura:
         this.callbacks.onAgentStatus("ghostwriter", "completed", 
           "No se encontraron capítulos truncados"
         );
-        await storage.updateProject(project.id, { status: "completed" });
-        this.callbacks.onProjectComplete();
+        await this.finalizeCompletedProject(project);
         return;
+      }
+
+      let seriesUnresolvedThreadsRegen: string[] = [];
+      let seriesKeyEventsRegen: string[] = [];
+      if (project.seriesId) {
+        const { threads, events } = await this.loadSeriesThreadsAndEvents(project);
+        seriesUnresolvedThreadsRegen = threads;
+        seriesKeyEventsRegen = events;
       }
 
       this.callbacks.onAgentStatus("ghostwriter", "writing", 
@@ -3163,7 +3229,7 @@ Responde SOLO con un JSON válido con la estructura:
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: chapter.chapterNumber,
             chapterData: sectionData,
-            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsRegen, seriesKeyEventsRegen),
             guiaEstilo,
             previousContinuity,
             refinementInstructions: regenerationAttempt > 1 
@@ -3235,8 +3301,7 @@ Responde SOLO con un JSON válido con la estructura:
         `Regeneración completada para ${truncatedChapters.length} capítulos`
       );
 
-      await storage.updateProject(project.id, { status: "completed" });
-      this.callbacks.onProjectComplete();
+      await this.finalizeCompletedProject(project);
     } catch (error) {
       console.error("Regenerate truncated chapters error:", error);
       this.callbacks.onError(`Error regenerando capítulos: ${error instanceof Error ? error.message : "Error desconocido"}`);
@@ -3980,7 +4045,7 @@ Responde SOLO con un JSON válido con la estructura:
     }
   }
 
-  private async getEnrichedWorldBible(projectId: number, baseWorldBible: any): Promise<any> {
+  private async getEnrichedWorldBible(projectId: number, baseWorldBible: any, seriesUnresolvedThreads?: string[], seriesKeyEvents?: string[]): Promise<any> {
     try {
       const dbWorldBible = await storage.getWorldBibleByProject(projectId);
       if (!dbWorldBible) return baseWorldBible;
@@ -4003,6 +4068,8 @@ Responde SOLO con un JSON válido con la estructura:
         if (timelineEarly.length > 0) enriched._timeline = timelineEarly;
         const authorNotesEarly = ((dbWorldBible.authorNotes || []) as any[]).filter((n: any) => n.active !== false);
         if (authorNotesEarly.length > 0) enriched._author_notes = authorNotesEarly;
+        if (seriesUnresolvedThreads?.length) enriched._series_hilos_no_resueltos = seriesUnresolvedThreads;
+        if (seriesKeyEvents?.length) enriched._series_eventos_clave_previos = seriesKeyEvents;
         return enriched;
       }
 
@@ -4088,11 +4155,293 @@ Responde SOLO con un JSON válido con la estructura:
       if (authorNotes.length > 0) {
         enriched._author_notes = authorNotes;
       }
+
+      if (seriesUnresolvedThreads?.length) {
+        enriched._series_hilos_no_resueltos = seriesUnresolvedThreads;
+      }
+      if (seriesKeyEvents?.length) {
+        enriched._series_eventos_clave_previos = seriesKeyEvents;
+      }
       
       return enriched;
     } catch (error) {
       console.warn(`[WorldBible] Failed to get enriched data:`, error);
-      return baseWorldBible;
+      const fallback = JSON.parse(JSON.stringify(baseWorldBible));
+      if (seriesUnresolvedThreads?.length) fallback._series_hilos_no_resueltos = seriesUnresolvedThreads;
+      if (seriesKeyEvents?.length) fallback._series_eventos_clave_previos = seriesKeyEvents;
+      return fallback;
+    }
+  }
+
+  private async finalizeCompletedProject(project: Project): Promise<void> {
+    await storage.updateProject(project.id, { status: "completed" });
+    await this.generateSeriesContinuitySnapshot(project);
+    await this.runSeriesArcVerification(project);
+    this.callbacks.onProjectComplete();
+  }
+
+  private async loadSeriesThreadsAndEvents(project: Project): Promise<{ threads: string[]; events: string[] }> {
+    const threads: string[] = [];
+    const events: string[] = [];
+    if (!project.seriesId) return { threads, events };
+
+    try {
+      const currentOrder = project.seriesOrder || 1;
+      const fullContinuity = await storage.getSeriesFullContinuity(project.seriesId);
+      const seriesProjects = await storage.getProjectsBySeries(project.seriesId);
+
+      const prevSnapshots = fullContinuity.projectSnapshots.filter(s => {
+        if (s.projectId === project.id) return false;
+        const matchingProject = seriesProjects.find(p => p.id === s.projectId);
+        return (matchingProject?.seriesOrder || 999) < currentOrder;
+      });
+
+      const prevManuscripts = fullContinuity.manuscriptSnapshots.filter(
+        ms => (ms.seriesOrder || 999) < currentOrder
+      );
+
+      for (const snap of prevSnapshots) {
+        const ut = snap.unresolvedThreads as any[];
+        if (ut?.length) threads.push(...ut.map((t: any) => typeof t === "string" ? t : t.thread || t.name || JSON.stringify(t)));
+        const ke = snap.keyEvents as any[];
+        if (ke?.length) events.push(...ke.map((e: any) => typeof e === "string" ? e : e.event || e.description || JSON.stringify(e)));
+      }
+      for (const ms of prevManuscripts) {
+        const snap = ms.snapshot as any;
+        if (snap?.unresolvedThreads?.length) threads.push(...snap.unresolvedThreads.map((t: any) => typeof t === "string" ? t : t.thread || t.name || JSON.stringify(t)));
+        if (snap?.keyEvents?.length) events.push(...snap.keyEvents.map((e: any) => typeof e === "string" ? e : e.event || e.description || JSON.stringify(e)));
+      }
+
+      if (threads.length > 0) {
+        console.log(`[Orchestrator] Loaded ${threads.length} unresolved threads and ${events.length} key events from previous books (vol < ${currentOrder})`);
+      }
+    } catch (err) {
+      console.warn(`[Orchestrator] Failed to load series threads:`, err);
+    }
+
+    return { threads, events };
+  }
+
+  private async generateSeriesContinuitySnapshot(project: Project): Promise<void> {
+    try {
+      if (!project.seriesId) return;
+
+      const chapters = await storage.getChaptersByProject(project.id);
+      const completedChapters = chapters
+        .filter(c => c.status === "completed" && c.content)
+        .sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+      if (completedChapters.length === 0) return;
+
+      const synopsisParts: string[] = [];
+      const allCharacterStates: any = {};
+      const allUnresolvedThreads: string[] = [];
+      const allKeyEvents: string[] = [];
+
+      for (const ch of completedChapters) {
+        const label = ch.chapterNumber === 0 ? "Prólogo" : ch.chapterNumber === -1 ? "Epílogo" : `Capítulo ${ch.chapterNumber}`;
+        const content = ((ch as any).editedContent || ch.content || "") as string;
+        const preview = content.length > 300 ? content.substring(0, 300) + "..." : content;
+        synopsisParts.push(`${label}: ${ch.title || ""} - ${preview}`);
+
+        const state = ch.continuityState as any;
+        if (state?.characterStates) {
+          for (const [name, charState] of Object.entries(state.characterStates)) {
+            allCharacterStates[name] = charState;
+          }
+        }
+        if (state?.pendingThreads?.length) {
+          for (const t of state.pendingThreads) {
+            const threadStr = typeof t === "string" ? t : t.thread || t.name || JSON.stringify(t);
+            if (!allUnresolvedThreads.includes(threadStr)) allUnresolvedThreads.push(threadStr);
+          }
+        }
+        if (state?.resolvedThreads?.length) {
+          for (const t of state.resolvedThreads) {
+            const threadStr = typeof t === "string" ? t : t.thread || t.name || JSON.stringify(t);
+            const idx = allUnresolvedThreads.indexOf(threadStr);
+            if (idx >= 0) allUnresolvedThreads.splice(idx, 1);
+          }
+        }
+        if (state?.keyEvents?.length) {
+          allKeyEvents.push(...state.keyEvents.map((e: any) => typeof e === "string" ? e : e.event || JSON.stringify(e)));
+        }
+      }
+
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (worldBible) {
+        const dbRules = (worldBible.worldRules || []) as any[];
+        const threadRule = dbRules.find((r: any) => r.category === "__narrative_threads");
+        if (threadRule?.pending?.length) {
+          for (const t of threadRule.pending) {
+            if (!allUnresolvedThreads.includes(t)) allUnresolvedThreads.push(t);
+          }
+        }
+        if (threadRule?.resolved?.length) {
+          for (const t of threadRule.resolved) {
+            const idx = allUnresolvedThreads.indexOf(t);
+            if (idx >= 0) allUnresolvedThreads.splice(idx, 1);
+          }
+        }
+      }
+
+      const synopsis = `${project.title} (${completedChapters.length} capítulos). ${synopsisParts.slice(0, 5).join(" | ")}`;
+
+      const existing = await storage.getContinuitySnapshotByProject(project.id);
+      if (existing) {
+        await storage.updateContinuitySnapshot(existing.id, {
+          synopsis,
+          characterStates: allCharacterStates,
+          unresolvedThreads: allUnresolvedThreads,
+          keyEvents: allKeyEvents,
+        });
+        console.log(`[Orchestrator] Updated continuity snapshot for project ${project.id}: ${allUnresolvedThreads.length} unresolved threads, ${allKeyEvents.length} key events`);
+      } else {
+        await storage.createContinuitySnapshot({
+          projectId: project.id,
+          synopsis,
+          characterStates: allCharacterStates,
+          unresolvedThreads: allUnresolvedThreads,
+          keyEvents: allKeyEvents,
+        });
+        console.log(`[Orchestrator] Created continuity snapshot for project ${project.id}: ${allUnresolvedThreads.length} unresolved threads, ${allKeyEvents.length} key events`);
+      }
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "info",
+        message: `Snapshot de continuidad generado para la serie: ${allUnresolvedThreads.length} hilos pendientes, ${Object.keys(allCharacterStates).length} personajes rastreados, ${allKeyEvents.length} eventos clave`,
+        agentRole: "orchestrator",
+      });
+    } catch (error) {
+      console.error(`[Orchestrator] Error generating continuity snapshot:`, error);
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warn",
+        message: `Error al generar snapshot de continuidad: ${error instanceof Error ? error.message : "Error desconocido"}`,
+        agentRole: "orchestrator",
+      });
+    }
+  }
+
+  private async runSeriesArcVerification(project: Project): Promise<void> {
+    try {
+      if (!project.seriesId) return;
+
+      const series = await storage.getSeries(project.seriesId);
+      if (!series) return;
+
+      const milestones = await storage.getMilestonesBySeries(project.seriesId);
+      const threads = await storage.getPlotThreadsBySeries(project.seriesId);
+
+      if (milestones.length === 0 && threads.length === 0) {
+        console.log(`[Orchestrator] No milestones or threads defined for series ${project.seriesId}. Skipping arc verification.`);
+        return;
+      }
+
+      this.callbacks.onAgentStatus("arc-validator", "reviewing", "Verificando cumplimiento de hitos y progresión de hilos de la serie...");
+
+      const chapters = await storage.getChaptersByProject(project.id);
+      const sortedChapters = chapters.sort((a, b) => a.chapterNumber - b.chapterNumber);
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+
+      const chaptersSummary = sortedChapters.map(c => {
+        const label = c.chapterNumber === 0 ? "Prólogo" : c.chapterNumber === -1 ? "Epílogo" : `Capítulo ${c.chapterNumber}`;
+        const content = ((c as any).editedContent || c.content || "");
+        const preview = content.substring(0, 8000);
+        return `${label}: ${c.title || ""} (${c.wordCount || 0} palabras)\n${preview}${content.length > 8000 ? "\n[...truncado...]" : ""}`;
+      }).join("\n\n---\n\n");
+
+      const { ArcValidatorAgent } = await import("./agents/arc-validator");
+      const arcValidator = new ArcValidatorAgent();
+
+      let previousContext = "";
+      const currentOrder = project.seriesOrder || 1;
+      const fullContinuity = await storage.getSeriesFullContinuity(project.seriesId);
+      const seriesProjectsForArc = await storage.getProjectsBySeries(project.seriesId);
+      const prevSnapshots = fullContinuity.projectSnapshots.filter(s => {
+        if (s.projectId === project.id) return false;
+        const matchingProject = seriesProjectsForArc.find(p => p.id === s.projectId);
+        return (matchingProject?.seriesOrder || 999) < currentOrder;
+      });
+      if (prevSnapshots.length > 0) {
+        previousContext = prevSnapshots.map(s => `Synopsis: ${s.synopsis || "N/A"}\nHilos no resueltos: ${JSON.stringify(s.unresolvedThreads)}`).join("\n---\n");
+      }
+
+      const result = await arcValidator.execute({
+        projectTitle: project.title,
+        seriesTitle: series.title,
+        volumeNumber: project.seriesOrder || 1,
+        totalVolumes: series.totalPlannedBooks || 10,
+        chaptersSummary,
+        milestones,
+        plotThreads: threads,
+        worldBible: worldBible || {},
+        previousVolumesContext: previousContext || undefined,
+      });
+
+      if (result.result) {
+        await storage.createArcVerification({
+          seriesId: project.seriesId,
+          projectId: project.id,
+          volumeNumber: project.seriesOrder || 1,
+          status: result.result.passed ? "passed" : "needs_attention",
+          overallScore: result.result.overallScore,
+          milestonesChecked: result.result.milestonesChecked,
+          milestonesFulfilled: result.result.milestonesFulfilled,
+          threadsProgressed: result.result.threadsProgressed,
+          threadsResolved: result.result.threadsResolved,
+          findings: JSON.stringify(result.result.findings),
+          recommendations: result.result.recommendations,
+        });
+
+        for (const mv of result.result.milestoneVerifications) {
+          if (mv.isFulfilled) {
+            await storage.updateMilestone(mv.milestoneId, {
+              isFulfilled: true,
+              fulfilledInProjectId: project.id,
+            });
+          }
+        }
+
+        for (const tp of result.result.threadProgressions) {
+          const updateData: any = {};
+          if (tp.resolvedInVolume) {
+            updateData.status = "resolved";
+            updateData.resolvedVolume = project.seriesOrder || 1;
+          } else if (tp.progressedInVolume) {
+            updateData.status = "developing";
+          } else if (tp.currentStatus === "abandoned") {
+            updateData.status = "abandoned";
+          }
+          if (Object.keys(updateData).length > 0) {
+            await storage.updatePlotThread(tp.threadId, updateData);
+          }
+        }
+
+        const statusMsg = result.result.passed 
+          ? `Verificación de arco APROBADA (${result.result.overallScore}/100). Hitos: ${result.result.milestonesFulfilled}/${result.result.milestonesChecked}. Hilos progresados: ${result.result.threadsProgressed}, resueltos: ${result.result.threadsResolved}`
+          : `Verificación de arco REQUIERE ATENCIÓN (${result.result.overallScore}/100). Hitos: ${result.result.milestonesFulfilled}/${result.result.milestonesChecked}`;
+        
+        this.callbacks.onAgentStatus("arc-validator", result.result.passed ? "completed" : "warning", statusMsg);
+        
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: result.result.passed ? "info" : "warn",
+          message: statusMsg,
+          agentRole: "arc-validator",
+        });
+
+        console.log(`[Orchestrator] Arc verification complete for project ${project.id}: ${result.result.passed ? "PASSED" : "NEEDS_ATTENTION"} (${result.result.overallScore}/100)`);
+      }
+    } catch (error) {
+      console.error(`[Orchestrator] Error running arc verification:`, error);
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warn",
+        message: `Error en verificación de arco: ${error instanceof Error ? error.message : "Error desconocido"}`,
+        agentRole: "orchestrator",
+      });
     }
   }
 
@@ -4373,8 +4722,15 @@ Responde SOLO con un JSON válido con la estructura:
       previousContinuity = `FINAL DEL CAPÍTULO ANTERIOR:\n${lastParagraphs}`;
     }
 
-    // Use project's per-chapter settings for QA rewrites
-    const allChaptersCount = (await storage.getChaptersByProject(project.id)).length || project.chapterCount || 1;
+    let seriesThreadsRewrite: string[] = [];
+    let seriesEventsRewrite: string[] = [];
+    if (project.seriesId) {
+      const { threads, events } = await this.loadSeriesThreadsAndEvents(project);
+      seriesThreadsRewrite = threads;
+      seriesEventsRewrite = events;
+    }
+
+    const allChaptersCount = allChapters.length || project.chapterCount || 1;
     const calculatedTargetRewrite = this.calculatePerChapterTarget((project as any).minWordCount, allChaptersCount);
     const perChapterMinRewrite = (project as any).minWordsPerChapter || calculatedTargetRewrite;
     const perChapterMaxRewrite = (project as any).maxWordsPerChapter || Math.round(perChapterMinRewrite * 1.15);
@@ -4382,7 +4738,7 @@ Responde SOLO con un JSON válido con la estructura:
     const writerResult = await this.ghostwriter.execute({
       chapterNumber: sectionData.numero,
       chapterData: sectionData,
-      worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+      worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreadsRewrite, seriesEventsRewrite),
       guiaEstilo,
       previousContinuity,
       refinementInstructions: `CORRECCIONES DE ${qaLabels[qaSource].toUpperCase()}:\n${correctionInstructions}`,

@@ -11,6 +11,16 @@ interface FinalReviewerInput {
   guiaEstilo: string;
   pasadaNumero?: number;
   issuesPreviosCorregidos?: string[];
+  seriesContext?: {
+    seriesTitle: string;
+    volumeNumber: number;
+    totalVolumes: number;
+    unresolvedThreadsFromPrevBooks: string[];
+    keyEventsFromPrevBooks: string[];
+    milestones: Array<{ description: string; isRequired: boolean }>;
+    plotThreads: Array<{ threadName: string; status: string; importance: string }>;
+    isLastVolume: boolean;
+  };
 }
 
 export interface FinalReviewIssue {
@@ -439,6 +449,37 @@ Si el mismo problema persiste EXACTAMENTE igual, puedes reportarlo, pero con nue
 El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
     }
 
+    let seriesSection = "";
+    if (input.seriesContext) {
+      const sc = input.seriesContext;
+      seriesSection = `
+    ═══════════════════════════════════════════════════════════════════
+    🔴 CONTEXTO DE SERIE - VERIFICACIÓN OBLIGATORIA
+    ═══════════════════════════════════════════════════════════════════
+    Serie: "${sc.seriesTitle}" — Volumen ${sc.volumeNumber} de ${sc.totalVolumes}
+    ${sc.isLastVolume ? "⚠️ ESTE ES EL ÚLTIMO VOLUMEN DE LA SERIE. TODOS los hilos argumentales DEBEN estar resueltos al final." : ""}
+    
+    HILOS NO RESUELTOS DE LIBROS ANTERIORES (DEBEN progresar o resolverse en este volumen):
+    ${sc.unresolvedThreadsFromPrevBooks.length > 0 ? sc.unresolvedThreadsFromPrevBooks.map((t, i) => `  ${i + 1}. ${t}`).join("\n") : "  (Ninguno)"}
+    
+    EVENTOS CLAVE DE LIBROS ANTERIORES (contexto para coherencia):
+    ${sc.keyEventsFromPrevBooks.length > 0 ? sc.keyEventsFromPrevBooks.slice(0, 20).map((e, i) => `  ${i + 1}. ${e}`).join("\n") : "  (Ninguno)"}
+    
+    HITOS PLANIFICADOS PARA ESTE VOLUMEN:
+    ${sc.milestones.length > 0 ? sc.milestones.map((m, i) => `  ${i + 1}. ${m.isRequired ? "⛔ OBLIGATORIO" : "○ Opcional"}: ${m.description}`).join("\n") : "  (Ninguno definido)"}
+    
+    HILOS ARGUMENTALES DE LA SERIE:
+    ${sc.plotThreads.length > 0 ? sc.plotThreads.map((t, i) => `  ${i + 1}. [${t.status.toUpperCase()}] (${t.importance}): ${t.threadName}`).join("\n") : "  (Ninguno definido)"}
+    ═══════════════════════════════════════════════════════════════════
+    
+    INSTRUCCIONES ADICIONALES DE SERIE:
+    - Verifica que los hilos no resueltos de libros anteriores progresen o se resuelvan
+    - Comprueba que los hitos obligatorios de este volumen se cumplan
+    - Si es el último volumen, verifica que NO queden hilos abiertos sin resolver
+    - Reporta como "arco_incompleto" cualquier hilo de serie abandonado
+    ═══════════════════════════════════════════════════════════════════`;
+    }
+
     const prompt = `
     TÍTULO DE LA NOVELA: ${input.projectTitle}
     
@@ -447,6 +488,7 @@ El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
     
     GUÍA DE ESTILO:
     ${input.guiaEstilo}
+    ${seriesSection}
     ${pasadaInfo}
     ===============================================
     MANUSCRITO COMPLETO PARA ANÁLISIS:
@@ -460,6 +502,8 @@ El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
     3. Verifica la coherencia temporal entre capítulos.
     4. Identifica repeticiones léxicas cross-chapter (solo si aparecen 3+ veces).
     5. Evalúa si todos los arcos narrativos están cerrados.
+    ${input.seriesContext ? "6. Verifica el cumplimiento de hitos de serie y la progresión de hilos argumentales cross-volumen." : ""}
+    ${input.seriesContext?.isLastVolume ? "7. ⛔ ÚLTIMO VOLUMEN: Confirma que TODOS los hilos de la serie están cerrados satisfactoriamente." : ""}
     
     Sé PRECISO y OBJETIVO. Solo reporta errores con EVIDENCIA TEXTUAL verificable.
     Si el manuscrito está bien, apruébalo. No busques problemas donde no los hay.

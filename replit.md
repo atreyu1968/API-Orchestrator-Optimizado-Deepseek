@@ -2,18 +2,7 @@
 
 ## Overview
 
-LitAgents is a Node.js application designed for orchestrating autonomous AI literary agents using Google's Gemini 3 Pro. Its primary purpose is to manage the entire novel-writing workflow, from initial plot planning to the production of a final, polished manuscript. The system aims to provide a comprehensive solution for authoring and refining literary works, enhancing efficiency and quality through AI-driven processes.
-
-Key capabilities include:
-- Orchestration of 9 specialized AI agents covering plot planning, prose writing, editing, quality assurance, and structural corrections.
-- A persistent World Bible system for maintaining consistent lore and character details.
-- Logging of AI reasoning processes for transparency and auditing.
-- A real-time dashboard for monitoring progress and agent activities.
-- Automated refinement loops for re-writing content that does not meet quality standards.
-- An auto-recovery system to handle stalled AI generations.
-- The ability to import and professionally edit external manuscripts in multiple languages.
-- Advanced features like chapter expansion, new chapter insertion, and chapter reordering for narrative optimization.
-- An automatic pause system for user intervention and a robust approval logic to ensure high-quality manuscript completion.
+LitAgents is a Node.js application that orchestrates autonomous AI literary agents using Google's Gemini 3 Pro to manage the entire novel-writing workflow. It aims to provide a comprehensive solution for authoring and refining literary works, enhancing efficiency and quality through AI-driven processes. Key capabilities include orchestrating 9 specialized AI agents, maintaining a persistent World Bible for consistency, logging AI reasoning, providing a real-time monitoring dashboard, automating refinement loops, auto-recovery from stalled generations, and advanced features for manuscript import, expansion, reordering, and approval. The system ensures high-quality manuscript completion through robust approval logic and automatic pausing for user intervention.
 
 ## User Preferences
 
@@ -21,106 +10,60 @@ Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
-### Frontend Architecture
-- **Framework**: React with TypeScript, built using Vite.
-- **Routing**: Wouter for client-side navigation.
-- **State Management**: TanStack Query for server state and caching.
-- **UI Components**: shadcn/ui library leveraging Radix UI primitives.
-- **Styling**: Tailwind CSS with a custom theme supporting light/dark modes.
-- **Design System**: Adheres to Microsoft Fluent Design principles, emphasizing productivity and clear typography (Inter, JetBrains Mono, Merriweather).
+### Frontend
+- **Framework**: React with TypeScript (Vite).
+- **Routing**: Wouter.
+- **State Management**: TanStack Query.
+- **UI Components**: shadcn/ui (leveraging Radix UI).
+- **Styling**: Tailwind CSS (custom theme, light/dark modes).
+- **Design System**: Microsoft Fluent Design principles (Inter, JetBrains Mono, Merriweather fonts).
 
-### Backend Architecture
+### Backend
 - **Runtime**: Node.js with Express.
-- **Language**: TypeScript with ES modules.
-- **API Pattern**: RESTful endpoints supplemented with Server-Sent Events (SSE) for real-time updates.
-- **Agent System**: Features modular agent classes inheriting from a BaseAgent, each with specialized system prompts optimized for Gemini 3's reasoning mode. An orchestrator manages the pipeline flow, incorporating refinement loops where the Editor agent can trigger rewrites based on detailed feedback.
+- **Language**: TypeScript (ES modules).
+- **API Pattern**: RESTful endpoints with Server-Sent Events (SSE).
+- **Agent System**: Modular agent classes (inheriting from `BaseAgent`) with specialized system prompts for Gemini 3. An orchestrator manages the pipeline, including refinement loops triggered by the Editor agent.
 
 ### Data Storage
-- **Database**: PostgreSQL, managed with Drizzle ORM.
-- **Schema**: Defined in `shared/schema.ts`.
-- **Key Tables**: `projects`, `chapters`, `worldBibles`, `thoughtLogs`, `agentStatuses`, `series`, `continuitySnapshots`, `importedManuscripts`, `importedChapters`. These tables store project metadata, chapter content, world-building elements, AI process logs, real-time status, series information, continuity summaries, and details on imported manuscripts.
+- **Database**: PostgreSQL with Drizzle ORM.
+- **Schema**: Defined in `shared/schema.ts`, including tables for projects, chapters, world Bibles, thought logs, agent statuses, series, continuity snapshots, and imported manuscripts.
 
 ### AI Integration
-- **Model**: Gemini 3 Pro Preview, accessed via Google's Gemini API directly.
-- **Configuration**: Uses `thinkingBudget: 2048` for deep reasoning and `temperature: 1.0`, `topP: 0.95` for creative output.
-- **Client Setup**: Utilizes the `@google/genai` SDK with your own API key (`GEMINI_API_KEY`).
+- **Model**: Gemini 3 Pro Preview, accessed directly via Google's Gemini API.
+- **Configuration**: `thinkingBudget: 2048`, `temperature: 1.0`, `topP: 0.95`.
+- **Client Setup**: `@google/genai` SDK using `GEMINI_API_KEY`.
 
 ### Build System
-- **Development**: `tsx` for TypeScript execution with hot reload.
-- **Production**: `esbuild` for server code bundling and Vite for client asset compilation, outputting to a `dist/` directory.
+- **Development**: `tsx` for hot reload.
+- **Production**: `esbuild` for server, Vite for client.
 
 ### Feature Specifications
-- **Optimized Pipeline**: Streamlined re-edit pipeline reducing token consumption by consolidating problem detection and rewriting into a single pass.
-- **Manuscript Expansion System**: Agents (`ChapterExpansionAnalyzer`, `ChapterExpanderAgent`, `NewChapterGeneratorAgent`) for expanding short chapters and inserting new ones to fill narrative gaps.
-- **Chapter Reordering System**: Architect Analyzer can recommend and execute chapter reordering for improved narrative pacing, including automatic renumbering and title updates.
-- **Internal Chapter Header Sync**: Automatically updates chapter headers within the content (`originalContent`, `editedContent`) when chapters are reordered or inserted.
-- **Automatic Pause System**: The system pauses after multiple non-perfect evaluations, awaiting user instructions.
-- **Approval Logic**: Requires a single score of 9+ with no critical issues for project approval, preventing infinite loops on minor issues.
-- **Issue Hash Tracking System**: Prevents re-reporting of already resolved issues by generating and tracking unique hashes for issues.
-- **Improved Cancellation**: Allows for immediate cancellation of processes, with checks implemented before each chapter correction.
-- **Fast-Track Resume System**: Optimizes project resumption from `awaiting_instructions` by skipping unnecessary pipeline stages and directly engaging `runFinalReviewOnly()` with user instructions.
-- **Translation Export Improvements**: Markdown exports now: (1) strip code fences/JSON artifacts from AI output, (2) omit trailing dividers after the last chapter, and (3) use localized chapter labels (Prologue, Epilogue, Author's Note, Chapter) based on project language for 7 languages (es, en, fr, de, it, pt, ca).
-- **Professional Literary Adaptation System**: The Translator agent has been completely reframed from "translation" to "literary adaptation/recreation". The system prompt and user prompt now instruct the AI to recreate each chapter as if a native author had written it in the target language, adapting idioms, reordering syntax, and producing publication-ready prose indistinguishable from an original work. Anti-AI crutch word lists expanded for all 7 languages including Spanish. Catalan editorial rules corrected (removed erroneous ¿¡ marks). All translation routes now prefer `editedContent` (the polished version) over raw `content` using nullish coalescing. Resume and reedit routes now use the same shared `buildCleanMarkdownLines` utility for consistent markdown output with proper header normalization, style-guide contamination removal, and localized chapter labels. Resume chapter counting fixed to use `## ` headings instead of fragile `---` delimiter counting.
-- **Immediate Continuity Validation**: Validates each chapter immediately after writing, before the Editor stage. Detects dead characters acting, ignored injuries, and location inconsistencies. If violations are found, forces a targeted rewrite with specific correction instructions before proceeding.
-- **Mandatory Continuity Constraints**: The Ghostwriter now receives prominent, structured constraints at the top of its context listing dead characters, active injuries, last known locations, possessed objects, and recent key events, with clear warnings that violations will trigger automatic rejection.
-- **Enhanced Continuity Validation**: Dead character detection uses 30+ action verbs (vs original 12) with flashback-aware exceptions. Injury detection uses 14 physical verbs. Object tracking prevents characters from using items they don't possess.
-- **Short Chapter Quality Gate**: Short chapters (below word target) no longer skip the Editor review. They still get marked for expansion but must pass quality checks before proceeding.
-- **Continuity Sentinel Reliability**: Sentinel timeouts no longer silently pass. Failed checkpoints are logged as warnings and flagged for manual review or re-verification in the final review pass.
-- **Knowledge Leakage Prevention**: Character knowledge tracking (`knowledgeGained`) is now enforced as mandatory constraints for the Ghostwriter. The Editor and Final Reviewer detect when characters use information they shouldn't have access to.
-- **Appearance Drift Detection**: The Final Reviewer cross-references physical trait descriptions across all chapters against the World Bible's `apariencia_inmutable` canonical data. Inconsistencies generate automatic correction issues.
-- **Pronoun/Title Dead Character Detection**: The Editor now checks for pronoun references to recently-mentioned dead characters, not just proper names. Prevents subtle continuity violations via "he/she" references.
-- **QA Re-execution on Revision Cycles**: Voice/rhythm auditor and semantic repetition detector are no longer unconditionally skipped during revision cycles. They re-run if chapters were actually modified, ensuring quality isn't degraded by rewrites.
-- **Progressive World Bible Enrichment**: After each chapter is completed, the World Bible is automatically updated with character states (location, status, items, injuries, knowledge, emotional state), narrative thread tracking (pending/resolved), and new characters discovered. The Ghostwriter and Editor receive the enriched World Bible for every chapter, minimizing continuity errors at the source and reducing expensive rewrites.
-- **Full World Bible Access for Ghostwriter**: The Ghostwriter receives a structured, human-readable World Bible instead of raw JSON. Includes all character profiles with immutable appearance, dynamic state (location, items, injuries, knowledge, emotions), places, world rules, historical vocabulary, narrative threads, plot decisions, persistent injuries, and the complete timeline. All data from the database is merged before each chapter write.
-- **Author Notes System**: Users can add custom instructions, restrictions, and known-error avoidance notes to the World Bible via a dedicated "Notas del Autor" tab. Notes have categories (continuity, character, plot, style, worldbuilding, other), priority levels (critical/high/normal/low), and can be activated/deactivated. Active notes are injected prominently at the top of both the Ghostwriter and Editor prompts as mandatory author instructions, sorted by priority. Stored in the `authorNotes` jsonb field of the `world_bibles` table.
-- **Full-Text Sliding Context Window**: The Ghostwriter's context window now includes actual chapter text (last 8000 characters) for the 2 most recent chapters, plus 500-character excerpts for the next 5. Previously only continuityState JSON was passed, preventing the AI from detecting repetitions. Older chapters still get title-only references.
-- **Cross-Chapter Anti-Repetition System**: Explicit anti-repetition constraints are injected into both the Ghostwriter (7 specific rules covering structure, dialogue, revelations, endings, and literary devices) and the Editor (new `repeticiones_trama` detection field). The Editor receives up to 3 previous chapters' text (last 4000 chars each) specifically for cross-chapter comparison. Refinement instructions now include `repeticiones_trama` feedback when detected.
-- **Mandatory Constraint Anti-Repetition Block**: When key events exist in continuity state, an anti-repetition block is injected into the mandatory constraints warning against reusing the same discovery/confrontation/revelation patterns.
-- **PWA Support**: The app is a Progressive Web App with `manifest.json`, service worker (`sw.js`), and 192/512 icons. Supports install-to-home-screen, offline fallback for cached assets, and Apple touch icon. The HTML is set to `lang="es"` for Spanish.
+- **Optimized Pipeline**: Streamlined re-edit process, reduced token consumption.
+- **Manuscript Expansion/Reordering**: Agents for expanding chapters, inserting new ones, and reordering chapters for narrative flow. Includes automatic internal header syncing.
+- **Automatic Pause & Approval**: System pauses for user input on non-perfect evaluations. Requires a single score of 9+ with no critical issues for project approval.
+- **Issue Tracking**: Issue hash tracking prevents re-reporting of resolved issues.
+- **Enhanced Cancellation & Resume**: Immediate process cancellation and optimized project resumption from `awaiting_instructions`.
+- **Translation & Literary Adaptation**: Reframed Translator agent for literary adaptation into 7 languages, focusing on publication-ready prose. Uses `editedContent` and consistent markdown utilities.
+- **Continuity Validation & Constraints**: Immediate, pre-Editor validation for dead characters, ignored injuries, and location inconsistencies. Mandatory continuity constraints for the Ghostwriter and enhanced detection (e.g., pronoun checks for dead characters).
+- **World Bible Enrichment**: Automatic update and enrichment of the World Bible with character states and narrative threads after each chapter, provided to Ghostwriter and Editor. Includes full-text sliding context window for Ghostwriter.
+- **Author Notes System**: Users can add prioritized author instructions to the World Bible, injected into Ghostwriter and Editor prompts.
+- **Cross-Chapter Anti-Repetition**: Explicit rules and context (up to 3 previous chapters) for Ghostwriter and Editor to prevent thematic and narrative repetition.
+- **PWA Support**: Progressive Web App capabilities including `manifest.json`, service worker, and install-to-home-screen.
+- **Series Management**: Automatic continuity snapshots on book completion via `finalizeCompletedProject()` helper (called on all 6 completion paths: generateNovel, resumeNovel zero-pending, resumeNovel with-pending, runFinalReviewOnly, extendNovel, regenerateTruncatedChapters), ArcValidatorAgent for milestone verification, series context provision for Final Reviewer and Ghostwriter. Series thread/event loading uses `loadSeriesThreadsAndEvents()` which filters by `seriesOrder < currentVolume` to prevent future-book context leakage. Series unresolved threads injected into all Ghostwriter paths (generation, resume, QA rewrite, extension, regeneration, specific chapter rewrite). `getEnrichedWorldBible` early-return path includes series fields.
 
 ## External Dependencies
 
 ### AI Services
-- **Google Gemini API**: Direct access using your own API key (`GEMINI_API_KEY`).
-- **Models**: `gemini-3-pro-preview` for text generation, `gemini-2.5-flash-image` for image generation.
+- **Google Gemini API**: `GEMINI_API_KEY` for `gemini-3-pro-preview` (text) and `gemini-2.5-flash-image` (image).
 
-## Deployment
-
-### Ubuntu Server Auto-Installer
-The project includes an `install.sh` script for automated deployment on Ubuntu 22.04/24.04 servers.
-
-**Features:**
-- Automatic installation of Node.js 20.x, PostgreSQL, and Nginx
-- systemd service management (more reliable than PM2)
-- Configuration stored in `/etc/litagents/env` (survives updates)
-- Optional Cloudflare Tunnel integration for HTTPS
-- Update and backup scripts included
-
-**Usage:**
-```bash
-# Download and run
-curl -fsSL https://raw.githubusercontent.com/atreyu1968/escritorasdgemini/main/install.sh | sudo bash
-
-# Or clone and run
-git clone https://github.com/atreyu1968/escritorasdgemini.git
-cd escritorasdgemini
-sudo bash install.sh
-```
-
-**Post-installation commands:**
-- Status: `sudo systemctl status litagents`
-- Logs: `sudo journalctl -u litagents -f`
-- Update: `sudo /var/www/litagents/update.sh`
-- Backup: `sudo /var/www/litagents/backup.sh`
-
-### Database
-- **PostgreSQL**: Accessed via the `DATABASE_URL` environment variable.
-- **Drizzle Kit**: Used for database migrations, stored in the `migrations/` directory.
+### Deployment & Database
+- **PostgreSQL**: Database accessed via `DATABASE_URL`.
+- **Drizzle Kit**: Used for database migrations.
 
 ### Key NPM Packages
 - `@google/genai`: Google Gemini AI SDK.
-- `drizzle-orm` / `drizzle-zod`: ORM for database interaction and Zod for schema validation.
-- `express`: Web application framework for Node.js.
-- `@tanstack/react-query`: Library for asynchronous state management in React.
-- `wouter`: Lightweight routing library for React.
-- Radix UI primitives: Core components for building accessible UIs.
+- `drizzle-orm` / `drizzle-zod`: ORM and schema validation.
+- `express`: Node.js web framework.
+- `@tanstack/react-query`: React asynchronous state management.
+- `wouter`: React routing library.
+- Radix UI primitives: Accessible UI components.
