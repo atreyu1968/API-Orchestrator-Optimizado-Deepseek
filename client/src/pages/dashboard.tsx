@@ -268,7 +268,7 @@ export default function Dashboard() {
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setSelectedProjectId(project.id);
-      toast({ title: "Proyecto duplicado", description: `"${project.title}" ha sido creado` });
+      toast({ title: "Proyecto duplicado", description: `"${project?.title || 'Copia'}" ha sido creado` });
     },
     onError: () => {
       toast({ title: "Error", description: "No se pudo duplicar el proyecto", variant: "destructive" });

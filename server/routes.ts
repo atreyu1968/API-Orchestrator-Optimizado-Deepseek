@@ -265,12 +265,15 @@ export async function registerRoutes(
 
   app.post("/api/projects", async (req: Request, res: Response) => {
     try {
+      console.log("[API] POST /api/projects - body keys:", Object.keys(req.body || {}), "title:", req.body?.title);
       const parsed = insertProjectSchema.safeParse(req.body);
       if (!parsed.success) {
         console.error("Project validation failed:", JSON.stringify(parsed.error.flatten()));
         return res.status(400).json({ error: "Invalid project data", details: parsed.error.flatten() });
       }
+      console.log("[API] Parsed data keys:", Object.keys(parsed.data), "title:", parsed.data.title);
       const project = await storage.createProject(parsed.data);
+      console.log("[API] Created project id:", project.id, "title:", project.title);
       
       for (const agentName of ["architect", "ghostwriter", "editor", "copyeditor"]) {
         await storage.updateAgentStatus(project.id, agentName, { status: "idle" });

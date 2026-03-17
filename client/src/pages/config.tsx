@@ -44,14 +44,18 @@ export default function ConfigPage() {
 
   const createProjectMutation = useMutation({
     mutationFn: async (data: ConfigFormData) => {
+      console.log("[Config] Creating project with data:", JSON.stringify(data));
       const response = await apiRequest("POST", "/api/projects", data);
-      return response.json();
+      const result = await response.json();
+      console.log("[Config] Create response:", JSON.stringify(result));
+      return result;
     },
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      const projectTitle = project?.title || "Nuevo proyecto";
       toast({
         title: "Proyecto creado",
-        description: `"${project.title}" ha sido configurado. Puedes iniciar la generación desde el panel principal.`,
+        description: `"${projectTitle}" ha sido configurado. Puedes iniciar la generación desde el panel principal.`,
       });
     },
     onError: (error: any) => {
