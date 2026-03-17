@@ -8,6 +8,7 @@ import { setupAuth, authMiddleware, isAuthEnabled } from "./auth";
 
 const app = express();
 app.set("trust proxy", 1);
+app.set("etag", false);
 const httpServer = createServer(app);
 
 declare module "http" {
@@ -26,6 +27,16 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/")) {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+    res.set("Surrogate-Control", "no-store");
+  }
+  next();
+});
 
 setupAuth(app);
 
