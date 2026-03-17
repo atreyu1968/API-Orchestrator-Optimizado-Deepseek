@@ -15,7 +15,6 @@ set -e
 #   CF_TUNNEL_TOKEN         - (Opcional) Token de Cloudflare Tunnel
 # ============================================================
 
-# Colores para output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -29,7 +28,6 @@ print_warning() { echo -e "${YELLOW}[AVISO]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 print_header() { echo -e "\n${CYAN}═══════════════════════════════════════════════════════════════${NC}"; echo -e "${CYAN} $1${NC}"; echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}\n"; }
 
-# Configuración del proyecto
 APP_NAME="litagents"
 APP_DIR="/var/www/$APP_NAME"
 CONFIG_DIR="/etc/$APP_NAME"
@@ -40,10 +38,8 @@ DB_NAME="litagents_db"
 DB_USER="litagents"
 GITHUB_REPO="https://github.com/atreyu1968/escritorasdgemini.git"
 
-# Modo de instalación
 UNATTENDED=false
 
-# Parsear argumentos de línea de comandos
 while [[ $# -gt 0 ]]; do
     case $1 in
         --unattended|-u)
@@ -87,14 +83,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Verificar que se ejecuta como root
 if [ "$EUID" -ne 0 ]; then
     print_error "Este script debe ejecutarse como root"
     echo "Uso: sudo bash install.sh"
     exit 1
 fi
 
-# Guardar variables de entorno proporcionadas antes de cargar config existente
 PROVIDED_GEMINI_API_KEY="${GEMINI_API_KEY:-}"
 PROVIDED_LITAGENTS_PASSWORD="${LITAGENTS_PASSWORD:-}"
 PROVIDED_CF_TUNNEL_TOKEN="${CF_TUNNEL_TOKEN:-}"
@@ -107,7 +101,6 @@ if [ "$UNATTENDED" = true ]; then
     print_status "Modo desatendido activado"
 fi
 
-# Detectar si es una actualización
 IS_UPDATE=false
 if [ -f "$CONFIG_DIR/env" ]; then
     IS_UPDATE=true
@@ -115,7 +108,6 @@ if [ -f "$CONFIG_DIR/env" ]; then
     print_status "Las credenciales y configuración se preservarán."
     source "$CONFIG_DIR/env"
     
-    # Restaurar variables proporcionadas (tienen prioridad sobre las existentes)
     [ -n "$PROVIDED_GEMINI_API_KEY" ] && GEMINI_API_KEY="$PROVIDED_GEMINI_API_KEY"
     [ -n "$PROVIDED_LITAGENTS_PASSWORD" ] && LITAGENTS_PASSWORD="$PROVIDED_LITAGENTS_PASSWORD"
     [ -n "$PROVIDED_CF_TUNNEL_TOKEN" ] && CF_TUNNEL_TOKEN="$PROVIDED_CF_TUNNEL_TOKEN"
@@ -123,7 +115,6 @@ else
     print_status "Instalación nueva detectada."
 fi
 
-# Confirmación (solo en modo interactivo)
 if [ "$UNATTENDED" = false ]; then
     echo ""
     read -p "¿Continuar con la instalación? (s/N): " CONFIRM
@@ -140,7 +131,6 @@ print_header "PASO 1: Configuración de API Keys"
 
 if [ "$IS_UPDATE" = false ]; then
     if [ "$UNATTENDED" = true ]; then
-        # Modo desatendido: usar variables de entorno
         if [ -z "$GEMINI_API_KEY" ]; then
             print_error "La variable GEMINI_API_KEY es obligatoria en modo desatendido"
             echo "Uso: GEMINI_API_KEY=\"tu-key\" sudo bash install.sh --unattended"
@@ -151,7 +141,6 @@ if [ "$IS_UPDATE" = false ]; then
         LITAGENTS_PASSWORD="${LITAGENTS_PASSWORD:-}"
         CF_TOKEN="${CF_TUNNEL_TOKEN:-}"
     else
-        # Modo interactivo: solicitar al usuario
         echo "Necesitas proporcionar tu API key de Google Gemini."
         echo "Puedes obtenerla en: https://aistudio.google.com/apikey"
         echo ""
@@ -178,7 +167,6 @@ if [ "$IS_UPDATE" = false ]; then
         print_status "Acceso sin contrasena (cualquiera podra acceder)"
     fi
     
-    # Generar credenciales
     DB_PASS=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24)
     SESSION_SECRET=$(openssl rand -base64 32)
     
@@ -206,7 +194,6 @@ apt-mark manual nginx > /dev/null 2>&1
 print_status "Instalando PostgreSQL..."
 apt-get install -y -qq postgresql postgresql-contrib
 
-# Asegurar que PostgreSQL está corriendo
 systemctl enable postgresql > /dev/null 2>&1
 systemctl start postgresql
 
@@ -232,7 +219,6 @@ else
     apt-get install -y -qq nodejs
 fi
 
-# Asegurar permisos correctos
 chmod 755 /usr/bin/node 2>/dev/null || true
 chmod 755 /usr/bin/npm 2>/dev/null || true
 
@@ -246,7 +232,6 @@ print_header "PASO 4: Configurando base de datos PostgreSQL"
 if [ "$IS_UPDATE" = false ]; then
     print_status "Creando usuario y base de datos..."
     
-    # Verificar si el usuario ya existe
     if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
         print_warning "Usuario $DB_USER ya existe, actualizando contraseña..."
         sudo -u postgres psql -c "ALTER USER $DB_USER WITH PASSWORD '$DB_PASS';" > /dev/null 2>&1
@@ -254,7 +239,6 @@ if [ "$IS_UPDATE" = false ]; then
         sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';" > /dev/null 2>&1
     fi
     
-    # Verificar si la base de datos ya existe
     if sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1; then
         print_warning "Base de datos $DB_NAME ya existe"
     else
@@ -262,17 +246,28 @@ if [ "$IS_UPDATE" = false ]; then
     fi
     
     sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;" > /dev/null 2>&1
+    sudo -u postgres psql -d "$DB_NAME" -c "GRANT ALL ON SCHEMA public TO $DB_USER;" > /dev/null 2>&1
+    sudo -u postgres psql -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;" > /dev/null 2>&1
+    sudo -u postgres psql -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;" > /dev/null 2>&1
     
-    # Asegurar que pg_hba.conf permite conexiones md5
     PG_HBA=$(sudo -u postgres psql -t -c "SHOW hba_file" | xargs)
     if ! grep -q "local.*$DB_NAME.*$DB_USER.*md5" "$PG_HBA" 2>/dev/null; then
-        echo "local   $DB_NAME   $DB_USER   md5" | sudo tee -a "$PG_HBA" > /dev/null
+        sed -i "/^# TYPE/a local   $DB_NAME   $DB_USER   md5" "$PG_HBA" 2>/dev/null || \
+            echo "local   $DB_NAME   $DB_USER   md5" | sudo tee -a "$PG_HBA" > /dev/null
         systemctl reload postgresql
     fi
     
     print_success "Base de datos configurada"
 else
     print_status "Base de datos existente, omitiendo creación"
+    
+    if [ -n "$DATABASE_URL" ]; then
+        DB_NAME_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^/]*/\(.*\)|\1|p')
+        DB_USER_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+        sudo -u postgres psql -d "$DB_NAME_PARSED" -c "GRANT ALL ON SCHEMA public TO $DB_USER_PARSED;" > /dev/null 2>&1 || true
+        sudo -u postgres psql -d "$DB_NAME_PARSED" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER_PARSED;" > /dev/null 2>&1 || true
+        sudo -u postgres psql -d "$DB_NAME_PARSED" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER_PARSED;" > /dev/null 2>&1 || true
+    fi
 fi
 
 # ============================================================
@@ -303,16 +298,13 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR/inbox"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/exports"
 
 if [ "$IS_UPDATE" = true ]; then
-    # En actualizaciones, preservar la configuración existente
     print_status "Preservando configuración existente..."
     
-    # Solo actualizar API keys si se proporcionaron nuevas
     if [ -n "$GEMINI_API_KEY" ] && [ "$GEMINI_API_KEY" != "$(grep -oP 'GEMINI_API_KEY=\K.*' "$CONFIG_DIR/env" 2>/dev/null)" ]; then
         sed -i "s|^GEMINI_API_KEY=.*|GEMINI_API_KEY=$GEMINI_API_KEY|" "$CONFIG_DIR/env"
         print_status "API key de Gemini actualizada"
     fi
     
-    # Asegurar que existen los directorios de archivos en la config
     if ! grep -q "LITAGENTS_INBOX_DIR" "$CONFIG_DIR/env" 2>/dev/null; then
         echo "LITAGENTS_INBOX_DIR=$APP_DIR/inbox" >> "$CONFIG_DIR/env"
         echo "LITAGENTS_EXPORTS_DIR=$APP_DIR/exports" >> "$CONFIG_DIR/env"
@@ -320,7 +312,6 @@ if [ "$IS_UPDATE" = true ]; then
     
     print_success "Configuración preservada"
 else
-    # Nueva instalación: crear archivo de configuración completo
     DATABASE_URL="postgresql://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME"
     
     cat > "$CONFIG_DIR/env" << EOF
@@ -358,7 +349,6 @@ else
     rm -rf "$APP_DIR"
     git clone --depth 1 "$GITHUB_REPO" "$APP_DIR"
     
-    # Recrear directorios después de clonar
     mkdir -p "$APP_DIR/inbox"
     mkdir -p "$APP_DIR/inbox/processed"
     mkdir -p "$APP_DIR/exports"
@@ -374,7 +364,6 @@ print_header "PASO 8: Instalando dependencias de Node.js"
 
 cd "$APP_DIR"
 
-# Cargar variables de entorno para el build
 set -a
 source "$CONFIG_DIR/env"
 set +a
@@ -386,7 +375,22 @@ print_status "Compilando aplicación..."
 sudo -u "$APP_USER" npm run build 2>&1 | tail -5
 
 print_status "Ejecutando migraciones de schema (drizzle-kit push)..."
-DATABASE_URL="$DATABASE_URL" sudo -u "$APP_USER" --preserve-env=DATABASE_URL npm run db:push 2>&1 | tail -3
+sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npm run db:push 2>&1 | tail -5
+
+print_status "Verificando que las tablas se crearon correctamente..."
+TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null || echo "0")
+if [ "$TABLE_COUNT" -gt 0 ] 2>/dev/null; then
+    print_success "Base de datos inicializada con $TABLE_COUNT tablas"
+else
+    print_warning "No se detectaron tablas. Reintentando db:push con --force..."
+    sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push --force 2>&1 | tail -5
+    TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null || echo "0")
+    if [ "$TABLE_COUNT" -gt 0 ] 2>/dev/null; then
+        print_success "Base de datos inicializada con $TABLE_COUNT tablas (segundo intento)"
+    else
+        print_error "Las tablas no se crearon. Revisa la conexión a la base de datos."
+    fi
+fi
 
 print_status "Aplicando migraciones SQL adicionales..."
 DB_USER_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
@@ -408,7 +412,6 @@ print_success "Aplicación compilada"
 # ============================================================
 print_header "PASO 9: Configurando servicio systemd"
 
-# Obtener rutas de inbox/exports desde config
 INBOX_DIR="${LITAGENTS_INBOX_DIR:-$APP_DIR/inbox}"
 EXPORTS_DIR="${LITAGENTS_EXPORTS_DIR:-$APP_DIR/exports}"
 
@@ -431,14 +434,12 @@ RestartSec=10
 StandardOutput=append:$LOG_DIR/app.log
 StandardError=append:$LOG_DIR/error.log
 
-# Límites de recursos
 LimitNOFILE=65535
 MemoryMax=2G
 
-# Seguridad
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=$APP_DIR $LOG_DIR $INBOX_DIR $EXPORTS_DIR
+ReadWritePaths=$APP_DIR $LOG_DIR $INBOX_DIR $EXPORTS_DIR /tmp
 
 [Install]
 WantedBy=multi-user.target
@@ -448,14 +449,28 @@ systemctl daemon-reload
 systemctl enable "$APP_NAME" > /dev/null 2>&1
 systemctl restart "$APP_NAME"
 
-# Esperar a que inicie
-sleep 3
+sleep 5
 
 if systemctl is-active --quiet "$APP_NAME"; then
     print_success "Servicio $APP_NAME iniciado correctamente"
+    
+    print_status "Verificando que la aplicación responde..."
+    for i in 1 2 3 4 5; do
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$APP_PORT/api/auth/status" 2>/dev/null || echo "000")
+        if [ "$HTTP_CODE" = "200" ]; then
+            print_success "Aplicación respondiendo correctamente en puerto $APP_PORT"
+            break
+        fi
+        if [ "$i" -eq 5 ]; then
+            print_warning "La aplicación está corriendo pero no responde aún. Revisa los logs: cat $LOG_DIR/app.log"
+        fi
+        sleep 2
+    done
 else
     print_error "Error al iniciar el servicio"
-    journalctl -u "$APP_NAME" -n 20 --no-pager
+    echo ""
+    echo "=== Últimos logs de la aplicación ==="
+    cat "$LOG_DIR/error.log" 2>/dev/null | tail -20 || journalctl -u "$APP_NAME" -n 20 --no-pager
 fi
 
 # ============================================================
@@ -463,14 +478,13 @@ fi
 # ============================================================
 print_header "PASO 10: Configurando Nginx"
 
-cat > "/etc/nginx/sites-available/$APP_NAME" << 'EOF'
+cat > "/etc/nginx/sites-available/$APP_NAME" << 'NGINXEOF'
 server {
     listen 80;
     server_name _;
     
     client_max_body_size 500M;
     
-    # Logs
     access_log /var/log/nginx/litagents_access.log;
     error_log /var/log/nginx/litagents_error.log;
 
@@ -485,33 +499,44 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
         
-        # Timeouts largos para operaciones de AI
         proxy_read_timeout 300s;
         proxy_connect_timeout 300s;
         proxy_send_timeout 300s;
     }
 
-    # SSE (Server-Sent Events) para el dashboard
-    location /api/projects/ {
+    location ~ ^/api/projects/\d+/(generate|reedit|translate)-stream$ {
         proxy_pass http://127.0.0.1:5000;
         proxy_http_version 1.1;
         proxy_set_header Connection '';
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding off;
+        proxy_read_timeout 86400s;
+    }
+
+    location /sse/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Connection '';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_buffering off;
         proxy_cache off;
         chunked_transfer_encoding off;
         proxy_read_timeout 86400s;
     }
 }
-EOF
+NGINXEOF
 
-# Activar sitio
 ln -sf "/etc/nginx/sites-available/$APP_NAME" /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
-# Verificar configuración
 if nginx -t > /dev/null 2>&1; then
     systemctl restart nginx
     print_success "Nginx configurado correctamente"
@@ -521,9 +546,32 @@ else
 fi
 
 # ============================================================
-# PASO 11: Configurar firewall (UFW)
+# PASO 11: Configurar logrotate
 # ============================================================
-print_header "PASO 11: Configurando firewall"
+print_header "PASO 11: Configurando rotación de logs"
+
+cat > "/etc/logrotate.d/$APP_NAME" << EOF
+$LOG_DIR/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 $APP_USER $APP_USER
+    sharedscripts
+    postrotate
+        systemctl reload $APP_NAME > /dev/null 2>&1 || true
+    endscript
+}
+EOF
+
+print_success "Logrotate configurado (retención: 14 días)"
+
+# ============================================================
+# PASO 12: Configurar firewall (UFW)
+# ============================================================
+print_header "PASO 12: Configurando firewall"
 
 if command -v ufw &> /dev/null; then
     ufw allow OpenSSH > /dev/null 2>&1
@@ -539,11 +587,10 @@ else
 fi
 
 # ============================================================
-# PASO 12: Cloudflare Tunnel (opcional)
+# PASO 13: Cloudflare Tunnel (opcional)
 # ============================================================
-print_header "PASO 12: Cloudflare Tunnel (opcional)"
+print_header "PASO 13: Cloudflare Tunnel (opcional)"
 
-# Usar variable de entorno o argumento si está disponible
 CF_TOKEN="${CF_TUNNEL_TOKEN:-$PROVIDED_CF_TUNNEL_TOKEN}"
 
 if [ "$UNATTENDED" = true ]; then
@@ -565,21 +612,17 @@ fi
 if [ -n "$CF_TOKEN" ]; then
     print_status "Instalando cloudflared..."
     
-    # Descargar e instalar cloudflared
     curl -L -o /tmp/cloudflared.deb \
         https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb 2>/dev/null
     dpkg -i /tmp/cloudflared.deb > /dev/null 2>&1
     rm -f /tmp/cloudflared.deb
     
-    # Detener servicio existente si hay
     systemctl stop cloudflared 2>/dev/null || true
     
-    # Instalar servicio con token
     cloudflared service install "$CF_TOKEN" 2>/dev/null || true
     systemctl enable cloudflared > /dev/null 2>&1
     systemctl start cloudflared
     
-    # Habilitar cookies seguras (Cloudflare = HTTPS)
     sed -i 's/SECURE_COOKIES=false/SECURE_COOKIES=true/' "$CONFIG_DIR/env"
     systemctl restart "$APP_NAME"
     
@@ -593,11 +636,10 @@ else
 fi
 
 # ============================================================
-# PASO 13: Crear script de actualización
+# PASO 14: Crear scripts de utilidad
 # ============================================================
-print_header "PASO 13: Creando scripts de utilidad"
+print_header "PASO 14: Creando scripts de utilidad"
 
-# Script de actualización
 cat > "$APP_DIR/update.sh" << 'UPDATEEOF'
 #!/bin/bash
 set -e
@@ -605,12 +647,12 @@ set -e
 APP_DIR="/var/www/litagents"
 APP_USER="litagents"
 CONFIG_FILE="/etc/litagents/env"
+LOG_DIR="/var/log/litagents"
 
 echo "=== Actualizando LitAgents ==="
 
 cd "$APP_DIR"
 
-# Cargar variables de entorno y exportarlas para subprocesos
 set -a
 source "$CONFIG_FILE"
 set +a
@@ -621,13 +663,13 @@ git reset --hard origin/main
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
 echo "2. Instalando dependencias..."
-sudo -u "$APP_USER" npm install --legacy-peer-deps
+sudo -u "$APP_USER" npm install --legacy-peer-deps 2>&1 | tail -5
 
 echo "3. Compilando aplicación..."
-sudo -u "$APP_USER" npm run build
+sudo -u "$APP_USER" npm run build 2>&1 | tail -5
 
 echo "4. Ejecutando migraciones de schema (drizzle-kit push)..."
-DATABASE_URL="$DATABASE_URL" sudo -u "$APP_USER" --preserve-env=DATABASE_URL npm run db:push
+sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npm run db:push 2>&1 | tail -5
 
 echo "5. Aplicando migraciones SQL adicionales..."
 for migration in "$APP_DIR"/migrations/*.sql; do
@@ -645,14 +687,28 @@ done
 echo "6. Reiniciando servicio..."
 sudo systemctl restart litagents
 
-sleep 3
+sleep 5
 
 if systemctl is-active --quiet litagents; then
+    echo ""
+    echo "=== Verificando que la aplicación responde ==="
+    for i in 1 2 3 4 5; do
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:5000/api/auth/status" 2>/dev/null || echo "000")
+        if [ "$HTTP_CODE" = "200" ]; then
+            echo "Aplicación respondiendo correctamente"
+            break
+        fi
+        [ "$i" -eq 5 ] && echo "AVISO: La aplicación no responde aún. Revisa: cat $LOG_DIR/app.log"
+        sleep 2
+    done
+    echo ""
     echo "=== Actualización completada correctamente ==="
     systemctl status litagents --no-pager -l
 else
     echo "=== ERROR: El servicio no arrancó ==="
-    journalctl -u litagents -n 30 --no-pager
+    echo ""
+    echo "=== Logs de error ==="
+    cat "$LOG_DIR/error.log" 2>/dev/null | tail -30 || journalctl -u litagents -n 30 --no-pager
     exit 1
 fi
 UPDATEEOF
@@ -660,7 +716,6 @@ UPDATEEOF
 chmod +x "$APP_DIR/update.sh"
 chown "$APP_USER:$APP_USER" "$APP_DIR/update.sh"
 
-# Script de backup
 cat > "$APP_DIR/backup.sh" << 'EOF'
 #!/bin/bash
 set -e
@@ -673,8 +728,6 @@ mkdir -p "$BACKUP_DIR"
 echo "Creando backup de base de datos..."
 source /etc/litagents/env
 
-# Extraer credenciales de DATABASE_URL
-# Formato: postgresql://user:password@host:port/database
 DB_USER=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
 DB_PASS=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
 DB_HOST=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|p')
@@ -685,7 +738,6 @@ PGPASSWORD="$DB_PASS" pg_dump -U "$DB_USER" -h "$DB_HOST" -p "$DB_PORT" "$DB_NAM
 
 echo "Backup guardado en: $BACKUP_DIR/db_$DATE.sql"
 
-# Mantener solo los últimos 7 backups
 ls -t "$BACKUP_DIR"/db_*.sql | tail -n +8 | xargs -r rm
 
 echo "Backups disponibles:"
@@ -693,6 +745,22 @@ ls -lh "$BACKUP_DIR"
 EOF
 
 chmod +x "$APP_DIR/backup.sh"
+
+cat > "$APP_DIR/logs.sh" << EOF
+#!/bin/bash
+echo "=== Últimos logs de la aplicación ==="
+echo ""
+echo "--- app.log (últimas 50 líneas) ---"
+tail -50 $LOG_DIR/app.log 2>/dev/null || echo "Sin logs de aplicación"
+echo ""
+echo "--- error.log (últimas 30 líneas) ---"
+tail -30 $LOG_DIR/error.log 2>/dev/null || echo "Sin errores"
+echo ""
+echo "--- Estado del servicio ---"
+systemctl status $APP_NAME --no-pager -l 2>/dev/null || true
+EOF
+
+chmod +x "$APP_DIR/logs.sh"
 
 print_success "Scripts de utilidad creados"
 
@@ -719,7 +787,8 @@ echo "  Exportaciones:   $APP_DIR/exports"
 echo ""
 echo -e "${CYAN}Comandos útiles:${NC}"
 echo "  Estado:        sudo systemctl status $APP_NAME"
-echo "  Logs:          sudo journalctl -u $APP_NAME -f"
+echo "  Logs app:      sudo $APP_DIR/logs.sh"
+echo "  Logs tiempo real: tail -f $LOG_DIR/app.log"
 echo "  Reiniciar:     sudo systemctl restart $APP_NAME"
 echo "  Actualizar:    sudo $APP_DIR/update.sh"
 echo "  Backup:        sudo $APP_DIR/backup.sh"
@@ -732,6 +801,15 @@ echo "  Configuración: $CONFIG_DIR/env"
 echo "  Aplicación:    $APP_DIR"
 echo "  Logs:          $LOG_DIR"
 echo ""
-echo -e "${YELLOW}Nota: Las cookies están configuradas como HTTP (no seguras).${NC}"
-echo -e "${YELLOW}Si usas HTTPS, edita $CONFIG_DIR/env y cambia SECURE_COOKIES=true${NC}"
+if [ -n "$LITAGENTS_PASSWORD" ]; then
+echo -e "${YELLOW}Acceso protegido con contrasena.${NC}"
+else
+echo -e "${YELLOW}Sin contrasena configurada. Cualquiera con acceso a la URL puede usar la app.${NC}"
+fi
+echo ""
+if [ -n "$CF_TOKEN" ]; then
+echo -e "${GREEN}Cookies HTTPS activadas (Cloudflare Tunnel detectado).${NC}"
+else
+echo -e "${YELLOW}Cookies HTTP. Si usas HTTPS, edita $CONFIG_DIR/env y cambia SECURE_COOKIES=true${NC}"
+fi
 echo ""
