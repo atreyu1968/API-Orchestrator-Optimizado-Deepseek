@@ -89,7 +89,15 @@ export async function registerRoutes(
   app.get("/api/projects", async (req: Request, res: Response) => {
     try {
       const projects = await storage.getAllProjects();
-      res.json(projects);
+      const lightweight = projects.map(({ finalReviewResult, ...rest }) => ({
+        ...rest,
+        finalReviewResult: finalReviewResult ? { 
+          veredicto: (finalReviewResult as any).veredicto,
+          puntuacion_global: (finalReviewResult as any).puntuacion_global,
+          approved: (finalReviewResult as any).approved,
+        } : null,
+      }));
+      res.json(lightweight);
     } catch (error) {
       console.error("Error fetching projects:", error);
       res.status(500).json({ error: "Failed to fetch projects" });

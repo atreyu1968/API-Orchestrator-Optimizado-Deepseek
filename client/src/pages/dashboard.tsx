@@ -144,6 +144,12 @@ export default function Dashboard() {
 
   const activeProject = projects.find(p => p.status === "generating");
 
+  const { data: fullProjectDetail } = useQuery<Project>({
+    queryKey: ["/api/projects", currentProject?.id],
+    enabled: !!currentProject?.id,
+    refetchInterval: currentProject?.status === "generating" ? 5000 : false,
+  });
+
   const { data: chapters = [] } = useQuery<Chapter[]>({
     queryKey: ["/api/projects", currentProject?.id, "chapters"],
     enabled: !!currentProject?.id,
@@ -697,11 +703,11 @@ export default function Dashboard() {
                     </div>
                     
                     {/* Show Final Review Issues if available */}
-                    {currentProject.finalReviewResult && (currentProject.finalReviewResult as any).issues?.length > 0 && (
+                    {fullProjectDetail?.finalReviewResult && (fullProjectDetail.finalReviewResult as any).issues?.length > 0 && (
                       <div className="mt-4 pt-4 border-t border-border/50">
-                        <p className="text-sm font-medium mb-2">Issues Documentados ({(currentProject.finalReviewResult as any).issues.length})</p>
+                        <p className="text-sm font-medium mb-2">Issues Documentados ({(fullProjectDetail.finalReviewResult as any).issues.length})</p>
                         <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {((currentProject.finalReviewResult as any).issues as Array<{capitulo: number; problema: string; severidad: string; instrucciones_correccion: string}>).map((issue, idx) => (
+                          {((fullProjectDetail.finalReviewResult as any).issues as Array<{capitulo: number; problema: string; severidad: string; instrucciones_correccion: string}>).map((issue, idx) => (
                             <div 
                               key={idx} 
                               className="text-xs p-2 rounded bg-background/50 border border-border/30"
@@ -729,11 +735,11 @@ export default function Dashboard() {
                     )}
                     
                     {/* Show Score Justification if available */}
-                    {currentProject.finalReviewResult && (currentProject.finalReviewResult as any).justificacion_puntuacion && (
+                    {fullProjectDetail?.finalReviewResult && (fullProjectDetail.finalReviewResult as any).justificacion_puntuacion && (
                       <div className="mt-4 pt-4 border-t border-border/50">
                         <p className="text-sm font-medium mb-2">Desglose de Puntuación</p>
                         <div className="grid grid-cols-2 gap-2 text-xs">
-                          {Object.entries((currentProject.finalReviewResult as any).justificacion_puntuacion.puntuacion_desglosada || {}).map(([key, value]) => (
+                          {Object.entries((fullProjectDetail.finalReviewResult as any).justificacion_puntuacion.puntuacion_desglosada || {}).map(([key, value]) => (
                             <div key={key} className="flex justify-between">
                               <span className="text-muted-foreground capitalize">{key.replace(/_/g, ' ')}:</span>
                               <span className="font-medium">{value as number}/10</span>
