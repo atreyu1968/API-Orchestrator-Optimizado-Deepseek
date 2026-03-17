@@ -1446,6 +1446,19 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
       const worldBible = await storage.getWorldBibleByProject(project.id);
       if (!worldBible) {
+        const existingChapters = await storage.getChaptersByProject(project.id);
+        if (existingChapters.length === 0) {
+          console.log(`[Orchestrator] Resume: No World Bible or chapters found for project ${project.id}. Restarting generation from scratch...`);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "info",
+            message: "Reanudación: sin World Bible ni capítulos. Reiniciando generación desde cero...",
+            agentRole: "orchestrator",
+          });
+          await storage.updateProject(project.id, { status: "idle" });
+          await this.generateNovel(project);
+          return;
+        }
         this.callbacks.onError("No se encontró el World Bible del proyecto. Debe iniciar una nueva generación.");
         await storage.updateProject(project.id, { status: "error" });
         return;
