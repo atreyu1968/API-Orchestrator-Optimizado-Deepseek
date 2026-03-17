@@ -380,13 +380,13 @@ source "$CONFIG_DIR/env"
 set +a
 
 print_status "Ejecutando npm install..."
-sudo -u "$APP_USER" --preserve-env=HOME,PATH npm install --legacy-peer-deps 2>&1 | tail -5
+sudo -u "$APP_USER" npm install --legacy-peer-deps 2>&1 | tail -5
 
 print_status "Compilando aplicación..."
-sudo -u "$APP_USER" --preserve-env=HOME,PATH,NODE_ENV npm run build 2>&1 | tail -5
+sudo -u "$APP_USER" npm run build 2>&1 | tail -5
 
 print_status "Ejecutando migraciones de schema (drizzle-kit push)..."
-sudo -u "$APP_USER" --preserve-env=DATABASE_URL npm run db:push 2>&1 | tail -3
+DATABASE_URL="$DATABASE_URL" sudo -u "$APP_USER" --preserve-env=DATABASE_URL npm run db:push 2>&1 | tail -3
 
 print_status "Aplicando migraciones SQL adicionales..."
 DB_USER_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
@@ -616,17 +616,18 @@ source "$CONFIG_FILE"
 set +a
 
 echo "1. Obteniendo últimos cambios..."
-sudo -u "$APP_USER" git fetch --all
-sudo -u "$APP_USER" git reset --hard origin/main
+git fetch --all
+git reset --hard origin/main
+chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
 echo "2. Instalando dependencias..."
-sudo -u "$APP_USER" --preserve-env=HOME,PATH npm install --legacy-peer-deps
+sudo -u "$APP_USER" npm install --legacy-peer-deps
 
 echo "3. Compilando aplicación..."
-sudo -u "$APP_USER" --preserve-env=HOME,PATH,NODE_ENV npm run build
+sudo -u "$APP_USER" npm run build
 
 echo "4. Ejecutando migraciones de schema (drizzle-kit push)..."
-sudo -u "$APP_USER" --preserve-env=DATABASE_URL npm run db:push
+DATABASE_URL="$DATABASE_URL" sudo -u "$APP_USER" --preserve-env=DATABASE_URL npm run db:push
 
 echo "5. Aplicando migraciones SQL adicionales..."
 for migration in "$APP_DIR"/migrations/*.sql; do
