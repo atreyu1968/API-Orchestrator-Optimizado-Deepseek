@@ -7,6 +7,7 @@ import { autoResumeReeditProjects, startWatchdog } from "./reedit-auto-resume";
 import { setupAuth, authMiddleware, isAuthEnabled } from "./auth";
 
 const app = express();
+app.set("trust proxy", 1);
 const httpServer = createServer(app);
 
 declare module "http" {

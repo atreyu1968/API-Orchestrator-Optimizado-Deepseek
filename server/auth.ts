@@ -38,7 +38,7 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction):
     return;
   }
 
-  if (req.path === "/" || req.path.startsWith("/assets") || req.path.endsWith(".js") || req.path.endsWith(".css") || req.path.endsWith(".ico") || req.path.endsWith(".png") || req.path.endsWith(".svg")) {
+  if (req.path === "/" || req.path === "/manifest.json" || req.path === "/sw.js" || req.path.startsWith("/assets") || req.path.startsWith("/icons/") || req.path.endsWith(".js") || req.path.endsWith(".css") || req.path.endsWith(".ico") || req.path.endsWith(".png") || req.path.endsWith(".svg")) {
     next();
     return;
   }
