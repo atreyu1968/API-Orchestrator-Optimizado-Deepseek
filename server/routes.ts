@@ -258,7 +258,8 @@ export async function registerRoutes(
     try {
       const parsed = insertProjectSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid project data", details: parsed.error });
+        console.error("Project validation failed:", JSON.stringify(parsed.error.flatten()));
+        return res.status(400).json({ error: "Invalid project data", details: parsed.error.flatten() });
       }
       const project = await storage.createProject(parsed.data);
       
@@ -267,9 +268,9 @@ export async function registerRoutes(
       }
 
       res.status(201).json(project);
-    } catch (error) {
-      console.error("Error creating project:", error);
-      res.status(500).json({ error: "Failed to create project" });
+    } catch (error: any) {
+      console.error("Error creating project:", error?.message || error);
+      res.status(500).json({ error: "Failed to create project", details: error?.message });
     }
   });
 

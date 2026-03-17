@@ -54,10 +54,11 @@ export default function ConfigPage() {
         description: `"${project.title}" ha sido configurado. Puedes iniciar la generación desde el panel principal.`,
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Create project error:", error);
       toast({
         title: "Error",
-        description: "No se pudo crear el proyecto",
+        description: error?.message || "No se pudo crear el proyecto",
         variant: "destructive",
       });
     },
