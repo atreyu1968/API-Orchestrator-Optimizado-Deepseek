@@ -793,7 +793,15 @@ export class GhostwriterAgent extends BaseAgent {
     🚨 RECORDATORIO FINAL: ESCRIBE EL CAPÍTULO COMPLETO 🚨
     ═══════════════════════════════════════════════════════════════════
     Comienza directamente con la narrativa. Sin introducción ni comentarios.
-    Recuerda: NO repitas expresiones, metáforas o conceptos. Cada imagen debe ser única.
+    
+    🚫 ANTI-REPETICIÓN (OBLIGATORIO):
+    - NO repitas expresiones, metáforas o imágenes usadas en capítulos anteriores
+    - NO repitas la ESTRUCTURA de escenas previas (si el anterior tuvo "llegada → descubrimiento → huida", usa otro patrón)
+    - NO repitas patrones de diálogo (si el anterior empezó con una pregunta retórica, no lo hagas aquí)
+    - NO repitas el MECANISMO de revelaciones o giros (si el anterior usó "carta encontrada", usa otro recurso)
+    - NO repitas el TIPO de final de capítulo (si el anterior terminó en cliffhanger, usa cierre emocional u otro)
+    - Cada capítulo debe sentirse FRESCO y DIFERENTE en su ejecución narrativa
+    - Lee el contexto de capítulos anteriores y asegúrate de NO duplicar sus recursos literarios
     
     ⚠️ TU CAPÍTULO DEBE TENER MÍNIMO ${minWords} PALABRAS ⚠️
     Si escribes menos, serás obligado a reescribir. Desarrolla cada escena con detalle.

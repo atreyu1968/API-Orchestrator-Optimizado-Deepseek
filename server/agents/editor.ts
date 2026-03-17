@@ -37,6 +37,7 @@ interface EditorInput {
   guiaEstilo: string;
   estructuraTresActos?: any;
   previousContinuityState?: any;
+  previousChaptersContext?: string;
 }
 
 export interface EditorResult {
@@ -48,6 +49,7 @@ export interface EditorResult {
   filtracion_conocimiento?: string[];
   inconsistencias_objetos?: string[];
   frases_repetidas?: string[];
+  repeticiones_trama?: string[];
   problemas_ritmo?: string[];
   problemas_verosimilitud?: string[];
   cliches_ia_detectados?: string[];
@@ -158,6 +160,14 @@ PROTOCOLO DE EVALUACIÓN INTEGRADO
    - 4-6 repeticiones: -1 punto
    - Más de 6 repeticiones: -2 puntos máximo
 
+4b. REPETICIÓN DE TRAMA ENTRE CAPÍTULOS (CRÍTICO):
+   - Compara este capítulo con el texto de capítulos anteriores proporcionado en la World Bible/contexto.
+   - ¿Se repite la ESTRUCTURA de una escena previa? (ej: misma secuencia llegada-descubrimiento-escape)
+   - ¿Se reutiliza el mismo MECANISMO de revelación? (ej: "encuentra una carta", "escucha una conversación")
+   - ¿Se repite el mismo TIPO de cliffhanger o final?
+   - ¿Se duplican metáforas o imágenes ya usadas en capítulos anteriores?
+   - Si detectas repetición de trama: reportar en "repeticiones_trama" y penalizar -1 punto
+
 5. RITMO Y PACING:
    - ¿Los eventos dramáticos tienen suficiente SETUP emocional?
    - ¿Las transiciones son fluidas?
@@ -201,6 +211,7 @@ SALIDA JSON OBLIGATORIA:
   "filtracion_conocimiento": ["Personaje X sabe/dice Y pero solo Z lo descubrió en Cap N"],
   "inconsistencias_objetos": ["Personaje X usa objeto Y pero lo perdió/no lo tiene"],
   "frases_repetidas": ["Expresiones repetidas"],
+  "repeticiones_trama": ["Escenas/mecanismos/estructuras repetidos de capítulos anteriores"],
   "problemas_ritmo": ["Escenas sin setup"],
   "problemas_verosimilitud": ["Deus ex machina, coincidencias forzadas"],
   "cliches_ia_detectados": ["Palabras/frases artificiales encontradas"],
@@ -295,6 +306,17 @@ ${authorNotesSection}
 ${input.estructuraTresActos ? `4. ESTRUCTURA DE TRES ACTOS:\n${JSON.stringify(input.estructuraTresActos, null, 2)}` : ""}
 
 ${continuitySection}
+${input.previousChaptersContext ? `
+═══════════════════════════════════════════════════════════════════
+TEXTO DE CAPÍTULOS ANTERIORES (PARA DETECCIÓN DE REPETICIONES):
+═══════════════════════════════════════════════════════════════════
+${input.previousChaptersContext}
+═══════════════════════════════════════════════════════════════════
+COMPARA el capítulo actual contra estos textos anteriores.
+Detecta: escenas con misma estructura, mecanismos de revelación repetidos,
+metáforas/imágenes duplicadas, y patrones narrativos reciclados.
+═══════════════════════════════════════════════════════════════════
+` : ""}
 
 ===============================================
 TEXTO DEL CAPÍTULO ${input.chapterNumber} A EVALUAR:

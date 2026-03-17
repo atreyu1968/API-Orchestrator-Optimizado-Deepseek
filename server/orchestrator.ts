@@ -459,6 +459,12 @@ export class Orchestrator {
       recentEvents.forEach(event => {
         mandatoryConstraints.push(`  → ${event}`);
       });
+      mandatoryConstraints.push(`\n🚫 ANTI-REPETICIÓN DE TRAMA: Los eventos listados arriba YA OCURRIERON.`);
+      mandatoryConstraints.push(`  NO repitas escenas similares. NO reutilices los mismos patrones narrativos:`);
+      mandatoryConstraints.push(`  - NO repitas descubrimientos del mismo tipo`);
+      mandatoryConstraints.push(`  - NO repitas confrontaciones con la misma estructura`);
+      mandatoryConstraints.push(`  - NO repitas revelaciones con el mismo mecanismo`);
+      mandatoryConstraints.push(`  - Cada capítulo debe avanzar la trama con NUEVOS elementos`);
     }
 
     for (let i = sortedChapters.length - 1; i >= 0; i--) {
@@ -466,20 +472,29 @@ export class Orchestrator {
       const distanceFromCurrent = sortedChapters.length - 1 - i;
 
       if (distanceFromCurrent < FULL_CONTEXT_CHAPTERS) {
+        const content = chapter.editedContent || chapter.originalContent || chapter.content || "";
         const continuityState = chapter.continuityState 
           ? JSON.stringify(chapter.continuityState)
           : "";
+        const truncatedContent = typeof content === 'string' && content.length > 8000
+          ? content.substring(content.length - 8000)
+          : content;
         contextParts.unshift(`
-[CAPÍTULO ${chapter.chapterNumber} - ${chapter.title}] (COMPLETO)
+[CAPÍTULO ${chapter.chapterNumber} - ${chapter.title}] (TEXTO COMPLETO DEL CAPÍTULO ANTERIOR)
+${truncatedContent || "(sin contenido)"}
 Estado de continuidad: ${continuityState || "No disponible"}
 `);
       } else if (distanceFromCurrent < FULL_CONTEXT_CHAPTERS + SUMMARY_CONTEXT_CHAPTERS) {
         const section = allSections.find(s => s.numero === chapter.chapterNumber);
-        const summary = section 
+        const chapterContent = chapter.editedContent || chapter.originalContent || chapter.content || "";
+        const contentSummary = typeof chapterContent === 'string' && chapterContent.length > 500
+          ? chapterContent.substring(0, 500) + "..."
+          : chapterContent;
+        const planInfo = section 
           ? `Objetivo: ${section.objetivo_narrativo || "N/A"}. Ubicación: ${section.ubicacion || "N/A"}. Elenco: ${section.elenco_presente?.join(", ") || "N/A"}.`
-          : "Resumen no disponible";
+          : "";
         
-        contextParts.unshift(`[Cap ${chapter.chapterNumber}: ${chapter.title}] ${summary}`);
+        contextParts.unshift(`[Cap ${chapter.chapterNumber}: ${chapter.title}] ${planInfo}\nExtracto: ${contentSummary || "N/A"}`);
       } else {
         contextParts.unshift(`[Cap ${chapter.chapterNumber}: ${chapter.title}]`);
       }
@@ -500,6 +515,27 @@ ${contextParts.join("\n")}
 ═══════════════════════════════════════════════════════════════════`;
 
     return { context, characterStates };
+  }
+
+  private buildPreviousChaptersContextForEditor(
+    completedChapters: Chapter[],
+    currentChapterNumber: number,
+    maxChapters: number = 3
+  ): string {
+    const sorted = [...completedChapters]
+      .filter(c => c.status === "completed" && c.chapterNumber < currentChapterNumber)
+      .sort((a, b) => b.chapterNumber - a.chapterNumber)
+      .slice(0, maxChapters);
+
+    if (sorted.length === 0) return "";
+
+    const parts: string[] = [];
+    for (const ch of sorted.reverse()) {
+      const content = (ch.editedContent || ch.originalContent || ch.content || "") as string;
+      const excerpt = content.length > 4000 ? content.substring(content.length - 4000) : content;
+      parts.push(`--- Capítulo ${ch.chapterNumber}: ${ch.title} (últimos ${excerpt.length} caracteres) ---\n${excerpt}`);
+    }
+    return parts.join("\n\n");
   }
 
   async generateNovel(project: Project): Promise<void> {
@@ -1042,6 +1078,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           await storage.updateChapter(chapter.id, { status: "editing" });
           this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
 
+          const editorChaptersCtx = await storage.getChaptersByProject(project.id);
           const editorResult = await this.editor.execute({
             chapterNumber: sectionData.numero,
             chapterContent: currentContent,
@@ -1049,6 +1086,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
             guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
             previousContinuityState: previousContinuityStateForEditor,
+            previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
           });
 
           await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-pro-preview", sectionData.numero, "chapter_edit");
@@ -1603,6 +1641,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           await storage.updateChapter(chapter.id, { status: "editing" });
           this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
 
+          const editorChaptersCtx = await storage.getChaptersByProject(project.id);
           const editorResult = await this.editor.execute({
             chapterNumber: sectionData.numero,
             chapterContent: currentContent,
@@ -1610,6 +1649,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
             guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
             previousContinuityState: previousContinuityStateForEditor,
+            previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
           });
 
           await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-pro-preview", sectionData.numero, "chapter_edit");
@@ -2432,12 +2472,14 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
         this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
 
+        const qaEditorChaptersCtx = await storage.getChaptersByProject(project.id);
         const editorResult = await this.editor.execute({
           chapterNumber: sectionData.numero,
           chapterContent,
           chapterData: sectionData,
           worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
           guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
+          previousChaptersContext: this.buildPreviousChaptersContextForEditor(qaEditorChaptersCtx, sectionData.numero),
         });
 
         await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-pro-preview", sectionData.numero, "qa_edit");
@@ -2833,6 +2875,7 @@ Responde SOLO con un JSON válido con la estructura:
           // Editor review
           this.callbacks.onAgentStatus("editor", "reviewing", `El Editor está revisando ${sectionLabel}...`);
           
+          const extEditorChaptersCtx = await storage.getChaptersByProject(project.id);
           const editorResult = await this.editor.execute({
             chapterNumber: sectionData.numero,
             chapterContent: currentContent,
@@ -2840,6 +2883,7 @@ Responde SOLO con un JSON válido con la estructura:
             worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
             previousContinuityState: previousContinuityStateForEditor,
             guiaEstilo: fullStyleGuide,
+            previousChaptersContext: this.buildPreviousChaptersContextForEditor(extEditorChaptersCtx, sectionData.numero),
           });
 
           await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-pro-preview", sectionData.numero, "extend_edit");
@@ -3487,9 +3531,13 @@ Responde SOLO con un JSON válido con la estructura:
       parts.push(`\n⚠️ DEBILIDADES A CORREGIR:\n${editorResult.debilidades_criticas.map(d => `  - ${d}`).join("\n")}`);
     }
     
-    // Frases repetidas
     if (editorResult.frases_repetidas && editorResult.frases_repetidas.length > 0) {
       parts.push(`\n🔄 FRASES/EXPRESIONES REPETIDAS (VARIAR):\n${editorResult.frases_repetidas.map(f => `  - "${f}"`).join("\n")}`);
+    }
+
+    if (editorResult.repeticiones_trama && editorResult.repeticiones_trama.length > 0) {
+      parts.push(`\n🚫 REPETICIONES DE TRAMA ENTRE CAPÍTULOS (CRÍTICO - REESTRUCTURAR):\n${editorResult.repeticiones_trama.map(r => `  ❌ ${r}`).join("\n")}`);
+      parts.push(`  → Usa un MECANISMO NARRATIVO DIFERENTE para lograr el mismo objetivo de la trama`);
     }
     
     // Problemas de ritmo
