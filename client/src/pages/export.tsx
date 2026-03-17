@@ -57,7 +57,9 @@ interface CompletedProject {
 
 interface SavedTranslation {
   id: number;
-  projectId: number;
+  projectId: number | null;
+  reeditProjectId: number | null;
+  source: "original" | "reedit";
   projectTitle: string;
   sourceLanguage: string;
   targetLanguage: string;
@@ -110,6 +112,7 @@ const TRANSLATION_STATE_KEY = "litagents_active_translation";
 
 interface ActiveTranslationState {
   projectId: number;
+  projectSource: "original" | "reedit";
   projectTitle: string;
   sourceLanguage: string;
   targetLanguage: string;
@@ -152,6 +155,7 @@ function loadTranslationState(): ActiveTranslationState | null {
 export default function ExportPage() {
   const { toast } = useToast();
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedProjectSource, setSelectedProjectSource] = useState<"original" | "reedit">("original");
   const [sourceLanguage, setSourceLanguage] = useState("es");
   const [targetLanguage, setTargetLanguage] = useState("en");
   const [eventSourceRef, setEventSourceRef] = useState<EventSource | null>(null);
@@ -195,6 +199,7 @@ export default function ExportPage() {
     
     saveTranslationState({
       projectId,
+      projectSource: source,
       projectTitle: title,
       sourceLanguage: srcLang,
       targetLanguage: tgtLang,
@@ -227,7 +232,7 @@ export default function ExportPage() {
           chapterTitle: `Preparando ${data.totalChapters} capítulos...`,
         };
         saveTranslationState({
-          projectId, projectTitle: title, sourceLanguage: srcLang, targetLanguage: tgtLang,
+          projectId, projectSource: source, projectTitle: title, sourceLanguage: srcLang, targetLanguage: tgtLang,
           startedAt: new Date().toISOString(),
           currentChapter: newState.currentChapter, totalChapters: newState.totalChapters,
           chapterTitle: newState.chapterTitle, inputTokens: newState.inputTokens, outputTokens: newState.outputTokens,
@@ -252,7 +257,7 @@ export default function ExportPage() {
           outputTokens: data.outputTokens || prev.outputTokens,
         };
         saveTranslationState({
-          projectId, projectTitle: title, sourceLanguage: srcLang, targetLanguage: tgtLang,
+          projectId, projectSource: source, projectTitle: title, sourceLanguage: srcLang, targetLanguage: tgtLang,
           startedAt: new Date().toISOString(),
           currentChapter: newState.currentChapter, totalChapters: newState.totalChapters,
           chapterTitle: newState.chapterTitle, inputTokens: newState.inputTokens, outputTokens: newState.outputTokens,
@@ -361,9 +366,13 @@ export default function ExportPage() {
     // Safety check: Don't auto-restart if the session is too old
     if (secondsAgo < 120) {
       // NEVER restart if a translation already exists for this project WITH THE SAME TARGET LANGUAGE
-      const translationExists = savedTranslations.some(
-        t => t.projectId === saved.projectId && t.targetLanguage === saved.targetLanguage
-      );
+      const translationExists = savedTranslations.some(t => {
+        if (t.targetLanguage !== saved.targetLanguage) return false;
+        if (saved.projectSource === "reedit") {
+          return t.reeditProjectId === saved.projectId || (t.source === "reedit" && t.projectId === saved.projectId);
+        }
+        return t.projectId === saved.projectId && t.source !== "reedit";
+      });
       
       if (translationExists) {
         // Clear the saved state - we should NOT auto-restart
@@ -577,11 +586,16 @@ export default function ExportPage() {
     };
   }, [toast]);
 
-  const selectedProject = completedProjects.find(p => p.id === selectedProjectId);
+  const selectedProject = completedProjects.find(p => p.id === selectedProjectId && p.source === selectedProjectSource);
 
-  // Check if selected project already has a translation TO THE SAME TARGET LANGUAGE
   const existingTranslation = selectedProjectId 
-    ? savedTranslations.find(t => t.projectId === selectedProjectId && t.targetLanguage === targetLanguage)
+    ? savedTranslations.find(t => {
+        if (t.targetLanguage !== targetLanguage) return false;
+        if (selectedProjectSource === "reedit") {
+          return t.reeditProjectId === selectedProjectId || (t.source === "reedit" && t.projectId === selectedProjectId);
+        }
+        return t.projectId === selectedProjectId && t.source !== "reedit";
+      })
     : null;
   const hasExistingTranslation = !!existingTranslation;
   const isTranslationInProgress = existingTranslation?.status === "translating";
@@ -644,9 +658,9 @@ export default function ExportPage() {
                     <Card
                       key={`${project.source}-${project.id}`}
                       className={`hover-elevate cursor-pointer transition-all ${
-                        selectedProjectId === project.id ? "ring-2 ring-primary" : ""
+                        selectedProjectId === project.id && selectedProjectSource === project.source ? "ring-2 ring-primary" : ""
                       }`}
-                      onClick={() => setSelectedProjectId(project.id)}
+                      onClick={() => { setSelectedProjectId(project.id); setSelectedProjectSource(project.source); }}
                       data-testid={`card-project-${project.source}-${project.id}`}
                     >
                       <CardHeader className="pb-2">
@@ -919,6 +933,9 @@ export default function ExportPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <p className="font-medium truncate">{translation.projectTitle}</p>
+                      {translation.source === "reedit" && (
+                        <Badge variant="outline" className="text-xs shrink-0">Re-editado</Badge>
+                      )}
                       {translation.status === "translating" ? (
                         <Badge variant="outline" className="animate-pulse bg-blue-500/10 text-blue-600 border-blue-200">
                           <Loader2 className="h-3 w-3 mr-1 animate-spin" />

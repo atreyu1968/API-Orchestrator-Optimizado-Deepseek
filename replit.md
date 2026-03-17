@@ -43,7 +43,7 @@ Preferred communication style: Simple, everyday language.
 - **Automatic Pause & Approval**: System pauses for user input on non-perfect evaluations. Requires a single score of 9+ with no critical issues for project approval.
 - **Issue Tracking**: Issue hash tracking prevents re-reporting of resolved issues.
 - **Enhanced Cancellation & Resume**: Immediate process cancellation and optimized project resumption from `awaiting_instructions`.
-- **Translation & Literary Adaptation**: Reframed Translator agent for literary adaptation into 7 languages, focusing on publication-ready prose. Uses `editedContent` and consistent markdown utilities.
+- **Translation & Literary Adaptation**: Reframed Translator agent for literary adaptation into 7 languages, focusing on publication-ready prose. Uses `editedContent` and consistent markdown utilities. Full support for translating re-edited books via `/api/reedit-projects/:id/translate-stream` with proper ID collision handling (`source` + `reeditProjectId` tracking), resume support for interrupted reedit translations, and "Re-editado" badge in translation repository.
 - **Continuity Validation & Constraints**: Immediate, pre-Editor validation for dead characters, ignored injuries, and location inconsistencies. Mandatory continuity constraints for the Ghostwriter and enhanced detection (e.g., pronoun checks for dead characters).
 - **World Bible Enrichment**: Automatic update and enrichment of the World Bible with character states and narrative threads after each chapter, provided to Ghostwriter and Editor. Includes full-text sliding context window for Ghostwriter.
 - **Author Notes System**: Users can add prioritized author instructions to the World Bible, injected into Ghostwriter and Editor prompts.

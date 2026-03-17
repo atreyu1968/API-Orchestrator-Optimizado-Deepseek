@@ -4888,6 +4888,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const translationsWithoutMarkdown = allTranslations.map(t => ({
         id: t.id,
         projectId: t.projectId,
+        reeditProjectId: t.reeditProjectId,
+        source: t.source || "original",
         projectTitle: t.projectTitle,
         sourceLanguage: t.sourceLanguage,
         targetLanguage: t.targetLanguage,
@@ -5095,7 +5097,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return;
       }
 
-      const projectId = existingTranslation.projectId;
+      const isReedit = existingTranslation.source === "reedit" || !!existingTranslation.reeditProjectId;
+      const projectId = isReedit ? existingTranslation.reeditProjectId : existingTranslation.projectId;
       if (!projectId) {
         sendEvent("error", { error: "No project associated with this translation" });
         cleanup();
@@ -5103,27 +5106,43 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return;
       }
 
-      const project = await storage.getProject(projectId);
-      if (!project) {
-        sendEvent("error", { error: "Original project not found" });
-        cleanup();
-        res.end();
-        return;
+      let projectTitle: string;
+      let chaptersWithContent: Array<any>;
+
+      if (isReedit) {
+        const reeditProject = await storage.getReeditProject(projectId);
+        if (!reeditProject) {
+          sendEvent("error", { error: "Reedit project not found" });
+          cleanup();
+          res.end();
+          return;
+        }
+        projectTitle = reeditProject.title;
+        const chapters = await storage.getReeditChaptersByProject(projectId);
+        const getReeditOrder = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
+        const sortedChapters = [...chapters].sort((a, b) => getReeditOrder(a.chapterNumber) - getReeditOrder(b.chapterNumber));
+        chaptersWithContent = sortedChapters.filter(c => (c.editedContent || c.originalContent || "").trim().length > 0);
+      } else {
+        const project = await storage.getProject(projectId);
+        if (!project) {
+          sendEvent("error", { error: "Original project not found" });
+          cleanup();
+          res.end();
+          return;
+        }
+        projectTitle = project.title;
+        const chapters = await storage.getChaptersByProject(projectId);
+        const sortedChapters = [...chapters].sort((a, b) => {
+          const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
+          const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
+          return orderA - orderB;
+        });
+        chaptersWithContent = sortedChapters.filter(c => ((c as any).editedContent ?? c.content ?? "").trim().length > 0);
       }
 
       const sourceLanguage = existingTranslation.sourceLanguage;
       const targetLanguage = existingTranslation.targetLanguage;
       const existingMarkdown = existingTranslation.markdown || "";
-
-      // Get all chapters and sort them
-      const chapters = await storage.getChaptersByProject(projectId);
-      const sortedChapters = [...chapters].sort((a, b) => {
-        const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
-        const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
-        return orderA - orderB;
-      });
-
-      const chaptersWithContent = sortedChapters.filter(c => ((c as any).editedContent ?? c.content ?? "").trim().length > 0);
       const totalChapters = chaptersWithContent.length;
       
       let markdownChapterCount = 0;
@@ -5152,7 +5171,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         sendEvent("complete", {
           id: translationId,
           projectId,
-          title: project.title,
+          title: projectTitle,
           sourceLanguage,
           targetLanguage,
           chaptersTranslated: alreadyTranslated,
@@ -5171,7 +5190,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       }
 
       sendEvent("start", {
-        projectTitle: project.title,
+        projectTitle,
         totalChapters,
         alreadyTranslated,
         remaining: remainingChapters.length,
@@ -5216,14 +5235,14 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
         console.log(`[Resume] Translating ${chapterLabel}: ${chapter.title}`);
 
-        const chapterContent = (chapter as any).editedContent ?? chapter.content ?? "";
+        const chapterContent = chapter.editedContent || chapter.originalContent || (chapter as any).content || "";
         const result = await translator.execute({
           content: chapterContent,
           sourceLanguage,
           targetLanguage,
           chapterTitle: chapter.title || undefined,
           chapterNumber: chapter.chapterNumber,
-          projectId,
+          projectId: isReedit ? -projectId : projectId,
         });
 
         if (result.result) {
@@ -5285,7 +5304,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       sendEvent("complete", {
         id: translationId,
         projectId,
-        title: project.title,
+        title: projectTitle,
         sourceLanguage,
         targetLanguage,
         chaptersTranslated: completedCount,
