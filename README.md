@@ -2,16 +2,20 @@
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando Google Gemini.
 
+**PWA instalable** — se puede instalar en escritorio y movil directamente desde el navegador.
+
 ## Caracteristicas Principales
 
-- **Generador de Novelas**: Pipeline completo con 9+ agentes especializados para escribir novelas de principio a fin
+- **Generador de Novelas**: Pipeline completo con 13+ agentes especializados para escribir novelas de principio a fin
 - **Re-editor de Manuscritos (LitEditors)**: Importa y edita profesionalmente manuscritos externos en multiples idiomas
 - **Traductor de Novelas (LitTranslators)**: Sistema de traduccion literaria con revision nativa
 - **World Bible Progresiva**: Base de datos de consistencia que se enriquece automaticamente capitulo a capitulo
 - **Notas del Autor**: Instrucciones personalizadas para que los agentes eviten errores conocidos
 - **Zero Continuity Errors**: Validacion inmediata post-escritura, deteccion de personajes muertos, filtraciones de conocimiento y drift de apariencia
+- **Anti-Repeticion entre Capitulos**: Ventana deslizante con texto real de capitulos anteriores y deteccion de patrones narrativos repetidos
 - **Seguimiento de Costos**: Tracking granular de uso de tokens por proyecto y modelo
 - **Autenticacion**: Proteccion con contrasena para instalaciones en servidor propio
+- **PWA**: Aplicacion web progresiva instalable con soporte offline
 
 ## Agentes del Sistema
 
@@ -77,6 +81,12 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 - Categorias: continuidad, personaje, trama, estilo, mundo
 - Niveles de prioridad: critica, alta, normal, baja
 - Se inyectan en los prompts del Ghostwriter y Editor como restricciones obligatorias
+
+### Anti-Repeticion entre Capitulos
+- **Ventana deslizante con texto real**: Los 2 capitulos mas recientes se envian con su texto completo (ultimos 8000 caracteres), los 5 siguientes con extractos de 500 caracteres
+- **Restricciones explicitas al Ghostwriter**: 7 reglas que prohiben repetir estructura de escenas, patrones de dialogo, mecanismos de revelacion, tipos de finales y recursos literarios
+- **Deteccion por el Editor**: Nuevo campo `repeticiones_trama` que compara el capitulo actual contra el texto de 3 capitulos anteriores (4000 chars cada uno)
+- **Retroalimentacion en ciclos de correccion**: Si se detectan repeticiones, el Ghostwriter recibe instrucciones especificas para reestructurar usando mecanismos narrativos diferentes
 
 ### Sistema de Calidad
 - Pausa automatica tras multiples evaluaciones no perfectas
@@ -354,14 +364,22 @@ sudo systemctl daemon-reload
 sudo systemctl restart nginx
 ```
 
+### PWA (Aplicacion Web Progresiva)
+- Instalable en escritorio y movil desde el navegador (Chrome, Edge, Safari)
+- Service Worker con estrategia network-first y fallback offline para assets cacheados
+- Las rutas `/api/` y `/sse/` (datos en tiempo real) nunca se cachean
+- Iconos 192x192 y 512x512 para pantalla de inicio
+- Soporte Apple Touch Icon para iOS
+
 ## Stack Tecnologico
 
-- **Frontend**: React + TypeScript + Vite + shadcn/ui
+- **Frontend**: React + TypeScript + Vite + shadcn/ui (PWA)
 - **Backend**: Node.js + Express + TypeScript
 - **Base de datos**: PostgreSQL + Drizzle ORM
 - **IA**: Google Gemini API (Gemini 3 Pro, 2.5 Flash, 2.0 Flash)
 - **Proxy**: Nginx
 - **Proceso**: systemd
+- **Idioma**: Interfaz en espanol (`lang="es"`)
 
 ## Licencia
 
