@@ -618,17 +618,43 @@ export class QueueManager {
     });
 
     const self = this;
+    const persistLog = async (level: string, message: string, agentRole?: string) => {
+      try {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level,
+          message,
+          agentRole: agentRole ?? null,
+          metadata: null,
+        });
+      } catch (e) {
+        console.error("[Queue/ActivityLog] Failed to persist:", e);
+      }
+    };
+    const getSectionLabel = (chapterNumber: number, title?: string | null): string => {
+      if (chapterNumber === 0) return title || "el Prólogo";
+      if (chapterNumber === -1) return title || "el Epílogo";
+      if (chapterNumber === -2) return title || "la Nota del Autor";
+      return `el Capítulo ${chapterNumber}`;
+    };
+
     const orchestrator = new Orchestrator({
       onAgentStatus: async (role, status, message) => {
         self.updateHeartbeat();
         console.log(`[Queue] ${project.title} - ${role}: ${status}`, message || "");
+        await storage.updateAgentStatus(project.id, role, { status, currentTask: message });
+        if (message) await persistLog("info", message, role);
       },
       onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
         self.updateHeartbeat();
         console.log(`[Queue] ${project.title} - Chapter ${chapterNumber} complete: ${wordCount} words`);
+        const label = getSectionLabel(chapterNumber, chapterTitle);
+        await persistLog("success", `${label} completado (${wordCount} palabras)`, "ghostwriter");
       },
-      onChapterRewrite: async () => {
+      onChapterRewrite: async (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
         self.updateHeartbeat();
+        const label = getSectionLabel(chapterNumber, chapterTitle);
+        await persistLog("warning", `Reescritura ${currentIndex}/${totalToRewrite}: ${label} - ${reason}`, "editor");
       },
       onChapterStatusChange: async () => {
         self.updateHeartbeat();
@@ -636,11 +662,13 @@ export class QueueManager {
       onProjectComplete: async () => {
         self.stopHeartbeatMonitor();
         self.currentProjectId = null;
+        await persistLog("success", "Novela completada exitosamente", "orchestrator");
         await self.handleProjectComplete(queueItem, project);
       },
       onError: async (error) => {
         self.stopHeartbeatMonitor();
         self.currentProjectId = null;
+        await persistLog("error", error, "orchestrator");
         await self.handleProjectError(queueItem, project, error);
       },
     });

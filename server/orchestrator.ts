@@ -1520,6 +1520,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       
       let previousContinuityStateForEditor: any = lastCompleted?.continuityState || null;
 
+      this.callbacks.onAgentStatus("architect", "completed", "Estructura narrativa completada");
       this.callbacks.onAgentStatus("orchestrator", "resuming", 
         `Retomando generación. ${pendingChapters.length} capítulos pendientes de ${existingChapters.length} totales.`
       );
