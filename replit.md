@@ -26,7 +26,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Storage
 - **Database**: PostgreSQL with Drizzle ORM.
-- **Schema**: Defined in `shared/schema.ts`, including tables for projects, chapters, world Bibles, thought logs, agent statuses, series, continuity snapshots, and imported manuscripts.
+- **Schema**: Defined in `shared/schema.ts`, including tables for projects, chapters, world Bibles, thought logs, agent statuses, series, continuity snapshots, arc verifications, and imported manuscripts.
 
 ### AI Integration
 - **Model**: Gemini 3 Pro Preview, accessed directly via Google's Gemini API.
@@ -49,7 +49,28 @@ Preferred communication style: Simple, everyday language.
 - **Author Notes System**: Users can add prioritized author instructions to the World Bible, injected into Ghostwriter and Editor prompts.
 - **Cross-Chapter Anti-Repetition**: Explicit rules and context (up to 3 previous chapters) for Ghostwriter and Editor to prevent thematic and narrative repetition.
 - **PWA Support**: Progressive Web App capabilities including `manifest.json`, service worker, and install-to-home-screen.
-- **Series Management**: Automatic continuity snapshots on book completion via `finalizeCompletedProject()` helper (called on all 6 completion paths: generateNovel, resumeNovel zero-pending, resumeNovel with-pending, runFinalReviewOnly, extendNovel, regenerateTruncatedChapters), ArcValidatorAgent for milestone verification, series context provision for Final Reviewer and Ghostwriter. Series thread/event loading uses `loadSeriesThreadsAndEvents()` which filters by `seriesOrder < currentVolume` to prevent future-book context leakage. Series unresolved threads injected into all Ghostwriter paths (generation, resume, QA rewrite, extension, regeneration, specific chapter rewrite). `getEnrichedWorldBible` early-return path includes series fields.
+
+### Series Management (Complete Inter-Book Continuity System)
+- **Centralized Completion Logic**: `finalizeCompletedProject()` helper ensures continuity snapshot generation and arc verification run on every completion path (8 total: generateNovel, resumeNovel zero-pending, resumeNovel with-pending, runFinalReviewOnly, extendNovel, regenerateTruncatedChapters, runContinuitySentinelForce passed, runContinuitySentinelForce with rewrites).
+- **Automatic Continuity Snapshots**: `generateSeriesContinuitySnapshot()` extracts synopsis, character states, unresolved threads, and key events from completed chapters and saves them via `storage.createContinuitySnapshot`.
+- **Automatic Arc Verification**: `runSeriesArcVerification()` runs ArcValidatorAgent after each book completes to verify milestone fulfillment and plot thread progress. Results stored in `arc_verifications` table.
+- **Series-Aware Context Loading**: `loadSeriesThreadsAndEvents()` loads unresolved threads and key events from previous volumes only, filtering by `seriesOrder < currentVolume` to prevent future-book context leakage.
+- **Final Reviewer Series Context**: Receives series milestones, plot threads, unresolved threads from prior books, and last-volume flag for thread closure enforcement.
+- **Ghostwriter Series Constraints**: Series unresolved threads injected into enriched World Bible across all Ghostwriter paths: initial generation, resume, QA rewrites, extension, regeneration, and specific chapter rewrites.
+- **Enriched World Bible Resilience**: `getEnrichedWorldBible()` includes series fields in early-return (empty characters) and error fallback paths, ensuring series context is never silently dropped.
+- **Volume Ordering**: Architect series context sorts volumes by `seriesOrder` using `?? 999` for null values (unknown order sorts last, not first).
+- **Manuscript Snapshot Filtering**: Imported manuscript snapshots also filtered by `seriesOrder < currentVolume`.
+
+## Key Orchestrator Methods
+
+| Method | Purpose |
+|---|---|
+| `finalizeCompletedProject()` | Sets status "completed", generates continuity snapshot, runs arc verification |
+| `loadSeriesThreadsAndEvents()` | Loads prior-volume threads/events with seriesOrder filtering |
+| `getEnrichedWorldBible()` | Enriches base World Bible with DB character states, narrative threads, author notes, series context |
+| `generateSeriesContinuitySnapshot()` | Extracts and saves book completion data for series continuity |
+| `runSeriesArcVerification()` | Runs ArcValidatorAgent and stores verification results |
+| `runFinalReview()` | Multi-cycle final review with series context, QA rewrites, and approval logic |
 
 ## External Dependencies
 
