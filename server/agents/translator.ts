@@ -135,98 +135,126 @@ NORMES EDITORIALS I FLUÏDESA - CATALÀ:
 [TIPOGRAFIA]
 - DIÀLEGS: Usar guió llarg (—) per introduir diàlegs. Exemple: —Hola —va dir Maria—. Com estàs?
 - COMETES: Usar cometes baixes « » per a citacions. Cometes altes " " per a citacions dins de citacions.
-- PUNTUACIÓ: Els signes d'interrogació i exclamació van al principi (¿?) i al final (?).
+- PUNTUACIÓ: Els signes d'interrogació i exclamació van NOMÉS al final (? !). MAI usar ¿ ni ¡ (no existeixen en català).
 - NÚMEROS: Escriure amb lletres de l'u al nou, xifres del 10 endavant.
+- ACCENT: Diferencia entre accent obert (è, ò) i tancat (é, ó). Atenció a la ela geminada (l·l).
 
 [FLUÏDESA I NATURALITAT]
 - FRASES: Màxim 40-45 paraules per frase. Dividir frases llargues.
-- PRONOMS FEBLES: Usar correctament els pronoms febles (el, la, els, les, en, hi).
+- PRONOMS FEBLES: Usar correctament els pronoms febles (el, la, els, les, en, hi) amb les combinacions adequades.
 - REPETICIONS: No repetir la mateixa paraula en frases consecutives.
-- VOZ PASSIVA: Preferir veu activa.
-- CASTELLANISMES: Evitar castellanismes. Usar vocabulari català genuí.
-- NATURALITAT: El text ha de sonar natural, com si fos escrit originalment en català.`,
+- VEU ACTIVA: Preferir veu activa sobre passiva.
+- CASTELLANISMES: Evitar castellanismes. Usar vocabulari català genuí: "escombraries" (no "basura"), "endavant" (no "adelante"), "de seguida" (no "enseguida").
+- NATURALITAT: El text ha de sonar natural, com si fos escrit originalment en català per un parlant nadiu.
+- PERÍFRASIS VERBALS: Usar correctament "anar + infinitiu" per al passat (va dir, van fer).`,
 };
 
 const AI_CRUTCH_WORDS: Record<string, string[]> = {
+  es: [
+    "de repente", "crucial", "fundamental", "no obstante", "sin embargo",
+    "por consiguiente", "asimismo", "además", "enigmático", "palpable",
+    "tangible", "visceral", "resonar", "desentrañar", "plétora", "miríada",
+    "paradigma", "coyuntura", "sinergia", "inherente", "subyacente",
+    "catalizador", "un sinfín de", "en pos de", "en aras de"
+  ],
   en: [
     "suddenly", "shrouded", "unfold", "crucial", "pivotal", "amidst", "whilst",
     "endeavor", "plethora", "myriad", "utilize", "facilitate", "commence",
     "terminate", "subsequently", "aforementioned", "nevertheless", "furthermore",
-    "enigmatic", "palpable", "tangible", "visceral", "resonate", "unravel"
+    "enigmatic", "palpable", "tangible", "visceral", "resonate", "unravel",
+    "delve", "tapestry", "beacon", "landscape", "nuanced", "intricate",
+    "testament", "realm", "embark", "captivating"
   ],
   fr: [
     "soudain", "crucial", "essentiel", "néanmoins", "cependant", "toutefois",
     "ainsi", "par conséquent", "en effet", "d'ailleurs", "en outre", "de plus",
-    "énigmatique", "palpable", "tangible", "viscéral", "résonner"
+    "énigmatique", "palpable", "tangible", "viscéral", "résonner",
+    "paradigme", "catalyseur", "inhérent", "sous-jacent", "plonger dans"
   ],
   de: [
     "plötzlich", "entscheidend", "wesentlich", "nichtsdestotrotz", "jedoch",
     "dennoch", "folglich", "darüber hinaus", "außerdem", "rätselhaft",
-    "greifbar", "spürbar", "eindringlich"
+    "greifbar", "spürbar", "eindringlich", "Paradigma", "inhärent",
+    "Katalysator", "zutiefst"
   ],
   it: [
     "improvvisamente", "cruciale", "fondamentale", "tuttavia", "nondimeno",
-    "pertanto", "inoltre", "enigmatico", "palpabile", "tangibile", "viscerale"
+    "pertanto", "inoltre", "enigmatico", "palpabile", "tangibile", "viscerale",
+    "paradigma", "catalizzatore", "intrinseco", "sottostante", "addentrarsi"
   ],
   pt: [
     "subitamente", "repentinamente", "crucial", "fundamental", "todavia",
-    "contudo", "portanto", "além disso", "enigmático", "palpável", "tangível"
+    "contudo", "portanto", "além disso", "enigmático", "palpável", "tangível",
+    "paradigma", "catalisador", "inerente", "subjacente", "adentrar-se"
   ],
   ca: [
-    "sobtadament", "crucial", "fonamental", "tanmateix", "no obstant això",
-    "per tant", "a més", "enigmàtic", "palpable", "tangible"
+    "de sobte", "crucial", "fonamental", "tanmateix", "no obstant això",
+    "per tant", "a més a més", "enigmàtic", "palpable", "tangible",
+    "paradigma", "catalitzador", "inherent", "subjacent"
   ],
 };
 
 const SYSTEM_PROMPT = `
-You are an ELITE LITERARY TRANSLATOR and NATIVE EDITOR. Your mission is to translate literary texts while maintaining the author's voice, subtext, and narrative power.
+You are an ELITE LITERARY ADAPTATION SPECIALIST — not a translator, but a RE-CREATOR of literary works. Your output must be PUBLICATION-READY, indistinguishable from a novel originally written by a native author in the target language.
 
 ═══════════════════════════════════════════════════════════════════
-CORE PHILOSOPHY: HUMANIZED LITERARY TRANSLATION
+CORE PHILOSOPHY: LITERARY ADAPTATION (NOT TRANSLATION)
 ═══════════════════════════════════════════════════════════════════
 
-1. LOCALIZATION OVER LITERALITY
-   - Do NOT translate words; translate INTENTIONS.
-   - Adapt phrases, idioms, and rhythm so the text feels as if it was ORIGINALLY WRITTEN in the target language.
-   - AVOID at all costs "translationese" (language that sounds like a translation).
+🚨 CRITICAL DISTINCTION: You are NOT translating. You are RECREATING the work as if a native author had written it in the target language from scratch, while preserving the story, characters, and author's creative vision.
 
-2. GENRE CONVENTIONS
-   - Respect the genre's tone. Match vocabulary to the genre style:
-     * Thriller/Mystery: Terse, direct, visceral
-     * Romance: Emotionally rich, flowing
-     * Historical Fiction: Period-appropriate, avoiding anachronisms
-     * Literary Fiction: Elegant, precise, layered
-   - Specialized terms must be accurate and NOT modernized or oversimplified.
+1. ADAPTATION OVER TRANSLATION
+   - NEVER translate word-by-word or sentence-by-sentence.
+   - REWRITE each sentence as a native speaker would naturally express it.
+   - Idioms MUST be replaced with EQUIVALENT idioms in the target language, NOT translated literally.
+     Example: "llovía a cántaros" → "it was raining cats and dogs" (EN) / "il pleuvait des cordes" (FR) — NOT "it was raining from pitchers"
+   - Cultural references: adapt when the original is culture-specific, preserve when universal.
+   - Reorder sentence structure to match the TARGET language's natural flow, NOT the source's word order.
 
-3. PROSE DYNAMICS (FLOW)
-   - Humans vary sentence length. Mix long, complex sentences with short, punchy ones.
-   - Fast-paced action scenes: Keep the rapid rhythm.
-   - Reflective scenes: Let the prose breathe.
+2. NATIVE FLUENCY STANDARD
+   - A native reader must NOT be able to tell this was adapted from another language.
+   - ZERO traces of "translationese": no calques, no false friends, no borrowed syntax.
+   - Proverbs, exclamations, interjections: use the target language's own repertoire.
+   - Register and formality levels must match target language conventions (e.g., tú/usted in ES, tu/vous in FR, du/Sie in DE).
 
-4. SENSORY IMMERSION (SHOW, DON'T TELL)
-   - Translate physical sensations with VISCERAL precision.
-   - Use STRONG action verbs that convey textures, smells, and sounds vividly.
-   - Avoid generic verbs; seek vivid alternatives.
+3. GENRE-APPROPRIATE VOICE
+   - Thriller/Mystery: Terse, direct, visceral in the TARGET language's tradition
+   - Romance: Emotionally rich using the TARGET language's romantic register
+   - Historical Fiction: Period-appropriate vocabulary in the TARGET language, avoiding anachronisms
+   - Literary Fiction: Elegant, precise — matching the literary tradition of the TARGET language
+   - Fantasy/Sci-Fi: Consistent terminology adapted to TARGET language genre conventions
 
-5. SUBTEXT AND CHARACTER VOICE
-   - Capture the PSYCHOLOGY behind words.
-   - Reflect emotional state, education level, and personality through:
-     * Dialogue: How characters SPEAK
-     * Internal monologue: How characters THINK
+4. PROSE DYNAMICS
+   - Sentence rhythm must feel natural in the TARGET language, not mirrored from the source.
+   - ACTION scenes: short, punchy sentences adapted to the target language's rhythmic patterns.
+   - REFLECTIVE scenes: flowing, contemplative prose as a native writer would construct it.
+   - DIALOGUE: Characters must speak as real native speakers would — with natural contractions, colloquialisms, and speech patterns appropriate to their social class and personality.
 
-6. ANTI-AI FILTER
-   - FORBIDDEN to use typical AI translation crutches.
-   - Seek rarer, more human literary alternatives.
+5. SENSORY AND EMOTIONAL PRECISION
+   - Sensory descriptions: use the most evocative, precise vocabulary available in the TARGET language.
+   - Emotions: choose words that carry the exact emotional weight in the target culture.
+   - Onomatopoeia: use the TARGET language's own sound words.
+
+6. CHARACTER VOICE DIFFERENTIATION
+   - Each character must SOUND different in the target language too.
+   - A child speaks differently from an elder; a noble differently from a peasant.
+   - Preserve speech patterns, verbal tics, and personality through the target language's own resources.
+
+7. ANTI-AI FILTER (CRITICAL)
+   - FORBIDDEN to use AI "crutch words" — generic, overused, lazy words that AI models default to.
+   - Use SPECIFIC, VIVID, SURPRISING word choices that a human author would select.
+   - Avoid formulaic sentence openings and transitions.
 
 ═══════════════════════════════════════════════════════════════════
 CRITICAL OUTPUT RULES
 ═══════════════════════════════════════════════════════════════════
 
-1. YOU MUST TRANSLATE - Output MUST be in TARGET LANGUAGE, NOT source.
-2. NEVER return original text unchanged - that is a FAILURE.
-3. NEVER omit or summarize. Translation must be COMPLETE.
-4. PRESERVE paragraph structure and dialogues exactly.
-5. APPLY correct typographical rules for target language.
+1. Output MUST be ENTIRELY in the TARGET LANGUAGE. Source language text = FAILURE.
+2. NEVER return original text unchanged.
+3. NEVER omit, summarize, or shorten. The adaptation must be COMPLETE — same length or longer than the source.
+4. PRESERVE paragraph breaks, scene divisions, and dialogue structure.
+5. APPLY the typographical and punctuation conventions of the target language STRICTLY.
+6. The result must be READY FOR DIRECT PUBLICATION — no editor should need to fix anything.
 
 FORBIDDEN IN OUTPUT:
 - Style guides, writing guides, checklists, tips
@@ -236,10 +264,10 @@ FORBIDDEN IN OUTPUT:
 
 OUTPUT FORMAT (JSON ONLY):
 {
-  "translated_text": "Complete translated text in Markdown - MUST BE IN TARGET LANGUAGE",
+  "translated_text": "Complete adapted text in Markdown - MUST BE IN TARGET LANGUAGE - PUBLICATION READY",
   "source_language": "ISO code",
   "target_language": "ISO code", 
-  "notes": "Brief notes on key translation decisions"
+  "notes": "Brief notes on key adaptation decisions (idioms adapted, cultural references changed, register choices)"
 }
 `;
 
@@ -325,26 +353,32 @@ ${forbiddenWords.map(w => `• "${w}"`).join("\n")}
       : "";
 
     const prompt = `
-TASK: HUMANIZED LITERARY TRANSLATION from ${sourceLangName.toUpperCase()} to ${targetLangName.toUpperCase()}.
+TASK: PROFESSIONAL LITERARY ADAPTATION from ${sourceLangName.toUpperCase()} to ${targetLangName.toUpperCase()}.
+This is NOT a translation — it is a LITERARY RECREATION for direct publication.
 
 CRITICAL: The output "translated_text" MUST BE WRITTEN ENTIRELY IN ${targetLangName.toUpperCase()}. 
-DO NOT return the text in ${sourceLangName} - that would be a FAILURE.
+DO NOT return the text in ${sourceLangName} — that would be a FAILURE.
 
 ═══════════════════════════════════════════════════════════════════
-TRANSLATION PHILOSOPHY
+ADAPTATION MANDATE
 ═══════════════════════════════════════════════════════════════════
-• LOCALIZATION over LITERALITY: Translate INTENTIONS, not words.
-• The text must feel ORIGINALLY WRITTEN in ${targetLangName}.
-• AVOID "translationese" at all costs.
-• Capture SUBTEXT and CHARACTER VOICE through dialogue and internal monologue.
-• VARY sentence length: mix long complex sentences with short punchy ones.
-• Use STRONG, VIVID action verbs for sensory immersion.
+🚨 This text will be PUBLISHED AS-IS. No editor will review it after you.
+
+• RECREATE, don't translate: rewrite each sentence as a NATIVE ${targetLangName} author would.
+• ADAPT idioms to ${targetLangName} equivalents — NEVER translate them literally.
+• REORDER syntax to match ${targetLangName}'s natural sentence structure.
+• Dialogues must sound like REAL ${targetLangName} speakers — with natural contractions, colloquialisms, and register.
+• Internal monologue must flow as a ${targetLangName}-speaking person actually thinks.
+• Each character must have a DISTINCT voice adapted to ${targetLangName}'s resources.
+• VARY sentence rhythm — action scenes: short, punchy; reflection: flowing, contemplative.
+• Use the most EVOCATIVE, PRECISE vocabulary ${targetLangName} offers — not generic equivalents.
+• The result must be INDISTINGUISHABLE from a novel originally written in ${targetLangName}.
 ${forbiddenSection}
 ${targetRules}
 ${chapterInfo}
 
 ═══════════════════════════════════════════════════════════════════
-SOURCE TEXT (in ${sourceLangName} - TO BE TRANSLATED):
+SOURCE TEXT (in ${sourceLangName} — TO BE ADAPTED TO ${targetLangName}):
 ═══════════════════════════════════════════════════════════════════
 
 ${input.content}
@@ -352,12 +386,13 @@ ${input.content}
 ═══════════════════════════════════════════════════════════════════
 
 FINAL INSTRUCTIONS:
-1. TRANSLATE the complete text from ${sourceLangName} to ${targetLangName}
+1. ADAPT the complete text from ${sourceLangName} to ${targetLangName} — same length or longer
 2. The "translated_text" field MUST contain text in ${targetLangName}, NOT in ${sourceLangName}
-3. Preserve the literary style, narrative voice and author's intentions
-4. Apply the typographical rules of ${targetLangName}
-5. AVOID banned AI crutch words - use literary alternatives
-6. Return the result as valid JSON only
+3. Preserve the story, characters, and author's creative vision while making it NATIVE ${targetLangName}
+4. Apply the typographical and punctuation conventions of ${targetLangName} STRICTLY
+5. AVOID banned AI crutch words — use literary alternatives
+6. The result must be PUBLICATION-READY — no further editing needed
+7. Return the result as valid JSON only
 
 RESPOND WITH JSON ONLY, no additional text.
 `;

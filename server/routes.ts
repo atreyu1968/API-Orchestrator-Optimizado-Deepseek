@@ -4476,7 +4476,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return orderA - orderB;
       });
       
-      const chaptersWithContent = sortedChapters.filter(c => c.content && c.content.trim().length > 0);
+      const chaptersWithContent = sortedChapters.filter(c => ((c as any).editedContent ?? c.content ?? "").trim().length > 0);
       const totalChapters = chaptersWithContent.length;
       
       sendEvent("start", { 
@@ -4530,8 +4530,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         
         console.log(`[Translate] Translating ${chapterLabel}: ${chapter.title}`);
         
+        const chapterContent = (chapter as any).editedContent ?? chapter.content ?? "";
         const result = await translator.execute({
-          content: chapter.content || "",
+          content: chapterContent,
           sourceLanguage,
           targetLanguage,
           chapterTitle: chapter.title || undefined,
@@ -4546,7 +4547,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
             translatedContent: result.result.translated_text,
             notes: result.result.notes,
           });
-          completedCount++; // Increment AFTER successful translation
+          completedCount++;
         }
         
         totalInputTokens += (result as any).inputTokens || 0;
@@ -4562,7 +4563,6 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           outputTokens: totalOutputTokens
         });
 
-        // Update the database record with partial progress so the UI sees it
         if (translationRecordId) {
           try {
             await storage.updateTranslation(translationRecordId, {
@@ -4937,6 +4937,121 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  const buildCleanMarkdownLines = (
+    chapters: Array<{ chapterNumber: number; title: string; translatedContent: string; notes: string }>,
+    targetLanguage: string
+  ): string => {
+    const langLabelsMap: Record<string, { prologue: string; epilogue: string; authorNote: string; chapter: string }> = {
+      es: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota del Autor", chapter: "Capítulo" },
+      en: { prologue: "Prologue", epilogue: "Epilogue", authorNote: "Author's Note", chapter: "Chapter" },
+      fr: { prologue: "Prologue", epilogue: "Épilogue", authorNote: "Note de l'Auteur", chapter: "Chapitre" },
+      de: { prologue: "Prolog", epilogue: "Epilog", authorNote: "Anmerkung des Autors", chapter: "Kapitel" },
+      it: { prologue: "Prologo", epilogue: "Epilogo", authorNote: "Nota dell'Autore", chapter: "Capitolo" },
+      pt: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota do Autor", chapter: "Capítulo" },
+      ca: { prologue: "Pròleg", epilogue: "Epíleg", authorNote: "Nota de l'Autor", chapter: "Capítol" },
+    };
+    const lbl = langLabelsMap[targetLanguage] || langLabelsMap.en;
+
+    const normalizeHeader = (header: string, chapterNumber: number): string => {
+      const chapterPattern = /^(CHAPTER|Chapter|CAPÍTULO|Capítulo|CHAPITRE|Chapitre|KAPITEL|Kapitel|CAPITOLO|Capitolo|CAPÍTOL|Capítol)\s*(\d+)\s*[:\-–—]?\s*/i;
+      const match = header.match(chapterPattern);
+      if (match) {
+        const num = parseInt(match[2], 10);
+        const rest = header.slice(match[0].length).trim();
+        return `${lbl.chapter} ${num}${rest ? `: ${rest}` : ''}`;
+      }
+      if (/^(PROLOGUE|Prologue|PRÓLOGO|Prólogo|PROLOG|Prolog|PROLOGO|Prologo|PRÒLEG|Pròleg)\s*[:\-–—]?\s*/i.test(header)) {
+        const rest = header.replace(/^(PROLOGUE|Prologue|PRÓLOGO|Prólogo|PROLOG|Prolog|PROLOGO|Prologo|PRÒLEG|Pròleg)\s*[:\-–—]?\s*/i, '').trim();
+        return rest ? `${lbl.prologue}: ${rest}` : lbl.prologue;
+      }
+      if (/^(EPILOGUE|Epilogue|EPÍLOGO|Epílogo|EPILOG|Epilog|EPILOGO|Epilogo|EPÍLEG|Epíleg)\s*[:\-–—]?\s*/i.test(header)) {
+        const rest = header.replace(/^(EPILOGUE|Epilogue|EPÍLOGO|Epílogo|EPILOG|Epilog|EPILOGO|Epilogo|EPÍLEG|Epíleg)\s*[:\-–—]?\s*/i, '').trim();
+        return rest ? `${lbl.epilogue}: ${rest}` : lbl.epilogue;
+      }
+      if (/^(AUTHOR'?S?\s*NOTE|Author'?s?\s*Note|NOTA\s*DEL?\s*AUTOR|Nota\s*del?\s*Autor|NOTE\s*DE\s*L'AUTEUR|Note\s*de\s*l'Auteur|ANMERKUNG\s*DES\s*AUTORS|Anmerkung\s*des\s*Autors|NOTA\s*DELL'?AUTORE|Nota\s*dell'?Autore|NOTA\s*DE\s*L'AUTOR|Nota\s*de\s*l'Autor)\s*[:\-–—]?\s*/i.test(header)) {
+        return lbl.authorNote;
+      }
+      return header;
+    };
+
+    const cleanContent = (content: string, chapterNumber: number): { heading: string | null; body: string } => {
+      let cleaned = content.trim();
+      const codeBlockMatch = cleaned.match(/^```(?:json|markdown|md)?\s*([\s\S]*?)```\s*$/);
+      if (codeBlockMatch) cleaned = codeBlockMatch[1].trim();
+      cleaned = cleaned.replace(/```(?:json|markdown|md|text)?\n?/g, '').replace(/```\s*$/g, '');
+      if (cleaned.startsWith('{') && cleaned.includes('"translated_text"')) {
+        try {
+          const parsed = JSON.parse(cleaned);
+          if (parsed.translated_text) cleaned = parsed.translated_text;
+        } catch {
+          const jsonMatch = cleaned.match(/"translated_text"\s*:\s*"([\s\S]*?)(?:"\s*,\s*"(?:source_|target_|notes)|\s*"\s*})/);
+          if (jsonMatch) cleaned = jsonMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+        }
+      }
+      const stylePatterns = [
+        /^#+ *(?:Literary Style Guide|Writing Guide|Style Guide|Guía de Estilo|Guía de Escritura)[^\n]*\n[\s\S]*?(?=^#+ *(?:CHAPTER|Chapter|CAPÍTULO|Capítulo|Prologue|Prólogo|Epilogue|Epílogo|CAPITOLO|Capitolo)\b|\n---\n|$)/gmi,
+        /^###+ *Checklist[^\n]*\n[\s\S]*?(?=^#{1,2} *(?:CHAPTER|Chapter|CAPÍTULO|Capítulo)\b|\n---\n|$)/gmi,
+        /\n---\n[\s\S]*?(?:Style Guide|Guía de Estilo|Writing Guide)[\s\S]*?\n---\n/gi,
+      ];
+      for (const p of stylePatterns) {
+        const after = cleaned.replace(p, '');
+        if (after.trim().length > 50) cleaned = after;
+      }
+
+      const headingMatch = cleaned.match(/^(#{1,4})\s*(.+?)\n+/);
+      let bodyText = cleaned;
+      let extractedHeading: string | null = null;
+      if (headingMatch) {
+        const rawHeading = headingMatch[2].trim();
+        extractedHeading = normalizeHeader(rawHeading, chapterNumber);
+        const potentialBody = cleaned.slice(headingMatch[0].length).trim();
+        if (potentialBody.length > 50) {
+          bodyText = potentialBody;
+        } else {
+          extractedHeading = null;
+        }
+      }
+      const chapterHeaderPattern = /^#{1,4}\s*(CHAPTER|Chapter|CAPÍTULO|Capítulo|CHAPITRE|Chapitre|KAPITEL|Kapitel|CAPITOLO|Capitolo|CAPÍTOL|Capítol|Prologue|PROLOGUE|Prólogo|PRÓLOGO|Prolog|PROLOG|Prologo|PROLOGO|Pròleg|PRÒLEG|Epilogue|EPILOGUE|Epílogo|EPÍLOGO|Epilog|EPILOG|Epilogo|EPILOGO|Epíleg|EPÍLEG)[^\n]*\n+/i;
+      for (let i = 0; i < 3; i++) {
+        const before = bodyText;
+        const afterRemoval = bodyText.replace(chapterHeaderPattern, '');
+        if (afterRemoval.trim().length > 50 && afterRemoval !== before) {
+          bodyText = afterRemoval;
+        } else break;
+      }
+      const numericHeaderPattern = /^#{1,4}\s*\d+\s*[:\-–—]?\s*[^\n]*\n+/i;
+      const afterNumericRemoval = bodyText.replace(numericHeaderPattern, '');
+      if (afterNumericRemoval.trim().length > 50) bodyText = afterNumericRemoval.trim();
+      bodyText = bodyText.replace(/\n*[-*]{3,}\s*$/, '').trim();
+      cleaned = cleaned.replace(/,?\s*"(?:source_language|target_language|notes)"\s*:\s*"[^"]*"\s*}?\s*$/g, '');
+      return { heading: extractedHeading, body: bodyText };
+    };
+
+    const lines: string[] = [];
+    for (const chapter of chapters) {
+      const parsed = cleanContent(chapter.translatedContent, chapter.chapterNumber);
+      let heading: string;
+      if (parsed.heading) {
+        heading = parsed.heading;
+      } else {
+        if (chapter.chapterNumber === 0) {
+          heading = `${lbl.prologue}${chapter.title ? `: ${chapter.title}` : ''}`;
+        } else if (chapter.chapterNumber === -1) {
+          heading = `${lbl.epilogue}${chapter.title ? `: ${chapter.title}` : ''}`;
+        } else if (chapter.chapterNumber === -2) {
+          heading = lbl.authorNote;
+        } else {
+          heading = `${lbl.chapter} ${chapter.chapterNumber}${chapter.title ? `: ${chapter.title}` : ''}`;
+        }
+      }
+      lines.push(`## ${heading}`);
+      lines.push("");
+      lines.push(parsed.body);
+      lines.push("");
+    }
+    return lines.join("\n");
+  };
+
   // Resume a stuck translation from where it left off
   app.get("/api/translations/:id/resume", async (req: Request, res: Response) => {
     const translationId = parseInt(req.params.id);
@@ -5008,16 +5123,18 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return orderA - orderB;
       });
 
-      const chaptersWithContent = sortedChapters.filter(c => c.content && c.content.trim().length > 0);
+      const chaptersWithContent = sortedChapters.filter(c => ((c as any).editedContent ?? c.content ?? "").trim().length > 0);
       const totalChapters = chaptersWithContent.length;
       
-      // Count chapters in persisted markdown by counting "---" delimiters
-      // Each chapter is separated by "\n\n---\n\n", so delimiters + 1 = chapters
-      // But only if there's actual content
       let markdownChapterCount = 0;
       if (existingMarkdown.trim().length > 0) {
-        const delimiterMatches = existingMarkdown.match(/\n\n---\n\n/g);
-        markdownChapterCount = delimiterMatches ? delimiterMatches.length + 1 : 1;
+        const headingMatches = existingMarkdown.match(/^## /gm);
+        if (headingMatches) {
+          markdownChapterCount = headingMatches.length;
+        } else {
+          const delimiterMatches = existingMarkdown.match(/\n\n---\n\n/g);
+          markdownChapterCount = delimiterMatches ? delimiterMatches.length + 1 : 1;
+        }
       }
       
       // Use the minimum of: database counter vs actual markdown chapters
@@ -5099,8 +5216,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
         console.log(`[Resume] Translating ${chapterLabel}: ${chapter.title}`);
 
+        const chapterContent = (chapter as any).editedContent ?? chapter.content ?? "";
         const result = await translator.execute({
-          content: chapter.content || "",
+          content: chapterContent,
           sourceLanguage,
           targetLanguage,
           chapterTitle: chapter.title || undefined,
@@ -5132,11 +5250,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           resumed: true,
         });
 
-        // Save progress after each chapter
-        const newChapterMarkdown = translatedChapters.map(tc => tc.translatedContent).join("\n\n---\n\n");
+        // Save progress after each chapter — apply proper cleaning and header normalization
+        const newChapterLines = buildCleanMarkdownLines(translatedChapters, targetLanguage);
         const combinedMarkdown = existingMarkdown 
-          ? existingMarkdown + "\n\n---\n\n" + newChapterMarkdown 
-          : newChapterMarkdown;
+          ? existingMarkdown + "\n\n" + newChapterLines
+          : newChapterLines;
         
         await storage.updateTranslation(translationId, {
           chaptersTranslated: completedCount,
@@ -5147,11 +5265,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         });
       }
 
-      // Final update - mark as completed
-      const newChapterMarkdown = translatedChapters.map(tc => tc.translatedContent).join("\n\n---\n\n");
+      // Final update - mark as completed with proper cleaning
+      const newChapterLines = buildCleanMarkdownLines(translatedChapters, targetLanguage);
       const finalMarkdown = existingMarkdown 
-        ? existingMarkdown + "\n\n---\n\n" + newChapterMarkdown 
-        : newChapterMarkdown;
+        ? existingMarkdown + "\n\n" + newChapterLines
+        : newChapterLines;
       
       const totalWords = finalMarkdown.split(/\s+/).filter(w => w.length > 0).length;
 
@@ -6446,102 +6564,14 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         }
       }
       
-      // Generate final markdown
-      let finalMarkdown = `# ${project.title}\n\n`;
-      let totalWords = 0;
-      
-      // Localized chapter labels by target language
-      const reeditLabels: Record<string, { prologue: string; epilogue: string; authorNote: string; chapter: string }> = {
-        es: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota del Autor", chapter: "Capítulo" },
-        en: { prologue: "Prologue", epilogue: "Epilogue", authorNote: "Author's Note", chapter: "Chapter" },
-        fr: { prologue: "Prologue", epilogue: "Épilogue", authorNote: "Note de l'Auteur", chapter: "Chapitre" },
-        de: { prologue: "Prolog", epilogue: "Epilog", authorNote: "Anmerkung des Autors", chapter: "Kapitel" },
-        it: { prologue: "Prologo", epilogue: "Epilogo", authorNote: "Nota dell'Autore", chapter: "Capitolo" },
-        pt: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota do Autor", chapter: "Capítulo" },
-        ca: { prologue: "Pròleg", epilogue: "Epíleg", authorNote: "Nota de l'Autor", chapter: "Capítol" },
-      };
-      const lang = reeditLabels[targetLanguage as string] || reeditLabels.en;
-      
-      // Helper to clean code fences, JSON artifacts, and duplicate headers from translated content
-      const cleanTranslatedContent = (content: string, chapterNum: number): string => {
-        let cleaned = content.trim();
-        
-        // Strip markdown code block wrapper if present
-        const codeBlockMatch = cleaned.match(/^```(?:json|markdown|md|text)?\s*([\s\S]*?)```\s*$/);
-        if (codeBlockMatch) {
-          cleaned = codeBlockMatch[1].trim();
-        }
-        
-        // Also strip any remaining code fences
-        cleaned = cleaned.replace(/```(?:json|markdown|md|text)?\n?/g, '').replace(/```\s*$/g, '');
-        
-        // If it's still JSON with translated_text field, extract it
-        if (cleaned.startsWith('{') && cleaned.includes('"translated_text"')) {
-          try {
-            const parsed = JSON.parse(cleaned);
-            if (parsed.translated_text) {
-              cleaned = parsed.translated_text;
-            }
-          } catch {
-            // Try regex extraction for malformed JSON
-            const jsonMatch = cleaned.match(/"translated_text"\s*:\s*"([\s\S]*?)(?:"\s*,\s*"(?:source_|target_|notes)|\s*"\s*})/);
-            if (jsonMatch) {
-              cleaned = jsonMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-            }
-          }
-        }
-        
-        // Remove chapter-like headers from the start (AI includes them but we add our own)
-        // CRITICAL: Require newline at the end to avoid consuming prose
-        const chapterHeaderPattern = /^#{1,4}\s*(CHAPTER|Chapter|CAPÍTULO|Capítulo|CHAPITRE|Chapitre|KAPITEL|Kapitel|CAPITOLO|Capitolo|CAPÍTOL|Capítol|Prologue|PROLOGUE|Prólogo|PRÓLOGO|Prolog|PROLOG|Prologo|PROLOGO|Pròleg|PRÒLEG|Epilogue|EPILOGUE|Epílogo|EPÍLOGO|Epilog|EPILOG|Epilogo|EPILOGO|Epíleg|EPÍLEG|Author'?s?\s*Note|AUTHOR'?S?\s*NOTE|Nota\s*del?\s*Autor|NOTA\s*DEL?\s*AUTOR|Note\s*de\s*l'Auteur|NOTE\s*DE\s*L'AUTEUR|Anmerkung\s*des\s*Autors|ANMERKUNG\s*DES\s*AUTORS|Nota\s*dell'?Autore|NOTA\s*DELL'?AUTORE|Nota\s*de\s*l'Autor|NOTA\s*DE\s*L'AUTOR)[^\n]*\n+/i;
-        
-        // Remove up to 3 duplicate headers, but verify content remains
-        for (let i = 0; i < 3; i++) {
-          const before = cleaned;
-          const afterRemoval = cleaned.replace(chapterHeaderPattern, '');
-          // Only remove if it leaves substantial content
-          if (afterRemoval.trim().length > 50 && afterRemoval !== before) {
-            cleaned = afterRemoval;
-          } else {
-            break;
-          }
-        }
-        
-        // Also remove headers that are just the chapter number (e.g., "## 1: Title\n")
-        // Only if it leaves content
-        const numericHeaderPattern = /^#{1,4}\s*\d+\s*[:\-–—]?\s*[^\n]*\n+/i;
-        const afterNumeric = cleaned.replace(numericHeaderPattern, '');
-        if (afterNumeric.trim().length > 50) {
-          cleaned = afterNumeric.trim();
-        }
-        
-        // Remove trailing dividers
-        cleaned = cleaned.replace(/\n*[-*]{3,}\s*$/, '').trim();
-        
-        return cleaned;
-      };
-      
-      for (let i = 0; i < translatedChapters.length; i++) {
-        const ch = translatedChapters[i];
-        const isLastChapter = i === translatedChapters.length - 1;
-        
-        // Generate localized fallback label
-        const titleLabel = ch.chapterNumber === 0 ? lang.prologue :
-                          ch.chapterNumber === 998 ? lang.epilogue :
-                          ch.chapterNumber === 999 ? lang.authorNote :
-                          `${lang.chapter} ${ch.chapterNumber}`;
-        
-        // Clean the translated content (remove code fences, JSON artifacts, duplicate headers)
-        const cleanedContent = cleanTranslatedContent(ch.translatedContent, ch.chapterNumber);
-        
-        finalMarkdown += `## ${ch.title || titleLabel}\n\n`;
-        finalMarkdown += cleanedContent + "\n\n";
-        // Only add divider between chapters, not after the last one
-        if (!isLastChapter) {
-          finalMarkdown += "---\n\n";
-        }
-        totalWords += cleanedContent.split(/\s+/).filter((w: string) => w.length > 0).length;
-      }
+      // Generate final markdown using shared clean builder
+      const reeditChaptersForMarkdown = translatedChapters.map(ch => ({
+        ...ch,
+        chapterNumber: ch.chapterNumber === 998 ? -1 : ch.chapterNumber === 999 ? -2 : ch.chapterNumber,
+      }));
+      const cleanedBody = buildCleanMarkdownLines(reeditChaptersForMarkdown, targetLanguage as string);
+      const finalMarkdown = `# ${project.title}\n\n${cleanedBody}`;
+      const totalWords = finalMarkdown.split(/\s+/).filter((w: string) => w.length > 0).length;
       
       // Save to repository
       if (translationRecordId) {
