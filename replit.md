@@ -78,7 +78,7 @@ Preferred communication style: Simple, everyday language.
 - **Automatic Pause & Approval**: System pauses for user input on non-perfect evaluations. Requires a single score of 9+ with no critical issues for project approval.
 - **Issue Tracking**: Issue hash tracking prevents re-reporting of resolved issues.
 - **Enhanced Cancellation & Resume**: Immediate process cancellation and optimized project resumption from `awaiting_instructions`.
-- **Continuity Validation & Constraints**: Immediate, pre-Editor validation for dead characters, ignored injuries, and location inconsistencies. Mandatory continuity constraints for the Ghostwriter.
+- **Continuity Validation & Constraints**: Three-layer continuity system: (1) Immediate pre-Editor validation for dead characters, ignored injuries, and location inconsistencies. (2) Editor acts as primary continuity sentinel with full 6-category analysis (physical, temporal, spatial, character state, objects, knowledge leaks) — continuity errors auto-reject the chapter. (3) Continuity Sentinel runs every 5 chapters but only checks multi-chapter panoramic patterns (accumulated timeline drift, abandoned threads, cross-chapter contradictions) — only triggers rewrites for CRITICAL severity issues, not MAJOR.
 - **World Bible Enrichment**: Automatic update and enrichment of the World Bible with character states and narrative threads after each chapter. Includes full-text sliding context window for Ghostwriter.
 - **Author Notes System**: Users can add prioritized author instructions to the World Bible, injected into Ghostwriter and Editor prompts.
 - **Cross-Chapter Anti-Repetition**: Explicit rules and context (up to 3 previous chapters) for Ghostwriter and Editor to prevent thematic and narrative repetition.

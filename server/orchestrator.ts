@@ -1249,14 +1249,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             if (!checkpointResult.passed && checkpointResult.chaptersToRevise.length > 0) {
               accumulatedContinuityIssues = [...accumulatedContinuityIssues, ...checkpointResult.issues];
               
-              const hasSignificantIssues = checkpointResult.issues.some(issue => 
+              const hasCriticalIssues = checkpointResult.issues.some(issue => 
                 issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]") ||
-                issue.includes("[MAYOR]") || issue.includes("[mayor]")
+                issue.toLowerCase().includes("critica") || issue.toLowerCase().includes("crítica")
               );
               
-              if (hasSignificantIssues) {
+              if (hasCriticalIssues) {
                 this.callbacks.onAgentStatus("continuity-sentinel", "editing", 
-                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores detectados`
+                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores CRÍTICOS detectados`
                 );
                 
                 for (const chapterNum of checkpointResult.chaptersToRevise) {
@@ -1279,6 +1279,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                     );
                   }
                 }
+              } else {
+                this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
+                  `Issues MAYORES/MENORES detectados (no críticos). Se anotarán para la revisión final sin reescribir capítulos.`
+                );
               }
             }
           }
@@ -1817,14 +1821,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             );
             
             if (!checkpointResult.passed && checkpointResult.chaptersToRevise.length > 0) {
-              const hasSignificantIssues = checkpointResult.issues.some(issue => 
+              const hasCriticalIssues = checkpointResult.issues.some(issue => 
                 issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]") ||
-                issue.includes("[MAYOR]") || issue.includes("[mayor]")
+                issue.toLowerCase().includes("critica") || issue.toLowerCase().includes("crítica")
               );
               
-              if (hasSignificantIssues) {
+              if (hasCriticalIssues) {
                 this.callbacks.onAgentStatus("continuity-sentinel", "editing", 
-                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores detectados`
+                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores CRÍTICOS detectados`
                 );
                 
                 for (const chapterNum of checkpointResult.chaptersToRevise) {
@@ -1852,6 +1856,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                     );
                   }
                 }
+              } else {
+                this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
+                  `Issues MAYORES/MENORES detectados (no críticos). Se anotarán para la revisión final sin reescribir capítulos.`
+                );
               }
             }
           }
@@ -3099,13 +3107,12 @@ Responde SOLO con un JSON válido con la estructura:
         return;
       }
 
-      // Process issues and rewrite affected chapters
-      const hasCriticalOrMajor = result.issues.some(issue => 
+      const hasCriticalIssues = result.issues.some(issue => 
         issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]") ||
-        issue.includes("[MAYOR]") || issue.includes("[mayor]")
+        issue.toLowerCase().includes("critica") || issue.toLowerCase().includes("crítica")
       );
 
-      if (hasCriticalOrMajor && result.chaptersToRevise.length > 0) {
+      if (hasCriticalIssues && result.chaptersToRevise.length > 0) {
         this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
           `${result.issues.length} issues detectados. Forzando reescritura de capítulos: ${result.chaptersToRevise.join(", ")}`
         );
@@ -4569,10 +4576,13 @@ Responde SOLO con un JSON válido con la estructura:
     const sentinelResult = result.result;
     
     if (sentinelResult?.checkpoint_aprobado) {
-      this.callbacks.onAgentStatus("continuity-sentinel", "completed", 
-        `Checkpoint #${checkpointNumber} APROBADO (${sentinelResult.puntuacion}/10). Sin issues de continuidad.`
+      const minorIssues = (sentinelResult?.issues || []).map(i => 
+        `[${i.severidad.toUpperCase()}] ${i.tipo}: ${i.descripcion}`
       );
-      return { passed: true, issues: [], chaptersToRevise: [] };
+      this.callbacks.onAgentStatus("continuity-sentinel", "completed", 
+        `Checkpoint #${checkpointNumber} APROBADO (${sentinelResult.puntuacion}/10).${minorIssues.length > 0 ? ` ${minorIssues.length} issues menores anotados para revisión final.` : " Sin issues de continuidad."}`
+      );
+      return { passed: true, issues: minorIssues, chaptersToRevise: [] };
     } else {
       const issueDescriptions = (sentinelResult?.issues || []).map(i => 
         `[${i.severidad.toUpperCase()}] ${i.tipo}: ${i.descripcion}\n⚠️ PRESERVAR: ${i.elementos_a_preservar || "El resto del capítulo"}\n✏️ CORRECCIÓN: ${i.fix_sugerido}`
