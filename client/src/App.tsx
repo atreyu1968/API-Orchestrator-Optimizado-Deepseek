@@ -114,6 +114,8 @@ function AuthenticatedApp() {
             <footer className="flex items-center justify-center gap-2 px-3 py-1.5 border-t text-xs text-muted-foreground shrink-0">
               <img src={asdLogo} alt="ASD" className="h-4 w-auto" />
               <span>&copy; {new Date().getFullYear()} Atreyu Servicios Digitales</span>
+              <span className="text-muted-foreground/50">|</span>
+              <span className="text-muted-foreground/50">v4.0</span>
             </footer>
           </div>
         </div>
