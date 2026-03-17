@@ -129,6 +129,10 @@ function saveTranslationState(state: ActiveTranslationState | null) {
   }
 }
 
+function clearTranslationState() {
+  localStorage.removeItem(TRANSLATION_STATE_KEY);
+}
+
 function loadTranslationState(): ActiveTranslationState | null {
   try {
     const saved = localStorage.getItem(TRANSLATION_STATE_KEY);

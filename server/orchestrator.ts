@@ -442,7 +442,7 @@ export class Orchestrator {
     const knowledgeConstraints: string[] = [];
     characterKnowledge.forEach((knowledge, name) => {
       if (characterStates.get(name)?.alive && knowledge.length > 0) {
-        const uniqueKnowledge = [...new Set(knowledge)].slice(-5);
+        const uniqueKnowledge = Array.from(new Set(knowledge)).slice(-5);
         knowledgeConstraints.push(`🧠 ${name} SABE: [${uniqueKnowledge.join("; ")}] - SOLO puede actuar/hablar basándose en lo que sabe`);
       }
     });
@@ -472,7 +472,7 @@ export class Orchestrator {
       const distanceFromCurrent = sortedChapters.length - 1 - i;
 
       if (distanceFromCurrent < FULL_CONTEXT_CHAPTERS) {
-        const content = chapter.editedContent || chapter.originalContent || chapter.content || "";
+        const content = (chapter as any).editedContent || chapter.originalContent || chapter.content || "";
         const continuityState = chapter.continuityState 
           ? JSON.stringify(chapter.continuityState)
           : "";
@@ -486,7 +486,7 @@ Estado de continuidad: ${continuityState || "No disponible"}
 `);
       } else if (distanceFromCurrent < FULL_CONTEXT_CHAPTERS + SUMMARY_CONTEXT_CHAPTERS) {
         const section = allSections.find(s => s.numero === chapter.chapterNumber);
-        const chapterContent = chapter.editedContent || chapter.originalContent || chapter.content || "";
+        const chapterContent = (chapter as any).editedContent || chapter.originalContent || chapter.content || "";
         const contentSummary = typeof chapterContent === 'string' && chapterContent.length > 500
           ? chapterContent.substring(0, 500) + "..."
           : chapterContent;
@@ -531,7 +531,7 @@ ${contextParts.join("\n")}
 
     const parts: string[] = [];
     for (const ch of sorted.reverse()) {
-      const content = (ch.editedContent || ch.originalContent || ch.content || "") as string;
+      const content = ((ch as any).editedContent || ch.originalContent || ch.content || "") as string;
       const excerpt = content.length > 4000 ? content.substring(content.length - 4000) : content;
       parts.push(`--- Capítulo ${ch.chapterNumber}: ${ch.title} (últimos ${excerpt.length} caracteres) ---\n${excerpt}`);
     }
@@ -3966,19 +3966,17 @@ Responde SOLO con un JSON válido con la estructura:
           
           const injuries = state.injuries || state.heridas || [];
           if (injuries.length > 0) {
-            existing.activeInjuries = [
-              ...new Set([...(existing.activeInjuries || []), ...injuries])
-            ];
+            existing.activeInjuries = Array.from(
+              new Set([...(existing.activeInjuries || []), ...injuries])
+            );
           }
           
           const knowledge = state.knowledgeGained || state.conocimiento || [];
           if (knowledge.length > 0) {
-            existing.accumulatedKnowledge = [
-              ...new Set([
-                ...(existing.accumulatedKnowledge || []).slice(-10),
-                ...knowledge
-              ])
-            ].slice(-15);
+            existing.accumulatedKnowledge = Array.from(new Set([
+              ...(existing.accumulatedKnowledge || []).slice(-10),
+              ...knowledge
+            ])).slice(-15);
           }
           
           if (state.emotionalState) {
@@ -4013,12 +4011,12 @@ Responde SOLO con un JSON válido con la estructura:
         const threadRule = worldRules.find((r: any) => r.category === "__narrative_threads");
         if (threadRule) {
           const existingPending = threadRule.pending || [];
-          const newPending = [...new Set([...existingPending, ...pendingThreads])]
+          const newPending = Array.from(new Set([...existingPending, ...pendingThreads]))
             .filter((t: string) => !resolvedThreads.includes(t));
           threadRule.pending = newPending.slice(-20);
-          threadRule.resolved = [
-            ...new Set([...(threadRule.resolved || []), ...resolvedThreads])
-          ].slice(-20);
+          threadRule.resolved = Array.from(
+            new Set([...(threadRule.resolved || []), ...resolvedThreads])
+          ).slice(-20);
           threadRule.lastUpdatedChapter = chapterNumber;
         } else {
           worldRules.push({
