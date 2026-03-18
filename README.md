@@ -1,4 +1,4 @@
-# LitAgents - Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v5.0 — Sistema de Orquestacion de Agentes Literarios IA
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando Google Gemini.
 
@@ -7,57 +7,83 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 ## Caracteristicas Principales
 
 - **Generador de Novelas**: Pipeline completo con 13+ agentes especializados para escribir novelas de principio a fin
-- **Re-editor de Manuscritos (LitEditors)**: Importa y edita profesionalmente manuscritos externos en multiples idiomas
+- **Re-editor de Manuscritos (LitEditors)**: Importa y edita profesionalmente manuscritos externos en multiples idiomas con 12 agentes especializados
 - **Adaptacion Literaria Profesional (LitTranslators)**: Sistema de adaptacion literaria (no traduccion literal) con resultado listo para publicacion
+- **Taller de Guias**: Generacion de guias de estilo, escritura por idea, identidad de pseudonimo y coherencia de serie
 - **World Bible Progresiva**: Base de datos de consistencia que se enriquece automaticamente capitulo a capitulo
 - **Notas del Autor**: Instrucciones personalizadas para que los agentes eviten errores conocidos
 - **Zero Continuity Errors**: Validacion inmediata post-escritura, deteccion de personajes muertos, filtraciones de conocimiento y drift de apariencia
 - **Anti-Repeticion entre Capitulos**: Ventana deslizante con texto real de capitulos anteriores y deteccion de patrones narrativos repetidos
-- **Seguimiento de Costos**: Tracking granular de uso de tokens por proyecto y modelo
+- **Seguimiento de Costos**: Tracking granular de uso de tokens por proyecto, agente y modelo con precios actualizados
+- **Gestion de Series**: Continuidad inter-libros con snapshots automaticos y verificacion de arcos narrativos
 - **Autenticacion**: Proteccion con contrasena para instalaciones en servidor propio
 - **PWA**: Aplicacion web progresiva instalable con soporte offline
 
 ## Agentes del Sistema
 
 ### Generador de Novelas
-| Agente | Modelo | Funcion |
-|--------|--------|---------|
-| Arquitecto Global | Gemini 3 Pro | Planificacion de estructura narrativa y World Bible |
-| Ghostwriter | Gemini 2.5 Flash | Escritura creativa de capitulos completos (con thinking) |
-| Editor | Gemini 2.5 Flash | Evaluacion de calidad y plan quirurgico de correcciones |
-| Corrector (Copyeditor) | Gemini 2.5 Flash | Correccion de estilo y gramatica |
-| Revisor Final | Gemini 3 Pro | Evaluacion completa del manuscrito con auditoria forense |
-| Centinela de Continuidad | Gemini 2.5 Flash | Validacion de consistencia post-escritura |
-| Auditor de Voz y Ritmo | Gemini 2.5 Flash | Deteccion de problemas de ritmo narrativo |
-| Detector de Repeticiones | Gemini 2.5 Flash | Deteccion de repeticiones semanticas y lexicas |
-| Validador de Arcos | Gemini 2.5 Flash | Verificacion de arcos narrativos de personajes |
+| Agente | Modelo | Tokens Max | Funcion |
+|--------|--------|------------|---------|
+| Arquitecto Global | Gemini 2.5 Flash | 16384 | Planificacion de estructura narrativa y World Bible |
+| Ghostwriter | Gemini 2.5 Flash | 65536 | Escritura creativa de capitulos completos (con thinking) |
+| Editor | Gemini 2.5 Flash | 8192 | Evaluacion de calidad y plan quirurgico de correcciones |
+| Corrector (Copyeditor) | Gemini 2.5 Flash | 8192 | Correccion de estilo y gramatica |
+| Revisor Final | Gemini 2.5 Flash | 16384 | Evaluacion completa del manuscrito con auditoria forense |
+| Centinela de Continuidad | Gemini 2.5 Flash | 4096 | Validacion de consistencia post-escritura |
+| Auditor de Voz y Ritmo | Gemini 2.5 Flash | 4096 | Deteccion de problemas de ritmo narrativo |
+| Detector de Repeticiones | Gemini 2.5 Flash | 4096 | Deteccion de repeticiones semanticas y lexicas |
+| Validador de Arcos | Gemini 2.5 Flash | 4096 | Verificacion de arcos narrativos de personajes |
 
 ### Expansion y Reestructuracion
-| Agente | Modelo | Funcion |
-|--------|--------|---------|
-| Analizador de Expansion | Gemini 2.5 Flash | Identifica capitulos cortos y gaps narrativos |
-| Expansor de Capitulos | Gemini 3 Pro | Expande capitulos cortos manteniendo coherencia |
-| Generador de Capitulos Nuevos | Gemini 3 Pro | Inserta capitulos nuevos para llenar gaps |
-| Reestructurador | Gemini 2.5 Flash | Reordena capitulos para mejor pacing |
+| Agente | Modelo | Tokens Max | Funcion |
+|--------|--------|------------|---------|
+| Analizador de Expansion | Gemini 2.5 Flash | 8192 | Identifica capitulos cortos y gaps narrativos |
+| Expansor de Capitulos | Gemini 2.5 Flash | 65536 | Expande capitulos cortos manteniendo coherencia |
+| Generador de Capitulos Nuevos | Gemini 2.5 Flash | 65536 | Inserta capitulos nuevos para llenar gaps |
+| Reestructurador | Gemini 2.5 Flash | 8192 | Reordena capitulos para mejor pacing |
 
 ### Re-editor (LitEditors)
-| Agente | Modelo | Funcion |
-|--------|--------|---------|
-| Analizador de Manuscritos | Gemini 2.0 Flash | Extraccion y analisis de manuscritos importados |
-| Revisor Final | Gemini 3 Pro | Evaluacion forense de consistencia |
-| Corrector | Gemini 2.5 Flash | Correccion de estilo |
+| Agente | Modelo | Tokens Max | Funcion |
+|--------|--------|------------|---------|
+| Analizador de Manuscritos | Gemini 2.0 Flash | — | Extraccion y analisis de manuscritos importados |
+| Editor de Re-edicion | Gemini 2.5 Flash | 8192 | Revision profunda con analisis de 7 categorias |
+| Corrector de Re-edicion | Gemini 2.5 Flash | 65536 | Correccion con World Bible y contexto adyacente |
+| Centinela de Continuidad | Gemini 2.5 Flash | 4096 | Auditoria de continuidad multi-capitulo |
+| Auditor de Voz y Ritmo | Gemini 2.5 Flash | 4096 | Analisis de ritmo y pacing |
+| Detector de Repeticiones | Gemini 2.5 Flash | 4096 | Deteccion de repeticiones semanticas |
+| Detector de Anacronismos | Gemini 2.5 Flash | 4096 | Verificacion de precision historica |
+| Extractor de World Bible | Gemini 2.5 Flash | 16384 | Extraccion automatica de Bible desde manuscrito |
+| Analizador Arquitectonico | Gemini 2.5 Flash | 16384 | Analisis estructural del manuscrito |
+| Corrector Estructural | Gemini 2.5 Flash | 65536 | Correccion de problemas estructurales (con thinking) |
+| Reescritor Narrativo | Gemini 2.5 Flash | 65536 | Reescritura completa de capitulos (con thinking) |
+| Revisor Final | Gemini 2.5 Flash | 8192 | Evaluacion forense de consistencia |
 
 ### Adaptacion Literaria Profesional (LitTranslators)
-| Agente | Modelo | Funcion |
-|--------|--------|---------|
-| Adaptador Literario | Gemini 2.5 Flash | Recreacion literaria profesional lista para publicacion |
-| Revisor Nativo | Gemini 2.5 Flash | Revision como hablante nativo del idioma destino |
+| Agente | Modelo | Tokens Max | Funcion |
+|--------|--------|------------|---------|
+| Adaptador Literario | Gemini 2.5 Flash | 65536 | Recreacion literaria profesional lista para publicacion |
+| Revisor Nativo | Gemini 2.5 Flash | 65536 | Revision como hablante nativo del idioma destino |
 
-## Distribucion de Modelos (Calidad/Costo)
+### Taller de Guias
+| Agente | Modelo | Tokens Max | Funcion |
+|--------|--------|------------|---------|
+| Generador de Guias | Gemini 2.5 Flash | 32768 | Generacion de guias de estilo y escritura (con thinking) |
 
-- **Gemini 3 Pro Preview**: Tareas de razonamiento profundo (planificacion, revision final, correccion avanzada)
-- **Gemini 2.5 Flash (con thinking)**: Escritura creativa, edicion, validacion, correccion y traduccion (equilibrio calidad/costo)
-- **Gemini 2.0 Flash**: Analisis basico de manuscritos importados (el mas rapido)
+## Distribucion de Modelos y Costos
+
+Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando costos sin sacrificar calidad.
+
+| Modelo | Uso | Input/M | Output/M | Thinking/M |
+|--------|-----|---------|----------|------------|
+| Gemini 2.5 Flash | Todos los agentes | $0.15 | $0.60 | $3.50 |
+| Gemini 2.0 Flash | Analizador de manuscritos | $0.10 | $0.40 | — |
+
+### Optimizacion de Tokens
+- **System prompts** enviados via `systemInstruction` (no como mensajes de usuario) para reducir tokens de entrada
+- **Thinking desactivado por defecto**: Solo los agentes que lo necesitan (Ghostwriter, Arquitecto, Reestructurador, Expansor, correctores estructurales) lo activan explicitamente
+- **Limites de salida por rol**: 65536 (escritores/traductores), 16384 (revisores/analizadores), 8192 (editores), 4096 (validadores/auditores)
+- **Contexto deslizante comprimido**: 1 capitulo completo + 4 resumenes, truncados a 5000 caracteres
+- **Maximo 10 ciclos de revision final** con deteccion de estancamiento (early exit si las puntuaciones se estancan por 4 ciclos consecutivos)
 
 ## Funcionalidades Avanzadas
 
@@ -90,9 +116,16 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 
 ### Sistema de Calidad
 - Pausa automatica tras multiples evaluaciones no perfectas
-- Aprobacion requiere puntuacion 9+ sin problemas criticos
+- Aprobacion requiere puntuacion 9/10 sin problemas criticos
+- Si las puntuaciones se estancan por debajo del umbral minimo durante 4+ ciclos, el sistema rechaza y no aprueba con calidad insuficiente
 - Tracking de hashes de issues para evitar re-reportar problemas resueltos
 - QA re-ejecuta auditores si hay capitulos modificados en el ciclo
+
+### Gestion de Series
+- **Snapshots de continuidad automaticos**: Extrae sinopsis, estado de personajes, hilos pendientes y eventos clave al completar cada libro
+- **Verificacion de arcos narrativos**: ArcValidatorAgent valida hitos y progreso de hilos entre volumenes
+- **Contexto de serie para el Ghostwriter**: Hilos pendientes de volumenes anteriores inyectados en la World Bible enriquecida
+- **Filtrado temporal**: Solo carga contexto de volumenes anteriores, previniendo filtraciones de futuros libros
 
 ### Adaptacion Literaria Profesional
 - **No es traduccion, es recreacion**: El sistema no traduce literalmente — recrea cada capitulo como si un autor nativo lo hubiera escrito desde cero en el idioma destino
@@ -104,9 +137,17 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 - **Contenido editado como fuente**: Siempre usa la version editada y pulida del capitulo, no el borrador original
 - **Reanudacion robusta**: Si una adaptacion se interrumpe, se retoma exactamente donde se quedo sin duplicar ni perder capitulos
 
+### Conteo de Palabras y Expansion
+- Tolerancia flexible del 10%: `FLEXIBLE_MIN = TARGET_MIN x 0.90`, `FLEXIBLE_MAX = TARGET_MAX x 1.10`
+- 5 reintentos dedicados para ajuste de longitud (independientes de los ciclos de edicion)
+- Modo expansion: el Ghostwriter recibe el borrador corto y lo expande con detalles sensoriales, dialogo, monologo interno y transiciones
+- Filosofia de edicion quirurgica: todas las correcciones modifican solo pasajes problematicos preservando el contenido funcional
+
 ### Exportacion
 - Markdown limpio sin artefactos de codigo
+- Exportacion a DOCX con formato profesional
 - Etiquetas de capitulo localizadas (7 idiomas: es, en, fr, de, it, pt, ca)
+- Separacion automatica de parrafos largos (~3-4 oraciones por parrafo)
 - Soporte para Prologo, Epilogo y Nota del Autor
 
 ## Requisitos del Sistema
@@ -374,7 +415,8 @@ sudo systemctl daemon-reload
 sudo systemctl restart nginx
 ```
 
-### PWA (Aplicacion Web Progresiva)
+## PWA (Aplicacion Web Progresiva)
+
 - Instalable en escritorio y movil desde el navegador (Chrome, Edge, Safari)
 - Service Worker con estrategia network-first y fallback offline para assets cacheados
 - Las rutas `/api/` y `/sse/` (datos en tiempo real) nunca se cachean
@@ -386,7 +428,7 @@ sudo systemctl restart nginx
 - **Frontend**: React + TypeScript + Vite + shadcn/ui (PWA)
 - **Backend**: Node.js + Express + TypeScript
 - **Base de datos**: PostgreSQL + Drizzle ORM
-- **IA**: Google Gemini API (Gemini 3 Pro, 2.5 Flash, 2.0 Flash)
+- **IA**: Google Gemini API (Gemini 2.5 Flash, 2.0 Flash)
 - **Proxy**: Nginx
 - **Proceso**: systemd
 - **Idioma**: Interfaz en espanol (`lang="es"`)
