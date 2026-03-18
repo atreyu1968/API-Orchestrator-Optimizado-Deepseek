@@ -681,4 +681,27 @@ export type InsertReeditChapter = z.infer<typeof insertReeditChapterSchema>;
 export type ReeditAuditReport = typeof reeditAuditReports.$inferSelect;
 export type InsertReeditAuditReport = z.infer<typeof insertReeditAuditReportSchema>;
 
+export const generatedGuides = pgTable("generated_guides", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  guideType: text("guide_type").notNull(), // author_style | idea_writing | pseudonym_style | series_writing
+  sourceAuthor: text("source_author"),
+  sourceIdea: text("source_idea"),
+  sourceGenre: text("source_genre"),
+  pseudonymId: integer("pseudonym_id").references(() => pseudonyms.id, { onDelete: "set null" }),
+  seriesId: integer("series_id").references(() => series.id, { onDelete: "set null" }),
+  inputTokens: integer("input_tokens").default(0),
+  outputTokens: integer("output_tokens").default(0),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertGeneratedGuideSchema = createInsertSchema(generatedGuides).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type GeneratedGuide = typeof generatedGuides.$inferSelect;
+export type InsertGeneratedGuide = z.infer<typeof insertGeneratedGuideSchema>;
+
 export * from "./models/chat";

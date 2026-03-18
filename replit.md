@@ -68,6 +68,15 @@ Preferred communication style: Simple, everyday language.
 - Shared `sanitizeContentForTranslation()` function cleans source content before translation (all 3 paths).
 - `splitLongParagraphs()` function applied across all output paths (format-ebook, export-markdown, DOCX, chapter viewer) — splits narrative blocks >600 chars at sentence boundaries (~3-4 sentences per paragraph), separates dialogue lines (—, «, ") into their own paragraphs.
 
+#### Taller de Guías (Guide Workshop) (v5.0)
+- AI-powered style and writing guide generation module at `/guides`.
+- 4 guide types: author_style (emulate known authors), idea_writing (develop story premises), pseudonym_style (define pseudonym identity), series_writing (maintain series coherence).
+- `generated_guides` table with fields: id, title, content, guideType, sourceAuthor, sourceIdea, sourceGenre, pseudonymId, seriesId, inputTokens, outputTokens, createdAt.
+- Agent: `server/agents/style-guide-generator.ts` using Gemini 2.5 Flash with thinking (budget: 2048).
+- API: `GET /api/guides`, `GET /api/guides/:id`, `DELETE /api/guides/:id`, `POST /api/guides/generate`, `POST /api/guides/:id/apply-to-pseudonym`.
+- Frontend: `client/src/pages/guides.tsx` with 5 tabs (library + 4 guide types), guide viewer dialog, apply-to-pseudonym dialog.
+- Apply feature saves generated guides as style guides linked to pseudonyms.
+
 #### Word Count Validation & Expansion
 - 10% flexible tolerance: `FLEXIBLE_MIN = TARGET_MIN × 0.90`, `FLEXIBLE_MAX = TARGET_MAX × 1.10`.
 - `MAX_WORD_COUNT_RETRIES = 5` dedicated retries using separate `wordCountRetries` counter (independent from editor's `refinementAttempts`). After 5 retries, continues forward.

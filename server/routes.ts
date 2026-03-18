@@ -7472,6 +7472,81 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  app.get("/api/guides", async (_req: Request, res: Response) => {
+    try {
+      const guides = await storage.getAllGeneratedGuides();
+      res.json(guides);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/guides/:id", async (req: Request, res: Response) => {
+    try {
+      const guide = await storage.getGeneratedGuide(parseInt(req.params.id));
+      if (!guide) return res.status(404).json({ error: "Guide not found" });
+      res.json(guide);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/guides/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteGeneratedGuide(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/guides/generate", async (req: Request, res: Response) => {
+    try {
+      const { generateStyleGuide } = await import("./agents/style-guide-generator");
+      const result = await generateStyleGuide(req.body);
+      const guide = await storage.createGeneratedGuide({
+        title: result.title,
+        content: result.content,
+        guideType: req.body.guideType,
+        sourceAuthor: req.body.authorName || null,
+        sourceIdea: req.body.idea || null,
+        sourceGenre: req.body.genre || null,
+        pseudonymId: req.body.pseudonymId || null,
+        seriesId: req.body.seriesId || null,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+      });
+      res.json(guide);
+    } catch (error: any) {
+      console.error("Error generating guide:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/guides/:id/apply-to-pseudonym", async (req: Request, res: Response) => {
+    try {
+      const guide = await storage.getGeneratedGuide(parseInt(req.params.id));
+      if (!guide) return res.status(404).json({ error: "Guide not found" });
+
+      const { pseudonymId } = req.body;
+      if (!pseudonymId) return res.status(400).json({ error: "pseudonymId required" });
+
+      const pseudonym = await storage.getPseudonym(pseudonymId);
+      if (!pseudonym) return res.status(404).json({ error: "Pseudonym not found" });
+
+      const newStyleGuide = await storage.createStyleGuide({
+        pseudonymId,
+        title: guide.title,
+        content: guide.content,
+      });
+
+      res.json({ success: true, styleGuideId: newStyleGuide.id });
+    } catch (error: any) {
+      console.error("Error applying guide:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }
 

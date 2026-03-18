@@ -23,7 +23,8 @@ import {
   Library,
   ListOrdered,
   DollarSign,
-  Edit3
+  Edit3,
+  Sparkles
 } from "lucide-react";
 
 const mainNavItems = [
@@ -37,6 +38,7 @@ const translationsNavItems = [
   { title: "Importar Libros", url: "/translations", icon: Upload },
   { title: "Exportar y Traducir", url: "/export", icon: Download },
   { title: "Reeditar Manuscrito", url: "/reedit", icon: Edit3 },
+  { title: "Taller de Guías", url: "/guides", icon: Sparkles },
 ];
 
 const settingsNavItems = [

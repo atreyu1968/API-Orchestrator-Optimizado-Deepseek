@@ -27,7 +27,8 @@ import {
   type ReeditWorldBible, type InsertReeditWorldBible,
   type ChatSession, type InsertChatSession,
   type ChatMessage, type InsertChatMessage,
-  type ChatProposal, type InsertChatProposal
+  type ChatProposal, type InsertChatProposal,
+  generatedGuides, type GeneratedGuide, type InsertGeneratedGuide
 } from "@shared/schema";
 import { eq, desc, asc, and, lt, isNull, or, sql } from "drizzle-orm";
 
@@ -177,6 +178,13 @@ export interface IStorage {
   getReeditWorldBibleByProject(projectId: number): Promise<ReeditWorldBible | undefined>;
   updateReeditWorldBible(id: number, data: Partial<ReeditWorldBible>): Promise<ReeditWorldBible | undefined>;
   deleteReeditWorldBible(projectId: number): Promise<void>;
+
+  // Generated Guides
+  createGeneratedGuide(data: InsertGeneratedGuide): Promise<GeneratedGuide>;
+  getGeneratedGuide(id: number): Promise<GeneratedGuide | undefined>;
+  getAllGeneratedGuides(): Promise<GeneratedGuide[]>;
+  updateGeneratedGuide(id: number, data: Partial<GeneratedGuide>): Promise<GeneratedGuide | undefined>;
+  deleteGeneratedGuide(id: number): Promise<void>;
 
   // Chat Sessions
   createChatSession(data: InsertChatSession): Promise<ChatSession>;
@@ -1131,6 +1139,29 @@ export class DatabaseStorage implements IStorage {
 
   async deleteChatProposal(id: number): Promise<void> {
     await db.delete(chatProposals).where(eq(chatProposals.id, id));
+  }
+
+  async createGeneratedGuide(data: InsertGeneratedGuide): Promise<GeneratedGuide> {
+    const [guide] = await db.insert(generatedGuides).values(data).returning();
+    return guide;
+  }
+
+  async getGeneratedGuide(id: number): Promise<GeneratedGuide | undefined> {
+    const [guide] = await db.select().from(generatedGuides).where(eq(generatedGuides.id, id));
+    return guide;
+  }
+
+  async getAllGeneratedGuides(): Promise<GeneratedGuide[]> {
+    return db.select().from(generatedGuides).orderBy(desc(generatedGuides.createdAt));
+  }
+
+  async updateGeneratedGuide(id: number, data: Partial<GeneratedGuide>): Promise<GeneratedGuide | undefined> {
+    const [updated] = await db.update(generatedGuides).set(data).where(eq(generatedGuides.id, id)).returning();
+    return updated;
+  }
+
+  async deleteGeneratedGuide(id: number): Promise<void> {
+    await db.delete(generatedGuides).where(eq(generatedGuides.id, id));
   }
 }
 
