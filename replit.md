@@ -65,6 +65,8 @@ Preferred communication style: Simple, everyday language.
 - "Re-editado" badge in translation repository.
 - Anti-AI filter with per-language crutch word lists.
 - Extensive cleanup of AI-generated contamination (style guides, checklists, JSON artifacts).
+- Shared `sanitizeContentForTranslation()` function cleans source content before translation (all 3 paths).
+- `splitLongParagraphs()` function applied across all output paths (format-ebook, export-markdown, DOCX, chapter viewer) — splits narrative blocks >600 chars at sentence boundaries (~3-4 sentences per paragraph), separates dialogue lines (—, «, ") into their own paragraphs.
 
 #### Word Count Validation & Expansion
 - 10% flexible tolerance: `FLEXIBLE_MIN = TARGET_MIN × 0.90`, `FLEXIBLE_MAX = TARGET_MAX × 1.10`.

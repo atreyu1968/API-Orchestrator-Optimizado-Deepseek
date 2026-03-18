@@ -290,6 +290,78 @@ function removeStyleGuideContamination(content: string): string {
   return cleaned.trim();
 }
 
+function splitLongParagraphs(content: string): string {
+  const blocks = content.split(/\n\n+/);
+  const result: string[] = [];
+
+  for (const block of blocks) {
+    const trimmed = block.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.length < 600) {
+      result.push(trimmed);
+      continue;
+    }
+
+    const lines = trimmed.split('\n');
+    const subResult: string[] = [];
+    let currentNarrative: string[] = [];
+
+    const flushNarrative = () => {
+      if (currentNarrative.length === 0) return;
+      const text = currentNarrative.join(' ');
+      currentNarrative = [];
+      if (text.length < 600) {
+        subResult.push(text);
+        return;
+      }
+      const sentences = text.match(/[^.!?…]+[.!?…]+["»"'\u201D]?\s*/g);
+      if (!sentences || sentences.length <= 3) {
+        subResult.push(text);
+        return;
+      }
+      const matchedLength = sentences.reduce((sum, s) => sum + s.length, 0);
+      const remainder = text.slice(matchedLength).trim();
+      let chunk = '';
+      let sentenceCount = 0;
+      for (const sentence of sentences) {
+        chunk += sentence;
+        sentenceCount++;
+        if (sentenceCount >= 3 && chunk.length >= 400) {
+          subResult.push(chunk.trim());
+          chunk = '';
+          sentenceCount = 0;
+        }
+      }
+      if (remainder) {
+        chunk += ' ' + remainder;
+      }
+      if (chunk.trim()) {
+        if (subResult.length > 0 && chunk.trim().length < 150) {
+          subResult[subResult.length - 1] += ' ' + chunk.trim();
+        } else {
+          subResult.push(chunk.trim());
+        }
+      }
+    };
+
+    for (const line of lines) {
+      const t = line.trim();
+      if (t.startsWith('—') || t.startsWith('«') || t.startsWith('\u201C') || t.startsWith('"')) {
+        flushNarrative();
+        subResult.push(t);
+      } else {
+        currentNarrative.push(t);
+      }
+    }
+    flushNarrative();
+
+    result.push(...subResult);
+  }
+
+  return result.join('\n\n');
+}
+
 function addContentParagraphs(children: Paragraph[], content: string): void {
   let cleanedContent = content;
   const continuityMarker = "---CONTINUITY_STATE---";
@@ -299,6 +371,7 @@ function addContentParagraphs(children: Paragraph[], content: string): void {
   }
   
   cleanedContent = removeStyleGuideContamination(cleanedContent);
+  cleanedContent = splitLongParagraphs(cleanedContent);
   
   const paragraphs = cleanedContent.split(/\n\n+/);
   
