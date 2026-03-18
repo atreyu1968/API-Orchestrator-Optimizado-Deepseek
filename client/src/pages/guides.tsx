@@ -17,7 +17,7 @@ import {
   Loader2, Sparkles, Trash2, Eye, UserPlus, BookOpen,
   Pen, Lightbulb, Users, Library
 } from "lucide-react";
-import type { GeneratedGuide, Pseudonym, Series } from "@shared/schema";
+import type { GeneratedGuide, Pseudonym, Series, StyleGuide } from "@shared/schema";
 
 const GUIDE_TYPE_LABELS: Record<string, { label: string; icon: typeof Pen; color: string }> = {
   author_style: { label: "Estilo de Autor", icon: Pen, color: "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200" },
@@ -120,9 +120,13 @@ function IdeaWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: any)
 
 function PseudonymStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: any) => void; isGenerating: boolean }) {
   const { data: pseudonyms = [] } = useQuery<Pseudonym[]>({ queryKey: ["/api/pseudonyms"] });
+  const { data: allStyleGuides = [] } = useQuery<StyleGuide[]>({ queryKey: ["/api/style-guides"] });
   const [selectedPseudonym, setSelectedPseudonym] = useState<string>("");
 
   const pseudonym = pseudonyms.find((p) => p.id.toString() === selectedPseudonym);
+  const existingGuides = pseudonym
+    ? allStyleGuides.filter((sg) => sg.pseudonymId === pseudonym.id && sg.isActive)
+    : [];
 
   return (
     <div className="space-y-4">
@@ -147,6 +151,13 @@ function PseudonymStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: a
             {pseudonym.bio && <p><strong>Bio:</strong> {pseudonym.bio}</p>}
             {pseudonym.defaultGenre && <p><strong>Género:</strong> {pseudonym.defaultGenre}</p>}
             {pseudonym.defaultTone && <p><strong>Tono:</strong> {pseudonym.defaultTone}</p>}
+            {existingGuides.length > 0 && (
+              <div className="mt-2 pt-2 border-t">
+                <p className="text-muted-foreground">
+                  <strong>{existingGuides.length}</strong> guía(s) de estilo existente(s). La IA las tendrá en cuenta para generar contenido complementario.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

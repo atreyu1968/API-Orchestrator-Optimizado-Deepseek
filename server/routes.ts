@@ -2393,6 +2393,16 @@ ${series.seriesGuide.substring(0, 50000)}`;
     }
   });
 
+  app.get("/api/style-guides", async (_req: Request, res: Response) => {
+    try {
+      const guides = await storage.getAllStyleGuides();
+      res.json(guides);
+    } catch (error) {
+      console.error("Error fetching style guides:", error);
+      res.status(500).json({ error: "Failed to fetch style guides" });
+    }
+  });
+
   app.get("/api/style-guides/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
@@ -7503,7 +7513,15 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   app.post("/api/guides/generate", async (req: Request, res: Response) => {
     try {
       const { generateStyleGuide } = await import("./agents/style-guide-generator");
-      const result = await generateStyleGuide(req.body);
+      const params = { ...req.body };
+      if (params.guideType === "pseudonym_style" && params.pseudonymId) {
+        const existingGuides = await storage.getStyleGuidesByPseudonym(params.pseudonymId);
+        const activeGuides = existingGuides.filter((g: any) => g.isActive);
+        if (activeGuides.length > 0) {
+          params.existingStyleGuides = activeGuides.map((g: any) => g.content);
+        }
+      }
+      const result = await generateStyleGuide(params);
       const guide = await storage.createGeneratedGuide({
         title: result.title,
         content: result.content,
