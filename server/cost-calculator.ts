@@ -67,15 +67,18 @@ export function formatCostForStorage(cost: number): string {
 
 // Agent to model mapping for reference
 export const AGENT_MODEL_MAPPING: Record<string, string> = {
-  "architect": "gemini-3-pro-preview",
-  "ghostwriter": "gemini-3-pro-preview",
-  "editor": "gemini-3-flash",
+  "architect": "gemini-2.5-flash",
+  "ghostwriter": "gemini-2.5-flash",
+  "editor": "gemini-2.5-flash",
   "copyeditor": "gemini-2.5-flash",
-  "final-reviewer": "gemini-3-pro-preview",
+  "final-reviewer": "gemini-2.5-flash",
   "continuity-sentinel": "gemini-2.5-flash",
   "voice-auditor": "gemini-2.5-flash",
   "semantic-detector": "gemini-2.5-flash",
   "translator": "gemini-2.5-flash",
   "arc-validator": "gemini-2.5-flash",
   "series-thread-fixer": "gemini-2.5-flash",
+  "restructurer": "gemini-2.5-flash",
+  "chapter-expander": "gemini-2.5-flash",
+  "manuscript-analyzer": "gemini-2.0-flash",
 };

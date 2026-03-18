@@ -28,6 +28,7 @@ export interface AgentConfig {
   systemPrompt: string;
   model?: GeminiModel;
   useThinking?: boolean;
+  maxOutputTokens?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000;
@@ -169,23 +170,25 @@ export abstract class BaseAgent {
       }
       
       try {
-        const modelToUse = this.config.model || "gemini-3-pro-preview";
-        const useThinking = this.config.useThinking !== false;
+        const modelToUse = this.config.model || "gemini-2.5-flash";
+        const useThinking = this.config.useThinking === true;
+        
+        const defaultMaxOutput = modelToUse === "gemini-3-pro-preview" ? 65536 : 32768;
+        const maxOutput = this.config.maxOutputTokens || defaultMaxOutput;
         
         const startTime = Date.now();
-        console.log(`[${this.config.name}] Starting API call (attempt ${attempt + 1})...`);
+        console.log(`[${this.config.name}] Starting API call (attempt ${attempt + 1}, model=${modelToUse}, maxOut=${maxOutput}, thinking=${useThinking})...`);
         
         const generatePromise = this.ai.models.generateContent({
           model: modelToUse,
           contents: [
-            { role: "user", parts: [{ text: this.config.systemPrompt }] },
-            { role: "model", parts: [{ text: "Entendido. Estoy listo para cumplir mi rol." }] },
             { role: "user", parts: [{ text: prompt }] },
           ],
           config: {
+            systemInstruction: this.config.systemPrompt,
             temperature,
             topP: 0.95,
-            maxOutputTokens: modelToUse === "gemini-3-pro-preview" ? 100000 : 65536,
+            maxOutputTokens: maxOutput,
             ...(useThinking && (modelToUse === "gemini-3-pro-preview" || modelToUse === "gemini-2.5-flash") ? {
               thinkingConfig: {
                 thinkingBudget: modelToUse === "gemini-3-pro-preview" ? 2048 : 1024,

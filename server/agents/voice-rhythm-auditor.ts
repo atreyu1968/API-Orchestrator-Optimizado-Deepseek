@@ -128,6 +128,7 @@ export class VoiceRhythmAuditorAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
       useThinking: false,
+      maxOutputTokens: 4096,
     });
   }
 

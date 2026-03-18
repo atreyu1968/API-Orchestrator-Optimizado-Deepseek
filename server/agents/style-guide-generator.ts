@@ -362,14 +362,14 @@ export async function generateStyleGuide(params: GenerateGuideParams): Promise<G
   }
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-preview-05-20",
+    model: "gemini-2.5-flash",
     contents: [{ role: "user", parts: [{ text: userMessage }] }],
     config: {
       systemInstruction: systemPrompt,
       temperature: 1.0,
       topP: 0.95,
-      maxOutputTokens: 65536,
-      thinkingConfig: { thinkingBudget: 2048 },
+      maxOutputTokens: 32768,
+      thinkingConfig: { thinkingBudget: 1024 },
     },
   });
 

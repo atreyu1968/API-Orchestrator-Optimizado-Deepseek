@@ -106,6 +106,7 @@ export class RestructurerAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
       useThinking: true,
+      maxOutputTokens: 16384,
     });
   }
 

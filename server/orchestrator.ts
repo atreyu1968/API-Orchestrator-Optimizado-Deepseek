@@ -90,7 +90,7 @@ export class Orchestrator {
   private semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 3;
-  private maxFinalReviewCycles = 15; // Continue until score >= 9 twice consecutively, up to this maximum
+  private maxFinalReviewCycles = 10;
   private minAcceptableScore = 9; // Minimum score required for approval
   private requiredConsecutiveHighScores = 2; // Must achieve 9+ this many times in a row
   private continuityCheckpointInterval = 5;
@@ -261,7 +261,7 @@ export class Orchestrator {
       "gemini-2.0-flash": { input: 0.15, output: 0.60, thinking: 0.30 },
     };
     
-    const modelPricing = pricing[model] || pricing["gemini-3-pro-preview"];
+    const modelPricing = pricing[model] || pricing["gemini-2.5-flash"];
     
     const inputCost = (tokenUsage.inputTokens / 1_000_000) * modelPricing.input;
     const outputCost = (tokenUsage.outputTokens / 1_000_000) * modelPricing.output;
@@ -383,8 +383,8 @@ export class Orchestrator {
     if (sortedChapters.length === 0) return emptyResult;
 
     const contextParts: string[] = [];
-    const FULL_CONTEXT_CHAPTERS = 2;
-    const SUMMARY_CONTEXT_CHAPTERS = 5;
+    const FULL_CONTEXT_CHAPTERS = 1;
+    const SUMMARY_CONTEXT_CHAPTERS = 4;
 
     const characterStates: Map<string, { alive: boolean; location: string; injuries: string[]; lastSeen: number }> = new Map();
     const characterItems: Map<string, string[]> = new Map();
@@ -476,8 +476,8 @@ export class Orchestrator {
         const continuityState = chapter.continuityState 
           ? JSON.stringify(chapter.continuityState)
           : "";
-        const truncatedContent = typeof content === 'string' && content.length > 8000
-          ? content.substring(content.length - 8000)
+        const truncatedContent = typeof content === 'string' && content.length > 5000
+          ? content.substring(content.length - 5000)
           : content;
         contextParts.unshift(`
 [CAPÍTULO ${chapter.chapterNumber} - ${chapter.title}] (TEXTO COMPLETO DEL CAPÍTULO ANTERIOR)
@@ -712,7 +712,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
-          await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "gemini-3-pro-preview", undefined, "world_bible");
+          await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "gemini-2.5-flash", undefined, "world_bible");
 
           if (architectResult.error || architectResult.timedOut) {
             lastArchitectError = architectResult.error || "Timeout durante la generación del World Bible";
@@ -1118,7 +1118,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
           });
 
-          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-pro-preview", sectionData.numero, "chapter_edit");
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "chapter_edit");
 
           if (editorResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -1190,7 +1190,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           guiaEstilo: styleGuideContent || undefined,
         });
 
-        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-3-pro-preview", sectionData.numero, "polish");
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "polish");
 
         if (polishResult.thoughtSignature) {
           await storage.createThoughtLog({
@@ -1715,7 +1715,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
           });
 
-          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-pro-preview", sectionData.numero, "chapter_edit");
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "chapter_edit");
 
           if (editorResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -1765,7 +1765,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           guiaEstilo: styleGuideContent || undefined,
         });
 
-        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-3-pro-preview", sectionData.numero, "polish");
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "polish");
 
         if (polishResult.thoughtSignature) {
           await storage.createThoughtLog({
@@ -2186,7 +2186,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         seriesContext: seriesContextForReview,
       });
 
-      await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "gemini-3-pro-preview", undefined, "final_review");
+      await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "gemini-2.5-flash", undefined, "final_review");
 
       if (reviewResult.thoughtSignature) {
         await storage.createThoughtLog({
@@ -2382,7 +2382,21 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const currentScore = result?.puntuacion_global || 0;
       previousScores.push(currentScore);
       
-      // Track consecutive high scores
+      if (previousScores.length >= 4) {
+        const lastFour = previousScores.slice(-4);
+        const maxRecent = Math.max(...lastFour);
+        const minRecent = Math.min(...lastFour);
+        if (maxRecent - minRecent <= 0.5 && maxRecent < this.minAcceptableScore) {
+          const avgScore = (lastFour.reduce((a, b) => a + b, 0) / lastFour.length).toFixed(1);
+          const bestOverall = Math.max(...previousScores);
+          this.callbacks.onAgentStatus("final-reviewer", "error", 
+            `Puntuación estancada en ~${avgScore}/10 tras ${previousScores.length} ciclos (mejor: ${bestOverall}). Umbral mínimo: ${this.minAcceptableScore}. NO APROBADO — calidad insuficiente.`
+          );
+          console.log(`[Orchestrator] Early exit: scores plateaued at ${lastFour.join(', ')} - best overall ${bestOverall} below min ${this.minAcceptableScore}, rejecting`);
+          return false;
+        }
+      }
+      
       if (currentScore >= this.minAcceptableScore) {
         consecutiveHighScores++;
       } else {
@@ -2585,7 +2599,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           previousChaptersContext: this.buildPreviousChaptersContextForEditor(qaEditorChaptersCtx, sectionData.numero),
         });
 
-        await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-pro-preview", sectionData.numero, "qa_edit");
+        await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "qa_edit");
 
         if (!editorResult.result?.aprobado) {
           const refinementInstructions = this.buildRefinementInstructions(editorResult.result);
@@ -2616,7 +2630,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           chapterTitle: sectionData.titulo,
           guiaEstilo: styleGuideContent || undefined,
         });
-        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-3-pro-preview", sectionData.numero, "qa_polish");
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "qa_polish");
 
         const finalContent = polishResult.result?.texto_final || chapterContent;
         const wordCount = finalContent.split(/\s+/).length;
@@ -2844,7 +2858,7 @@ Responde SOLO con un JSON válido con la estructura:
         return;
       }
 
-      await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "gemini-3-pro-preview", undefined, "extend_outline");
+      await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "gemini-2.5-flash", undefined, "extend_outline");
 
       // Parse the new chapter outlines
       let newChapterOutlines: any[] = [];
@@ -2994,7 +3008,7 @@ Responde SOLO con un JSON válido con la estructura:
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(extEditorChaptersCtx, sectionData.numero),
           });
 
-          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-pro-preview", sectionData.numero, "extend_edit");
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "extend_edit");
 
           if (editorResult.result) {
             const score = editorResult.result.puntuacion || 0;
@@ -4562,7 +4576,7 @@ Responde SOLO con un JSON válido con la estructura:
       return { passed: false, issues: [`[MAYOR] Error en checkpoint: ${errorMsg}`], chaptersToRevise: [] };
     }
 
-    await this.trackTokenUsage(project.id, result.tokenUsage, "El Centinela", "gemini-3-pro-preview", undefined, "continuity_check");
+    await this.trackTokenUsage(project.id, result.tokenUsage, "El Centinela", "gemini-2.5-flash", undefined, "continuity_check");
 
     if (result.thoughtSignature) {
       await storage.createThoughtLog({
@@ -4625,7 +4639,7 @@ Responde SOLO con un JSON válido con la estructura:
       guiaEstilo: styleGuideContent || undefined,
     });
 
-    await this.trackTokenUsage(project.id, result.tokenUsage, "El Auditor de Voz", "gemini-3-flash", undefined, "voice_audit");
+    await this.trackTokenUsage(project.id, result.tokenUsage, "El Auditor de Voz", "gemini-2.5-flash", undefined, "voice_audit");
 
     if (result.thoughtSignature) {
       await storage.createThoughtLog({
@@ -4824,7 +4838,7 @@ Responde SOLO con un JSON válido con la estructura:
       guiaEstilo: `${styleGuideContent || "Tone: literary, professional"}\n\nCORRECCIONES DEL AUDITOR DE VOZ:\n${voiceIssues}\n\nAjusta el tono y ritmo según las indicaciones manteniendo el contenido narrativo.`,
     });
 
-    await this.trackTokenUsage(project.id, copyEditResult.tokenUsage, "El Estilista", "gemini-3-pro-preview", chapter.chapterNumber, "voice_polish");
+    await this.trackTokenUsage(project.id, copyEditResult.tokenUsage, "El Estilista", "gemini-2.5-flash", chapter.chapterNumber, "voice_polish");
 
     const polishedContent = copyEditResult.result?.texto_final;
     if (polishedContent) {

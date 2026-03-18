@@ -212,6 +212,9 @@ export class ArchitectAgent extends BaseAgent {
       name: "El Arquitecto",
       role: "architect",
       systemPrompt: PHASE1_SYSTEM_PROMPT,
+      model: "gemini-2.5-flash",
+      useThinking: true,
+      maxOutputTokens: 65536,
     });
   }
 

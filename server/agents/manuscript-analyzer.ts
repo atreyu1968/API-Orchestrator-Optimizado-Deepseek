@@ -83,6 +83,7 @@ Responde SIEMPRE en formato JSON válido con esta estructura exacta:
 }`,
       model: "gemini-2.0-flash",
       useThinking: false,
+      maxOutputTokens: 8192,
     });
     this.timeoutMs = 4 * 60 * 1000;
   }

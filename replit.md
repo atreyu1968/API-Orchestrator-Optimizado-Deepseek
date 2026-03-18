@@ -29,8 +29,9 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: Defined in `shared/schema.ts`, including tables for projects, chapters, world Bibles, thought logs, agent statuses, series, continuity snapshots, arc verifications, imported manuscripts, reedit projects, and translations.
 
 ### AI Integration
-- **Models**: Gemini 3 Pro Preview (Architect, FinalReviewer, NarrativeRewriter, StructuralFixer, CopyEditor), Gemini 2.5 Flash with thinking (Ghostwriter, Editor, validators, Translator), Gemini 2.0 Flash (ManuscriptAnalyzer).
-- **Thinking Support**: Both Gemini 3 Pro (budget: 2048) and Gemini 2.5 Flash (budget: 1024) support deep reasoning via `thinkingConfig`.
+- **Models**: Gemini 2.5 Flash (all agents — Architect, Ghostwriter, Editor, CopyEditor, FinalReviewer, Translator, validators, Chapter Expander, Restructurer, Reedit agents), Gemini 2.0 Flash (ManuscriptAnalyzer).
+- **Thinking Support**: Gemini 2.5 Flash (budget: 1024) for agents that need it (Ghostwriter, Architect, Restructurer, Chapter Expander). Thinking is OFF by default; agents must opt-in with `useThinking: true`.
+- **Token Optimization**: System prompts sent via `systemInstruction` (not as user messages). Per-agent `maxOutputTokens` limits: 65536 for writers/translators, 16384 for reviewers, 8192 for editors/analyzers, 4096 for validators/auditors. Default model is `gemini-2.5-flash` (not Pro).
 - **Configuration**: `temperature: 1.0`, `topP: 0.95`.
 - **Client Setup**: `@google/genai` SDK using `GEMINI_API_KEY`.
 

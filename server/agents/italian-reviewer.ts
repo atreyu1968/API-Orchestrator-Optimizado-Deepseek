@@ -84,6 +84,7 @@ export class ItalianReviewerAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
       useThinking: false,
+      maxOutputTokens: 65536,
     });
   }
 

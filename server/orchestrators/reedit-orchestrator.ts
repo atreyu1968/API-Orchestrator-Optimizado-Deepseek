@@ -81,6 +81,7 @@ RESPONDE SOLO EN JSON:
 }`,
       model: "gemini-2.5-flash",
       useThinking: true,
+      maxOutputTokens: 8192,
     });
   }
 
@@ -164,8 +165,9 @@ RESPONDE SOLO EN JSON:
   "changesLog": "Resumen de los cambios realizados",
   "fluencyChanges": [{"before": "texto original", "after": "texto mejorado", "reason": "razón del cambio"}]
 }`,
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-flash",
       useThinking: true,
+      maxOutputTokens: 65536,
     });
   }
 
@@ -309,6 +311,7 @@ RESPONDE SOLO EN JSON:
 }`,
       model: "gemini-2.5-flash",
       useThinking: false,
+      maxOutputTokens: 4096,
     });
   }
 
@@ -375,6 +378,7 @@ RESPONDE SOLO EN JSON:
 }`,
       model: "gemini-2.5-flash",
       useThinking: false,
+      maxOutputTokens: 4096,
     });
   }
 
@@ -439,6 +443,7 @@ RESPONDE SOLO EN JSON:
 }`,
       model: "gemini-2.5-flash",
       useThinking: false,
+      maxOutputTokens: 4096,
     });
   }
 
@@ -514,6 +519,7 @@ RESPONDE SOLO EN JSON:
 }`,
       model: "gemini-2.5-flash",
       useThinking: false,
+      maxOutputTokens: 4096,
     });
   }
 
@@ -601,6 +607,7 @@ RESPONDE SOLO EN JSON:
 }`,
       model: "gemini-2.5-flash",
       useThinking: false,
+      maxOutputTokens: 16384,
     });
   }
 
@@ -788,6 +795,7 @@ RESPONDE SOLO EN JSON:
 }`,
       model: "gemini-2.5-flash",
       useThinking: false,
+      maxOutputTokens: 16384,
     });
   }
 
@@ -888,8 +896,9 @@ RESPONDE SOLO EN JSON:
   "resumenCambios": "Resumen ejecutivo de los cambios realizados",
   "confianzaCorreccion": 8
 }`,
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-flash",
       useThinking: true,
+      maxOutputTokens: 65536,
     });
   }
 
@@ -1077,8 +1086,9 @@ FORMATO DE RESPUESTA (JSON):
   },
   "resumenEjecutivo": "Descripción concisa de todas las correcciones realizadas"
 }`,
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-flash",
       useThinking: true,
+      maxOutputTokens: 65536,
     });
   }
 
@@ -1295,6 +1305,7 @@ RESPONDE ÚNICAMENTE CON JSON EN ESPAÑOL:
 }`,
       model: "gemini-2.5-flash",
       useThinking: false,
+      maxOutputTokens: 8192,
     });
   }
 

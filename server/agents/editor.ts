@@ -258,6 +258,7 @@ export class EditorAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
       useThinking: false,
+      maxOutputTokens: 8192,
     });
   }
 
