@@ -7522,6 +7522,21 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         }
       }
       const result = await generateStyleGuide(params);
+
+      let targetPseudonymId: number | null = req.body.pseudonymId || null;
+
+      if (req.body.createPseudonymName) {
+        const newPseudonym = await storage.createPseudonym({
+          name: req.body.createPseudonymName,
+          bio: null,
+          defaultGenre: req.body.createPseudonymGenre || null,
+          defaultTone: req.body.createPseudonymTone || null,
+        });
+        targetPseudonymId = newPseudonym.id;
+      } else if (req.body.assignPseudonymId) {
+        targetPseudonymId = req.body.assignPseudonymId;
+      }
+
       const guide = await storage.createGeneratedGuide({
         title: result.title,
         content: result.content,
@@ -7529,12 +7544,21 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         sourceAuthor: req.body.authorName || null,
         sourceIdea: req.body.idea || null,
         sourceGenre: req.body.genre || null,
-        pseudonymId: req.body.pseudonymId || null,
+        pseudonymId: targetPseudonymId,
         seriesId: req.body.seriesId || null,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
       });
-      res.json(guide);
+
+      if (targetPseudonymId) {
+        await storage.createStyleGuide({
+          pseudonymId: targetPseudonymId,
+          title: result.title,
+          content: result.content,
+        });
+      }
+
+      res.json({ ...guide, assignedPseudonymId: targetPseudonymId });
     } catch (error: any) {
       console.error("Error generating guide:", error);
       res.status(500).json({ error: error.message });

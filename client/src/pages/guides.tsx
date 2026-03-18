@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   Loader2, Sparkles, Trash2, Eye, UserPlus, BookOpen,
-  Pen, Lightbulb, Users, Library
+  Pen, Lightbulb, Users, Library, Plus
 } from "lucide-react";
 import type { GeneratedGuide, Pseudonym, Series, StyleGuide } from "@shared/schema";
 
@@ -26,9 +26,82 @@ const GUIDE_TYPE_LABELS: Record<string, { label: string; icon: typeof Pen; color
   series_writing: { label: "Guía de Serie", icon: Library, color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
 };
 
+function PseudonymAssignSelector({ selectedPseudonymId, onSelect, newPseudonymName, onNewNameChange, mode, onModeChange }: {
+  selectedPseudonymId: string;
+  onSelect: (id: string) => void;
+  newPseudonymName: string;
+  onNewNameChange: (name: string) => void;
+  mode: "none" | "existing" | "new";
+  onModeChange: (mode: "none" | "existing" | "new") => void;
+}) {
+  const { data: pseudonyms = [] } = useQuery<Pseudonym[]>({ queryKey: ["/api/pseudonyms"] });
+
+  return (
+    <div className="space-y-3 p-3 rounded-lg border bg-muted/30">
+      <Label className="text-sm font-medium">Asignar a pseudónimo (opcional)</Label>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant={mode === "none" ? "default" : "outline"}
+          size="sm"
+          data-testid="button-assign-none"
+          onClick={() => onModeChange("none")}
+        >
+          No asignar
+        </Button>
+        <Button
+          type="button"
+          variant={mode === "existing" ? "default" : "outline"}
+          size="sm"
+          data-testid="button-assign-existing"
+          onClick={() => onModeChange("existing")}
+        >
+          <UserPlus className="w-3 h-3 mr-1" />
+          Existente
+        </Button>
+        <Button
+          type="button"
+          variant={mode === "new" ? "default" : "outline"}
+          size="sm"
+          data-testid="button-assign-new"
+          onClick={() => onModeChange("new")}
+        >
+          <Plus className="w-3 h-3 mr-1" />
+          Crear nuevo
+        </Button>
+      </div>
+      {mode === "existing" && (
+        <Select value={selectedPseudonymId} onValueChange={onSelect}>
+          <SelectTrigger data-testid="select-assign-pseudonym">
+            <SelectValue placeholder="Seleccionar pseudónimo..." />
+          </SelectTrigger>
+          <SelectContent>
+            {pseudonyms.map((p) => (
+              <SelectItem key={p.id} value={p.id.toString()}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {mode === "new" && (
+        <Input
+          data-testid="input-new-pseudonym-name"
+          placeholder="Nombre del nuevo pseudónimo..."
+          value={newPseudonymName}
+          onChange={(e) => onNewNameChange(e.target.value)}
+        />
+      )}
+    </div>
+  );
+}
+
 function AuthorStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: any) => void; isGenerating: boolean }) {
   const [authorName, setAuthorName] = useState("");
   const [genre, setGenre] = useState("");
+  const [assignMode, setAssignMode] = useState<"none" | "existing" | "new">("none");
+  const [assignPseudonymId, setAssignPseudonymId] = useState("");
+  const [newPseudonymName, setNewPseudonymName] = useState("");
 
   return (
     <div className="space-y-4">
@@ -52,10 +125,29 @@ function AuthorStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: any)
           onChange={(e) => setGenre(e.target.value)}
         />
       </div>
+      <PseudonymAssignSelector
+        selectedPseudonymId={assignPseudonymId}
+        onSelect={setAssignPseudonymId}
+        newPseudonymName={newPseudonymName}
+        onNewNameChange={setNewPseudonymName}
+        mode={assignMode}
+        onModeChange={setAssignMode}
+      />
       <Button
         data-testid="button-generate-author-style"
-        onClick={() => onGenerate({ guideType: "author_style", authorName, genre })}
-        disabled={!authorName.trim() || isGenerating}
+        onClick={() => onGenerate({
+          guideType: "author_style",
+          authorName,
+          genre,
+          assignPseudonymId: assignMode === "existing" ? parseInt(assignPseudonymId) : undefined,
+          createPseudonymName: assignMode === "new" ? newPseudonymName : undefined,
+          createPseudonymGenre: assignMode === "new" ? genre : undefined,
+        })}
+        disabled={
+          !authorName.trim() || isGenerating ||
+          (assignMode === "existing" && !assignPseudonymId) ||
+          (assignMode === "new" && !newPseudonymName.trim())
+        }
         className="w-full"
       >
         {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
@@ -69,6 +161,9 @@ function IdeaWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: any)
   const [idea, setIdea] = useState("");
   const [genre, setGenre] = useState("");
   const [tone, setTone] = useState("");
+  const [assignMode, setAssignMode] = useState<"none" | "existing" | "new">("none");
+  const [assignPseudonymId, setAssignPseudonymId] = useState("");
+  const [newPseudonymName, setNewPseudonymName] = useState("");
 
   return (
     <div className="space-y-4">
@@ -105,10 +200,31 @@ function IdeaWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: any)
           />
         </div>
       </div>
+      <PseudonymAssignSelector
+        selectedPseudonymId={assignPseudonymId}
+        onSelect={setAssignPseudonymId}
+        newPseudonymName={newPseudonymName}
+        onNewNameChange={setNewPseudonymName}
+        mode={assignMode}
+        onModeChange={setAssignMode}
+      />
       <Button
         data-testid="button-generate-idea-guide"
-        onClick={() => onGenerate({ guideType: "idea_writing", idea, genre, tone })}
-        disabled={!idea.trim() || isGenerating}
+        onClick={() => onGenerate({
+          guideType: "idea_writing",
+          idea,
+          genre,
+          tone,
+          assignPseudonymId: assignMode === "existing" ? parseInt(assignPseudonymId) : undefined,
+          createPseudonymName: assignMode === "new" ? newPseudonymName : undefined,
+          createPseudonymGenre: assignMode === "new" ? genre : undefined,
+          createPseudonymTone: assignMode === "new" ? tone : undefined,
+        })}
+        disabled={
+          !idea.trim() || isGenerating ||
+          (assignMode === "existing" && !assignPseudonymId) ||
+          (assignMode === "new" && !newPseudonymName.trim())
+        }
         className="w-full"
       >
         {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
@@ -441,9 +557,14 @@ export default function GuidesPage() {
       const res = await apiRequest("POST", "/api/guides/generate", data);
       return res.json();
     },
-    onSuccess: (guide: GeneratedGuide) => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/guides"] });
-      toast({ title: "Guía generada", description: guide.title });
+      queryClient.invalidateQueries({ queryKey: ["/api/pseudonyms"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/style-guides"] });
+      const desc = data.assignedPseudonymId
+        ? `${data.title} — asignada automáticamente al pseudónimo`
+        : data.title;
+      toast({ title: "Guía generada", description: desc });
       setActiveTab("library");
     },
     onError: (err: any) => {
