@@ -11,9 +11,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2 } from "lucide-react";
+import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2, Sparkles } from "lucide-react";
 import { useProject } from "@/lib/project-context";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Project, Chapter } from "@shared/schema";
 
@@ -39,6 +39,28 @@ export default function ManuscriptPage() {
     architect: "Arquitecto",
     reeditor: "Re-editor",
   };
+
+  const formatEbookMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/format-ebook`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "chapters"] });
+      toast({
+        title: "Formato aplicado",
+        description: data.message,
+      });
+      setSelectedChapter(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo formatear el manuscrito",
+        variant: "destructive",
+      });
+    },
+  });
 
   const cloneToReeditMutation = useMutation({
     mutationFn: async (params: { projectId: number; instructions: string }) => {
@@ -255,6 +277,21 @@ export default function ManuscriptPage() {
             >
               <Download className="h-4 w-4 mr-2" />
               Exportar Word
+            </Button>
+          )}
+          {completedChapters.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => currentProject && formatEbookMutation.mutate(currentProject.id)}
+              disabled={formatEbookMutation.isPending}
+              data-testid="button-format-ebook"
+            >
+              {formatEbookMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4 mr-2" />
+              )}
+              Formatear eBook
             </Button>
           )}
           {completedChapters.length > 0 && (

@@ -4430,13 +4430,15 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           cleaned = cleaned.replace(pattern, '');
         }
         
-        // 5. Remove lines that look like instruction artifacts
+        // 5. Remove beat/escaleta numbered lines
+        cleaned = cleaned.replace(/^\d+\.\s*(Apertura|Desarrollo|Tensión|Reflexión|Escalada|Cierre|Hook|Clímax|Desenlace|Nudo|Resolución|Transición|Confrontación|Revelación|Setup)[:\.\s]*[^\n]*\n*/gmi, '');
+        cleaned = cleaned.replace(/^(?:Beat|BEAT)\s*\d+[:\.\s]*[^\n]*\n*/gm, '');
+        
+        // 6. Remove lines that look like instruction artifacts
         const lines = cleaned.split('\n');
         const filteredLines = lines.filter(line => {
           const trimmed = line.trim();
-          // Skip empty lines check, we keep those
           if (!trimmed) return true;
-          // Skip lines that are clearly AI instructions/metadata
           if (trimmed.startsWith('- Cronología:')) return false;
           if (trimmed.startsWith('- Ubicación:')) return false;
           if (trimmed.startsWith('- Elenco:')) return false;
@@ -4446,7 +4448,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         });
         cleaned = filteredLines.join('\n');
         
-        // 6. Clean up excessive whitespace
+        // 7. Clean up excessive whitespace
         cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
         
         return cleaned.trim();
@@ -4542,6 +4544,107 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     } catch (error) {
       console.error("Error exporting project markdown:", error);
       res.status(500).json({ error: "Failed to export project" });
+    }
+  });
+
+  app.post("/api/projects/:id/format-ebook", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getProject(projectId);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const chapters = await storage.getChaptersByProject(projectId);
+      
+      if (chapters.length === 0) {
+        return res.status(400).json({ error: "No chapters found" });
+      }
+
+      const cleanChapterContent = (content: string): string => {
+        let cleaned = content.trim();
+        
+        const continuityMarker = "---CONTINUITY_STATE---";
+        if (cleaned.includes(continuityMarker)) {
+          cleaned = cleaned.split(continuityMarker)[0].trim();
+        }
+        
+        cleaned = cleaned.replace(/\n*```json[\s\S]*?```\n*/g, '\n');
+        cleaned = cleaned.replace(/\n*\{[\s\S]*?"characterStates"[\s\S]*?\}\s*$/g, '');
+        
+        cleaned = cleaned.replace(/^#+ *(CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter|Prólogo|Prologue|Epílogo|Epilogue|Nota del Autor|Author'?s? Note)[^\n]*\n+/i, '');
+        
+        const promptPatterns = [
+          /CONTEXTO DEL MUNDO \(World Bible\):[\s\S]*?(?=\n\n[A-ZÁÉÍÓÚÑ]|\n\n[A-Z])/gi,
+          /GUÍA DE ESTILO:[\s\S]*?(?=\n\n[A-ZÁÉÍÓÚÑ]|\n\n[A-Z])/gi,
+          /═{10,}[\s\S]*?═{10,}/g,
+          /⛔[^\n]*\n/g,
+          /⚠️[^\n]*\n/g,
+          /ESTADO DE CONTINUIDAD[^\n]*:?[\s\S]*?(?=\n\n[A-ZÁÉÍÓÚÑ]|\n\n[A-Z]|$)/gi,
+          /TAREA ACTUAL:[\s\S]*?(?=\n\n[A-ZÁÉÍÓÚÑ]|\n\n[A-Z])/gi,
+          /DATOS BÁSICOS:[\s\S]*?(?=\n\n[A-ZÁÉÍÓÚÑ]|\n\n[A-Z])/gi,
+          /BEATS NARRATIVOS[\s\S]*?(?=\n\n[A-ZÁÉÍÓÚÑ]|\n\n[A-Z])/gi,
+          /INSTRUCCIONES DE REESCRITURA[\s\S]*?(?=\n\n[A-ZÁÉÍÓÚÑ]|\n\n[A-Z])/gi,
+        ];
+        
+        for (const pattern of promptPatterns) {
+          cleaned = cleaned.replace(pattern, '');
+        }
+        
+        cleaned = cleaned.replace(/^\d+\.\s*(Apertura|Desarrollo|Tensión|Reflexión|Escalada|Cierre|Hook|Clímax|Desenlace|Nudo|Resolución|Transición|Confrontación|Revelación|Setup)[:\.\s]*[^\n]*\n*/gmi, '');
+        
+        cleaned = cleaned.replace(/^(?:Beat|BEAT)\s*\d+[:\.\s]*[^\n]*\n*/gm, '');
+        
+        const lines = cleaned.split('\n');
+        const filteredLines = lines.filter(line => {
+          const trimmed = line.trim();
+          if (!trimmed) return true;
+          if (trimmed.startsWith('- Cronología:')) return false;
+          if (trimmed.startsWith('- Ubicación:')) return false;
+          if (trimmed.startsWith('- Elenco:')) return false;
+          if (trimmed.match(/^Capítulo \d+ -/i) && lines.indexOf(line) < 5) return false;
+          if (trimmed.match(/^CAPÍTULO \d+ -/i) && lines.indexOf(line) < 5) return false;
+          return true;
+        });
+        cleaned = filteredLines.join('\n');
+        
+        cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
+        
+        return cleaned.trim();
+      };
+
+      let chaptersFormatted = 0;
+      let totalIssuesFixed = 0;
+      
+      for (const chapter of chapters) {
+        if (!chapter.content) continue;
+        
+        const original = chapter.content;
+        const cleaned = cleanChapterContent(original);
+        
+        if (cleaned !== original) {
+          const wordCount = cleaned.split(/\s+/).filter((w: string) => w.length > 0).length;
+          await storage.updateChapter(chapter.id, { 
+            content: cleaned,
+            wordCount,
+          });
+          totalIssuesFixed++;
+        }
+        chaptersFormatted++;
+      }
+      
+      res.json({
+        success: true,
+        chaptersProcessed: chaptersFormatted,
+        chaptersFixed: totalIssuesFixed,
+        message: totalIssuesFixed > 0 
+          ? `${totalIssuesFixed} capítulo(s) formateado(s) correctamente para eBook.`
+          : "Todos los capítulos ya tenían el formato correcto.",
+      });
+    } catch (error) {
+      console.error("Error formatting for ebook:", error);
+      res.status(500).json({ error: "Failed to format chapters" });
     }
   });
 

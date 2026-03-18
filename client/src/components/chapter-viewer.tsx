@@ -7,6 +7,38 @@ interface ChapterViewerProps {
   chapter: Chapter | null;
 }
 
+function cleanContentForDisplay(raw: string): string {
+  let content = raw.trim();
+
+  const continuityMarker = "---CONTINUITY_STATE---";
+  if (content.includes(continuityMarker)) {
+    content = content.split(continuityMarker)[0].trim();
+  }
+
+  content = content.replace(/\n*```json[\s\S]*?```\n*/g, '\n');
+  content = content.replace(/\n*\{[\s\S]*?"characterStates"[\s\S]*?\}\s*$/g, '');
+
+  content = content.replace(/^#+ *(CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter|Prólogo|Prologue|Epílogo|Epilogue|Nota del Autor|Author'?s? Note)[^\n]*\n+/i, '');
+
+  content = content.replace(/═{10,}[\s\S]*?═{10,}/g, '');
+  content = content.replace(/⛔[^\n]*\n/g, '');
+  content = content.replace(/⚠️[^\n]*\n/g, '');
+
+  content = content.replace(/^\d+\.\s*(Apertura|Desarrollo|Tensión|Reflexión|Escalada|Cierre|Hook|Clímax|Desenlace|Nudo|Resolución|Transición|Confrontación|Revelación|Setup)[:\.\s]*[^\n]*\n*/gmi, '');
+  content = content.replace(/^(?:Beat|BEAT)\s*\d+[:\.\s]*[^\n]*\n*/gm, '');
+
+  content = content.replace(/\n{4,}/g, '\n\n\n');
+
+  return content.trim();
+}
+
+function getChapterLabel(chapterNumber: number): string {
+  if (chapterNumber === 0) return "Prólogo";
+  if (chapterNumber === -1) return "Epílogo";
+  if (chapterNumber === -2) return "Nota del Autor";
+  return `Capítulo ${chapterNumber}`;
+}
+
 export function ChapterViewer({ chapter }: ChapterViewerProps) {
   if (!chapter) {
     return (
@@ -20,13 +52,14 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
   }
 
   const isLoading = chapter.status === "writing" || chapter.status === "editing";
+  const displayContent = chapter.content ? cleanContentForDisplay(chapter.content) : null;
 
   return (
     <div className="h-full flex flex-col" data-testid={`viewer-chapter-${chapter.id}`}>
       <div className="flex items-center justify-between gap-4 pb-4 border-b mb-4">
         <div>
           <h2 className="text-xl font-semibold font-serif">
-            Capítulo {chapter.chapterNumber}
+            {getChapterLabel(chapter.chapterNumber)}
           </h2>
           {chapter.title && (
             <p className="text-lg text-muted-foreground font-serif mt-1">
@@ -50,11 +83,11 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
       </div>
       
       <ScrollArea className="flex-1">
-        {chapter.content ? (
+        {displayContent ? (
           <article className="prose prose-lg dark:prose-invert max-w-prose mx-auto leading-7 font-serif">
             <div 
               dangerouslySetInnerHTML={{ 
-                __html: chapter.content
+                __html: displayContent
                   .replace(/\n\n/g, '</p><p>')
                   .replace(/\n/g, '<br />')
                   .replace(/^/, '<p>')
