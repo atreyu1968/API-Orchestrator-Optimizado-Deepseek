@@ -44,6 +44,22 @@ const updateSeriesSchema = z.object({
 const activeStreams = new Map<number, Set<Response>>();
 const activeManuscriptAnalysis = new Map<number, AbortController>();
 
+function sanitizeContentForTranslation(content: string): string {
+  let cleaned = content.trim();
+  const continuityMarker = "---CONTINUITY_STATE---";
+  if (cleaned.includes(continuityMarker)) {
+    cleaned = cleaned.split(continuityMarker)[0].trim();
+  }
+  cleaned = cleaned.replace(/\n*\{[\s\S]*?"characterStates"[\s\S]*?\}\s*$/g, '');
+  cleaned = cleaned.replace(/═{10,}[\s\S]*?═{10,}/g, '');
+  cleaned = cleaned.replace(/⛔[^\n]*\n/g, '');
+  cleaned = cleaned.replace(/⚠️[^\n]*\n/g, '');
+  cleaned = cleaned.replace(/^\d+\.\s*(Apertura|Desarrollo|Tensión|Reflexión|Escalada|Cierre|Hook|Clímax|Desenlace|Nudo|Resolución|Transición|Confrontación|Revelación|Setup|Opening|Development|Tension|Reflection|Escalation|Closure|Climax|Resolution|Transition|Confrontation|Revelation)[:\.\s]*[^\n]*\n*/gmi, '');
+  cleaned = cleaned.replace(/^(?:Beat|BEAT)\s*\d+[:\.\s]*[^\n]*\n*/gm, '');
+  cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
+  return cleaned.trim();
+}
+
 function getSectionLabel(chapterNumber: number, title?: string | null): string {
   if (chapterNumber === 0) return title || "el Prólogo";
   if (chapterNumber === -1) return title || "el Epílogo";
@@ -4786,7 +4802,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         
         console.log(`[Translate] Translating ${chapterLabel}: ${chapter.title}`);
         
-        const chapterContent = (chapter as any).editedContent ?? chapter.content ?? "";
+        let chapterContent = ((chapter as any).editedContent ?? chapter.content ?? "").trim();
+        chapterContent = sanitizeContentForTranslation(chapterContent);
         const result = await translator.execute({
           content: chapterContent,
           sourceLanguage,
@@ -4920,16 +4937,28 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const parseTranslatedContent = (content: string, chapterNumber: number, targetLang: string): { heading: string | null; body: string } => {
         let cleaned = content.trim();
         
-        // First, check if content is wrapped in markdown code block (```json ... ``` or ```markdown ... ```)
+        const continuityMarker = "---CONTINUITY_STATE---";
+        if (cleaned.includes(continuityMarker)) {
+          cleaned = cleaned.split(continuityMarker)[0].trim();
+        }
+        
+        cleaned = cleaned.replace(/\n*```json[\s\S]*?```\n*/g, '\n');
+        cleaned = cleaned.replace(/\n*\{[\s\S]*?"characterStates"[\s\S]*?\}\s*$/g, '');
+        
+        cleaned = cleaned.replace(/═{10,}[\s\S]*?═{10,}/g, '');
+        cleaned = cleaned.replace(/⛔[^\n]*\n/g, '');
+        cleaned = cleaned.replace(/⚠️[^\n]*\n/g, '');
+        
+        cleaned = cleaned.replace(/^\d+\.\s*(Apertura|Desarrollo|Tensión|Reflexión|Escalada|Cierre|Hook|Clímax|Desenlace|Nudo|Resolución|Transición|Confrontación|Revelación|Setup|Opening|Development|Tension|Reflection|Escalation|Closure|Climax|Resolution|Transition|Confrontation|Revelation)[:\.\s]*[^\n]*\n*/gmi, '');
+        cleaned = cleaned.replace(/^(?:Beat|BEAT)\s*\d+[:\.\s]*[^\n]*\n*/gm, '');
+        
         const codeBlockMatch = cleaned.match(/^```(?:json|markdown|md)?\s*([\s\S]*?)```\s*$/);
         if (codeBlockMatch) {
           cleaned = codeBlockMatch[1].trim();
         }
         
-        // Also strip any remaining code fences that might be embedded
         cleaned = cleaned.replace(/```(?:json|markdown|md|text)?\n?/g, '').replace(/```\s*$/g, '');
         
-        // Check if content is a JSON object with translated_text field
         if (cleaned.startsWith('{') && cleaned.includes('"translated_text"')) {
           try {
             const parsed = JSON.parse(cleaned);
@@ -4937,7 +4966,6 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
               cleaned = parsed.translated_text;
             }
           } catch {
-            // Not valid JSON, try regex extraction
             const jsonMatch = cleaned.match(/"translated_text"\s*:\s*"([\s\S]*?)(?:"\s*,\s*"(?:source_|target_|notes)|\s*"\s*})/);
             if (jsonMatch) {
               cleaned = jsonMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
@@ -4945,8 +4973,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           }
         }
         
-        // Remove any style guide contamination from AI output
         cleaned = removeStyleGuideContamination(cleaned);
+        
+        cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
         
         // Extract the first markdown heading if present (# to #### at start)
         // CRITICAL: Require an actual newline after the heading to avoid consuming all content
@@ -5233,7 +5262,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     };
 
     const cleanContent = (content: string, chapterNumber: number): { heading: string | null; body: string } => {
-      let cleaned = content.trim();
+      let cleaned = sanitizeContentForTranslation(content);
+      
       const codeBlockMatch = cleaned.match(/^```(?:json|markdown|md)?\s*([\s\S]*?)```\s*$/);
       if (codeBlockMatch) cleaned = codeBlockMatch[1].trim();
       cleaned = cleaned.replace(/```(?:json|markdown|md|text)?\n?/g, '').replace(/```\s*$/g, '');
@@ -5281,7 +5311,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const afterNumericRemoval = bodyText.replace(numericHeaderPattern, '');
       if (afterNumericRemoval.trim().length > 50) bodyText = afterNumericRemoval.trim();
       bodyText = bodyText.replace(/\n*[-*]{3,}\s*$/, '').trim();
-      cleaned = cleaned.replace(/,?\s*"(?:source_language|target_language|notes)"\s*:\s*"[^"]*"\s*}?\s*$/g, '');
+      bodyText = bodyText.replace(/,?\s*"(?:source_language|target_language|notes)"\s*:\s*"[^"]*"\s*}?\s*$/g, '').trim();
       return { heading: extractedHeading, body: bodyText };
     };
 
@@ -5491,7 +5521,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
         console.log(`[Resume] Translating ${chapterLabel}: ${chapter.title}`);
 
-        const chapterContent = chapter.editedContent || chapter.originalContent || (chapter as any).content || "";
+        let chapterContent = (chapter.editedContent || chapter.originalContent || (chapter as any).content || "").trim();
+        chapterContent = sanitizeContentForTranslation(chapterContent);
         const result = await translator.execute({
           content: chapterContent,
           sourceLanguage,
@@ -6792,7 +6823,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           status: "translating"
         });
 
-        const contentToTranslate = chapter.editedContent || chapter.originalContent || "";
+        let contentToTranslate = (chapter.editedContent || chapter.originalContent || "").trim();
+        contentToTranslate = sanitizeContentForTranslation(contentToTranslate);
         console.log(`[Translate-Reedit] Translating ${chapterLabel}: ${chapter.title}`);
         
         const result = await translator.execute({
