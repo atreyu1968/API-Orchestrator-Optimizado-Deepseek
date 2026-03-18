@@ -52,7 +52,9 @@ function splitLongParagraphs(content: string): string {
     const trimmed = block.trim();
     if (!trimmed) continue;
 
-    if (trimmed.length < 600) {
+    const hasDialogue = /\n\s*[—«\u201C"]/.test(trimmed) || /^[—«\u201C"]/.test(trimmed);
+
+    if (trimmed.length < 600 && !hasDialogue) {
       result.push(trimmed);
       continue;
     }
@@ -6549,6 +6551,73 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     } catch (error) {
       console.error("Error deleting reedit project:", error);
       res.status(500).json({ error: "Failed to delete reedit project" });
+    }
+  });
+
+  app.post("/api/reedit-projects/:id/format-ebook", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getReeditProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const chapters = await storage.getReeditChaptersByProject(projectId);
+      if (chapters.length === 0) {
+        return res.status(400).json({ error: "No chapters found" });
+      }
+
+      const cleanReeditContent = (content: string): string => {
+        let cleaned = content.trim();
+        const continuityMarker = "---CONTINUITY_STATE---";
+        if (cleaned.includes(continuityMarker)) {
+          cleaned = cleaned.split(continuityMarker)[0].trim();
+        }
+        cleaned = cleaned.replace(/\n*```json[\s\S]*?```\n*/g, '\n');
+        cleaned = cleaned.replace(/\n*\{[\s\S]*?"characterStates"[\s\S]*?\}\s*$/g, '');
+        cleaned = cleaned.replace(/^#+ *(CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter|Prólogo|Prologue|Epílogo|Epilogue|Nota del Autor|Author'?s? Note)[^\n]*\n+/i, '');
+        cleaned = cleaned.replace(/═{10,}[\s\S]*?═{10,}/g, '');
+        cleaned = cleaned.replace(/⛔[^\n]*\n/g, '');
+        cleaned = cleaned.replace(/⚠️[^\n]*\n/g, '');
+        cleaned = cleaned.replace(/^\d+\.\s*(Apertura|Desarrollo|Tensión|Reflexión|Escalada|Cierre|Hook|Clímax|Desenlace|Nudo|Resolución|Transición|Confrontación|Revelación|Setup|Opening|Development|Tension|Reflection|Escalation|Closure|Climax|Resolution|Transition|Confrontation|Revelation)[:\.\s]*[^\n]*\n*/gmi, '');
+        cleaned = cleaned.replace(/^(?:Beat|BEAT)\s*\d+[:\.\s]*[^\n]*\n*/gm, '');
+        cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
+        cleaned = splitLongParagraphs(cleaned);
+        return cleaned.trim();
+      };
+
+      let chaptersFormatted = 0;
+      let totalIssuesFixed = 0;
+
+      for (const chapter of chapters) {
+        const content = chapter.editedContent || chapter.originalContent;
+        if (!content) continue;
+
+        const cleaned = cleanReeditContent(content);
+        const field = chapter.editedContent ? 'editedContent' : 'originalContent';
+
+        if (cleaned !== content) {
+          const wordCount = cleaned.split(/\s+/).filter((w: string) => w.length > 0).length;
+          await storage.updateReeditChapter(chapter.id, {
+            [field]: cleaned,
+            wordCount,
+          });
+          totalIssuesFixed++;
+        }
+        chaptersFormatted++;
+      }
+
+      res.json({
+        success: true,
+        chaptersProcessed: chaptersFormatted,
+        chaptersFixed: totalIssuesFixed,
+        message: totalIssuesFixed > 0
+          ? `${totalIssuesFixed} capítulo(s) formateado(s) correctamente para eBook.`
+          : "Todos los capítulos ya tenían el formato correcto.",
+      });
+    } catch (error) {
+      console.error("Error formatting reedit for ebook:", error);
+      res.status(500).json({ error: "Failed to format chapters" });
     }
   });
 

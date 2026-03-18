@@ -36,7 +36,8 @@ import {
   RotateCcw,
   Pause,
   Unlock,
-  MessageSquare
+  MessageSquare,
+  Wand2
 } from "lucide-react";
 import type { ReeditProject, ReeditChapter, ReeditAuditReport } from "@shared/schema";
 
@@ -827,6 +828,20 @@ export default function ReeditPage() {
     },
   });
 
+  const formatEbookMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      const res = await apiRequest("POST", `/api/reedit-projects/${projectId}/format-ebook`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
+      toast({ title: "Formato aplicado", description: data.message });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "No se pudo formatear", variant: "destructive" });
+    },
+  });
+
   const restartMutation = useMutation({
     mutationFn: async (params: { projectId: number; expandChapters: boolean; insertNewChapters: boolean; targetMinWordsPerChapter: number }) => {
       return apiRequest("POST", `/api/reedit-projects/${params.projectId}/restart`, {
@@ -1425,6 +1440,19 @@ export default function ReeditPage() {
                         <CardContent>
                           <FinalReviewDisplay result={selectedProjectData.finalReviewResult} />
                           <div className="mt-4 flex justify-end gap-2 flex-wrap">
+                            <Button
+                              variant="outline"
+                              data-testid="button-format-reedit-ebook"
+                              onClick={() => formatEbookMutation.mutate(selectedProjectData.id)}
+                              disabled={formatEbookMutation.isPending}
+                            >
+                              {formatEbookMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              ) : (
+                                <Wand2 className="h-4 w-4 mr-2" />
+                              )}
+                              Formatear eBook
+                            </Button>
                             <Button 
                               variant="outline" 
                               data-testid="button-download-reedit-docx"

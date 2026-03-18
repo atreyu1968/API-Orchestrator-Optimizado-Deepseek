@@ -15,7 +15,9 @@ function splitLongParagraphs(content: string): string {
     const trimmed = block.trim();
     if (!trimmed) continue;
 
-    if (trimmed.length < 600) {
+    const hasDialogue = /\n\s*[—«\u201C"]/.test(trimmed) || /^[—«\u201C"]/.test(trimmed);
+
+    if (trimmed.length < 600 && !hasDialogue) {
       result.push(trimmed);
       continue;
     }
