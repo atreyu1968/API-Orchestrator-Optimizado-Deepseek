@@ -120,7 +120,7 @@ Preferred communication style: Simple, everyday language.
 ## External Dependencies
 
 ### AI Services
-- **Google Gemini API**: `GEMINI_API_KEY` for `gemini-3-pro-preview` (text), `gemini-2.5-flash` (text with thinking), and `gemini-2.5-flash-image` (image).
+- **Google Gemini API**: `GEMINI_API_KEY` — primary model `gemini-2.5-flash` (all agents), `gemini-2.0-flash` (manuscript analyzer), `gemini-2.5-flash-image` (image generation).
 
 ### Deployment & Database
 - **PostgreSQL**: Database accessed via `DATABASE_URL`.

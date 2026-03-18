@@ -67,16 +67,16 @@ interface UsageByModel {
   eventCount: number;
 }
 
-const PRICING_INFO = `Precios reales por modelo (por millón de tokens):
+const PRICING_INFO = `Precios por modelo (por millón de tokens):
 
-gemini-3-pro-preview:
-  Input: $1.25/M, Output: $10.00/M, Thinking: $3.00/M
+gemini-2.5-flash (todos los agentes):
+  Input: $0.15/M, Output: $0.60/M, Thinking: $3.50/M
 
-gemini-3-flash:
-  Input: $0.50/M, Output: $3.00/M, Thinking: $1.50/M
+gemini-2.0-flash (analizador):
+  Input: $0.10/M, Output: $0.40/M
 
-gemini-2.5-flash:
-  Input: $0.30/M, Output: $2.50/M, Thinking: $1.00/M
+gemini-2.5-pro (reserva):
+  Input: $1.25/M, Output: $10.00/M, Thinking: $10.00/M
 
 Los costos se calculan según el modelo usado por cada agente.`;
 
@@ -92,16 +92,14 @@ function formatCurrency(amount: number): string {
 
 function getModelBadge(model: string) {
   const colors: Record<string, "default" | "secondary" | "outline"> = {
-    "gemini-3-pro-preview": "default",
-    "gemini-3-flash": "secondary",
-    "gemini-2.5-flash": "outline",
-    "gemini-2.0-flash": "outline",
+    "gemini-2.5-flash": "default",
+    "gemini-2.0-flash": "secondary",
+    "gemini-2.5-pro": "outline",
   };
   const shortNames: Record<string, string> = {
-    "gemini-3-pro-preview": "3 Pro",
-    "gemini-3-flash": "3 Flash",
     "gemini-2.5-flash": "2.5 Flash",
     "gemini-2.0-flash": "2.0 Flash",
+    "gemini-2.5-pro": "2.5 Pro",
   };
   return (
     <Badge variant={colors[model] || "outline"} className="text-xs font-mono">

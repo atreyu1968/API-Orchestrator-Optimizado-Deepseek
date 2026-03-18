@@ -255,10 +255,9 @@ export class Orchestrator {
   private calculateTokenCosts(model: string, tokenUsage: TokenUsage): { inputCost: number; outputCost: number; totalCost: number } {
     // Pricing per million tokens
     const pricing: Record<string, { input: number; output: number; thinking: number }> = {
-      "gemini-3-pro-preview": { input: 1.25, output: 10.00, thinking: 3.00 },
-      "gemini-3-flash": { input: 0.50, output: 3.00, thinking: 1.50 },
-      "gemini-2.5-flash": { input: 0.30, output: 2.50, thinking: 1.00 },
-      "gemini-2.0-flash": { input: 0.15, output: 0.60, thinking: 0.30 },
+      "gemini-2.5-flash": { input: 0.15, output: 0.60, thinking: 3.50 },
+      "gemini-2.0-flash": { input: 0.10, output: 0.40, thinking: 0 },
+      "gemini-2.5-pro": { input: 1.25, output: 10.00, thinking: 10.00 },
     };
     
     const modelPricing = pricing[model] || pricing["gemini-2.5-flash"];

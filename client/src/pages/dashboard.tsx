@@ -41,9 +41,9 @@ function sortChaptersForDisplay(chapters: Chapter[]): Chapter[] {
 }
 
 function calculateCost(inputTokens: number, outputTokens: number, thinkingTokens: number): number {
-  const INPUT_PRICE_PER_MILLION = 0.80;
-  const OUTPUT_PRICE_PER_MILLION = 6.50;
-  const THINKING_PRICE_PER_MILLION = 3.0;
+  const INPUT_PRICE_PER_MILLION = 0.15;
+  const OUTPUT_PRICE_PER_MILLION = 0.60;
+  const THINKING_PRICE_PER_MILLION = 3.50;
   
   const inputCost = (inputTokens / 1_000_000) * INPUT_PRICE_PER_MILLION;
   const outputCost = (outputTokens / 1_000_000) * OUTPUT_PRICE_PER_MILLION;
@@ -52,12 +52,13 @@ function calculateCost(inputTokens: number, outputTokens: number, thinkingTokens
   return inputCost + outputCost + thinkingCost;
 }
 
-const MODEL_PRICING_INFO = `Modelos usados:
-• gemini-3-pro-preview (Arquitecto, Narrador, Revisor): $1.25/$10.0/M + thinking $3.0/M
-• gemini-3-flash (Editor): $0.50/$3.0/M
-• gemini-2.5-flash (QA: Centinela, Auditor, Detector, Estilista): $0.30/$2.5/M
+const MODEL_PRICING_INFO = `Modelo principal: gemini-2.5-flash
+• Input: $0.15/M, Output: $0.60/M, Thinking: $3.50/M
 
-Precios promedio ponderados: Input $0.80/M, Output $6.50/M, Thinking $3.0/M`;
+Modelo secundario: gemini-2.0-flash (analizador)
+• Input: $0.10/M, Output: $0.40/M
+
+Todos los agentes ahora usan gemini-2.5-flash para optimizar costos.`;
 
 type ConfirmType = "cancel" | "forceComplete" | "resume" | "delete" | null;
 

@@ -20,7 +20,7 @@ export interface AgentResponse {
   error?: string;
 }
 
-export type GeminiModel = "gemini-3-pro-preview" | "gemini-2.5-flash" | "gemini-2.0-flash";
+export type GeminiModel = "gemini-2.5-flash" | "gemini-2.0-flash" | "gemini-2.5-pro";
 
 export interface AgentConfig {
   name: string;
@@ -173,7 +173,7 @@ export abstract class BaseAgent {
         const modelToUse = this.config.model || "gemini-2.5-flash";
         const useThinking = this.config.useThinking === true;
         
-        const defaultMaxOutput = modelToUse === "gemini-3-pro-preview" ? 65536 : 32768;
+        const defaultMaxOutput = modelToUse === "gemini-2.5-pro" ? 65536 : 32768;
         const maxOutput = this.config.maxOutputTokens || defaultMaxOutput;
         
         const startTime = Date.now();
@@ -189,9 +189,9 @@ export abstract class BaseAgent {
             temperature,
             topP: 0.95,
             maxOutputTokens: maxOutput,
-            ...(useThinking && (modelToUse === "gemini-3-pro-preview" || modelToUse === "gemini-2.5-flash") ? {
+            ...(useThinking && (modelToUse === "gemini-2.5-pro" || modelToUse === "gemini-2.5-flash") ? {
               thinkingConfig: {
-                thinkingBudget: modelToUse === "gemini-3-pro-preview" ? 2048 : 1024,
+                thinkingBudget: modelToUse === "gemini-2.5-pro" ? 2048 : 1024,
                 includeThoughts: true,
               },
             } : {}),

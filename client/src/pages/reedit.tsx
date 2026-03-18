@@ -71,9 +71,9 @@ function getChapterBadgeLabel(chapterNumber: number): string {
   return `Cap. ${chapterNumber}`;
 }
 
-const INPUT_PRICE_PER_MILLION = 0.80;
-const OUTPUT_PRICE_PER_MILLION = 6.50;
-const THINKING_PRICE_PER_MILLION = 3.0;
+const INPUT_PRICE_PER_MILLION = 0.15;
+const OUTPUT_PRICE_PER_MILLION = 0.60;
+const THINKING_PRICE_PER_MILLION = 3.50;
 
 function calculateCost(inputTokens: number, outputTokens: number, thinkingTokens: number) {
   const inputCost = (inputTokens / 1_000_000) * INPUT_PRICE_PER_MILLION;

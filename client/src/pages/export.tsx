@@ -79,8 +79,8 @@ interface ExportResult {
   markdown: string;
 }
 
-const INPUT_PRICE_PER_MILLION = 0.80;
-const OUTPUT_PRICE_PER_MILLION = 6.50;
+const INPUT_PRICE_PER_MILLION = 0.15;
+const OUTPUT_PRICE_PER_MILLION = 0.60;
 
 function calculateCost(inputTokens: number, outputTokens: number) {
   const inputCost = (inputTokens / 1_000_000) * INPUT_PRICE_PER_MILLION;

@@ -1,42 +1,32 @@
 // Real pricing per model (per 1M tokens)
-// Source: Google AI pricing as of Jan 2025
+// Source: Google AI pricing — updated March 2026
 
 export interface ModelPricing {
   inputPerMillion: number;
   outputPerMillion: number;
-  thinkingPerMillion: number; // Some models have separate thinking costs
+  thinkingPerMillion: number;
 }
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
-  // Gemini 3 Pro Preview - Most expensive, best quality
-  "gemini-3-pro-preview": {
-    inputPerMillion: 1.25,
-    outputPerMillion: 10.0,
-    thinkingPerMillion: 3.0, // Thinking tokens billed separately at lower rate
-  },
-  // Gemini 3 Flash - Fast, medium cost
-  "gemini-3-flash": {
-    inputPerMillion: 0.50,
-    outputPerMillion: 3.0,
-    thinkingPerMillion: 1.5,
-  },
-  // Gemini 2.5 Flash - Cheapest option
   "gemini-2.5-flash": {
-    inputPerMillion: 0.30,
-    outputPerMillion: 2.5,
-    thinkingPerMillion: 1.0,
+    inputPerMillion: 0.15,
+    outputPerMillion: 0.60,
+    thinkingPerMillion: 3.50,
   },
-  // Gemini 2.0 Flash - Legacy
   "gemini-2.0-flash": {
-    inputPerMillion: 0.30,
-    outputPerMillion: 2.5,
-    thinkingPerMillion: 1.0,
+    inputPerMillion: 0.10,
+    outputPerMillion: 0.40,
+    thinkingPerMillion: 0,
   },
-  // Default fallback
+  "gemini-2.5-pro": {
+    inputPerMillion: 1.25,
+    outputPerMillion: 10.00,
+    thinkingPerMillion: 10.00,
+  },
   "default": {
-    inputPerMillion: 1.0,
-    outputPerMillion: 5.0,
-    thinkingPerMillion: 2.0,
+    inputPerMillion: 0.15,
+    outputPerMillion: 0.60,
+    thinkingPerMillion: 3.50,
   },
 };
 
