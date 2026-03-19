@@ -11,6 +11,7 @@ set -e
 #
 # Variables de entorno opcionales:
 #   GEMINI_API_KEY          - (Requerido) API key de Google Gemini
+#   FISH_AUDIO_API_KEY      - (Opcional) API key de Fish Audio para audiolibros
 #   LITAGENTS_PASSWORD      - (Opcional) Contrasena de acceso
 #   CF_TUNNEL_TOKEN         - (Opcional) Token de Cloudflare Tunnel
 # ============================================================
@@ -54,6 +55,10 @@ while [[ $# -gt 0 ]]; do
             LITAGENTS_PASSWORD="${1#*=}"
             shift
             ;;
+        --fish-key=*)
+            FISH_AUDIO_API_KEY="${1#*=}"
+            shift
+            ;;
         --cf-token=*)
             CF_TUNNEL_TOKEN="${1#*=}"
             shift
@@ -64,15 +69,17 @@ while [[ $# -gt 0 ]]; do
             echo "Opciones:"
             echo "  --unattended, -u              Instalación sin interacción"
             echo "  --gemini-key=KEY              API key de Google Gemini (requerido)"
+            echo "  --fish-key=KEY                API key de Fish Audio para audiolibros (opcional)"
             echo "  --password=PASS               Contrasena de acceso (opcional)"
             echo "  --cf-token=TOKEN              Token de Cloudflare Tunnel (opcional)"
             echo "  --help, -h                    Mostrar esta ayuda"
             echo ""
             echo "Ejemplo desatendido:"
-            echo "  GEMINI_API_KEY=\"tu-key\" sudo bash install.sh --unattended"
+            echo "  sudo GEMINI_API_KEY=\"tu-key\" bash install.sh --unattended"
+            echo "  sudo GEMINI_API_KEY=\"tu-key\" FISH_AUDIO_API_KEY=\"fish-key\" bash install.sh --unattended"
             echo ""
             echo "  O con argumentos:"
-            echo "  sudo bash install.sh --unattended --gemini-key=\"tu-key\" --password=\"secreto\""
+            echo "  sudo bash install.sh --unattended --gemini-key=\"tu-key\" --fish-key=\"fish-key\" --password=\"secreto\""
             exit 0
             ;;
         *)
@@ -90,6 +97,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 PROVIDED_GEMINI_API_KEY="${GEMINI_API_KEY:-}"
+PROVIDED_FISH_AUDIO_API_KEY="${FISH_AUDIO_API_KEY:-}"
 PROVIDED_LITAGENTS_PASSWORD="${LITAGENTS_PASSWORD:-}"
 PROVIDED_CF_TUNNEL_TOKEN="${CF_TUNNEL_TOKEN:-}"
 
@@ -109,6 +117,7 @@ if [ -f "$CONFIG_DIR/env" ]; then
     source "$CONFIG_DIR/env"
     
     [ -n "$PROVIDED_GEMINI_API_KEY" ] && GEMINI_API_KEY="$PROVIDED_GEMINI_API_KEY"
+    [ -n "$PROVIDED_FISH_AUDIO_API_KEY" ] && FISH_AUDIO_API_KEY="$PROVIDED_FISH_AUDIO_API_KEY"
     [ -n "$PROVIDED_LITAGENTS_PASSWORD" ] && LITAGENTS_PASSWORD="$PROVIDED_LITAGENTS_PASSWORD"
     [ -n "$PROVIDED_CF_TUNNEL_TOKEN" ] && CF_TUNNEL_TOKEN="$PROVIDED_CF_TUNNEL_TOKEN"
 else
@@ -138,6 +147,12 @@ if [ "$IS_UPDATE" = false ]; then
         fi
         print_success "Usando GEMINI_API_KEY desde variable de entorno"
         
+        if [ -n "$FISH_AUDIO_API_KEY" ]; then
+            print_success "Usando FISH_AUDIO_API_KEY desde variable de entorno"
+        else
+            print_status "FISH_AUDIO_API_KEY no proporcionada (audiolibros deshabilitados)"
+        fi
+        
         LITAGENTS_PASSWORD="${LITAGENTS_PASSWORD:-}"
         CF_TOKEN="${CF_TUNNEL_TOKEN:-}"
     else
@@ -153,12 +168,26 @@ if [ "$IS_UPDATE" = false ]; then
         GEMINI_API_KEY="$INPUT_GEMINI_KEY"
         
         echo ""
+        echo "=== Configuracion de Fish Audio (Audiolibros) ==="
+        echo "(Opcional) Para generar audiolibros necesitas una API key de Fish Audio."
+        echo "Puedes obtenerla en: https://fish.audio/account/api-key"
+        echo "Presiona Enter para omitir (podras configurarla despues)."
+        read -p "FISH_AUDIO_API_KEY (opcional): " INPUT_FISH_KEY
+        FISH_AUDIO_API_KEY="${INPUT_FISH_KEY:-}"
+        
+        echo ""
         echo "=== Configuracion de Seguridad ==="
         echo "(Opcional) Configura una contrasena para proteger el acceso a la aplicacion."
         echo "Presiona Enter para omitir (acceso sin contrasena)."
         read -sp "LITAGENTS_PASSWORD (opcional): " INPUT_PASSWORD
         echo ""
         LITAGENTS_PASSWORD="${INPUT_PASSWORD:-}"
+    fi
+    
+    if [ -n "$FISH_AUDIO_API_KEY" ]; then
+        print_success "Fish Audio API key configurada (audiolibros habilitados)"
+    else
+        print_status "Fish Audio omitido (podras configurarlo despues en /etc/litagents/env)"
     fi
     
     if [ -n "$LITAGENTS_PASSWORD" ]; then
@@ -293,9 +322,12 @@ mkdir -p "$APP_DIR"
 mkdir -p "$APP_DIR/inbox"
 mkdir -p "$APP_DIR/inbox/processed"
 mkdir -p "$APP_DIR/exports"
+mkdir -p "$APP_DIR/audiobooks"
+mkdir -p "$APP_DIR/audiobooks/covers"
 chown "$APP_USER:$APP_USER" "$LOG_DIR"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/inbox"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/exports"
+chown -R "$APP_USER:$APP_USER" "$APP_DIR/audiobooks"
 
 if [ "$IS_UPDATE" = true ]; then
     print_status "Preservando configuración existente..."
@@ -303,6 +335,19 @@ if [ "$IS_UPDATE" = true ]; then
     if [ -n "$GEMINI_API_KEY" ] && [ "$GEMINI_API_KEY" != "$(grep -oP 'GEMINI_API_KEY=\K.*' "$CONFIG_DIR/env" 2>/dev/null)" ]; then
         sed -i "s|^GEMINI_API_KEY=.*|GEMINI_API_KEY=$GEMINI_API_KEY|" "$CONFIG_DIR/env"
         print_status "API key de Gemini actualizada"
+    fi
+    
+    if [ -n "$PROVIDED_FISH_AUDIO_API_KEY" ]; then
+        if grep -q "^FISH_AUDIO_API_KEY=" "$CONFIG_DIR/env" 2>/dev/null; then
+            sed -i "s|^FISH_AUDIO_API_KEY=.*|FISH_AUDIO_API_KEY=$FISH_AUDIO_API_KEY|" "$CONFIG_DIR/env"
+        else
+            echo "FISH_AUDIO_API_KEY=$FISH_AUDIO_API_KEY" >> "$CONFIG_DIR/env"
+        fi
+        print_status "API key de Fish Audio actualizada"
+    fi
+    
+    if ! grep -q "FISH_AUDIO_API_KEY" "$CONFIG_DIR/env" 2>/dev/null; then
+        echo "FISH_AUDIO_API_KEY=" >> "$CONFIG_DIR/env"
     fi
     
     if ! grep -q "LITAGENTS_INBOX_DIR" "$CONFIG_DIR/env" 2>/dev/null; then
@@ -320,6 +365,7 @@ PORT=$APP_PORT
 DATABASE_URL=$DATABASE_URL
 SESSION_SECRET=$SESSION_SECRET
 GEMINI_API_KEY=$GEMINI_API_KEY
+FISH_AUDIO_API_KEY=$FISH_AUDIO_API_KEY
 LITAGENTS_PASSWORD=$LITAGENTS_PASSWORD
 SECURE_COOKIES=false
 LITAGENTS_INBOX_DIR=$APP_DIR/inbox
@@ -352,6 +398,8 @@ else
     mkdir -p "$APP_DIR/inbox"
     mkdir -p "$APP_DIR/inbox/processed"
     mkdir -p "$APP_DIR/exports"
+    mkdir -p "$APP_DIR/audiobooks"
+    mkdir -p "$APP_DIR/audiobooks/covers"
 fi
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
@@ -414,6 +462,7 @@ print_header "PASO 9: Configurando servicio systemd"
 
 INBOX_DIR="${LITAGENTS_INBOX_DIR:-$APP_DIR/inbox}"
 EXPORTS_DIR="${LITAGENTS_EXPORTS_DIR:-$APP_DIR/exports}"
+AUDIOBOOKS_DIR="$APP_DIR/audiobooks"
 
 cat > "/etc/systemd/system/$APP_NAME.service" << EOF
 [Unit]
@@ -439,7 +488,7 @@ MemoryMax=2G
 
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=$APP_DIR $LOG_DIR $INBOX_DIR $EXPORTS_DIR /tmp
+ReadWritePaths=$APP_DIR $LOG_DIR $INBOX_DIR $EXPORTS_DIR $AUDIOBOOKS_DIR /tmp
 
 [Install]
 WantedBy=multi-user.target
@@ -656,6 +705,35 @@ cd "$APP_DIR"
 set -a
 source "$CONFIG_FILE"
 set +a
+
+if [ -z "$FISH_AUDIO_API_KEY" ]; then
+    echo ""
+    echo "=== Configuracion de Fish Audio (Audiolibros) ==="
+    echo "La funcion de audiolibros requiere una API key de Fish Audio."
+    echo "Puedes obtenerla en: https://fish.audio/account/api-key"
+    echo "Presiona Enter para omitir (podras configurarla despues en $CONFIG_FILE)."
+    read -p "FISH_AUDIO_API_KEY (opcional): " INPUT_FISH_KEY
+    if [ -n "$INPUT_FISH_KEY" ]; then
+        if grep -q "^FISH_AUDIO_API_KEY=" "$CONFIG_FILE" 2>/dev/null; then
+            sed -i "s|^FISH_AUDIO_API_KEY=.*|FISH_AUDIO_API_KEY=$INPUT_FISH_KEY|" "$CONFIG_FILE"
+        else
+            echo "FISH_AUDIO_API_KEY=$INPUT_FISH_KEY" >> "$CONFIG_FILE"
+        fi
+        export FISH_AUDIO_API_KEY="$INPUT_FISH_KEY"
+        echo "[OK] Fish Audio API key configurada"
+    else
+        if ! grep -q "^FISH_AUDIO_API_KEY=" "$CONFIG_FILE" 2>/dev/null; then
+            echo "FISH_AUDIO_API_KEY=" >> "$CONFIG_FILE"
+        fi
+        echo "[INFO] Fish Audio omitido"
+    fi
+    echo ""
+else
+    echo "[OK] Fish Audio API key ya configurada"
+fi
+
+mkdir -p "$APP_DIR/audiobooks/covers"
+chown -R "$APP_USER:$APP_USER" "$APP_DIR/audiobooks"
 
 echo "1. Obteniendo últimos cambios..."
 git fetch --all

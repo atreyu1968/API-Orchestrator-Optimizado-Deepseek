@@ -17,6 +17,7 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 - **Seguimiento de Costos**: Tracking granular de uso de tokens por proyecto, agente y modelo con precios actualizados
 - **Gestion de Series**: Continuidad inter-libros con snapshots automaticos y verificacion de arcos narrativos
 - **Autenticacion**: Proteccion con contrasena para instalaciones en servidor propio
+- **Audiolibros**: Conversion de novelas a audiolibro con voces TTS de Fish Audio (modelo speech-1.6), portadas personalizadas y descarga en ZIP
 - **PWA**: Aplicacion web progresiva instalable con soporte offline
 
 ## Agentes del Sistema
@@ -151,6 +152,15 @@ Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando c
 - Modo expansion: el Ghostwriter recibe el borrador corto y lo expande con detalles sensoriales, dialogo, monologo interno y transiciones
 - Filosofia de edicion quirurgica: todas las correcciones modifican solo pasajes problematicos preservando el contenido funcional
 
+### Audiolibros (Text-to-Speech)
+- **Conversion TTS**: Genera audiolibros capitulo a capitulo usando Fish Audio (modelo speech-1.6)
+- **Voces personalizables**: Seleccion de voces predefinidas o cualquier voz de Fish Audio por ID
+- **Velocidad ajustable**: Control de velocidad de narración (0.5x a 2.0x)
+- **Portadas**: Subida de imagen de portada para el proyecto de audiolibro
+- **Descarga en ZIP**: Descarga todos los capitulos generados en un archivo ZIP
+- **Streaming de audio**: Reproduccion directa desde la interfaz web
+- **Chunking inteligente**: Capitulos largos (>9500 caracteres) se dividen automaticamente en fragmentos por oraciones
+
 ### Exportacion
 - Markdown limpio sin artefactos de codigo
 - Exportacion a DOCX con formato profesional
@@ -165,6 +175,7 @@ Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando c
 - 20GB espacio en disco
 - Conexion a internet
 - API key de Google Gemini
+- API key de Fish Audio (opcional, para audiolibros)
 
 ## Preparacion del Servidor Ubuntu
 
@@ -199,8 +210,9 @@ cd escritorasdgemini
 # Instalacion minima
 sudo GEMINI_API_KEY="tu-api-key-aqui" bash install.sh --unattended
 
-# Con contrasena y Cloudflare Tunnel
+# Con todas las opciones
 sudo GEMINI_API_KEY="tu-api-key" \
+     FISH_AUDIO_API_KEY="tu-fish-key" \
      LITAGENTS_PASSWORD="tu-contrasena" \
      CF_TUNNEL_TOKEN="token-cloudflare-opcional" \
      bash install.sh --unattended
@@ -211,6 +223,7 @@ Tambien puedes usar argumentos de linea de comandos:
 ```bash
 sudo bash install.sh --unattended \
     --gemini-key="tu-api-key" \
+    --fish-key="tu-fish-key" \
     --password="tu-contrasena" \
     --cf-token="token-cloudflare"
 ```
@@ -222,8 +235,9 @@ Ver todas las opciones: `bash install.sh --help`
 El instalador te pedira:
 
 1. **GEMINI_API_KEY** (obligatorio): API key de Google Gemini
-2. **LITAGENTS_PASSWORD** (opcional): Contrasena para proteger el acceso
-3. **Cloudflare Tunnel Token** (opcional): Para acceso HTTPS externo
+2. **FISH_AUDIO_API_KEY** (opcional): API key de Fish Audio para generar audiolibros
+3. **LITAGENTS_PASSWORD** (opcional): Contrasena para proteger el acceso
+4. **Cloudflare Tunnel Token** (opcional): Para acceso HTTPS externo
 
 ### Acceder a la aplicacion
 
@@ -233,11 +247,17 @@ http://TU_IP_SERVIDOR
 
 Si configuraste una contrasena, veras una pantalla de login antes de acceder.
 
-## Obtener API Key de Gemini
+## Obtener API Keys
 
+### Google Gemini (obligatoria)
 1. Visita https://aistudio.google.com/apikey
 2. Crea un proyecto y habilita la API
 3. Genera una API key
+
+### Fish Audio (opcional, para audiolibros)
+1. Visita https://fish.audio/account/api-key
+2. Crea una cuenta y genera una API key
+3. El modelo utilizado es `speech-1.6` con voces personalizables
 
 ## Comandos de Administracion
 
@@ -268,11 +288,12 @@ sudo /var/www/litagents/update.sh
 ```
 
 El script de actualizacion:
-1. Descarga los ultimos cambios del repositorio
-2. Instala nuevas dependencias
-3. Ejecuta migraciones de base de datos
-4. Recompila la aplicacion
-5. Reinicia el servicio
+1. Verifica y solicita nuevas API keys si es necesario (Fish Audio para audiolibros)
+2. Descarga los ultimos cambios del repositorio
+3. Instala nuevas dependencias
+4. Ejecuta migraciones de base de datos
+5. Recompila la aplicacion
+6. Reinicia el servicio
 
 Las credenciales y proyectos existentes se preservan automaticamente.
 
@@ -292,6 +313,8 @@ sudo systemctl restart litagents
 /var/www/litagents/                    # Codigo de la aplicacion
 /var/www/litagents/inbox/              # Manuscritos a importar
 /var/www/litagents/exports/            # Archivos exportados
+/var/www/litagents/audiobooks/         # Archivos de audio generados
+/var/www/litagents/audiobooks/covers/  # Portadas de audiolibros
 /var/www/litagents/inbox/processed/    # Manuscritos ya procesados
 /etc/litagents/env                     # Configuracion y variables de entorno
 /etc/systemd/system/litagents.service  # Servicio systemd
@@ -337,6 +360,7 @@ put mi_manuscrito.docx
 | `DATABASE_URL` | URL de conexion PostgreSQL | Si (auto) |
 | `SESSION_SECRET` | Secreto para sesiones | Si (auto) |
 | `GEMINI_API_KEY` | API key de Google Gemini | Si |
+| `FISH_AUDIO_API_KEY` | API key de Fish Audio (audiolibros) | Opcional |
 | `LITAGENTS_PASSWORD` | Contrasena de acceso | Opcional |
 | `SECURE_COOKIES` | true/false para cookies seguras | Si (auto) |
 | `PORT` | Puerto de la aplicacion | Si (auto: 5000) |
@@ -437,6 +461,7 @@ sudo systemctl restart nginx
 - **Backend**: Node.js + Express + TypeScript
 - **Base de datos**: PostgreSQL + Drizzle ORM
 - **IA**: Google Gemini API (Gemini 2.5 Flash, 2.0 Flash)
+- **TTS**: Fish Audio API (modelo speech-1.6) para audiolibros
 - **Proxy**: Nginx
 - **Proceso**: systemd
 - **Idioma**: Interfaz en espanol (`lang="es"`)
