@@ -157,6 +157,30 @@ function AuthorStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: any)
   );
 }
 
+const IDEA_GENRES = [
+  { value: "fantasy", label: "Fantasía" },
+  { value: "scifi", label: "Ciencia Ficción" },
+  { value: "thriller", label: "Thriller" },
+  { value: "historical_thriller", label: "Thriller Histórico" },
+  { value: "romance", label: "Romance" },
+  { value: "horror", label: "Horror" },
+  { value: "mystery", label: "Misterio" },
+  { value: "literary", label: "Literaria" },
+  { value: "historical", label: "Histórica" },
+  { value: "adventure", label: "Aventura" },
+];
+
+const IDEA_TONES = [
+  { value: "dramatic", label: "Dramático" },
+  { value: "dark", label: "Oscuro" },
+  { value: "satirical", label: "Satírico" },
+  { value: "lyrical", label: "Lírico" },
+  { value: "minimalist", label: "Minimalista" },
+  { value: "epic", label: "Épico" },
+  { value: "intimate", label: "Íntimo" },
+  { value: "suspenseful", label: "Tenso" },
+];
+
 function IdeaWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: any) => void; isGenerating: boolean }) {
   const [idea, setIdea] = useState("");
   const [genre, setGenre] = useState("");
@@ -164,6 +188,22 @@ function IdeaWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: any)
   const [assignMode, setAssignMode] = useState<"none" | "existing" | "new">("none");
   const [assignPseudonymId, setAssignPseudonymId] = useState("");
   const [newPseudonymName, setNewPseudonymName] = useState("");
+  const [projectTitle, setProjectTitle] = useState("");
+  const [chapterCount, setChapterCount] = useState(20);
+  const [hasPrologue, setHasPrologue] = useState(false);
+  const [hasEpilogue, setHasEpilogue] = useState(false);
+  const [hasAuthorNote, setHasAuthorNote] = useState(false);
+  const [minWordsPerChapter, setMinWordsPerChapter] = useState(1500);
+  const [maxWordsPerChapter, setMaxWordsPerChapter] = useState(3500);
+  const [kindleUnlimitedOptimized, setKindleUnlimitedOptimized] = useState(false);
+
+  const { data: styleGuides = [] } = useQuery<StyleGuide[]>({ queryKey: ["/api/style-guides"] });
+  const [styleGuideId, setStyleGuideId] = useState<string>("");
+
+  const selectedPseudonymIdNum = assignMode === "existing" ? parseInt(assignPseudonymId) : undefined;
+  const pseudonymStyleGuides = selectedPseudonymIdNum
+    ? styleGuides.filter((sg) => sg.pseudonymId === selectedPseudonymIdNum && sg.isActive)
+    : [];
 
   return (
     <div className="space-y-4">
@@ -181,33 +221,130 @@ function IdeaWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: any)
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label htmlFor="idea-genre">Género</Label>
-          <Input
-            id="idea-genre"
-            data-testid="input-idea-genre"
-            placeholder="Ej: Thriller, Romance..."
-            value={genre}
-            onChange={(e) => setGenre(e.target.value)}
-          />
+          <Select value={genre} onValueChange={setGenre}>
+            <SelectTrigger id="idea-genre" data-testid="select-idea-genre">
+              <SelectValue placeholder="Seleccionar género..." />
+            </SelectTrigger>
+            <SelectContent>
+              {IDEA_GENRES.map((g) => (
+                <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <Label htmlFor="idea-tone">Tono</Label>
-          <Input
-            id="idea-tone"
-            data-testid="input-idea-tone"
-            placeholder="Ej: Oscuro, Esperanzador..."
-            value={tone}
-            onChange={(e) => setTone(e.target.value)}
-          />
+          <Select value={tone} onValueChange={setTone}>
+            <SelectTrigger id="idea-tone" data-testid="select-idea-tone">
+              <SelectValue placeholder="Seleccionar tono..." />
+            </SelectTrigger>
+            <SelectContent>
+              {IDEA_TONES.map((t) => (
+                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
+
+      <Separator />
+      <p className="text-sm font-medium text-muted-foreground">Datos del proyecto a crear</p>
+
       <PseudonymAssignSelector
         selectedPseudonymId={assignPseudonymId}
-        onSelect={setAssignPseudonymId}
+        onSelect={(val) => { setAssignPseudonymId(val); setStyleGuideId(""); }}
         newPseudonymName={newPseudonymName}
         onNewNameChange={setNewPseudonymName}
         mode={assignMode}
-        onModeChange={setAssignMode}
+        onModeChange={(m) => { setAssignMode(m); setStyleGuideId(""); }}
       />
+
+      {assignMode === "existing" && pseudonymStyleGuides.length > 0 && (
+        <div>
+          <Label>Guía de estilo del pseudónimo (opcional)</Label>
+          <Select value={styleGuideId} onValueChange={setStyleGuideId}>
+            <SelectTrigger data-testid="select-idea-style-guide">
+              <SelectValue placeholder="Sin guía de estilo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sin guía de estilo</SelectItem>
+              {pseudonymStyleGuides.map((sg) => (
+                <SelectItem key={sg.id} value={sg.id.toString()}>{sg.title}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <div>
+        <Label htmlFor="project-title">Título del proyecto</Label>
+        <Input
+          id="project-title"
+          data-testid="input-project-title"
+          placeholder="Título de la novela..."
+          value={projectTitle}
+          onChange={(e) => setProjectTitle(e.target.value)}
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <Label htmlFor="chapter-count">Capítulos</Label>
+          <Input
+            id="chapter-count"
+            data-testid="input-chapter-count"
+            type="number"
+            min={1}
+            max={350}
+            value={chapterCount}
+            onChange={(e) => setChapterCount(parseInt(e.target.value) || 1)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="min-words">Min palabras/cap</Label>
+          <Input
+            id="min-words"
+            data-testid="input-min-words"
+            type="number"
+            min={500}
+            max={10000}
+            value={minWordsPerChapter}
+            onChange={(e) => setMinWordsPerChapter(parseInt(e.target.value) || 1500)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="max-words">Max palabras/cap</Label>
+          <Input
+            id="max-words"
+            data-testid="input-max-words"
+            type="number"
+            min={500}
+            max={15000}
+            value={maxWordsPerChapter}
+            onChange={(e) => setMaxWordsPerChapter(parseInt(e.target.value) || 3500)}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-4">
+        <label className="flex items-center gap-2 text-sm" data-testid="check-prologue">
+          <input type="checkbox" checked={hasPrologue} onChange={(e) => setHasPrologue(e.target.checked)} className="rounded" />
+          Prólogo
+        </label>
+        <label className="flex items-center gap-2 text-sm" data-testid="check-epilogue">
+          <input type="checkbox" checked={hasEpilogue} onChange={(e) => setHasEpilogue(e.target.checked)} className="rounded" />
+          Epílogo
+        </label>
+        <label className="flex items-center gap-2 text-sm" data-testid="check-author-note">
+          <input type="checkbox" checked={hasAuthorNote} onChange={(e) => setHasAuthorNote(e.target.checked)} className="rounded" />
+          Nota del Autor
+        </label>
+        <label className="flex items-center gap-2 text-sm" data-testid="check-kindle">
+          <input type="checkbox" checked={kindleUnlimitedOptimized} onChange={(e) => setKindleUnlimitedOptimized(e.target.checked)} className="rounded" />
+          Kindle Unlimited
+        </label>
+      </div>
+
       <Button
         data-testid="button-generate-idea-guide"
         onClick={() => onGenerate({
@@ -219,16 +356,25 @@ function IdeaWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: any)
           createPseudonymName: assignMode === "new" ? newPseudonymName : undefined,
           createPseudonymGenre: assignMode === "new" ? genre : undefined,
           createPseudonymTone: assignMode === "new" ? tone : undefined,
+          projectTitle: projectTitle.trim() || undefined,
+          chapterCount,
+          hasPrologue,
+          hasEpilogue,
+          hasAuthorNote,
+          minWordsPerChapter,
+          maxWordsPerChapter,
+          kindleUnlimitedOptimized,
+          styleGuideId: styleGuideId && styleGuideId !== "none" ? parseInt(styleGuideId) : undefined,
         })}
         disabled={
-          !idea.trim() || isGenerating ||
+          !idea.trim() || !genre || !tone || !projectTitle.trim() || isGenerating ||
           (assignMode === "existing" && !assignPseudonymId) ||
           (assignMode === "new" && !newPseudonymName.trim())
         }
         className="w-full"
       >
         {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-        {isGenerating ? "Generando guía..." : "Generar Guía de Escritura"}
+        {isGenerating ? "Generando guía y creando proyecto..." : "Generar Guía y Crear Proyecto"}
       </Button>
     </div>
   );
@@ -478,6 +624,7 @@ function GuideLibrary() {
                   >
                     <Eye className="w-4 h-4" />
                   </Button>
+                  {(guide.guideType === "author_style" || guide.guideType === "pseudonym_style") && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -489,6 +636,7 @@ function GuideLibrary() {
                   >
                     <UserPlus className="w-4 h-4" />
                   </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -561,9 +709,14 @@ export default function GuidesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/guides"] });
       queryClient.invalidateQueries({ queryKey: ["/api/pseudonyms"] });
       queryClient.invalidateQueries({ queryKey: ["/api/style-guides"] });
-      const desc = data.assignedPseudonymId
-        ? `${data.title} — asignada automáticamente al pseudónimo`
-        : data.title;
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/extended-guides"] });
+      let desc = data.title;
+      if (data.projectId) {
+        desc = `${data.title} — proyecto creado automáticamente`;
+      } else if (data.assignedPseudonymId) {
+        desc = `${data.title} — asignada automáticamente al pseudónimo`;
+      }
       toast({ title: "Guía generada", description: desc });
       setActiveTab("library");
     },

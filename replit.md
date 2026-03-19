@@ -2,7 +2,7 @@
 
 ## Overview
 
-LitAgents is a Node.js application that orchestrates autonomous AI literary agents using Google's Gemini 3 Pro to manage the entire novel-writing workflow. It provides a comprehensive solution for authoring, re-editing, translating, and managing literary works through AI-driven processes. Key capabilities include orchestrating 12+ specialized AI agents, maintaining a persistent World Bible for consistency, logging AI reasoning, providing a real-time monitoring dashboard, automating refinement loops, auto-recovery from stalled generations, and advanced features for manuscript import, expansion, reordering, translation, and approval. The system ensures high-quality manuscript completion through robust approval logic and automatic pausing for user intervention.
+LitAgents is a Node.js application that orchestrates autonomous AI literary agents using Google's Gemini 2.5 Flash to manage the entire novel-writing workflow. It provides a comprehensive solution for authoring, re-editing, translating, and managing literary works through AI-driven processes. Key capabilities include orchestrating 12+ specialized AI agents, maintaining a persistent World Bible for consistency, logging AI reasoning, providing a real-time monitoring dashboard, automating refinement loops, auto-recovery from stalled generations, and advanced features for manuscript import, expansion, reordering, translation, and approval. The system ensures high-quality manuscript completion through robust approval logic and automatic pausing for user intervention.
 
 ## User Preferences
 
@@ -71,12 +71,13 @@ Preferred communication style: Simple, everyday language.
 
 #### Taller de Guías (Guide Workshop) (v5.0)
 - AI-powered style and writing guide generation module at `/guides`.
-- 4 guide types: author_style (emulate known authors), idea_writing (develop story premises), pseudonym_style (define pseudonym identity), series_writing (maintain series coherence).
+- 4 guide types: author_style (emulate known authors), idea_writing (develop story premises + auto-create project), pseudonym_style (define pseudonym identity), series_writing (maintain series coherence).
 - `generated_guides` table with fields: id, title, content, guideType, sourceAuthor, sourceIdea, sourceGenre, pseudonymId, seriesId, inputTokens, outputTokens, createdAt.
 - Agent: `server/agents/style-guide-generator.ts` using Gemini 2.5 Flash with thinking (budget: 2048).
 - API: `GET /api/guides`, `GET /api/guides/:id`, `DELETE /api/guides/:id`, `POST /api/guides/generate`, `POST /api/guides/:id/apply-to-pseudonym`.
 - Frontend: `client/src/pages/guides.tsx` with 5 tabs (library + 4 guide types), guide viewer dialog, apply-to-pseudonym dialog.
-- Apply feature saves generated guides as style guides linked to pseudonyms.
+- **idea_writing flow**: Collects full project data (title, chapters, prologue/epilogue/author note, words per chapter, Kindle optimization, pseudonym, style guide). On generation: saves as `extendedGuide` (not styleGuide) and auto-creates a project with `extendedGuideId` set. Genre and tone use dropdown selectors matching the config panel options.
+- **apply-to-pseudonym**: Only available for `author_style` and `pseudonym_style` guides. Creates a styleGuide linked to the selected pseudonym. Server validates guide type before allowing application.
 
 #### Word Count Validation & Expansion
 - 10% flexible tolerance: `FLEXIBLE_MIN = TARGET_MIN × 0.90`, `FLEXIBLE_MAX = TARGET_MAX × 1.10`.

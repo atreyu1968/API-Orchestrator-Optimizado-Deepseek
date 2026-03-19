@@ -7534,7 +7534,31 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         });
         targetPseudonymId = newPseudonym.id;
       } else if (req.body.assignPseudonymId) {
+        const existingPseudonym = await storage.getPseudonym(req.body.assignPseudonymId);
+        if (!existingPseudonym) {
+          return res.status(400).json({ error: "El pseudónimo seleccionado no existe" });
+        }
         targetPseudonymId = req.body.assignPseudonymId;
+      }
+
+      let validatedStyleGuideId: number | null = null;
+      if (req.body.guideType === "idea_writing") {
+        const minWords = Math.max(500, Math.min(10000, req.body.minWordsPerChapter || 1500));
+        const maxWords = Math.max(500, Math.min(15000, req.body.maxWordsPerChapter || 3500));
+        if (minWords > maxWords) {
+          return res.status(400).json({ error: "El mínimo de palabras por capítulo no puede ser mayor que el máximo" });
+        }
+
+        if (req.body.styleGuideId) {
+          const sg = await storage.getStyleGuide(req.body.styleGuideId);
+          if (!sg) {
+            return res.status(400).json({ error: "La guía de estilo seleccionada no existe" });
+          }
+          if (targetPseudonymId && sg.pseudonymId !== targetPseudonymId) {
+            return res.status(400).json({ error: "La guía de estilo no pertenece al pseudónimo seleccionado" });
+          }
+          validatedStyleGuideId = sg.id;
+        }
       }
 
       const guide = await storage.createGeneratedGuide({
@@ -7550,15 +7574,49 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         outputTokens: result.outputTokens,
       });
 
-      if (targetPseudonymId) {
-        await storage.createStyleGuide({
-          pseudonymId: targetPseudonymId,
-          title: result.title,
-          content: result.content,
-        });
-      }
+      if (req.body.guideType === "idea_writing") {
+        const chapterCount = Math.max(1, Math.min(350, req.body.chapterCount || 20));
+        const minWords = Math.max(500, Math.min(10000, req.body.minWordsPerChapter || 1500));
+        const maxWords = Math.max(500, Math.min(15000, req.body.maxWordsPerChapter || 3500));
 
-      res.json({ ...guide, assignedPseudonymId: targetPseudonymId });
+        const extendedGuide = await storage.createExtendedGuide({
+          title: result.title,
+          description: `Guía generada por IA a partir de idea: ${(req.body.idea || "").substring(0, 100)}`,
+          originalFileName: "ai-generated",
+          content: result.content,
+          wordCount: result.content.split(/\s+/).length,
+        });
+
+        const projectTitle = req.body.projectTitle || result.title;
+        const project = await storage.createProject({
+          title: projectTitle,
+          premise: req.body.idea || null,
+          genre: req.body.genre || "fantasy",
+          tone: req.body.tone || "dramatic",
+          chapterCount,
+          hasPrologue: req.body.hasPrologue || false,
+          hasEpilogue: req.body.hasEpilogue || false,
+          hasAuthorNote: req.body.hasAuthorNote || false,
+          pseudonymId: targetPseudonymId,
+          styleGuideId: validatedStyleGuideId,
+          extendedGuideId: extendedGuide.id,
+          minWordsPerChapter: minWords,
+          maxWordsPerChapter: maxWords,
+          kindleUnlimitedOptimized: req.body.kindleUnlimitedOptimized || false,
+        });
+
+        res.json({ ...guide, assignedPseudonymId: targetPseudonymId, extendedGuideId: extendedGuide.id, projectId: project.id });
+      } else {
+        if (targetPseudonymId && (req.body.guideType === "author_style" || req.body.guideType === "pseudonym_style")) {
+          await storage.createStyleGuide({
+            pseudonymId: targetPseudonymId,
+            title: result.title,
+            content: result.content,
+          });
+        }
+
+        res.json({ ...guide, assignedPseudonymId: targetPseudonymId });
+      }
     } catch (error: any) {
       console.error("Error generating guide:", error);
       res.status(500).json({ error: error.message });
@@ -7569,6 +7627,10 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     try {
       const guide = await storage.getGeneratedGuide(parseInt(req.params.id));
       if (!guide) return res.status(404).json({ error: "Guide not found" });
+
+      if (guide.guideType !== "author_style" && guide.guideType !== "pseudonym_style") {
+        return res.status(400).json({ error: "Solo las guías de estilo de autor o pseudónimo pueden aplicarse como guía de estilo" });
+      }
 
       const { pseudonymId } = req.body;
       if (!pseudonymId) return res.status(400).json({ error: "pseudonymId required" });
