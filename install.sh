@@ -375,15 +375,15 @@ print_status "Compilando aplicación..."
 sudo -u "$APP_USER" npm run build 2>&1 | tail -5
 
 print_status "Ejecutando migraciones de schema (drizzle-kit push)..."
-sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push --force 2>&1 | tail -5
+yes | sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push 2>&1 | tail -5
 
 print_status "Verificando que las tablas se crearon correctamente..."
 TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null || echo "0")
 if [ "$TABLE_COUNT" -gt 0 ] 2>/dev/null; then
     print_success "Base de datos inicializada con $TABLE_COUNT tablas"
 else
-    print_warning "No se detectaron tablas. Reintentando db:push con --force..."
-    sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push --force 2>&1 | tail -5
+    print_warning "No se detectaron tablas. Reintentando db:push..."
+    yes | sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push 2>&1 | tail -5
     TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null || echo "0")
     if [ "$TABLE_COUNT" -gt 0 ] 2>/dev/null; then
         print_success "Base de datos inicializada con $TABLE_COUNT tablas (segundo intento)"
@@ -669,7 +669,7 @@ echo "3. Compilando aplicación..."
 sudo -u "$APP_USER" npm run build 2>&1 | tail -5
 
 echo "4. Ejecutando migraciones de schema (drizzle-kit push)..."
-sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push --force 2>&1 | tail -5
+yes | sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push 2>&1 | tail -5
 
 echo "5. Aplicando migraciones SQL adicionales..."
 for migration in "$APP_DIR"/migrations/*.sql; do

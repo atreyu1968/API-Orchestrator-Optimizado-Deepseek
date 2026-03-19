@@ -1,0 +1,86 @@
+root@escritorasd:~# # Clonar repositorio
+git clone https://github.com/atreyu1968/escritorasdgemini.git
+cd escritorasdgemini
+
+# Ejecutar instalador (te pedira las configuraciones)
+sudo bash install.sh
+fatal: destination path 'escritorasdgemini' already exists and is not an empty directory.
+
+═══════════════════════════════════════════════════════════════
+ INSTALADOR DE LITAGENTS (EscritorasdGemini)
+═══════════════════════════════════════════════════════════════
+
+Este script instalará y configurará la aplicación completa.
+
+[AVISO] Instalación existente detectada. Se realizará una ACTUALIZACIÓN.
+[INFO] Las credenciales y configuración se preservarán.
+
+¿Continuar con la instalación? (s/N): s
+
+═══════════════════════════════════════════════════════════════
+ PASO 1: Configuración de API Keys
+═══════════════════════════════════════════════════════════════
+
+[INFO] Usando credenciales existentes de /etc/litagents/env
+
+═══════════════════════════════════════════════════════════════
+ PASO 2: Instalando dependencias del sistema
+═══════════════════════════════════════════════════════════════
+
+[INFO] Actualizando repositorios...
+[INFO] Instalando paquetes base...
+[INFO] Instalando Nginx...
+[INFO] Instalando PostgreSQL...
+[OK] Dependencias del sistema instaladas
+
+═══════════════════════════════════════════════════════════════
+ PASO 3: Instalando Node.js 20.x
+═══════════════════════════════════════════════════════════════
+
+[INFO] Node.js v20.20.1 ya está instalado
+[OK] Node.js v20.20.1 instalado
+
+═══════════════════════════════════════════════════════════════
+ PASO 4: Configurando base de datos PostgreSQL
+═══════════════════════════════════════════════════════════════
+
+[INFO] Base de datos existente, omitiendo creación
+
+═══════════════════════════════════════════════════════════════
+ PASO 5: Configurando usuario del sistema
+═══════════════════════════════════════════════════════════════
+
+[INFO] Usuario litagents ya existe
+
+═══════════════════════════════════════════════════════════════
+ PASO 6: Guardando configuración
+═══════════════════════════════════════════════════════════════
+
+[INFO] Preservando configuración existente...
+[OK] Configuración preservada
+
+═══════════════════════════════════════════════════════════════
+ PASO 7: Descargando código fuente
+═══════════════════════════════════════════════════════════════
+
+[INFO] Actualizando repositorio existente...
+HEAD is now at dc7a61e Ensure database migrations run automatically without user interaction
+[OK] Código descargado en /var/www/litagents
+
+═══════════════════════════════════════════════════════════════
+ PASO 8: Instalando dependencias de Node.js
+═══════════════════════════════════════════════════════════════
+
+[INFO] Ejecutando npm install...
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+[INFO] Compilando aplicación...
+building server...
+
+  dist/index.cjs  1.9mb ⚠️
+
+⚡ Done in 230ms
+[INFO] Ejecutando migraciones de schema (drizzle-kit push)...
