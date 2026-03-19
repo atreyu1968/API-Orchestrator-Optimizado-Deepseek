@@ -735,10 +735,25 @@ fi
 mkdir -p "$APP_DIR/audiobooks/covers"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/audiobooks"
 
+git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
+
 echo "1. Obteniendo últimos cambios..."
-git fetch --all
-git reset --hard origin/main
-chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+FETCH_OK=false
+for attempt in 1 2 3; do
+    if git fetch --all 2>&1; then
+        FETCH_OK=true
+        break
+    fi
+    echo "[AVISO] Intento $attempt fallido. Reintentando en 5 segundos..."
+    sleep 5
+done
+
+if [ "$FETCH_OK" = true ]; then
+    git reset --hard origin/main
+    chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+else
+    echo "[AVISO] No se pudo conectar a GitHub. Continuando con el código actual."
+fi
 
 echo "2. Instalando dependencias..."
 sudo -u "$APP_USER" npm install --legacy-peer-deps 2>&1 | tail -5
