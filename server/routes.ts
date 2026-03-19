@@ -8253,6 +8253,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   // ==========================================
 
   const AUDIOBOOKS_DIR = process.env.LITAGENTS_AUDIOBOOKS_DIR || "./audiobooks";
+  const activeAudiobookGenerations = new Map<number, AbortController>();
   const fs = await import("fs");
   if (!fs.existsSync(AUDIOBOOKS_DIR)) {
     fs.mkdirSync(AUDIOBOOKS_DIR, { recursive: true });
@@ -8498,6 +8499,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return res.status(409).json({ error: "Generation already in progress" });
       }
 
+      const abortController = new AbortController();
+      activeAudiobookGenerations.set(projectId, abortController);
+
       await storage.updateAudiobookProject(projectId, { status: "processing", errorMessage: null });
 
       res.json({ message: "Audio generation started", projectId });
@@ -8508,8 +8512,15 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
       let completedCount = 0;
       let hasError = false;
+      let wasCancelled = false;
 
       for (const chapter of chapters) {
+        if (abortController.signal.aborted) {
+          wasCancelled = true;
+          console.log(`[Audiobook] Project ${projectId}: Generation stopped by user`);
+          break;
+        }
+
         if (chapter.status === "completed" && chapter.audioFileName) {
           const audioPath = path.join(projectDir, chapter.audioFileName);
           if (fs.existsSync(audioPath)) {
@@ -8551,6 +8562,10 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           const audioBuffers: Buffer[] = [];
 
           for (const chunk of textChunks) {
+            if (abortController.signal.aborted) {
+              throw new Error("Generation cancelled");
+            }
+
             const ttsResponse = await fetch("https://api.fish.audio/v1/tts", {
               method: "POST",
               headers: {
@@ -8567,8 +8582,12 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
                   speed: project.speed || 1.0,
                   volume: 0,
                 },
+                top_p: 0.8,
+                temperature: 0.8,
+                repetition_penalty: 1.3,
                 latency: "normal",
               }),
+              signal: abortController.signal,
             });
 
             if (!ttsResponse.ok) {
@@ -8596,6 +8615,12 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
           console.log(`[Audiobook] Project ${projectId}: Chapter ${chapter.chapterNumber}/${chapters.length} completed (${finalAudio.length} bytes)`);
         } catch (chapterError: any) {
+          if (abortController.signal.aborted) {
+            await storage.updateAudiobookChapter(chapter.id, { status: "pending", errorMessage: null }).catch(() => {});
+            wasCancelled = true;
+            console.log(`[Audiobook] Project ${projectId}: Generation stopped by user during chapter ${chapter.chapterNumber}`);
+            break;
+          }
           console.error(`[Audiobook] Error generating chapter ${chapter.chapterNumber}:`, chapterError.message);
           await storage.updateAudiobookChapter(chapter.id, {
             status: "error",
@@ -8605,18 +8630,65 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         }
       }
 
-      const finalStatus = hasError ? (completedCount > 0 ? "completed" : "error") : "completed";
-      await storage.updateAudiobookProject(projectId, {
-        status: finalStatus,
-        completedChapters: completedCount,
-        errorMessage: hasError ? "Some chapters failed to generate" : null,
-      });
+      if (activeAudiobookGenerations.get(projectId) === abortController) {
+        activeAudiobookGenerations.delete(projectId);
+      }
 
-      console.log(`[Audiobook] Project ${projectId} ${finalStatus}: ${completedCount}/${chapters.length} chapters`);
+      if (wasCancelled) {
+        const currentProject = await storage.getAudiobookProject(projectId);
+        if (currentProject && currentProject.status !== "paused") {
+          await storage.updateAudiobookProject(projectId, {
+            status: "paused",
+            completedChapters: completedCount,
+            errorMessage: null,
+          });
+        } else if (currentProject) {
+          await storage.updateAudiobookProject(projectId, { completedChapters: completedCount });
+        }
+        console.log(`[Audiobook] Project ${projectId} paused: ${completedCount}/${chapters.length} chapters completed`);
+      } else {
+        const finalStatus = hasError ? (completedCount > 0 ? "completed" : "error") : "completed";
+        await storage.updateAudiobookProject(projectId, {
+          status: finalStatus,
+          completedChapters: completedCount,
+          errorMessage: hasError ? "Some chapters failed to generate" : null,
+        });
+        console.log(`[Audiobook] Project ${projectId} ${finalStatus}: ${completedCount}/${chapters.length} chapters`);
+      }
     } catch (error: any) {
-      console.error("[Audiobook] Error starting generation:", error);
       const projectId = Number(req.params.id);
-      await storage.updateAudiobookProject(projectId, { status: "error", errorMessage: error.message }).catch(() => {});
+      if (activeAudiobookGenerations.get(projectId) === abortController) {
+        activeAudiobookGenerations.delete(projectId);
+      }
+      if (error.name !== "AbortError") {
+        console.error("[Audiobook] Error starting generation:", error);
+        await storage.updateAudiobookProject(projectId, { status: "error", errorMessage: error.message }).catch(() => {});
+      }
+    }
+  });
+
+  app.post("/api/audiobooks/:id/pause", async (req: Request, res: Response) => {
+    try {
+      const projectId = Number(req.params.id);
+      const project = await storage.getAudiobookProject(projectId);
+      if (!project) return res.status(404).json({ error: "Audiobook project not found" });
+
+      if (project.status !== "processing") {
+        return res.status(400).json({ error: "Project is not currently generating" });
+      }
+
+      const controller = activeAudiobookGenerations.get(projectId);
+      if (controller) {
+        controller.abort();
+        activeAudiobookGenerations.delete(projectId);
+      }
+
+      await storage.updateAudiobookProject(projectId, { status: "paused", errorMessage: null });
+      console.log(`[Audiobook] Project ${projectId}: Paused by user`);
+      res.json({ message: "Generation paused", projectId });
+    } catch (error: any) {
+      console.error("[Audiobook] Error pausing generation:", error);
+      res.status(500).json({ error: error.message });
     }
   });
 
@@ -8677,6 +8749,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
             format: project.format || "mp3",
             mp3_bitrate: project.bitrate || 128,
             prosody: { speed: project.speed || 1.0, volume: 0 },
+            top_p: 0.8,
+            temperature: 0.8,
+            repetition_penalty: 1.3,
             latency: "normal",
           }),
         });
@@ -8838,6 +8913,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const projectId = Number(req.params.id);
       const project = await storage.getAudiobookProject(projectId);
       if (!project) return res.status(404).json({ error: "Audiobook project not found" });
+
+      const controller = activeAudiobookGenerations.get(projectId);
+      if (controller) {
+        controller.abort();
+        activeAudiobookGenerations.delete(projectId);
+        console.log(`[Audiobook] Project ${projectId}: Aborted active generation before delete`);
+      }
 
       const projectDir = path.join(AUDIOBOOKS_DIR, `project_${projectId}`);
       if (fs.existsSync(projectDir)) {

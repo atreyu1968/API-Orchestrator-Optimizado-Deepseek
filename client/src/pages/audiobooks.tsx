@@ -14,7 +14,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Headphones, Play, Download, Trash2, RefreshCw, AlertCircle, CheckCircle2,
-  Clock, Volume2, FileAudio, Loader2, Plus, ArrowLeft, Upload, Music, Pencil, Check, X
+  Clock, Volume2, FileAudio, Loader2, Plus, ArrowLeft, Upload, Music, Pencil, Check, X, Pause, Square
 } from "lucide-react";
 import type { AudiobookProject, AudiobookChapter } from "@shared/schema";
 
@@ -306,7 +306,8 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
     queryKey: ["/api/audiobooks", projectId],
     refetchInterval: (query) => {
       const d = query.state.data;
-      return d && d.status === "processing" ? 3000 : false;
+      if (d && d.status === "processing") return 3000;
+      return false;
     },
   });
 
@@ -331,6 +332,20 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/audiobooks", projectId] });
       toast({ title: "Capítulo generado" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const pauseMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/audiobooks/${projectId}/pause`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/audiobooks", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/audiobooks"] });
+      toast({ title: "Generación pausada", description: "Se detuvo la generación. No se consumirán más créditos hasta que la reanudes." });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -461,18 +476,34 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
           )}
 
           <div className="flex gap-3 mt-4">
-            <Button
-              data-testid="button-generate-all"
-              onClick={() => generateAllMutation.mutate()}
-              disabled={isProcessing || generateAllMutation.isPending}
-            >
-              {isProcessing || generateAllMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Play className="h-4 w-4 mr-2" />
-              )}
-              {isProcessing ? "Generando..." : "Generar Todo"}
-            </Button>
+            {isProcessing ? (
+              <Button
+                data-testid="button-pause-generation"
+                variant="secondary"
+                onClick={() => pauseMutation.mutate()}
+                disabled={pauseMutation.isPending}
+              >
+                {pauseMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Pause className="h-4 w-4 mr-2" />
+                )}
+                Pausar
+              </Button>
+            ) : (
+              <Button
+                data-testid="button-generate-all"
+                onClick={() => generateAllMutation.mutate()}
+                disabled={generateAllMutation.isPending}
+              >
+                {generateAllMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4 mr-2" />
+                )}
+                {project.status === "paused" ? "Reanudar" : project.status === "completed" ? "Regenerar Pendientes" : "Generar Todo"}
+              </Button>
+            )}
 
             {hasCompleted && (
               <a href={`/api/audiobooks/${projectId}/download`} download>
@@ -488,11 +519,14 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
               variant="destructive"
               size="icon"
               onClick={() => {
-                if (confirm("¿Eliminar este audiolibro y todos sus archivos de audio?")) {
+                const msg = isProcessing
+                  ? "¿Eliminar este audiolibro? Se detendrá la generación en curso y se eliminarán todos los archivos."
+                  : "¿Eliminar este audiolibro y todos sus archivos de audio?";
+                if (confirm(msg)) {
                   deleteMutation.mutate();
                 }
               }}
-              disabled={isProcessing}
+              disabled={deleteMutation.isPending}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
