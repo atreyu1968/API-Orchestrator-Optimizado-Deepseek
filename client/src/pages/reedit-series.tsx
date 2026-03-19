@@ -25,9 +25,11 @@ import {
   Clock,
   Sparkles,
   FileText,
-  Link2
+  Link2,
+  FileEdit,
+  Upload
 } from "lucide-react";
-import type { ReeditProject, Pseudonym } from "@shared/schema";
+import type { ReeditProject, ImportedManuscript, Pseudonym } from "@shared/schema";
 
 const SUPPORTED_LANGUAGES = [
   { code: "es", name: "Español" },
@@ -63,14 +65,61 @@ function getStatusBadge(status: string) {
   );
 }
 
+type BookType = "reedit" | "imported";
+
 type SelectedBook = {
   projectId: number;
+  type: BookType;
   order: number;
   title: string;
   status: string;
   wordCount: number;
   language: string | null;
 };
+
+type UnifiedBook = {
+  id: number;
+  type: BookType;
+  title: string;
+  status: string;
+  wordCount: number;
+  language: string | null;
+  totalChapters: number;
+  seriesId: number | null;
+  seriesOrder: number | null;
+};
+
+function toUnifiedBook(rp: ReeditProject): UnifiedBook {
+  return {
+    id: rp.id,
+    type: "reedit",
+    title: rp.title,
+    status: rp.status,
+    wordCount: rp.totalWordCount || 0,
+    language: rp.detectedLanguage || null,
+    totalChapters: rp.totalChapters || 0,
+    seriesId: rp.seriesId || null,
+    seriesOrder: rp.seriesOrder || null,
+  };
+}
+
+function toUnifiedFromImported(ms: ImportedManuscript): UnifiedBook {
+  return {
+    id: ms.id,
+    type: "imported",
+    title: ms.title,
+    status: ms.status,
+    wordCount: ms.totalWordCount || 0,
+    language: ms.detectedLanguage || null,
+    totalChapters: ms.totalChapters || 0,
+    seriesId: ms.seriesId || null,
+    seriesOrder: ms.seriesOrder || null,
+  };
+}
+
+function bookKey(book: { id: number; type: BookType }) {
+  return `${book.type}-${book.id}`;
+}
 
 export default function ReeditSeriesPage() {
   const { toast } = useToast();
@@ -82,32 +131,44 @@ export default function ReeditSeriesPage() {
   const [selectedBooks, setSelectedBooks] = useState<SelectedBook[]>([]);
   const [isConverting, setIsConverting] = useState(false);
 
-  const { data: projects = [], isLoading: projectsLoading } = useQuery<ReeditProject[]>({
+  const { data: reeditProjects = [], isLoading: reeditLoading } = useQuery<ReeditProject[]>({
     queryKey: ["/api/reedit-projects"],
+  });
+
+  const { data: importedManuscripts = [], isLoading: importedLoading } = useQuery<ImportedManuscript[]>({
+    queryKey: ["/api/imported-manuscripts"],
   });
 
   const { data: pseudonyms = [] } = useQuery<Pseudonym[]>({
     queryKey: ["/api/pseudonyms"],
   });
 
-  const availableProjects = projects.filter(p => !p.seriesId);
-  const linkedProjects = projects.filter(p => p.seriesId);
+  const allBooks: UnifiedBook[] = [
+    ...reeditProjects.map(toUnifiedBook),
+    ...importedManuscripts.map(toUnifiedFromImported),
+  ];
 
-  const toggleBook = (project: ReeditProject) => {
-    const isSelected = selectedBooks.some(b => b.projectId === project.id);
+  const availableBooks = allBooks.filter(b => !b.seriesId);
+  const linkedBooks = allBooks.filter(b => b.seriesId);
+  const isLoading = reeditLoading || importedLoading;
+
+  const toggleBook = (book: UnifiedBook) => {
+    const key = bookKey(book);
+    const isSelected = selectedBooks.some(b => bookKey({ id: b.projectId, type: b.type }) === key);
     if (isSelected) {
-      const filtered = selectedBooks.filter(b => b.projectId !== project.id);
+      const filtered = selectedBooks.filter(b => bookKey({ id: b.projectId, type: b.type }) !== key);
       setSelectedBooks(filtered.map((b, i) => ({ ...b, order: i + 1 })));
     } else {
       setSelectedBooks([
         ...selectedBooks,
         {
-          projectId: project.id,
+          projectId: book.id,
+          type: book.type,
           order: selectedBooks.length + 1,
-          title: project.title,
-          status: project.status,
-          wordCount: project.totalWordCount || 0,
-          language: project.detectedLanguage,
+          title: book.title,
+          status: book.status,
+          wordCount: book.wordCount,
+          language: book.language,
         },
       ]);
     }
@@ -121,8 +182,9 @@ export default function ReeditSeriesPage() {
     setSelectedBooks(newBooks.map((b, i) => ({ ...b, order: i + 1 })));
   };
 
-  const removeBook = (projectId: number) => {
-    const filtered = selectedBooks.filter(b => b.projectId !== projectId);
+  const removeBook = (book: SelectedBook) => {
+    const key = bookKey({ id: book.projectId, type: book.type });
+    const filtered = selectedBooks.filter(b => bookKey({ id: b.projectId, type: b.type }) !== key);
     setSelectedBooks(filtered.map((b, i) => ({ ...b, order: i + 1 })));
   };
 
@@ -139,7 +201,7 @@ export default function ReeditSeriesPage() {
     setIsConverting(true);
     try {
       const response = await apiRequest("POST", "/api/reedit-projects/convert-to-series", {
-        books: selectedBooks.map(b => ({ projectId: b.projectId, order: b.order })),
+        books: selectedBooks.map(b => ({ projectId: b.projectId, order: b.order, type: b.type })),
         seriesTitle: seriesTitle.trim(),
         totalPlannedBooks: seriesTotalBooks,
         pseudonymId: selectedPseudonymId && selectedPseudonymId !== "none" ? parseInt(selectedPseudonymId) : undefined,
@@ -150,6 +212,7 @@ export default function ReeditSeriesPage() {
         description: data.message || `Serie "${seriesTitle}" creada con ${selectedBooks.length} libro(s).`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/imported-manuscripts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/series"] });
       queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
       queryClient.invalidateQueries({ queryKey: ["/api/guides"] });
@@ -172,10 +235,10 @@ export default function ReeditSeriesPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Library className="h-6 w-6" />
-            Crear Serie desde Libros Importados
+            Crear Serie desde Libros
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Agrupa tus libros reeditados en una serie. Se generará automáticamente una guía de escritura y un World Bible unificado.
+            Agrupa tus libros reeditados e importados en una serie. Se generará automáticamente una guía de escritura y un World Bible unificado.
           </p>
         </div>
       </div>
@@ -189,39 +252,40 @@ export default function ReeditSeriesPage() {
                 Libros Disponibles
               </CardTitle>
               <CardDescription>
-                Haz clic en un libro para añadirlo a la serie. Solo se muestran libros que no pertenecen a otra serie.
+                Haz clic en un libro para añadirlo a la serie. Puedes mezclar libros reeditados e importados.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {projectsLoading ? (
+              {isLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : availableProjects.length === 0 ? (
+              ) : availableBooks.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p>No hay libros disponibles.</p>
-                  <p className="text-xs mt-1">Importa y reedita manuscritos primero.</p>
+                  <p className="text-xs mt-1">Importa manuscritos o crea proyectos de reedición primero.</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {availableProjects.map((project) => {
-                    const isSelected = selectedBooks.some(b => b.projectId === project.id);
+                  {availableBooks.map((book) => {
+                    const key = bookKey(book);
+                    const isSelected = selectedBooks.some(b => bookKey({ id: b.projectId, type: b.type }) === key);
                     return (
                       <div
-                        key={project.id}
+                        key={key}
                         className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all border ${
                           isSelected
                             ? "border-primary bg-primary/5 shadow-sm"
                             : "border-transparent hover:bg-muted"
                         }`}
-                        onClick={() => toggleBook(project)}
-                        data-testid={`toggle-book-${project.id}`}
+                        onClick={() => toggleBook(book)}
+                        data-testid={`toggle-book-${key}`}
                       >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           {isSelected ? (
                             <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">
-                              {selectedBooks.find(b => b.projectId === project.id)?.order}
+                              {selectedBooks.find(b => bookKey({ id: b.projectId, type: b.type }) === key)?.order}
                             </div>
                           ) : (
                             <div className="h-8 w-8 rounded-full border-2 border-dashed border-muted-foreground/30 flex items-center justify-center shrink-0">
@@ -229,14 +293,23 @@ export default function ReeditSeriesPage() {
                             </div>
                           )}
                           <div className="min-w-0">
-                            <p className="font-medium truncate">{project.title}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium truncate">{book.title}</p>
+                              <Badge variant="outline" className="text-[10px] shrink-0 px-1.5 py-0">
+                                {book.type === "imported" ? (
+                                  <><Upload className="h-2.5 w-2.5 mr-0.5" />Importado</>
+                                ) : (
+                                  <><FileEdit className="h-2.5 w-2.5 mr-0.5" />Reeditado</>
+                                )}
+                              </Badge>
+                            </div>
                             <p className="text-xs text-muted-foreground">
-                              {getLanguageName(project.detectedLanguage)} · {(project.totalWordCount || 0).toLocaleString()} palabras · {project.totalChapters || 0} caps
+                              {getLanguageName(book.language)} · {book.wordCount.toLocaleString()} palabras · {book.totalChapters} caps
                             </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {getStatusBadge(project.status)}
+                          {getStatusBadge(book.status)}
                         </div>
                       </div>
                     );
@@ -244,23 +317,26 @@ export default function ReeditSeriesPage() {
                 </div>
               )}
 
-              {linkedProjects.length > 0 && (
+              {linkedBooks.length > 0 && (
                 <>
                   <Separator className="my-4" />
                   <div>
                     <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
                       <Link2 className="h-3 w-3" />
-                      Ya vinculados a una serie ({linkedProjects.length})
+                      Ya vinculados a una serie ({linkedBooks.length})
                     </p>
                     <div className="space-y-1">
-                      {linkedProjects.map((project) => (
-                        <div key={project.id} className="flex items-center justify-between p-2 rounded-md opacity-50">
+                      {linkedBooks.map((book) => (
+                        <div key={bookKey(book)} className="flex items-center justify-between p-2 rounded-md opacity-50">
                           <div className="flex items-center gap-2 min-w-0">
                             <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span className="text-sm truncate">{project.title}</span>
+                            <span className="text-sm truncate">{book.title}</span>
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+                              {book.type === "imported" ? "Imp" : "Reed"}
+                            </Badge>
                           </div>
                           <Badge variant="outline" className="text-xs shrink-0">
-                            Serie #{project.seriesOrder || "?"}
+                            Serie #{book.seriesOrder || "?"}
                           </Badge>
                         </div>
                       ))}
@@ -355,54 +431,62 @@ export default function ReeditSeriesPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {selectedBooks.map((book, index) => (
-                    <div
-                      key={book.projectId}
-                      className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border"
-                      data-testid={`series-book-${book.projectId}`}
-                    >
-                      <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0">
-                        {book.order}
+                  {selectedBooks.map((book, index) => {
+                    const key = bookKey({ id: book.projectId, type: book.type });
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border"
+                        data-testid={`series-book-${key}`}
+                      >
+                        <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0">
+                          {book.order}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-medium truncate">{book.title}</p>
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
+                              {book.type === "imported" ? "Imp" : "Reed"}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {book.wordCount.toLocaleString()} palabras
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            disabled={index === 0}
+                            onClick={() => moveBook(index, "up")}
+                            data-testid={`button-move-up-${key}`}
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            disabled={index === selectedBooks.length - 1}
+                            onClick={() => moveBook(index, "down")}
+                            data-testid={`button-move-down-${key}`}
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => removeBook(book)}
+                            data-testid={`button-remove-book-${key}`}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{book.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {book.wordCount.toLocaleString()} palabras
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          disabled={index === 0}
-                          onClick={() => moveBook(index, "up")}
-                          data-testid={`button-move-up-${book.projectId}`}
-                        >
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          disabled={index === selectedBooks.length - 1}
-                          onClick={() => moveBook(index, "down")}
-                          data-testid={`button-move-down-${book.projectId}`}
-                        >
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => removeBook(book.projectId)}
-                          data-testid={`button-remove-book-${book.projectId}`}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
