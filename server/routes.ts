@@ -8357,6 +8357,28 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   // AUDIOBOOK ROUTES (Fish Audio TTS)
   // ==========================================
 
+  function prepareTtsText(raw: string): string {
+    let text = raw
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+
+    text = text.replace(/\r\n/g, '\n');
+
+    const paragraphs = text.split(/\n\s*\n/);
+    const processed = paragraphs.map(para => {
+      let p = para.replace(/[ \t]+/g, ' ').trim();
+      p = p.replace(/([.])(\s+)(?=[A-ZÁÉÍÓÚÑÜ¿¡])/g, '$1\n$2');
+      p = p.replace(/([!?])(\s+)/g, '$1\n$2');
+      p = p.replace(/([—])(\s*["«])/g, '$1\n$2');
+      return p;
+    }).filter(p => p.length > 0);
+
+    return processed.join('\n\n\n');
+  }
+
   const AUDIOBOOKS_DIR = process.env.LITAGENTS_AUDIOBOOKS_DIR || "./audiobooks";
   const activeAudiobookGenerations = new Map<number, AbortController>();
   const fs = await import("fs");
@@ -8645,29 +8667,26 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         try {
           await storage.updateAudiobookChapter(chapter.id, { status: "processing", errorMessage: null });
 
-          const textContent = chapter.textContent
-            .replace(/<[^>]*>/g, '')
-            .replace(/&nbsp;/g, ' ')
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/\s+/g, ' ')
-            .trim();
+          const textContent = prepareTtsText(chapter.textContent);
 
           const MAX_CHARS = 9500;
           const textChunks: string[] = [];
           if (textContent.length <= MAX_CHARS) {
             textChunks.push(textContent);
           } else {
-            const sentences = textContent.match(/[^.!?]+[.!?]+/g) || [textContent];
+            const paragraphs = textContent.split(/\n\n+/);
             let currentChunk = '';
-            for (const sentence of sentences) {
-              if ((currentChunk + sentence).length > MAX_CHARS && currentChunk.length > 0) {
-                textChunks.push(currentChunk.trim());
-                currentChunk = sentence;
-              } else {
-                currentChunk += sentence;
+            for (const para of paragraphs) {
+              const sentences = para.match(/[^.!?]+[.!?]+/g) || [para];
+              for (const sentence of sentences) {
+                if ((currentChunk + sentence).length > MAX_CHARS && currentChunk.length > 0) {
+                  textChunks.push(currentChunk.trim());
+                  currentChunk = sentence;
+                } else {
+                  currentChunk += sentence;
+                }
               }
+              currentChunk += "\n\n";
             }
             if (currentChunk.trim()) textChunks.push(currentChunk.trim());
           }
@@ -8822,27 +8841,26 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
       await storage.updateAudiobookChapter(chapterId, { status: "processing", errorMessage: null });
 
-      const textContent = chapter.textContent
-        .replace(/<[^>]*>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/\s+/g, ' ')
-        .trim();
+      const textContent = prepareTtsText(chapter.textContent);
 
       const MAX_CHARS = 9500;
       const textChunks: string[] = [];
       if (textContent.length <= MAX_CHARS) {
         textChunks.push(textContent);
       } else {
-        const sentences = textContent.match(/[^.!?]+[.!?]+/g) || [textContent];
+        const paragraphs = textContent.split(/\n\n+/);
         let currentChunk = '';
-        for (const sentence of sentences) {
-          if ((currentChunk + sentence).length > MAX_CHARS && currentChunk.length > 0) {
-            textChunks.push(currentChunk.trim());
-            currentChunk = sentence;
-          } else {
-            currentChunk += sentence;
+        for (const para of paragraphs) {
+          const sentences = para.match(/[^.!?]+[.!?]+/g) || [para];
+          for (const sentence of sentences) {
+            if ((currentChunk + sentence).length > MAX_CHARS && currentChunk.length > 0) {
+              textChunks.push(currentChunk.trim());
+              currentChunk = sentence;
+            } else {
+              currentChunk += sentence;
+            }
           }
+          currentChunk += "\n\n";
         }
         if (currentChunk.trim()) textChunks.push(currentChunk.trim());
       }
