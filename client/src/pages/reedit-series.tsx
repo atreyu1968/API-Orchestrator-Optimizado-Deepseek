@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   ArrowLeft,
   ArrowUp,
@@ -27,7 +29,10 @@ import {
   FileText,
   Link2,
   FileEdit,
-  Upload
+  Upload,
+  UserPlus,
+  User,
+  Pen
 } from "lucide-react";
 import type { ReeditProject, ImportedManuscript, Pseudonym } from "@shared/schema";
 
@@ -117,6 +122,30 @@ function toUnifiedFromImported(ms: ImportedManuscript): UnifiedBook {
   };
 }
 
+const GENRES = [
+  { value: "fantasy", label: "Fantasía" },
+  { value: "scifi", label: "Ciencia Ficción" },
+  { value: "thriller", label: "Thriller" },
+  { value: "historical_thriller", label: "Thriller Histórico" },
+  { value: "romance", label: "Romance" },
+  { value: "horror", label: "Horror" },
+  { value: "mystery", label: "Misterio" },
+  { value: "literary", label: "Literaria" },
+  { value: "historical", label: "Histórica" },
+  { value: "adventure", label: "Aventura" },
+];
+
+const TONES = [
+  { value: "dramatic", label: "Dramático" },
+  { value: "dark", label: "Oscuro" },
+  { value: "satirical", label: "Satírico" },
+  { value: "lyrical", label: "Lírico" },
+  { value: "minimalist", label: "Minimalista" },
+  { value: "epic", label: "Épico" },
+  { value: "intimate", label: "Íntimo" },
+  { value: "suspenseful", label: "Tenso" },
+];
+
 function bookKey(book: { id: number; type: BookType }) {
   return `${book.type}-${book.id}`;
 }
@@ -130,6 +159,13 @@ export default function ReeditSeriesPage() {
   const [selectedPseudonymId, setSelectedPseudonymId] = useState<string>("");
   const [selectedBooks, setSelectedBooks] = useState<SelectedBook[]>([]);
   const [isConverting, setIsConverting] = useState(false);
+
+  const [createNewPseudonym, setCreateNewPseudonym] = useState(false);
+  const [newPseudonymName, setNewPseudonymName] = useState("");
+  const [newPseudonymBio, setNewPseudonymBio] = useState("");
+  const [newPseudonymGenre, setNewPseudonymGenre] = useState("");
+  const [newPseudonymTone, setNewPseudonymTone] = useState("");
+  const [generateStyleGuide, setGenerateStyleGuide] = useState(true);
 
   const { data: reeditProjects = [], isLoading: reeditLoading } = useQuery<ReeditProject[]>({
     queryKey: ["/api/reedit-projects"],
@@ -197,15 +233,32 @@ export default function ReeditSeriesPage() {
       toast({ title: "Error", description: "Selecciona al menos un libro para la serie", variant: "destructive" });
       return;
     }
+    if (createNewPseudonym && !newPseudonymName.trim()) {
+      toast({ title: "Error", description: "El nombre del seudónimo es obligatorio", variant: "destructive" });
+      return;
+    }
 
     setIsConverting(true);
     try {
-      const response = await apiRequest("POST", "/api/reedit-projects/convert-to-series", {
+      const payload: any = {
         books: selectedBooks.map(b => ({ projectId: b.projectId, order: b.order, type: b.type })),
         seriesTitle: seriesTitle.trim(),
         totalPlannedBooks: seriesTotalBooks,
-        pseudonymId: selectedPseudonymId && selectedPseudonymId !== "none" ? parseInt(selectedPseudonymId) : undefined,
-      });
+      };
+
+      if (createNewPseudonym) {
+        payload.newPseudonym = {
+          name: newPseudonymName.trim(),
+          bio: newPseudonymBio.trim() || undefined,
+          defaultGenre: newPseudonymGenre || undefined,
+          defaultTone: newPseudonymTone || undefined,
+        };
+        payload.generateStyleGuide = generateStyleGuide;
+      } else if (selectedPseudonymId && selectedPseudonymId !== "none") {
+        payload.pseudonymId = parseInt(selectedPseudonymId);
+      }
+
+      const response = await apiRequest("POST", "/api/reedit-projects/convert-to-series", payload);
       const data = await response.json();
       toast({
         title: "Serie Creada",
@@ -216,6 +269,8 @@ export default function ReeditSeriesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/series"] });
       queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
       queryClient.invalidateQueries({ queryKey: ["/api/guides"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pseudonyms"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/style-guides"] });
       navigate("/series");
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "Error al crear la serie", variant: "destructive" });
@@ -386,21 +441,120 @@ export default function ReeditSeriesPage() {
                 </p>
               </div>
 
-              <div>
-                <Label htmlFor="pseudonym">Seudónimo (opcional)</Label>
-                <Select value={selectedPseudonymId} onValueChange={setSelectedPseudonymId}>
-                  <SelectTrigger className="mt-1" data-testid="select-pseudonym">
-                    <SelectValue placeholder="Sin seudónimo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sin seudónimo</SelectItem>
-                    {pseudonyms.map((p) => (
-                      <SelectItem key={p.id} value={String(p.id)}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <Separator />
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    Seudónimo
+                  </Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-7"
+                    onClick={() => {
+                      setCreateNewPseudonym(!createNewPseudonym);
+                      if (!createNewPseudonym) setSelectedPseudonymId("");
+                    }}
+                    data-testid="button-toggle-new-pseudonym"
+                  >
+                    {createNewPseudonym ? (
+                      <><User className="h-3 w-3 mr-1" />Usar existente</>
+                    ) : (
+                      <><UserPlus className="h-3 w-3 mr-1" />Crear nuevo</>
+                    )}
+                  </Button>
+                </div>
+
+                {!createNewPseudonym ? (
+                  <Select value={selectedPseudonymId} onValueChange={setSelectedPseudonymId}>
+                    <SelectTrigger data-testid="select-pseudonym">
+                      <SelectValue placeholder="Sin seudónimo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin seudónimo</SelectItem>
+                      {pseudonyms.map((p) => (
+                        <SelectItem key={p.id} value={String(p.id)}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="space-y-3 p-3 rounded-lg border border-dashed border-primary/30 bg-primary/5">
+                    <div>
+                      <Label htmlFor="new-pseudo-name" className="text-xs">Nombre del Seudónimo *</Label>
+                      <Input
+                        id="new-pseudo-name"
+                        value={newPseudonymName}
+                        onChange={(e) => setNewPseudonymName(e.target.value)}
+                        placeholder="Ej: Elena Marques"
+                        className="mt-1 h-8 text-sm"
+                        data-testid="input-new-pseudonym-name"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="new-pseudo-bio" className="text-xs">Biografía (opcional)</Label>
+                      <Textarea
+                        id="new-pseudo-bio"
+                        value={newPseudonymBio}
+                        onChange={(e) => setNewPseudonymBio(e.target.value)}
+                        placeholder="Breve descripción del perfil autorial..."
+                        className="mt-1 text-sm min-h-[60px]"
+                        data-testid="input-new-pseudonym-bio"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs">Género</Label>
+                        <Select value={newPseudonymGenre} onValueChange={setNewPseudonymGenre}>
+                          <SelectTrigger className="mt-1 h-8 text-sm" data-testid="select-new-pseudonym-genre">
+                            <SelectValue placeholder="Seleccionar" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {GENRES.map((g) => (
+                              <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Tono</Label>
+                        <Select value={newPseudonymTone} onValueChange={setNewPseudonymTone}>
+                          <SelectTrigger className="mt-1 h-8 text-sm" data-testid="select-new-pseudonym-tone">
+                            <SelectValue placeholder="Seleccionar" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {TONES.map((t) => (
+                              <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <Separator />
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Pen className="h-3.5 w-3.5 text-primary" />
+                        <Label htmlFor="generate-style" className="text-xs cursor-pointer">
+                          Generar guía de estilo con IA
+                        </Label>
+                      </div>
+                      <Switch
+                        id="generate-style"
+                        checked={generateStyleGuide}
+                        onCheckedChange={setGenerateStyleGuide}
+                        data-testid="switch-generate-style-guide"
+                      />
+                    </div>
+                    {generateStyleGuide && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Se creará automáticamente una guía de estilo profesional para este seudónimo usando IA, basada en su género, tono y biografía.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

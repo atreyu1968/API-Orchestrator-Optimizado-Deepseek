@@ -2139,7 +2139,7 @@ export async function registerRoutes(
 
   app.post("/api/reedit-projects/convert-to-series", async (req: Request, res: Response) => {
     try {
-      const { books, seriesTitle, totalPlannedBooks, pseudonymId } = req.body;
+      const { books, seriesTitle, totalPlannedBooks, pseudonymId, newPseudonym, generateStyleGuide: shouldGenerateStyleGuide } = req.body;
 
       if (!books || !Array.isArray(books) || books.length < 1) {
         return res.status(400).json({ error: "Debes seleccionar al menos un libro" });
@@ -2150,6 +2150,13 @@ export async function registerRoutes(
       const plannedCount = parseInt(totalPlannedBooks) || books.length;
       if (plannedCount < 1 || plannedCount > 50) {
         return res.status(400).json({ error: "El total de libros planeados debe estar entre 1 y 50" });
+      }
+
+      if (newPseudonym && pseudonymId) {
+        return res.status(400).json({ error: "No puedes seleccionar un seudónimo existente y crear uno nuevo a la vez" });
+      }
+      if (newPseudonym && (!newPseudonym.name || !newPseudonym.name.trim())) {
+        return res.status(400).json({ error: "El nombre del seudónimo es obligatorio" });
       }
 
       const uniqueKeys = new Set(books.map((b: any) => `${b.type || "reedit"}-${b.projectId}`));
@@ -2186,6 +2193,41 @@ export async function registerRoutes(
       resolvedBooks.sort((a: any, b: any) => a.seriesOrder - b.seriesOrder);
 
       let targetPseudonymId: number | null = pseudonymId || null;
+      let createdPseudonym: any = null;
+      let styleGuideGenerated = false;
+
+      if (newPseudonym) {
+        createdPseudonym = await storage.createPseudonym({
+          name: newPseudonym.name.trim(),
+          bio: newPseudonym.bio || null,
+          defaultGenre: newPseudonym.defaultGenre || null,
+          defaultTone: newPseudonym.defaultTone || null,
+        });
+        targetPseudonymId = createdPseudonym.id;
+
+        if (shouldGenerateStyleGuide) {
+          const { generateStyleGuide: genGuide } = await import("./agents/style-guide-generator");
+          const firstLang = resolvedBooks[0]?.detectedLanguage || "es";
+
+          const pseudoGuideResult = await genGuide({
+            guideType: "pseudonym_style",
+            pseudonymName: createdPseudonym.name,
+            pseudonymBio: createdPseudonym.bio || undefined,
+            pseudonymGenre: newPseudonym.defaultGenre || undefined,
+            pseudonymTone: newPseudonym.defaultTone || undefined,
+            language: firstLang,
+          });
+
+          await storage.createStyleGuide({
+            pseudonymId: createdPseudonym.id,
+            title: pseudoGuideResult.title,
+            content: pseudoGuideResult.content,
+            isActive: true,
+          });
+          styleGuideGenerated = true;
+        }
+      }
+
       if (!targetPseudonymId) {
         const firstWithPseudo = resolvedBooks.find((b: any) => b.pseudonymId);
         if (firstWithPseudo) targetPseudonymId = firstWithPseudo.pseudonymId;
@@ -2375,12 +2417,20 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
         }
       }
 
+      const parts = [`Serie "${newSeries.title}" creada con ${resolvedBooks.length} libro(s).`];
+      if (createdPseudonym) parts.push(`Seudónimo "${createdPseudonym.name}" creado.`);
+      if (styleGuideGenerated) parts.push("Guía de estilo generada.");
+      parts.push("Guía de serie generada.");
+      if (hasWorldBibleData) parts.push("World Bible unificado generado.");
+
       res.json({
         series: newSeries,
         booksLinked: resolvedBooks.length,
         guideGenerated: true,
         worldBibleGenerated: hasWorldBibleData,
-        message: `Serie "${newSeries.title}" creada con ${resolvedBooks.length} libro(s). Guía de serie generada.${hasWorldBibleData ? " World Bible unificado generado." : ""}`,
+        pseudonymCreated: !!createdPseudonym,
+        styleGuideGenerated,
+        message: parts.join(" "),
       });
     } catch (error: any) {
       console.error("Error converting reedit projects to series:", error);
