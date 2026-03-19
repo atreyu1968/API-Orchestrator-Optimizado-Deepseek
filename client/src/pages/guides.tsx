@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   Loader2, Sparkles, Trash2, Eye, UserPlus, BookOpen,
-  Pen, Lightbulb, Users, Library, Plus
+  Pen, Lightbulb, Users, Library, Plus, Download
 } from "lucide-react";
 import type { GeneratedGuide, Pseudonym, Series, StyleGuide } from "@shared/schema";
 
@@ -25,6 +25,22 @@ const GUIDE_TYPE_LABELS: Record<string, { label: string; icon: typeof Pen; color
   pseudonym_style: { label: "Estilo de Pseudónimo", icon: Users, color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
   series_writing: { label: "Guía de Serie", icon: Library, color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
 };
+
+function downloadGuideAsMd(guide: GeneratedGuide) {
+  const typeLabel = GUIDE_TYPE_LABELS[guide.guideType]?.label || guide.guideType;
+  const header = `# ${guide.title}\n\n**Tipo:** ${typeLabel}\n**Fecha:** ${new Date(guide.createdAt).toLocaleDateString()}\n${guide.sourceAuthor ? `**Autor de referencia:** ${guide.sourceAuthor}\n` : ""}${guide.sourceIdea ? `**Idea:** ${guide.sourceIdea}\n` : ""}${guide.sourceGenre ? `**Género:** ${guide.sourceGenre}\n` : ""}\n---\n\n`;
+  const content = header + guide.content;
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const safeName = guide.title.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s_-]/g, "").replace(/\s+/g, "_").substring(0, 80);
+  a.href = url;
+  a.download = `${safeName}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 function PseudonymAssignSelector({ selectedPseudonymId, onSelect, newPseudonymName, onNewNameChange, mode, onModeChange }: {
   selectedPseudonymId: string;
@@ -540,6 +556,17 @@ function GuideViewDialog({ guide, open, onClose }: { guide: GeneratedGuide | nul
             {guide.content}
           </div>
         </ScrollArea>
+        <div className="flex justify-end pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="button-download-guide-dialog"
+            onClick={() => downloadGuideAsMd(guide)}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Descargar .md
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -623,6 +650,14 @@ function GuideLibrary() {
                     onClick={() => setViewGuide(guide)}
                   >
                     <Eye className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    data-testid={`button-download-guide-${guide.id}`}
+                    onClick={() => downloadGuideAsMd(guide)}
+                  >
+                    <Download className="w-4 h-4" />
                   </Button>
                   {(guide.guideType === "author_style" || guide.guideType === "pseudonym_style") && (
                   <Button
