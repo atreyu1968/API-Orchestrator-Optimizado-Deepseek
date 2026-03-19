@@ -7898,6 +7898,58 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           params.existingStyleGuides = activeGuides.map((g: any) => g.content);
         }
       }
+
+      if (params.guideType === "series_writing" && params.seriesId) {
+        const sObj = await storage.getSeries(params.seriesId);
+        if (sObj) {
+          params.seriesTitle = params.seriesTitle || sObj.title;
+          params.seriesTotalBooks = params.seriesTotalBooks || sObj.totalPlannedBooks;
+          params.seriesWorkType = params.seriesWorkType || sObj.workType;
+        }
+        const seriesProjects = await storage.getProjectsBySeries(params.seriesId);
+        let seriesReedits: any[] = [];
+        try {
+          const allReedits = await storage.getAllReeditProjects();
+          seriesReedits = allReedits.filter((rp: any) => rp.seriesId === params.seriesId);
+        } catch (_e) { /* ignore */ }
+        let seriesImported: any[] = [];
+        try {
+          seriesImported = await storage.getImportedManuscriptsBySeries(params.seriesId);
+        } catch (_e) { /* ignore */ }
+
+        const bookSummaries: string[] = [];
+        for (const proj of seriesProjects) {
+          const chapters = await storage.getChaptersByProject(proj.id);
+          const totalWords = chapters.reduce((sum, ch) => sum + (ch.content?.split(/\s+/).length || 0), 0);
+          const firstContent = chapters.slice(0, 2).map(ch => (ch.content || "").substring(0, 400)).join("\n...\n");
+          bookSummaries.push(`LIBRO #${proj.seriesOrder || "?"}: "${proj.title}" (${chapters.length} capítulos, ~${totalWords.toLocaleString()} palabras)\nPrimeras líneas:\n${firstContent}`);
+        }
+        for (const rp of seriesReedits) {
+          const chapters = await storage.getReeditChaptersByProject(rp.id);
+          const totalWords = chapters.reduce((sum: number, ch: any) => sum + ((ch.editedContent || ch.originalContent || "").split(/\s+/).length || 0), 0);
+          const firstContent = chapters.slice(0, 2).map((ch: any) => (ch.editedContent || ch.originalContent || "").substring(0, 400)).join("\n...\n");
+          bookSummaries.push(`LIBRO #${rp.seriesOrder || "?"}: "${rp.title}" (${chapters.length} capítulos, ~${totalWords.toLocaleString()} palabras, reeditado)\nPrimeras líneas:\n${firstContent}`);
+        }
+        for (const ms of seriesImported) {
+          const chapters = await storage.getImportedChaptersByManuscript(ms.id);
+          const totalWords = chapters.reduce((sum: number, ch: any) => sum + ((ch.content || "").split(/\s+/).length || 0), 0);
+          const firstContent = chapters.slice(0, 2).map((ch: any) => (ch.content || "").substring(0, 400)).join("\n...\n");
+          bookSummaries.push(`LIBRO #${ms.seriesOrder || "?"}: "${ms.title}" (${chapters.length} capítulos, ~${totalWords.toLocaleString()} palabras, importado)\nPrimeras líneas:\n${firstContent}`);
+        }
+
+        if (bookSummaries.length > 0) {
+          params.seriesDescription = `Serie compuesta por los siguientes libros ya escritos:\n\n${bookSummaries.join("\n\n")}`;
+        }
+
+        if (params.assignPseudonymId || params.pseudonymId) {
+          const pId = params.assignPseudonymId || params.pseudonymId;
+          const pseud = await storage.getPseudonym(pId);
+          if (pseud) params.pseudonymName = pseud.name;
+        } else if (params.createPseudonymName) {
+          params.pseudonymName = params.createPseudonymName;
+        }
+      }
+
       const result = await generateStyleGuide(params);
 
       let targetPseudonymId: number | null = req.body.pseudonymId || null;
@@ -7919,7 +7971,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       }
 
       let validatedStyleGuideId: number | null = null;
-      if (req.body.guideType === "idea_writing") {
+      if (req.body.guideType === "idea_writing" || req.body.guideType === "series_writing") {
         const minWords = Math.max(500, Math.min(10000, req.body.minWordsPerChapter || 1500));
         const maxWords = Math.max(500, Math.min(15000, req.body.maxWordsPerChapter || 3500));
         if (minWords > maxWords) {
@@ -7951,23 +8003,63 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         outputTokens: result.outputTokens,
       });
 
-      if (req.body.guideType === "idea_writing") {
+      if (req.body.guideType === "idea_writing" || req.body.guideType === "series_writing") {
         const chapterCount = Math.max(1, Math.min(350, req.body.chapterCount || 20));
         const minWords = Math.max(500, Math.min(10000, req.body.minWordsPerChapter || 1500));
         const maxWords = Math.max(500, Math.min(15000, req.body.maxWordsPerChapter || 3500));
 
+        const isSeriesGuide = req.body.guideType === "series_writing";
+        const descSuffix = isSeriesGuide
+          ? `serie: ${(req.body.seriesTitle || "").substring(0, 100)}`
+          : `idea: ${(req.body.idea || "").substring(0, 100)}`;
+
         const extendedGuide = await storage.createExtendedGuide({
           title: result.title,
-          description: `Guía generada por IA a partir de idea: ${(req.body.idea || "").substring(0, 100)}`,
+          description: `Guía extendida generada por IA a partir de ${descSuffix}`,
           originalFileName: "ai-generated",
           content: result.content,
           wordCount: result.content.split(/\s+/).length,
         });
 
+        let seriesId: number | null = null;
+        let nextSeriesOrder: number | null = null;
+
+        if (isSeriesGuide && req.body.seriesId) {
+          seriesId = req.body.seriesId;
+          const seriesObj = await storage.getSeries(seriesId);
+          if (!seriesObj) {
+            return res.status(400).json({ error: "La serie seleccionada no existe" });
+          }
+          const existingProjects = await storage.getProjectsBySeries(seriesId);
+          let reeditProjects: any[] = [];
+          let importedMs: any[] = [];
+          try {
+            const allReedits = await storage.getAllReeditProjects();
+            reeditProjects = allReedits.filter((rp: any) => rp.seriesId === seriesId);
+          } catch (_e) { /* ignore */ }
+          try {
+            importedMs = await storage.getImportedManuscriptsBySeries(seriesId);
+          } catch (_e) { /* ignore */ }
+          
+          const allOrders = [
+            ...existingProjects.map(p => p.seriesOrder || 0),
+            ...reeditProjects.map((rp: any) => rp.seriesOrder || 0),
+            ...importedMs.map((m: any) => m.seriesOrder || 0),
+          ];
+          nextSeriesOrder = allOrders.length > 0 ? Math.max(...allOrders) + 1 : 1;
+
+          await storage.updateSeries(seriesId, {
+            seriesGuide: result.content,
+            seriesGuideFileName: "ai-generated-extended.md",
+          });
+        }
+
         const projectTitle = req.body.projectTitle || result.title;
         const project = await storage.createProject({
           title: projectTitle,
-          premise: req.body.idea || null,
+          premise: isSeriesGuide
+            ? `Continuación de la serie "${req.body.seriesTitle || ""}"`
+            : (req.body.idea || null),
           genre: req.body.genre || "fantasy",
           tone: req.body.tone || "dramatic",
           chapterCount,
@@ -7977,12 +8069,15 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           pseudonymId: targetPseudonymId,
           styleGuideId: validatedStyleGuideId,
           extendedGuideId: extendedGuide.id,
+          workType: seriesId ? "series" : "standalone",
+          seriesId: seriesId,
+          seriesOrder: nextSeriesOrder,
           minWordsPerChapter: minWords,
           maxWordsPerChapter: maxWords,
           kindleUnlimitedOptimized: req.body.kindleUnlimitedOptimized || false,
         });
 
-        res.json({ ...guide, assignedPseudonymId: targetPseudonymId, extendedGuideId: extendedGuide.id, projectId: project.id });
+        res.json({ ...guide, assignedPseudonymId: targetPseudonymId, extendedGuideId: extendedGuide.id, projectId: project.id, seriesId });
       } else {
         if (targetPseudonymId && (req.body.guideType === "author_style" || req.body.guideType === "pseudonym_style")) {
           await storage.createStyleGuide({

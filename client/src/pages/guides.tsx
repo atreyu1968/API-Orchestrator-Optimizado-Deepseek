@@ -464,10 +464,29 @@ function PseudonymStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: a
 
 function SeriesWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: any) => void; isGenerating: boolean }) {
   const { data: seriesList = [] } = useQuery<Series[]>({ queryKey: ["/api/series"] });
+  const { data: styleGuides = [] } = useQuery<StyleGuide[]>({ queryKey: ["/api/style-guides"] });
   const [selectedSeries, setSelectedSeries] = useState<string>("");
   const [genre, setGenre] = useState("");
+  const [tone, setTone] = useState("");
+  const [assignMode, setAssignMode] = useState<"none" | "existing" | "new">("none");
+  const [assignPseudonymId, setAssignPseudonymId] = useState("");
+  const [newPseudonymName, setNewPseudonymName] = useState("");
+  const [projectTitle, setProjectTitle] = useState("");
+  const [chapterCount, setChapterCount] = useState(20);
+  const [hasPrologue, setHasPrologue] = useState(false);
+  const [hasEpilogue, setHasEpilogue] = useState(false);
+  const [hasAuthorNote, setHasAuthorNote] = useState(false);
+  const [minWordsPerChapter, setMinWordsPerChapter] = useState(1500);
+  const [maxWordsPerChapter, setMaxWordsPerChapter] = useState(3500);
+  const [kindleUnlimitedOptimized, setKindleUnlimitedOptimized] = useState(false);
+  const [styleGuideId, setStyleGuideId] = useState<string>("");
 
   const s = seriesList.find((x) => x.id.toString() === selectedSeries);
+
+  const selectedPseudonymIdNum = assignMode === "existing" ? parseInt(assignPseudonymId) : undefined;
+  const pseudonymStyleGuides = selectedPseudonymIdNum
+    ? styleGuides.filter((sg) => sg.pseudonymId === selectedPseudonymIdNum && sg.isActive)
+    : [];
 
   return (
     <div className="space-y-4">
@@ -490,21 +509,138 @@ function SeriesWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: an
         <Card className="bg-muted/50">
           <CardContent className="pt-4 space-y-1 text-sm">
             {s.description && <p><strong>Descripción:</strong> {s.description}</p>}
-            {s.totalPlannedBooks && <p><strong>Libros:</strong> {s.totalPlannedBooks}</p>}
+            {s.totalPlannedBooks && <p><strong>Libros planificados:</strong> {s.totalPlannedBooks}</p>}
             {s.workType && <p><strong>Tipo:</strong> {s.workType}</p>}
           </CardContent>
         </Card>
       )}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="series-genre">Género</Label>
+          <Select value={genre} onValueChange={setGenre}>
+            <SelectTrigger id="series-genre" data-testid="select-series-genre">
+              <SelectValue placeholder="Seleccionar género..." />
+            </SelectTrigger>
+            <SelectContent>
+              {IDEA_GENRES.map((g) => (
+                <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="series-tone">Tono</Label>
+          <Select value={tone} onValueChange={setTone}>
+            <SelectTrigger id="series-tone" data-testid="select-series-tone">
+              <SelectValue placeholder="Seleccionar tono..." />
+            </SelectTrigger>
+            <SelectContent>
+              {IDEA_TONES.map((t) => (
+                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <Separator />
+      <p className="text-sm font-medium text-muted-foreground">Datos del proyecto a crear (siguiente libro de la serie)</p>
+
+      <PseudonymAssignSelector
+        selectedPseudonymId={assignPseudonymId}
+        onSelect={(val) => { setAssignPseudonymId(val); setStyleGuideId(""); }}
+        newPseudonymName={newPseudonymName}
+        onNewNameChange={setNewPseudonymName}
+        mode={assignMode}
+        onModeChange={(m) => { setAssignMode(m); setStyleGuideId(""); }}
+      />
+
+      {assignMode === "existing" && pseudonymStyleGuides.length > 0 && (
+        <div>
+          <Label>Guía de estilo del pseudónimo (opcional)</Label>
+          <Select value={styleGuideId} onValueChange={setStyleGuideId}>
+            <SelectTrigger data-testid="select-series-style-guide">
+              <SelectValue placeholder="Sin guía de estilo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sin guía de estilo</SelectItem>
+              {pseudonymStyleGuides.map((sg) => (
+                <SelectItem key={sg.id} value={sg.id.toString()}>{sg.title}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div>
-        <Label htmlFor="series-genre">Género (opcional)</Label>
+        <Label htmlFor="series-project-title">Título del nuevo libro</Label>
         <Input
-          id="series-genre"
-          data-testid="input-series-genre"
-          placeholder="Ej: Fantasía épica, Ciencia ficción..."
-          value={genre}
-          onChange={(e) => setGenre(e.target.value)}
+          id="series-project-title"
+          data-testid="input-series-project-title"
+          placeholder="Título de la novela..."
+          value={projectTitle}
+          onChange={(e) => setProjectTitle(e.target.value)}
         />
       </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <Label htmlFor="series-chapter-count">Capítulos</Label>
+          <Input
+            id="series-chapter-count"
+            data-testid="input-series-chapter-count"
+            type="number"
+            min={1}
+            max={350}
+            value={chapterCount}
+            onChange={(e) => setChapterCount(parseInt(e.target.value) || 1)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="series-min-words">Min palabras/cap</Label>
+          <Input
+            id="series-min-words"
+            data-testid="input-series-min-words"
+            type="number"
+            min={500}
+            max={10000}
+            value={minWordsPerChapter}
+            onChange={(e) => setMinWordsPerChapter(parseInt(e.target.value) || 1500)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="series-max-words">Max palabras/cap</Label>
+          <Input
+            id="series-max-words"
+            data-testid="input-series-max-words"
+            type="number"
+            min={500}
+            max={15000}
+            value={maxWordsPerChapter}
+            onChange={(e) => setMaxWordsPerChapter(parseInt(e.target.value) || 3500)}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-4">
+        <label className="flex items-center gap-2 text-sm" data-testid="check-series-prologue">
+          <input type="checkbox" checked={hasPrologue} onChange={(e) => setHasPrologue(e.target.checked)} className="rounded" />
+          Prólogo
+        </label>
+        <label className="flex items-center gap-2 text-sm" data-testid="check-series-epilogue">
+          <input type="checkbox" checked={hasEpilogue} onChange={(e) => setHasEpilogue(e.target.checked)} className="rounded" />
+          Epílogo
+        </label>
+        <label className="flex items-center gap-2 text-sm" data-testid="check-series-author-note">
+          <input type="checkbox" checked={hasAuthorNote} onChange={(e) => setHasAuthorNote(e.target.checked)} className="rounded" />
+          Nota del Autor
+        </label>
+        <label className="flex items-center gap-2 text-sm" data-testid="check-series-kindle">
+          <input type="checkbox" checked={kindleUnlimitedOptimized} onChange={(e) => setKindleUnlimitedOptimized(e.target.checked)} className="rounded" />
+          Kindle Unlimited
+        </label>
+      </div>
+
       <Button
         data-testid="button-generate-series-guide"
         onClick={() => {
@@ -517,13 +653,31 @@ function SeriesWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: an
             seriesTotalBooks: s.totalPlannedBooks,
             seriesWorkType: s.workType,
             genre,
+            tone,
+            assignPseudonymId: assignMode === "existing" ? parseInt(assignPseudonymId) : undefined,
+            createPseudonymName: assignMode === "new" ? newPseudonymName : undefined,
+            createPseudonymGenre: assignMode === "new" ? genre : undefined,
+            createPseudonymTone: assignMode === "new" ? tone : undefined,
+            projectTitle: projectTitle.trim() || undefined,
+            chapterCount,
+            hasPrologue,
+            hasEpilogue,
+            hasAuthorNote,
+            minWordsPerChapter,
+            maxWordsPerChapter,
+            kindleUnlimitedOptimized,
+            styleGuideId: styleGuideId && styleGuideId !== "none" ? parseInt(styleGuideId) : undefined,
           });
         }}
-        disabled={!selectedSeries || isGenerating}
+        disabled={
+          !selectedSeries || !genre || !tone || !projectTitle.trim() || isGenerating ||
+          (assignMode === "existing" && !assignPseudonymId) ||
+          (assignMode === "new" && !newPseudonymName.trim())
+        }
         className="w-full"
       >
         {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-        {isGenerating ? "Generando guía..." : "Generar Guía de Serie"}
+        {isGenerating ? "Generando guía y creando proyecto..." : "Generar Guía Extendida y Crear Proyecto"}
       </Button>
     </div>
   );
@@ -746,6 +900,7 @@ export default function GuidesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/style-guides"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/extended-guides"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/series"] });
       let desc = data.title;
       if (data.projectId) {
         desc = `${data.title} — proyecto creado automáticamente`;
