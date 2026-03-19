@@ -37,7 +37,12 @@ import {
   Pause,
   Unlock,
   MessageSquare,
-  Wand2
+  Wand2,
+  Library,
+  ArrowUp,
+  ArrowDown,
+  Plus,
+  X
 } from "lucide-react";
 import type { ReeditProject, ReeditChapter, ReeditAuditReport } from "@shared/schema";
 
@@ -718,6 +723,13 @@ export default function ReeditPage() {
   // Chat panel state
   const [showChat, setShowChat] = useState(false);
 
+  // Convert to series state
+  const [showSeriesDialog, setShowSeriesDialog] = useState(false);
+  const [seriesTitle, setSeriesTitle] = useState("");
+  const [seriesTotalBooks, setSeriesTotalBooks] = useState(3);
+  const [selectedBooks, setSelectedBooks] = useState<{projectId: number; order: number; title: string}[]>([]);
+  const [isConvertingSeries, setIsConvertingSeries] = useState(false);
+
   const { data: projects = [], isLoading: projectsLoading } = useQuery<ReeditProject[]>({
     queryKey: ["/api/reedit-projects"],
     refetchInterval: 5000,
@@ -1064,10 +1076,28 @@ export default function ReeditPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Proyectos
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Proyectos
+                </CardTitle>
+                {projects.length >= 1 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowSeriesDialog(true);
+                      setSelectedBooks([]);
+                      setSeriesTitle("");
+                      setSeriesTotalBooks(3);
+                    }}
+                    data-testid="button-open-series-dialog"
+                  >
+                    <Library className="h-4 w-4 mr-1" />
+                    Crear Serie
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {projectsLoading ? (
@@ -1572,6 +1602,176 @@ export default function ReeditPage() {
                 <RotateCcw className="h-4 w-4 mr-2" />
               )}
               Reiniciar Proyecto
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSeriesDialog} onOpenChange={setShowSeriesDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Crear Serie desde Libros Importados</DialogTitle>
+            <DialogDescription>
+              Selecciona los libros importados, ordénalos en la serie, y se generará automáticamente una guía de serie y un World Bible unificado.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Nombre de la Serie</Label>
+              <Input
+                value={seriesTitle}
+                onChange={(e) => setSeriesTitle(e.target.value)}
+                placeholder="Ej: Las Crónicas de..."
+                data-testid="input-series-title"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Total de Libros Planeados</Label>
+              <Input
+                type="number"
+                value={seriesTotalBooks}
+                onChange={(e) => setSeriesTotalBooks(parseInt(e.target.value) || 3)}
+                min={1}
+                max={20}
+                data-testid="input-series-total-books"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Libros Disponibles</Label>
+              <p className="text-xs text-muted-foreground mb-2">Haz clic para añadir o quitar libros de la serie</p>
+              <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                {projects.map((project) => {
+                  const isSelected = selectedBooks.some(b => b.projectId === project.id);
+                  return (
+                    <div
+                      key={project.id}
+                      className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors ${isSelected ? "bg-accent" : "hover:bg-muted"}`}
+                      onClick={() => {
+                        if (isSelected) {
+                          const filtered = selectedBooks.filter(b => b.projectId !== project.id);
+                          setSelectedBooks(filtered.map((b, i) => ({ ...b, order: i + 1 })));
+                        } else {
+                          setSelectedBooks([...selectedBooks, { projectId: project.id, order: selectedBooks.length + 1, title: project.title }]);
+                        }
+                      }}
+                      data-testid={`toggle-book-${project.id}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {isSelected && (
+                          <Badge variant="secondary" className="shrink-0">
+                            #{selectedBooks.find(b => b.projectId === project.id)?.order}
+                          </Badge>
+                        )}
+                        <span className="truncate text-sm">{project.title}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {getStatusBadge(project.status)}
+                        {isSelected ? (
+                          <X className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Plus className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            {selectedBooks.length > 1 && (
+              <div>
+                <Label>Orden en la Serie</Label>
+                <p className="text-xs text-muted-foreground mb-2">Usa las flechas para reordenar</p>
+                <div className="space-y-1">
+                  {selectedBooks.map((book, index) => (
+                    <div key={book.projectId} className="flex items-center gap-2 p-2 bg-muted rounded-md">
+                      <Badge variant="outline">{book.order}</Badge>
+                      <span className="text-sm flex-1 truncate">{book.title}</span>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          disabled={index === 0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newBooks = [...selectedBooks];
+                            [newBooks[index - 1], newBooks[index]] = [newBooks[index], newBooks[index - 1]];
+                            setSelectedBooks(newBooks.map((b, i) => ({ ...b, order: i + 1 })));
+                          }}
+                          data-testid={`button-move-up-${book.projectId}`}
+                        >
+                          <ArrowUp className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          disabled={index === selectedBooks.length - 1}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newBooks = [...selectedBooks];
+                            [newBooks[index], newBooks[index + 1]] = [newBooks[index + 1], newBooks[index]];
+                            setSelectedBooks(newBooks.map((b, i) => ({ ...b, order: i + 1 })));
+                          }}
+                          data-testid={`button-move-down-${book.projectId}`}
+                        >
+                          <ArrowDown className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSeriesDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!seriesTitle.trim() || selectedBooks.length < 1) {
+                  toast({ title: "Error", description: "Introduce el nombre de la serie y selecciona al menos un libro", variant: "destructive" });
+                  return;
+                }
+                setIsConvertingSeries(true);
+                try {
+                  const response = await apiRequest("POST", "/api/reedit-projects/convert-to-series", {
+                    books: selectedBooks.map(b => ({ projectId: b.projectId, order: b.order })),
+                    seriesTitle: seriesTitle.trim(),
+                    totalPlannedBooks: seriesTotalBooks,
+                  });
+                  const data = await response.json();
+                  toast({
+                    title: "Serie Creada",
+                    description: data.message || `Serie "${seriesTitle}" creada exitosamente con ${selectedBooks.length} libro(s).`,
+                  });
+                  setShowSeriesDialog(false);
+                  queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/series"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+                } catch (error: any) {
+                  toast({ title: "Error", description: error.message || "Error al crear la serie", variant: "destructive" });
+                } finally {
+                  setIsConvertingSeries(false);
+                }
+              }}
+              disabled={isConvertingSeries || !seriesTitle.trim() || selectedBooks.length < 1}
+              data-testid="button-confirm-create-series"
+            >
+              {isConvertingSeries ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Generando Serie y Guías...
+                </>
+              ) : (
+                <>
+                  <Library className="h-4 w-4 mr-2" />
+                  Crear Serie ({selectedBooks.length} libro{selectedBooks.length !== 1 ? "s" : ""})
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

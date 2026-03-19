@@ -79,6 +79,17 @@ Preferred communication style: Simple, everyday language.
 - **idea_writing flow**: Collects full project data (title, chapters, prologue/epilogue/author note, words per chapter, Kindle optimization, pseudonym, style guide). On generation: saves as `extendedGuide` (not styleGuide) and auto-creates a project with `extendedGuideId` set. Genre and tone use dropdown selectors matching the config panel options.
 - **apply-to-pseudonym**: Only available for `author_style` and `pseudonym_style` guides. Creates a styleGuide linked to the selected pseudonym. Server validates guide type before allowing application.
 
+#### Convert Reedit Projects to Series (v5.0)
+- Converts multiple imported/re-edited books into a unified series.
+- `reeditProjects` table has `seriesId` and `seriesOrder` columns for series linkage.
+- API: `POST /api/reedit-projects/convert-to-series` — accepts `{ books: [{projectId, order}], seriesTitle, totalPlannedBooks, pseudonymId }`.
+- Validates: no duplicate project IDs, books not already in a series, bounds on totalPlannedBooks.
+- Creates series record, links each reedit project via `seriesId`/`seriesOrder` update.
+- Auto-generates a `series_writing` guide using AI (feeds book summaries/excerpts to the style-guide-generator agent).
+- Merges World Bible data from all selected books using Gemini 2.5 Flash to deduplicate characters/locations/timeline across books, then updates each book's World Bible with the unified data.
+- Series registry (`GET /api/series/registry`) includes reedit projects as volumes alongside regular projects and imported manuscripts.
+- Frontend: "Crear Serie" button in the reedit page projects card opens a dialog to select books, reorder them, name the series, and trigger conversion.
+
 #### Word Count Validation & Expansion
 - 10% flexible tolerance: `FLEXIBLE_MIN = TARGET_MIN × 0.90`, `FLEXIBLE_MAX = TARGET_MAX × 1.10`.
 - `MAX_WORD_COUNT_RETRIES = 5` dedicated retries using separate `wordCountRetries` counter (independent from editor's `refinementAttempts`). After 5 retries, continues forward.

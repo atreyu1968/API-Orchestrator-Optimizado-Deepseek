@@ -1575,6 +1575,7 @@ export async function registerRoutes(
       const allPseudonyms = await storage.getAllPseudonyms();
       const allProjects = await storage.getAllProjects();
       const allManuscripts = await storage.getAllImportedManuscripts();
+      const allReeditProjects = await storage.getAllReeditProjects();
       
       const registry = allSeries.map(s => {
         const pseudonym = s.pseudonymId ? allPseudonyms.find(p => p.id === s.pseudonymId) : null;
@@ -1583,6 +1584,9 @@ export async function registerRoutes(
           .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
         const seriesManuscripts = allManuscripts
           .filter(m => m.seriesId === s.id)
+          .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
+        const seriesReeditProjects = allReeditProjects
+          .filter(rp => rp.seriesId === s.id)
           .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
         
         const volumes = [
@@ -1606,6 +1610,16 @@ export async function registerRoutes(
             continuityAnalysisStatus: m.continuityAnalysisStatus || "pending",
             hasContinuitySnapshot: !!m.continuitySnapshot,
           })),
+          ...seriesReeditProjects.map(rp => ({
+            type: "reedit" as const,
+            id: rp.id,
+            title: rp.title,
+            seriesOrder: rp.seriesOrder,
+            status: rp.status === "completed" ? "completed" : rp.status,
+            wordCount: rp.totalWordCount || 0,
+            continuityAnalysisStatus: null,
+            hasContinuitySnapshot: false,
+          })),
         ].sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
         
         return {
@@ -1613,6 +1627,7 @@ export async function registerRoutes(
           pseudonym: pseudonym || null,
           projects: seriesProjects,
           importedManuscripts: seriesManuscripts,
+          reeditProjects: seriesReeditProjects,
           volumes,
           completedVolumes: volumes.filter(v => v.status === "completed" || v.status === "imported").length,
         };
@@ -2118,6 +2133,220 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error converting project to series:", error);
+      res.status(500).json({ error: error.message || "Error al convertir en serie" });
+    }
+  });
+
+  app.post("/api/reedit-projects/convert-to-series", async (req: Request, res: Response) => {
+    try {
+      const { books, seriesTitle, totalPlannedBooks, pseudonymId } = req.body;
+
+      if (!books || !Array.isArray(books) || books.length < 1) {
+        return res.status(400).json({ error: "Debes seleccionar al menos un libro importado" });
+      }
+      if (!seriesTitle || !seriesTitle.trim()) {
+        return res.status(400).json({ error: "El nombre de la serie es obligatorio" });
+      }
+      const plannedCount = parseInt(totalPlannedBooks) || books.length;
+      if (plannedCount < 1 || plannedCount > 50) {
+        return res.status(400).json({ error: "El total de libros planeados debe estar entre 1 y 50" });
+      }
+
+      const projectIds = books.map((b: any) => b.projectId);
+      const uniqueIds = new Set(projectIds);
+      if (uniqueIds.size !== projectIds.length) {
+        return res.status(400).json({ error: "No puedes seleccionar el mismo libro más de una vez" });
+      }
+
+      const reeditProjects: any[] = [];
+      for (const book of books) {
+        const rp = await storage.getReeditProject(book.projectId);
+        if (!rp) {
+          return res.status(400).json({ error: `Proyecto importado #${book.projectId} no encontrado` });
+        }
+        if (rp.seriesId) {
+          return res.status(400).json({ error: `"${rp.title}" ya pertenece a una serie` });
+        }
+        reeditProjects.push({ ...rp, seriesOrder: book.order });
+      }
+
+      reeditProjects.sort((a: any, b: any) => a.seriesOrder - b.seriesOrder);
+
+      let targetPseudonymId: number | null = pseudonymId || null;
+      if (!targetPseudonymId && reeditProjects[0]?.pseudonymId) {
+        targetPseudonymId = reeditProjects[0].pseudonymId;
+      }
+
+      const newSeries = await storage.createSeries({
+        title: seriesTitle.trim(),
+        description: `Serie creada a partir de ${reeditProjects.length} libro(s) importado(s): ${reeditProjects.map((rp: any) => rp.title).join(", ")}`,
+        workType: plannedCount === 3 ? "trilogy" : "series",
+        totalPlannedBooks: plannedCount,
+        pseudonymId: targetPseudonymId,
+      });
+
+      for (const rp of reeditProjects) {
+        await storage.updateReeditProject(rp.id, {
+          seriesId: newSeries.id,
+          seriesOrder: rp.seriesOrder,
+        });
+      }
+
+      const bookSummaries: string[] = [];
+      const allCharacters: any[] = [];
+      const allLocations: any[] = [];
+      const allTimeline: any[] = [];
+      const allLoreRules: any[] = [];
+
+      for (const rp of reeditProjects) {
+        const chapters = await storage.getReeditChaptersByProject(rp.id);
+        const totalWords = chapters.reduce((sum: number, ch: any) => {
+          const content = ch.editedContent || ch.originalContent || "";
+          return sum + content.split(/\s+/).length;
+        }, 0);
+
+        const firstChapters = chapters.slice(0, 3).map((ch: any) => {
+          const content = ch.editedContent || ch.originalContent || "";
+          return content.substring(0, 500);
+        }).join("\n...\n");
+
+        bookSummaries.push(
+          `LIBRO ${rp.seriesOrder}: "${rp.title}" (${chapters.length} capítulos, ~${totalWords.toLocaleString()} palabras, idioma: ${rp.detectedLanguage || "es"})\nPrimeras líneas:\n${firstChapters}`
+        );
+
+        const wb = await storage.getReeditWorldBibleByProject(rp.id);
+        if (wb) {
+          if (wb.characters && Array.isArray(wb.characters)) {
+            allCharacters.push(...wb.characters.map((c: any) => ({ ...c, fromBook: rp.title, bookOrder: rp.seriesOrder })));
+          }
+          if (wb.locations && Array.isArray(wb.locations)) {
+            allLocations.push(...wb.locations.map((l: any) => ({ ...l, fromBook: rp.title, bookOrder: rp.seriesOrder })));
+          }
+          if (wb.timeline && Array.isArray(wb.timeline)) {
+            allTimeline.push(...wb.timeline.map((t: any) => ({ ...t, fromBook: rp.title, bookOrder: rp.seriesOrder })));
+          }
+          if (wb.loreRules && Array.isArray(wb.loreRules)) {
+            allLoreRules.push(...wb.loreRules.map((r: any) => ({ ...r, fromBook: rp.title, bookOrder: rp.seriesOrder })));
+          }
+        }
+      }
+
+      const { generateStyleGuide } = await import("./agents/style-guide-generator");
+
+      let pseudonymName: string | undefined;
+      if (targetPseudonymId) {
+        const pseud = await storage.getPseudonym(targetPseudonymId);
+        if (pseud) pseudonymName = pseud.name;
+      }
+
+      const guideResult = await generateStyleGuide({
+        guideType: "series_writing",
+        seriesTitle: seriesTitle.trim(),
+        seriesDescription: `Serie compuesta por los siguientes libros ya escritos:\n${bookSummaries.join("\n\n")}`,
+        seriesTotalBooks: plannedCount,
+        seriesWorkType: plannedCount === 3 ? "trilogy" : "series",
+        pseudonymName,
+        language: reeditProjects[0]?.detectedLanguage || "es",
+      });
+
+      await storage.createGeneratedGuide({
+        title: guideResult.title,
+        content: guideResult.content,
+        guideType: "series_writing",
+        sourceAuthor: null,
+        sourceIdea: null,
+        sourceGenre: null,
+        pseudonymId: targetPseudonymId,
+        seriesId: newSeries.id,
+        inputTokens: guideResult.inputTokens,
+        outputTokens: guideResult.outputTokens,
+      });
+
+      const guideContent = guideResult.content;
+      await storage.updateSeries(newSeries.id, {
+        seriesGuide: guideContent,
+        seriesGuideFileName: "ai-generated-from-imports.md",
+      });
+
+      const { GoogleGenAI } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+      const worldBiblePrompt = `Eres un analista literario experto. A partir de los siguientes datos extraídos de ${reeditProjects.length} libro(s) de la serie "${seriesTitle.trim()}", genera un World Bible UNIFICADO para toda la serie en formato JSON.
+
+PERSONAJES ENCONTRADOS:
+${JSON.stringify(allCharacters.slice(0, 100), null, 2)}
+
+LOCALIZACIONES:
+${JSON.stringify(allLocations.slice(0, 50), null, 2)}
+
+LÍNEA TEMPORAL:
+${JSON.stringify(allTimeline.slice(0, 50), null, 2)}
+
+REGLAS DEL MUNDO:
+${JSON.stringify(allLoreRules.slice(0, 30), null, 2)}
+
+Genera un JSON con esta estructura exacta:
+{
+  "characters": [{"name": "...", "description": "...", "firstAppearance": "Libro X, Cap Y", "aliases": [], "relationships": [], "arc": "..."}],
+  "locations": [{"name": "...", "description": "...", "firstMention": "Libro X", "characteristics": []}],
+  "timeline": [{"event": "...", "chapter": "Libro X, Cap Y", "timeMarker": "...", "importance": "high/medium/low"}],
+  "loreRules": [{"rule": "...", "source": "Libro X", "category": "..."}],
+  "seriesArcs": [{"arc": "...", "startBook": 1, "currentStatus": "...", "resolution": "..."}]
+}
+
+Deduplica personajes y localizaciones que aparezcan en múltiples libros, unificando su información. Responde SOLO con el JSON válido.`;
+
+      const wbResponse = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: worldBiblePrompt }] }],
+        config: {
+          temperature: 0.3,
+          maxOutputTokens: 32768,
+          thinkingConfig: { thinkingBudget: 1024 },
+        },
+      });
+
+      let worldBibleData: any = {};
+      try {
+        const wbText = (wbResponse.text || "").replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        worldBibleData = JSON.parse(wbText);
+      } catch {
+        worldBibleData = {
+          characters: allCharacters,
+          locations: allLocations,
+          timeline: allTimeline,
+          loreRules: allLoreRules,
+        };
+      }
+
+      const mergedWbData = {
+        characters: worldBibleData.characters || allCharacters,
+        locations: worldBibleData.locations || allLocations,
+        timeline: worldBibleData.timeline || allTimeline,
+        loreRules: worldBibleData.loreRules || allLoreRules,
+      };
+
+      for (const rp of reeditProjects) {
+        const existingWb = await storage.getReeditWorldBibleByProject(rp.id);
+        if (existingWb) {
+          await storage.updateReeditWorldBible(existingWb.id, mergedWbData);
+        } else {
+          await storage.createReeditWorldBible({
+            projectId: rp.id,
+            ...mergedWbData,
+          });
+        }
+      }
+
+      res.json({
+        series: newSeries,
+        booksLinked: reeditProjects.length,
+        guideGenerated: true,
+        worldBibleGenerated: true,
+        message: `Serie "${newSeries.title}" creada con ${reeditProjects.length} libro(s). Guía de serie y World Bible generados.`,
+      });
+    } catch (error: any) {
+      console.error("Error converting reedit projects to series:", error);
       res.status(500).json({ error: error.message || "Error al convertir en serie" });
     }
   });
