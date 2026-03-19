@@ -3096,7 +3096,8 @@ export class ReeditOrchestrator {
         // Reload chapters to get updated content
         const updatedChapters = await storage.getReeditChaptersByProject(projectId);
         validChapters.length = 0;
-        validChapters.push(...updatedChapters.filter(c => c.originalContent));
+        validChapters.push(...updatedChapters.filter(c => c.editedContent || c.originalContent)
+          .sort((a, b) => getChapterSortOrder(a.chapterNumber) - getChapterSortOrder(b.chapterNumber)));
       } else if (narrativeRewriteCompleted) {
         const chaptersRewritten = (existingRewriteReport.findings as any)?.chaptersRewritten || 0;
         console.log(`[ReeditOrchestrator] Skipping narrative rewriting (already completed: ${chaptersRewritten} chapters rewritten)`);
@@ -3345,41 +3346,43 @@ export class ReeditOrchestrator {
           nonPerfectCount = 0;
           console.log(`[ReeditOrchestrator] Score ${rawScore}/10 with NO new issues. Consecutive high scores: ${consecutiveHighScores}`);
         } else if (rawScore >= this.minAcceptableScore && hasAnyNewIssues) {
-          // Puntuación alta pero con issues pendientes - no aprobar, corregir primero
+          consecutiveHighScores = 0;
+          nonPerfectCount++;
           console.log(`[ReeditOrchestrator] Score ${rawScore}/10 is good but ${issuesCount} issue(s) remain (${criticalIssues.length} críticos). Correcting...`);
-          // Don't increment consecutiveHighScores - must correct issues first
         } else {
           consecutiveHighScores = 0;
           nonPerfectCount++;
+        }
+        
+        if (nonPerfectCount >= MAX_NON_PERFECT_BEFORE_PAUSE) {
+          const pauseReason = `Después de ${nonPerfectCount} evaluaciones sin alcanzar 10/10, el proceso se ha pausado. Última puntuación: ${rawScore}/10. Issues detectados: ${issuesCount}. Por favor, proporciona instrucciones para continuar.`;
           
-          // Check if we should pause for user instructions
-          if (nonPerfectCount >= MAX_NON_PERFECT_BEFORE_PAUSE) {
-            const pauseReason = `Después de ${nonPerfectCount} evaluaciones sin alcanzar 10/10, el proceso se ha pausado. Última puntuación: ${rawScore}/10. Issues detectados: ${issuesCount}. Por favor, proporciona instrucciones para continuar.`;
-            
-            console.log(`[ReeditOrchestrator] PAUSING after ${nonPerfectCount} non-perfect scores. Waiting for user instructions.`);
-            
-            await storage.updateReeditProject(projectId, {
-              status: "awaiting_instructions",
-              pauseReason,
-              revisionCycle,
-              consecutiveHighScores,
-              nonPerfectFinalReviews: nonPerfectCount,
-              previousScores: previousScores as any,
-              finalReviewResult: finalResult,
-              bestsellerScore: Math.round(bestsellerScore),
-            });
-            
-            this.emitProgress({
-              projectId,
-              stage: "paused",
-              currentChapter: validChapters.length,
-              totalChapters: validChapters.length,
-              message: pauseReason,
-            });
-            
-            // Exit the loop - wait for user to resume with instructions
-            return;
-          }
+          console.log(`[ReeditOrchestrator] PAUSING after ${nonPerfectCount} non-perfect scores. Waiting for user instructions.`);
+          
+          await storage.updateReeditProject(projectId, {
+            status: "awaiting_instructions",
+            pauseReason,
+            revisionCycle,
+            totalReviewCycles: totalCyclesExecuted,
+            consecutiveHighScores,
+            nonPerfectFinalReviews: nonPerfectCount,
+            previousScores: previousScores as any,
+            finalReviewResult: finalResult,
+            bestsellerScore: Math.round(bestsellerScore),
+            totalInputTokens: this.totalInputTokens,
+            totalOutputTokens: this.totalOutputTokens,
+            totalThinkingTokens: this.totalThinkingTokens,
+          });
+          
+          this.emitProgress({
+            projectId,
+            stage: "paused",
+            currentChapter: validChapters.length,
+            totalChapters: validChapters.length,
+            message: pauseReason,
+          });
+          
+          return;
         }
 
         if (consecutiveHighScores >= this.requiredConsecutiveHighScores) {
@@ -3656,6 +3659,7 @@ export class ReeditOrchestrator {
       errorMessage: null,
     });
 
+   try {
     const chapters = await storage.getReeditChaptersByProject(projectId);
     let validChapters = chapters.filter(c => c.editedContent).sort((a, b) => getChapterSortOrder(a.chapterNumber) - getChapterSortOrder(b.chapterNumber));
 
@@ -3663,14 +3667,16 @@ export class ReeditOrchestrator {
     const worldBibleForReview = await storage.getReeditWorldBibleByProject(projectId);
     const guiaEstilo = (project as any).styleGuide || "";
 
-    let revisionCycle = 0;
+    let revisionCycle = project.revisionCycle || 0;
     // Preserve existing consecutive high scores when resuming
     let consecutiveHighScores = project.consecutiveHighScores || 0;
     console.log(`[ReeditOrchestrator] Starting with ${consecutiveHighScores} consecutive high score(s) from previous session`);
-    const previousScores: number[] = [];
+    const previousScores: number[] = (project.previousScores as number[]) || [];
     let finalResult: FinalReviewerResult | null = null;
-    let bestsellerScore = 0;
+    let bestsellerScore = project.bestsellerScore || 0;
+    let nonPerfectCount = project.nonPerfectFinalReviews || 0;
     const correctedIssueDescriptions: string[] = [];
+    const MAX_NON_PERFECT_BEFORE_PAUSE = 15;
     
     // TOTAL cycle limit to prevent infinite loops (uses dedicated field that never resets)
     const MAX_TOTAL_CYCLES = 30;
@@ -3824,10 +3830,16 @@ export class ReeditOrchestrator {
         await storage.updateReeditProject(projectId, {
           status: "awaiting_instructions",
           pauseReason,
+          revisionCycle,
           totalReviewCycles: totalCyclesExecuted,
           consecutiveHighScores,
+          nonPerfectFinalReviews: nonPerfectCount,
+          previousScores: previousScores as any,
           finalReviewResult: finalResult,
           bestsellerScore: Math.round(bestsellerScore),
+          totalInputTokens: this.totalInputTokens,
+          totalOutputTokens: this.totalOutputTokens,
+          totalThinkingTokens: this.totalThinkingTokens,
         });
         
         this.emitProgress({
@@ -3900,13 +3912,46 @@ export class ReeditOrchestrator {
       
       if (rawScore >= this.minAcceptableScore && !hasAnyNewIssuesFRO) {
         consecutiveHighScores++;
+        nonPerfectCount = 0;
         console.log(`[ReeditOrchestrator] FRO: Score ${rawScore}/10 with NO new issues. Consecutive high scores: ${consecutiveHighScores}`);
       } else if (rawScore >= this.minAcceptableScore && hasAnyNewIssuesFRO) {
-        // Puntuación alta pero con issues pendientes - no aprobar, corregir primero
+        consecutiveHighScores = 0;
+        nonPerfectCount++;
         console.log(`[ReeditOrchestrator] FRO: Score ${rawScore}/10 is good but ${issuesCount} issue(s) remain (${criticalIssuesFRO.length} críticos). Correcting...`);
-        // Don't increment consecutiveHighScores - must correct issues first
       } else {
         consecutiveHighScores = 0;
+        nonPerfectCount++;
+      }
+      
+      if (nonPerfectCount >= MAX_NON_PERFECT_BEFORE_PAUSE) {
+        const pauseReason = `Después de ${nonPerfectCount} evaluaciones sin alcanzar 10/10, el proceso se ha pausado. Última puntuación: ${rawScore}/10. Issues detectados: ${issuesCount}. Por favor, proporciona instrucciones para continuar.`;
+        
+        console.log(`[ReeditOrchestrator] FRO PAUSING after ${nonPerfectCount} non-perfect scores. Waiting for user instructions.`);
+        
+        await storage.updateReeditProject(projectId, {
+          status: "awaiting_instructions",
+          pauseReason,
+          revisionCycle,
+          totalReviewCycles: totalCyclesExecuted,
+          consecutiveHighScores,
+          nonPerfectFinalReviews: nonPerfectCount,
+          previousScores: previousScores as any,
+          finalReviewResult: finalResult,
+          bestsellerScore: Math.round(bestsellerScore),
+          totalInputTokens: this.totalInputTokens,
+          totalOutputTokens: this.totalOutputTokens,
+          totalThinkingTokens: this.totalThinkingTokens,
+        });
+        
+        this.emitProgress({
+          projectId,
+          stage: "paused",
+          currentChapter: validChapters.length,
+          totalChapters: validChapters.length,
+          message: pauseReason,
+        });
+        
+        return;
       }
 
       if (consecutiveHighScores >= this.requiredConsecutiveHighScores) {
@@ -4065,6 +4110,17 @@ export class ReeditOrchestrator {
       }
 
       revisionCycle++;
+      
+      await storage.updateReeditProject(projectId, {
+        revisionCycle,
+        totalReviewCycles: totalCyclesExecuted,
+        consecutiveHighScores,
+        nonPerfectFinalReviews: nonPerfectCount,
+        previousScores: previousScores as any,
+        totalInputTokens: this.totalInputTokens,
+        totalOutputTokens: this.totalOutputTokens,
+        totalThinkingTokens: this.totalThinkingTokens,
+      });
     }
 
     // CRITICAL: If we exited the loop without achieving 2x consecutive 10/10, pause for instructions
@@ -4079,9 +4135,13 @@ export class ReeditOrchestrator {
         revisionCycle,
         totalReviewCycles: totalCyclesExecuted,
         consecutiveHighScores,
+        nonPerfectFinalReviews: nonPerfectCount,
         previousScores: previousScores as any,
         finalReviewResult: finalResult,
         bestsellerScore: Math.round(bestsellerScore),
+        totalInputTokens: this.totalInputTokens,
+        totalOutputTokens: this.totalOutputTokens,
+        totalThinkingTokens: this.totalThinkingTokens,
       });
       
       this.emitProgress({
@@ -4128,6 +4188,18 @@ export class ReeditOrchestrator {
     });
 
     console.log(`[ReeditOrchestrator] Full final review completed for project ${projectId}: ${bestsellerScore}/10`);
+
+   } catch (error) {
+      console.error(`[ReeditOrchestrator] Error in runFinalReviewOnly for project ${projectId}:`, error);
+      await storage.updateReeditProject(projectId, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : "Unknown error in final review",
+        totalInputTokens: this.totalInputTokens,
+        totalOutputTokens: this.totalOutputTokens,
+        totalThinkingTokens: this.totalThinkingTokens,
+      });
+      throw error;
+    }
   }
 
   async applyReviewerCorrections(projectId: number): Promise<void> {
@@ -4136,6 +4208,17 @@ export class ReeditOrchestrator {
       throw new Error(`Project ${projectId} not found`);
     }
 
+    this.totalInputTokens = project.totalInputTokens || 0;
+    this.totalOutputTokens = project.totalOutputTokens || 0;
+    this.totalThinkingTokens = project.totalThinkingTokens || 0;
+
+    await storage.updateReeditProject(projectId, {
+      status: "processing",
+      currentStage: "fixing",
+      errorMessage: null,
+    });
+
+   try {
     const finalReviewResult = project.finalReviewResult as any;
     if (!finalReviewResult) {
       throw new Error(`No final review result found for project ${projectId}`);
@@ -4146,6 +4229,12 @@ export class ReeditOrchestrator {
 
     if (weaknesses.length === 0 && recommendations.length === 0) {
       console.log(`[ReeditOrchestrator] No weaknesses or recommendations to apply for project ${projectId}`);
+      await storage.updateReeditProject(projectId, {
+        status: "awaiting_instructions",
+        totalInputTokens: this.totalInputTokens,
+        totalOutputTokens: this.totalOutputTokens,
+        totalThinkingTokens: this.totalThinkingTokens,
+      });
       return;
     }
 
@@ -4153,7 +4242,6 @@ export class ReeditOrchestrator {
     console.log(`  - Weaknesses: ${weaknesses.length}`);
     console.log(`  - Recommendations: ${recommendations.length}`);
 
-    // Convert to problem format
     const problems = [
       ...weaknesses.map((w: string, i: number) => ({
         id: `weakness-${i}`,
@@ -4171,17 +4259,12 @@ export class ReeditOrchestrator {
       }))
     ];
 
-    // Get worldBible
     const worldBible = await storage.getReeditWorldBibleByProject(projectId);
-    
-    // Get user instructions (architectInstructions or pendingUserInstructions)
     const userInstructions = project.pendingUserInstructions || project.architectInstructions || "";
 
-    // Get all chapters
     const allChapters = await storage.getReeditChaptersByProject(projectId);
     const editableChapters = allChapters.filter(c => c.editedContent);
 
-    // Extract chapter numbers mentioned in feedback
     const mentionedChapters = new Set<number>();
     const feedbackText = [...weaknesses, ...recommendations].join(' ');
     const chapterMatches = feedbackText.match(/cap[íi]tulo\s*(\d+)/gi) || [];
@@ -4190,7 +4273,6 @@ export class ReeditOrchestrator {
       if (!isNaN(num)) mentionedChapters.add(num);
     });
 
-    // If specific chapters mentioned, prioritize those; otherwise fix first 5
     let chaptersToFix: ReeditChapter[];
     if (mentionedChapters.size > 0) {
       chaptersToFix = editableChapters.filter(c => mentionedChapters.has(c.chapterNumber));
@@ -4209,6 +4291,11 @@ export class ReeditOrchestrator {
     });
 
     for (let i = 0; i < chaptersToFix.length; i++) {
+      if (await this.checkCancellation(projectId)) {
+        console.log(`[ReeditOrchestrator] Cancelled during applyReviewerCorrections at chapter ${i + 1}/${chaptersToFix.length}`);
+        return;
+      }
+
       const chapter = chaptersToFix[i];
 
       this.emitProgress({
@@ -4220,7 +4307,6 @@ export class ReeditOrchestrator {
       });
 
       try {
-        // Build adjacent context
         const prevChapter = editableChapters.find(c => c.chapterNumber === chapter.chapterNumber - 1);
         const nextChapter = editableChapters.find(c => c.chapterNumber === chapter.chapterNumber + 1);
         const adjacentContext = {
@@ -4239,6 +4325,7 @@ export class ReeditOrchestrator {
           userInstructions || undefined
         );
         this.trackTokens(rewriteResult);
+        await this.updateHeartbeat(projectId);
 
         const rewrittenContentARC = rewriteResult.capituloReescrito || rewriteResult.rewrittenContent;
         if (rewrittenContentARC) {
@@ -4254,11 +4341,12 @@ export class ReeditOrchestrator {
       }
     }
 
-    // Update project tokens
     await storage.updateReeditProject(projectId, {
-      totalInputTokens: (project.totalInputTokens || 0) + this.totalInputTokens,
-      totalOutputTokens: (project.totalOutputTokens || 0) + this.totalOutputTokens,
-      totalThinkingTokens: (project.totalThinkingTokens || 0) + this.totalThinkingTokens,
+      status: "awaiting_instructions",
+      currentStage: "reviewing",
+      totalInputTokens: this.totalInputTokens,
+      totalOutputTokens: this.totalOutputTokens,
+      totalThinkingTokens: this.totalThinkingTokens,
     });
 
     this.emitProgress({
@@ -4270,6 +4358,18 @@ export class ReeditOrchestrator {
     });
 
     console.log(`[ReeditOrchestrator] Applied corrections to ${chaptersToFix.length} chapters for project ${projectId}`);
+
+   } catch (error) {
+      console.error(`[ReeditOrchestrator] Error in applyReviewerCorrections for project ${projectId}:`, error);
+      await storage.updateReeditProject(projectId, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : "Unknown error applying corrections",
+        totalInputTokens: this.totalInputTokens,
+        totalOutputTokens: this.totalOutputTokens,
+        totalThinkingTokens: this.totalThinkingTokens,
+      });
+      throw error;
+    }
   }
 }
 
