@@ -28,7 +28,10 @@ import {
   type ChatSession, type InsertChatSession,
   type ChatMessage, type InsertChatMessage,
   type ChatProposal, type InsertChatProposal,
-  generatedGuides, type GeneratedGuide, type InsertGeneratedGuide
+  generatedGuides, type GeneratedGuide, type InsertGeneratedGuide,
+  audiobookProjects, audiobookChapters,
+  type AudiobookProject, type InsertAudiobookProject,
+  type AudiobookChapter, type InsertAudiobookChapter
 } from "@shared/schema";
 import { eq, desc, asc, and, lt, isNull, or, sql } from "drizzle-orm";
 
@@ -185,6 +188,20 @@ export interface IStorage {
   getAllGeneratedGuides(): Promise<GeneratedGuide[]>;
   updateGeneratedGuide(id: number, data: Partial<GeneratedGuide>): Promise<GeneratedGuide | undefined>;
   deleteGeneratedGuide(id: number): Promise<void>;
+
+  // Audiobook Projects
+  createAudiobookProject(data: InsertAudiobookProject): Promise<AudiobookProject>;
+  getAudiobookProject(id: number): Promise<AudiobookProject | undefined>;
+  getAllAudiobookProjects(): Promise<AudiobookProject[]>;
+  updateAudiobookProject(id: number, data: Partial<AudiobookProject>): Promise<AudiobookProject | undefined>;
+  deleteAudiobookProject(id: number): Promise<void>;
+
+  // Audiobook Chapters
+  createAudiobookChapter(data: InsertAudiobookChapter): Promise<AudiobookChapter>;
+  getAudiobookChaptersByProject(projectId: number): Promise<AudiobookChapter[]>;
+  getAudiobookChapter(id: number): Promise<AudiobookChapter | undefined>;
+  updateAudiobookChapter(id: number, data: Partial<AudiobookChapter>): Promise<AudiobookChapter | undefined>;
+  deleteAudiobookChaptersByProject(projectId: number): Promise<void>;
 
   // Chat Sessions
   createChatSession(data: InsertChatSession): Promise<ChatSession>;
@@ -1162,6 +1179,54 @@ export class DatabaseStorage implements IStorage {
 
   async deleteGeneratedGuide(id: number): Promise<void> {
     await db.delete(generatedGuides).where(eq(generatedGuides.id, id));
+  }
+
+  async createAudiobookProject(data: InsertAudiobookProject): Promise<AudiobookProject> {
+    const [project] = await db.insert(audiobookProjects).values(data).returning();
+    return project;
+  }
+
+  async getAudiobookProject(id: number): Promise<AudiobookProject | undefined> {
+    const [project] = await db.select().from(audiobookProjects).where(eq(audiobookProjects.id, id));
+    return project;
+  }
+
+  async getAllAudiobookProjects(): Promise<AudiobookProject[]> {
+    return db.select().from(audiobookProjects).orderBy(desc(audiobookProjects.createdAt));
+  }
+
+  async updateAudiobookProject(id: number, data: Partial<AudiobookProject>): Promise<AudiobookProject | undefined> {
+    const [updated] = await db.update(audiobookProjects).set(data).where(eq(audiobookProjects.id, id)).returning();
+    return updated;
+  }
+
+  async deleteAudiobookProject(id: number): Promise<void> {
+    await db.delete(audiobookProjects).where(eq(audiobookProjects.id, id));
+  }
+
+  async createAudiobookChapter(data: InsertAudiobookChapter): Promise<AudiobookChapter> {
+    const [chapter] = await db.insert(audiobookChapters).values(data).returning();
+    return chapter;
+  }
+
+  async getAudiobookChaptersByProject(projectId: number): Promise<AudiobookChapter[]> {
+    return db.select().from(audiobookChapters)
+      .where(eq(audiobookChapters.projectId, projectId))
+      .orderBy(asc(audiobookChapters.chapterNumber));
+  }
+
+  async getAudiobookChapter(id: number): Promise<AudiobookChapter | undefined> {
+    const [chapter] = await db.select().from(audiobookChapters).where(eq(audiobookChapters.id, id));
+    return chapter;
+  }
+
+  async updateAudiobookChapter(id: number, data: Partial<AudiobookChapter>): Promise<AudiobookChapter | undefined> {
+    const [updated] = await db.update(audiobookChapters).set(data).where(eq(audiobookChapters.id, id)).returning();
+    return updated;
+  }
+
+  async deleteAudiobookChaptersByProject(projectId: number): Promise<void> {
+    await db.delete(audiobookChapters).where(eq(audiobookChapters.projectId, projectId));
   }
 }
 

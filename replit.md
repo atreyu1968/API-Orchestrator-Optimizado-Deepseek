@@ -139,6 +139,18 @@ Preferred communication style: Simple, everyday language.
 - **PostgreSQL**: Database accessed via `DATABASE_URL`.
 - **Drizzle Kit**: Used for database migrations.
 
+### TTS / Audiobook Services
+- **Fish Audio API**: `FISH_AUDIO_API_KEY` — TTS model `speech-1.6` for audiobook generation. Supports MP3/WAV/Opus output, voice cloning via `reference_id`, and prosody control (speed/volume).
+
+#### Audiobook Generation (v5.0)
+- Converts completed books (projects, reedit projects, imported manuscripts, translations) into audiobooks chapter by chapter using Fish Audio TTS API.
+- **Schema**: `audiobook_projects` (title, sourceType, sourceId, voiceId, voiceName, coverImage, format, bitrate, speed, status) + `audiobook_chapters` (chapterNumber, textContent, audioFileName, audioSizeBytes, status).
+- **Text chunking**: Splits chapters >9500 chars at sentence boundaries for API limits; concatenates audio buffers.
+- **API Routes**: `GET /api/audiobooks`, `GET /api/audiobooks/:id`, `GET /api/audiobooks/sources/available`, `GET /api/audiobooks/voices/list`, `POST /api/audiobooks` (with cover upload), `POST /api/audiobooks/:id/generate`, `POST /api/audiobooks/:id/generate-chapter/:chapterId`, `GET /api/audiobooks/:id/download` (ZIP), `GET /api/audiobooks/:id/chapter/:chapterId/audio`, `DELETE /api/audiobooks/:id`.
+- **ZIP download**: Includes all completed audio files, cover image (if uploaded), and `metadata.json` with chapter listing.
+- **Frontend**: `client/src/pages/audiobooks.tsx` — list/create/detail views. Create form includes source selection, Fish Audio voice picker, format/bitrate/speed sliders, cover upload. Detail view shows per-chapter progress, inline audio players, generate-all or per-chapter generation, and ZIP download.
+- Audio files stored in `./audiobooks/project_{id}/` directory.
+
 ### Key NPM Packages
 - `@google/genai`: Google Gemini AI SDK.
 - `drizzle-orm` / `drizzle-zod`: ORM and schema validation.
@@ -146,4 +158,5 @@ Preferred communication style: Simple, everyday language.
 - `@tanstack/react-query`: React asynchronous state management.
 - `wouter`: React routing library.
 - `mammoth`: .docx file parsing.
+- `archiver`: ZIP file creation for audiobook downloads.
 - Radix UI primitives: Accessible UI components.

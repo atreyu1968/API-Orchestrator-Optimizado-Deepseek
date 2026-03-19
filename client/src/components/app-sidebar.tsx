@@ -25,7 +25,8 @@ import {
   DollarSign,
   Edit3,
   Sparkles,
-  BookMarked
+  BookMarked,
+  Headphones
 } from "lucide-react";
 
 const mainNavItems = [
@@ -41,6 +42,7 @@ const translationsNavItems = [
   { title: "Reeditar Manuscrito", url: "/reedit", icon: Edit3 },
   { title: "Serie desde Importados", url: "/reedit-series", icon: BookMarked },
   { title: "Taller de Guías", url: "/guides", icon: Sparkles },
+  { title: "Audiolibros", url: "/audiobooks", icon: Headphones },
 ];
 
 const settingsNavItems = [

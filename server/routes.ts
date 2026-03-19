@@ -171,6 +171,19 @@ const upload = multer({
   }
 });
 
+const uploadImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Solo se permiten imágenes (JPEG, PNG, WebP, GIF)'));
+    }
+  }
+});
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -8119,6 +8132,596 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       res.json({ success: true, styleGuideId: newStyleGuide.id });
     } catch (error: any) {
       console.error("Error applying guide:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==========================================
+  // AUDIOBOOK ROUTES (Fish Audio TTS)
+  // ==========================================
+
+  const AUDIOBOOKS_DIR = process.env.LITAGENTS_AUDIOBOOKS_DIR || "./audiobooks";
+  const fs = await import("fs");
+  if (!fs.existsSync(AUDIOBOOKS_DIR)) {
+    fs.mkdirSync(AUDIOBOOKS_DIR, { recursive: true });
+  }
+
+  app.get("/api/audiobooks", async (_req: Request, res: Response) => {
+    try {
+      const projects = await storage.getAllAudiobookProjects();
+      res.json(projects);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/audiobooks/sources/available", async (_req: Request, res: Response) => {
+    try {
+      const allProjects = await storage.getAllProjects();
+      const allReedits = await storage.getAllReeditProjects();
+      const allTranslations = (await import("@shared/schema")).translations;
+      const { db } = await import("./db");
+      const { desc } = await import("drizzle-orm");
+      const translationRows = await db.select().from(allTranslations).orderBy(desc(allTranslations.createdAt));
+
+      const sources: any[] = [];
+
+      for (const p of allProjects) {
+        if (p.status === "completed") {
+          sources.push({
+            sourceType: "project",
+            sourceId: p.id,
+            title: p.title,
+            chapters: p.totalChapters || 0,
+            language: "es",
+          });
+        }
+      }
+
+      for (const r of allReedits) {
+        if (r.status === "completed") {
+          sources.push({
+            sourceType: "reedit",
+            sourceId: r.id,
+            title: r.title,
+            chapters: r.totalChapters || 0,
+            language: "es",
+          });
+        }
+      }
+
+      const importedMs = await storage.getAllImportedManuscripts();
+      for (const m of importedMs) {
+        if (m.status === "completed") {
+          sources.push({
+            sourceType: "imported",
+            sourceId: m.id,
+            title: m.title,
+            chapters: m.totalChapters || 0,
+            language: "es",
+          });
+        }
+      }
+
+      for (const t of translationRows) {
+        if (t.status === "completed") {
+          sources.push({
+            sourceType: "translation",
+            sourceId: t.id,
+            title: t.title || `Translation #${t.id}`,
+            chapters: t.totalChapters || 0,
+            language: t.targetLanguage || "en",
+          });
+        }
+      }
+
+      res.json(sources);
+    } catch (error: any) {
+      console.error("[Audiobook] Error listing sources:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/audiobooks/voices/list", async (_req: Request, res: Response) => {
+    try {
+      const apiKey = process.env.FISH_AUDIO_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "FISH_AUDIO_API_KEY not configured" });
+
+      const response = await fetch("https://api.fish.audio/model", {
+        headers: { "Authorization": `Bearer ${apiKey}` },
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: "Failed to fetch voices from Fish Audio" });
+      }
+
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      console.error("[Audiobook] Error fetching voices:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/audiobooks/:id", async (req: Request, res: Response) => {
+    try {
+      const project = await storage.getAudiobookProject(Number(req.params.id));
+      if (!project) return res.status(404).json({ error: "Audiobook project not found" });
+      const chapters = await storage.getAudiobookChaptersByProject(project.id);
+      res.json({ ...project, chapters });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/audiobooks", uploadImage.single("coverImage"), async (req: Request, res: Response) => {
+    try {
+      const { title, sourceType, sourceId, voiceId, voiceName, format, bitrate, speed, sourceLanguage } = req.body;
+      if (!title || !sourceType || !sourceId || !voiceId) {
+        return res.status(400).json({ error: "Missing required fields: title, sourceType, sourceId, voiceId" });
+      }
+
+      const validSourceTypes = ["project", "reedit", "imported", "translation"];
+      if (!validSourceTypes.includes(sourceType)) {
+        return res.status(400).json({ error: "Invalid sourceType" });
+      }
+
+      const validFormats = ["mp3", "wav", "opus"];
+      if (format && !validFormats.includes(format)) {
+        return res.status(400).json({ error: "Invalid format" });
+      }
+
+      let coverImage: string | null = null;
+      if (req.file) {
+        const coverDir = path.join(AUDIOBOOKS_DIR, "covers");
+        if (!fs.existsSync(coverDir)) fs.mkdirSync(coverDir, { recursive: true });
+        const ext = path.extname(req.file.originalname).toLowerCase().replace(/[^a-z.]/g, '') || '.jpg';
+        const safeExts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+        const finalExt = safeExts.includes(ext) ? ext : '.jpg';
+        const coverFilename = `cover_${Date.now()}${finalExt}`;
+        const coverPath = path.join(coverDir, coverFilename);
+        const resolvedCover = path.resolve(coverPath);
+        const resolvedDir = path.resolve(coverDir);
+        if (!resolvedCover.startsWith(resolvedDir + path.sep)) {
+          return res.status(400).json({ error: "Invalid cover filename" });
+        }
+        fs.writeFileSync(coverPath, req.file.buffer);
+        coverImage = coverFilename;
+      }
+
+      let chaptersData: { number: number; title: string; content: string }[] = [];
+      const sid = Number(sourceId);
+
+      if (sourceType === "project") {
+        const chapters = await storage.getChaptersByProject(sid);
+        chaptersData = chapters
+          .filter(c => c.content && c.content.trim().length > 0)
+          .sort((a, b) => a.chapterNumber - b.chapterNumber)
+          .map(c => ({ number: c.chapterNumber, title: c.title || `Capítulo ${c.chapterNumber}`, content: c.content! }));
+      } else if (sourceType === "reedit") {
+        const chapters = await storage.getReeditChaptersByProject(sid);
+        chaptersData = chapters
+          .filter(c => c.editedContent && c.editedContent.trim().length > 0)
+          .sort((a, b) => a.chapterNumber - b.chapterNumber)
+          .map(c => ({ number: c.chapterNumber, title: c.chapterTitle || `Capítulo ${c.chapterNumber}`, content: c.editedContent! }));
+      } else if (sourceType === "imported") {
+        const importedChaptersTable = (await import("@shared/schema")).importedChapters;
+        const { db: dbImport } = await import("./db");
+        const { eq, asc } = await import("drizzle-orm");
+        const chapters = await dbImport.select().from(importedChaptersTable)
+          .where(eq(importedChaptersTable.manuscriptId, sid))
+          .orderBy(asc(importedChaptersTable.chapterNumber));
+        chaptersData = chapters
+          .filter(c => c.content && c.content.trim().length > 0)
+          .map(c => ({ number: c.chapterNumber, title: c.title || `Capítulo ${c.chapterNumber}`, content: c.content! }));
+      } else if (sourceType === "translation") {
+        const translationsTable = (await import("@shared/schema")).translations;
+        const { db: dbTrans } = await import("./db");
+        const { eq } = await import("drizzle-orm");
+        const [translation] = await dbTrans.select().from(translationsTable).where(eq(translationsTable.id, sid));
+        if (translation && translation.translatedChapters) {
+          const translatedChapters = typeof translation.translatedChapters === 'string'
+            ? JSON.parse(translation.translatedChapters)
+            : translation.translatedChapters;
+          if (Array.isArray(translatedChapters)) {
+            chaptersData = translatedChapters.map((c: any, idx: number) => ({
+              number: idx + 1,
+              title: c.title || c.chapterTitle || `Chapter ${idx + 1}`,
+              content: c.content || c.translatedContent || '',
+            })).filter(c => c.content.trim().length > 0);
+          }
+        }
+      }
+
+      if (chaptersData.length === 0) {
+        return res.status(400).json({ error: "No chapters found in the selected source" });
+      }
+
+      const project = await storage.createAudiobookProject({
+        title,
+        sourceType,
+        sourceId: sid,
+        sourceLanguage: sourceLanguage || "es",
+        voiceId,
+        voiceName: voiceName || null,
+        coverImage,
+        totalChapters: chaptersData.length,
+        format: format || "mp3",
+        bitrate: bitrate ? Number(bitrate) : 128,
+        speed: speed ? parseFloat(speed) : 1.0,
+      });
+
+      for (const ch of chaptersData) {
+        await storage.createAudiobookChapter({
+          projectId: project.id,
+          chapterNumber: ch.number,
+          chapterTitle: ch.title,
+          textContent: ch.content,
+          audioFileName: null,
+          audioDurationSeconds: null,
+          audioSizeBytes: null,
+          errorMessage: null,
+        });
+      }
+
+      const fullProject = await storage.getAudiobookProject(project.id);
+      const chapters = await storage.getAudiobookChaptersByProject(project.id);
+      res.json({ ...fullProject, chapters });
+    } catch (error: any) {
+      console.error("[Audiobook] Error creating project:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/audiobooks/:id/generate", async (req: Request, res: Response) => {
+    try {
+      const apiKey = process.env.FISH_AUDIO_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "FISH_AUDIO_API_KEY not configured" });
+
+      const projectId = Number(req.params.id);
+      const project = await storage.getAudiobookProject(projectId);
+      if (!project) return res.status(404).json({ error: "Audiobook project not found" });
+
+      if (project.status === "processing") {
+        return res.status(409).json({ error: "Generation already in progress" });
+      }
+
+      await storage.updateAudiobookProject(projectId, { status: "processing", errorMessage: null });
+
+      res.json({ message: "Audio generation started", projectId });
+
+      const chapters = await storage.getAudiobookChaptersByProject(projectId);
+      const projectDir = path.join(AUDIOBOOKS_DIR, `project_${projectId}`);
+      if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
+
+      let completedCount = 0;
+      let hasError = false;
+
+      for (const chapter of chapters) {
+        if (chapter.status === "completed" && chapter.audioFileName) {
+          const audioPath = path.join(projectDir, chapter.audioFileName);
+          if (fs.existsSync(audioPath)) {
+            completedCount++;
+            continue;
+          }
+        }
+
+        try {
+          await storage.updateAudiobookChapter(chapter.id, { status: "processing", errorMessage: null });
+
+          const textContent = chapter.textContent
+            .replace(/<[^>]*>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          const MAX_CHARS = 9500;
+          const textChunks: string[] = [];
+          if (textContent.length <= MAX_CHARS) {
+            textChunks.push(textContent);
+          } else {
+            const sentences = textContent.match(/[^.!?]+[.!?]+/g) || [textContent];
+            let currentChunk = '';
+            for (const sentence of sentences) {
+              if ((currentChunk + sentence).length > MAX_CHARS && currentChunk.length > 0) {
+                textChunks.push(currentChunk.trim());
+                currentChunk = sentence;
+              } else {
+                currentChunk += sentence;
+              }
+            }
+            if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+          }
+
+          const audioBuffers: Buffer[] = [];
+
+          for (const chunk of textChunks) {
+            const ttsResponse = await fetch("https://api.fish.audio/v1/tts", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+                "model": "speech-1.6",
+              },
+              body: JSON.stringify({
+                text: chunk,
+                reference_id: project.voiceId,
+                format: project.format || "mp3",
+                mp3_bitrate: project.bitrate || 128,
+                prosody: {
+                  speed: project.speed || 1.0,
+                  volume: 0,
+                },
+                latency: "normal",
+              }),
+            });
+
+            if (!ttsResponse.ok) {
+              const errorText = await ttsResponse.text();
+              throw new Error(`Fish Audio API error (${ttsResponse.status}): ${errorText}`);
+            }
+
+            const arrayBuffer = await ttsResponse.arrayBuffer();
+            audioBuffers.push(Buffer.from(arrayBuffer));
+          }
+
+          const finalAudio = Buffer.concat(audioBuffers);
+          const audioFilename = `chapter_${String(chapter.chapterNumber).padStart(3, '0')}.${project.format || 'mp3'}`;
+          const audioPath = path.join(projectDir, audioFilename);
+          fs.writeFileSync(audioPath, finalAudio);
+
+          await storage.updateAudiobookChapter(chapter.id, {
+            status: "completed",
+            audioFileName: audioFilename,
+            audioSizeBytes: finalAudio.length,
+          });
+
+          completedCount++;
+          await storage.updateAudiobookProject(projectId, { completedChapters: completedCount });
+
+          console.log(`[Audiobook] Project ${projectId}: Chapter ${chapter.chapterNumber}/${chapters.length} completed (${finalAudio.length} bytes)`);
+        } catch (chapterError: any) {
+          console.error(`[Audiobook] Error generating chapter ${chapter.chapterNumber}:`, chapterError.message);
+          await storage.updateAudiobookChapter(chapter.id, {
+            status: "error",
+            errorMessage: chapterError.message,
+          });
+          hasError = true;
+        }
+      }
+
+      const finalStatus = hasError ? (completedCount > 0 ? "completed" : "error") : "completed";
+      await storage.updateAudiobookProject(projectId, {
+        status: finalStatus,
+        completedChapters: completedCount,
+        errorMessage: hasError ? "Some chapters failed to generate" : null,
+      });
+
+      console.log(`[Audiobook] Project ${projectId} ${finalStatus}: ${completedCount}/${chapters.length} chapters`);
+    } catch (error: any) {
+      console.error("[Audiobook] Error starting generation:", error);
+      const projectId = Number(req.params.id);
+      await storage.updateAudiobookProject(projectId, { status: "error", errorMessage: error.message }).catch(() => {});
+    }
+  });
+
+  app.post("/api/audiobooks/:id/generate-chapter/:chapterId", async (req: Request, res: Response) => {
+    try {
+      const apiKey = process.env.FISH_AUDIO_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "FISH_AUDIO_API_KEY not configured" });
+
+      const projectId = Number(req.params.id);
+      const chapterId = Number(req.params.chapterId);
+      const project = await storage.getAudiobookProject(projectId);
+      if (!project) return res.status(404).json({ error: "Audiobook project not found" });
+
+      const chapter = await storage.getAudiobookChapter(chapterId);
+      if (!chapter || chapter.projectId !== projectId) {
+        return res.status(404).json({ error: "Chapter not found" });
+      }
+
+      await storage.updateAudiobookChapter(chapterId, { status: "processing", errorMessage: null });
+
+      const textContent = chapter.textContent
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const MAX_CHARS = 9500;
+      const textChunks: string[] = [];
+      if (textContent.length <= MAX_CHARS) {
+        textChunks.push(textContent);
+      } else {
+        const sentences = textContent.match(/[^.!?]+[.!?]+/g) || [textContent];
+        let currentChunk = '';
+        for (const sentence of sentences) {
+          if ((currentChunk + sentence).length > MAX_CHARS && currentChunk.length > 0) {
+            textChunks.push(currentChunk.trim());
+            currentChunk = sentence;
+          } else {
+            currentChunk += sentence;
+          }
+        }
+        if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+      }
+
+      const audioBuffers: Buffer[] = [];
+      for (const chunk of textChunks) {
+        const ttsResponse = await fetch("https://api.fish.audio/v1/tts", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "model": "speech-1.6",
+          },
+          body: JSON.stringify({
+            text: chunk,
+            reference_id: project.voiceId,
+            format: project.format || "mp3",
+            mp3_bitrate: project.bitrate || 128,
+            prosody: { speed: project.speed || 1.0, volume: 0 },
+            latency: "normal",
+          }),
+        });
+
+        if (!ttsResponse.ok) {
+          const errorText = await ttsResponse.text();
+          throw new Error(`Fish Audio API error (${ttsResponse.status}): ${errorText}`);
+        }
+
+        const arrayBuffer = await ttsResponse.arrayBuffer();
+        audioBuffers.push(Buffer.from(arrayBuffer));
+      }
+
+      const finalAudio = Buffer.concat(audioBuffers);
+      const projectDir = path.join(AUDIOBOOKS_DIR, `project_${projectId}`);
+      if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
+
+      const audioFilename = `chapter_${String(chapter.chapterNumber).padStart(3, '0')}.${project.format || 'mp3'}`;
+      fs.writeFileSync(path.join(projectDir, audioFilename), finalAudio);
+
+      await storage.updateAudiobookChapter(chapterId, {
+        status: "completed",
+        audioFileName: audioFilename,
+        audioSizeBytes: finalAudio.length,
+      });
+
+      const allChapters = await storage.getAudiobookChaptersByProject(projectId);
+      const completed = allChapters.filter(c => c.status === "completed").length;
+      const hasErrors = allChapters.some(c => c.status === "error");
+      const allDone = allChapters.every(c => c.status === "completed" || c.status === "error");
+      const projectStatus = allDone
+        ? (hasErrors && completed === 0 ? "error" : "completed")
+        : project.status;
+      await storage.updateAudiobookProject(projectId, { completedChapters: completed, status: projectStatus });
+
+      res.json({ message: "Chapter generated", chapterId, audioFilename, size: finalAudio.length });
+    } catch (error: any) {
+      console.error("[Audiobook] Error generating single chapter:", error);
+      const chapterId = Number(req.params.chapterId);
+      await storage.updateAudiobookChapter(chapterId, { status: "error", errorMessage: error.message }).catch(() => {});
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/audiobooks/:id/download", async (req: Request, res: Response) => {
+    try {
+      const projectId = Number(req.params.id);
+      const project = await storage.getAudiobookProject(projectId);
+      if (!project) return res.status(404).json({ error: "Audiobook project not found" });
+
+      const chapters = await storage.getAudiobookChaptersByProject(projectId);
+      const completedChapters = chapters.filter(c => c.status === "completed" && c.audioFileName);
+      if (completedChapters.length === 0) {
+        return res.status(400).json({ error: "No completed audio chapters to download" });
+      }
+
+      const projectDir = path.join(AUDIOBOOKS_DIR, `project_${projectId}`);
+      const archiver = (await import("archiver")).default;
+      const archive = archiver("zip", { zlib: { level: 5 } });
+
+      const safeTitle = project.title.replace(/[^a-zA-Z0-9\u00C0-\u024F _-]/g, "_");
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}_audiobook.zip"`);
+
+      archive.pipe(res);
+
+      for (const ch of completedChapters) {
+        const audioPath = path.join(projectDir, ch.audioFileName!);
+        if (fs.existsSync(audioPath)) {
+          archive.file(audioPath, { name: ch.audioFileName! });
+        }
+      }
+
+      if (project.coverImage) {
+        const coverPath = path.join(AUDIOBOOKS_DIR, "covers", project.coverImage);
+        if (fs.existsSync(coverPath)) {
+          archive.file(coverPath, { name: `cover_${path.extname(project.coverImage)}` });
+        }
+      }
+
+      const metadata = {
+        title: project.title,
+        sourceType: project.sourceType,
+        language: project.sourceLanguage,
+        voiceId: project.voiceId,
+        voiceName: project.voiceName,
+        format: project.format,
+        totalChapters: completedChapters.length,
+        chapters: completedChapters.map(c => ({
+          number: c.chapterNumber,
+          title: c.chapterTitle,
+          file: c.audioFileName,
+          sizeBytes: c.audioSizeBytes,
+        })),
+        generatedAt: new Date().toISOString(),
+      };
+      archive.append(JSON.stringify(metadata, null, 2), { name: "metadata.json" });
+
+      await archive.finalize();
+    } catch (error: any) {
+      console.error("[Audiobook] Error creating ZIP:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: error.message });
+      }
+    }
+  });
+
+  app.get("/api/audiobooks/:id/chapter/:chapterId/audio", async (req: Request, res: Response) => {
+    try {
+      const projectId = Number(req.params.id);
+      const chapterId = Number(req.params.chapterId);
+      const chapter = await storage.getAudiobookChapter(chapterId);
+      if (!chapter || chapter.projectId !== projectId || !chapter.audioFileName) {
+        return res.status(404).json({ error: "Audio file not found" });
+      }
+
+      const audioPath = path.join(AUDIOBOOKS_DIR, `project_${projectId}`, chapter.audioFileName);
+      if (!fs.existsSync(audioPath)) {
+        return res.status(404).json({ error: "Audio file not found on disk" });
+      }
+
+      const project = await storage.getAudiobookProject(projectId);
+      const ext = project?.format || "mp3";
+      const mimeTypes: Record<string, string> = {
+        mp3: "audio/mpeg",
+        wav: "audio/wav",
+        opus: "audio/opus",
+      };
+
+      res.setHeader("Content-Type", mimeTypes[ext] || "audio/mpeg");
+      res.setHeader("Content-Disposition", `inline; filename="${chapter.audioFileName}"`);
+      const fileStream = fs.createReadStream(audioPath);
+      fileStream.pipe(res);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/audiobooks/:id", async (req: Request, res: Response) => {
+    try {
+      const projectId = Number(req.params.id);
+      const project = await storage.getAudiobookProject(projectId);
+      if (!project) return res.status(404).json({ error: "Audiobook project not found" });
+
+      const projectDir = path.join(AUDIOBOOKS_DIR, `project_${projectId}`);
+      if (fs.existsSync(projectDir)) {
+        fs.rmSync(projectDir, { recursive: true, force: true });
+      }
+
+      if (project.coverImage) {
+        const coverPath = path.join(AUDIOBOOKS_DIR, "covers", project.coverImage);
+        if (fs.existsSync(coverPath)) fs.unlinkSync(coverPath);
+      }
+
+      await storage.deleteAudiobookProject(projectId);
+      res.json({ message: "Audiobook project deleted" });
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, serial, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, serial, timestamp, jsonb, boolean, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -705,5 +705,56 @@ export const insertGeneratedGuideSchema = createInsertSchema(generatedGuides).om
 
 export type GeneratedGuide = typeof generatedGuides.$inferSelect;
 export type InsertGeneratedGuide = z.infer<typeof insertGeneratedGuideSchema>;
+
+export const audiobookProjects = pgTable("audiobook_projects", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  sourceType: text("source_type").notNull(), // project | reedit | imported | translation
+  sourceId: integer("source_id").notNull(),
+  sourceLanguage: text("source_language").default("es"),
+  voiceId: text("voice_id").notNull(),
+  voiceName: text("voice_name"),
+  coverImage: text("cover_image"),
+  totalChapters: integer("total_chapters").default(0),
+  completedChapters: integer("completed_chapters").default(0),
+  status: text("status").notNull().default("pending"), // pending | processing | completed | error | paused
+  errorMessage: text("error_message"),
+  format: text("format").default("mp3"),
+  bitrate: integer("bitrate").default(128),
+  speed: real("speed").default(1.0),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const audiobookChapters = pgTable("audiobook_chapters", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => audiobookProjects.id, { onDelete: "cascade" }),
+  chapterNumber: integer("chapter_number").notNull(),
+  chapterTitle: text("chapter_title"),
+  textContent: text("text_content").notNull(),
+  audioFileName: text("audio_file_name"),
+  audioDurationSeconds: integer("audio_duration_seconds"),
+  audioSizeBytes: integer("audio_size_bytes"),
+  status: text("status").notNull().default("pending"), // pending | processing | completed | error
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertAudiobookProjectSchema = createInsertSchema(audiobookProjects).omit({
+  id: true,
+  createdAt: true,
+  status: true,
+  completedChapters: true,
+});
+
+export const insertAudiobookChapterSchema = createInsertSchema(audiobookChapters).omit({
+  id: true,
+  createdAt: true,
+  status: true,
+});
+
+export type AudiobookProject = typeof audiobookProjects.$inferSelect;
+export type InsertAudiobookProject = z.infer<typeof insertAudiobookProjectSchema>;
+export type AudiobookChapter = typeof audiobookChapters.$inferSelect;
+export type InsertAudiobookChapter = z.infer<typeof insertAudiobookChapterSchema>;
 
 export * from "./models/chat";
