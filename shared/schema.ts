@@ -431,7 +431,8 @@ export const seriesArcMilestones = pgTable("series_arc_milestones", {
   description: text("description").notNull(),
   isRequired: boolean("is_required").notNull().default(true),
   isFulfilled: boolean("is_fulfilled").notNull().default(false),
-  fulfilledInProjectId: integer("fulfilled_in_project_id").references(() => projects.id, { onDelete: "set null" }),
+  fulfilledInProjectId: integer("fulfilled_in_project_id"),
+  fulfilledVolumeType: text("fulfilled_volume_type").default("project"),
   fulfilledInChapter: integer("fulfilled_in_chapter"),
   verificationNotes: text("verification_notes"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
@@ -456,7 +457,8 @@ export const seriesPlotThreads = pgTable("series_plot_threads", {
 export const seriesArcVerifications = pgTable("series_arc_verifications", {
   id: serial("id").primaryKey(),
   seriesId: integer("series_id").notNull().references(() => series.id, { onDelete: "cascade" }),
-  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull(),
+  volumeType: text("volume_type").default("project"),
   volumeNumber: integer("volume_number").notNull(),
   verificationDate: timestamp("verification_date").default(sql`CURRENT_TIMESTAMP`).notNull(),
   overallScore: integer("overall_score"), // 0-100 percentage

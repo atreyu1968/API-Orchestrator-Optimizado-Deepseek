@@ -4162,15 +4162,10 @@ IMPORTANTE:
   app.post("/api/series/:id/verify-project", async (req: Request, res: Response) => {
     try {
       const seriesId = parseInt(req.params.id);
-      const { projectId } = req.body;
+      const { projectId, volumeType } = req.body;
       
       if (!projectId) {
         return res.status(400).json({ error: "projectId is required" });
-      }
-
-      const project = await storage.getProject(projectId);
-      if (!project) {
-        return res.status(404).json({ error: "Project not found" });
       }
 
       const series = await storage.getSeries(seriesId);
@@ -4178,18 +4173,70 @@ IMPORTANTE:
         return res.status(404).json({ error: "Series not found" });
       }
 
-      const chapters = await storage.getChaptersByProject(projectId);
-      const worldBible = await storage.getWorldBibleByProject(projectId);
+      let projectTitle = "";
+      let volumeNumber = 1;
+      let worldBible: any = null;
+      let chaptersList: { chapterNumber: number; title: string | null; content: string | null; status?: string; wordCount?: number }[] = [];
+
+      if (volumeType === "reedit") {
+        const reeditProject = await storage.getReeditProject(projectId);
+        if (!reeditProject) return res.status(404).json({ error: "Reedit project not found" });
+        projectTitle = reeditProject.title;
+        volumeNumber = reeditProject.seriesOrder || 1;
+        const chapters = await storage.getReeditChaptersByProject(projectId);
+        chaptersList = chapters.map(c => ({
+          chapterNumber: c.chapterNumber,
+          title: c.chapterTitle,
+          content: c.editedContent || c.originalContent,
+          wordCount: (c.editedContent || c.originalContent || "").split(/\s+/).length,
+        }));
+      } else if (volumeType === "imported") {
+        const importedChaptersTable = (await import("@shared/schema")).importedChapters;
+        const importedManuscriptsTable = (await import("@shared/schema")).importedManuscripts;
+        const { db: dbImport } = await import("./db");
+        const { eq } = await import("drizzle-orm");
+        const [manuscript] = await dbImport.select().from(importedManuscriptsTable).where(eq(importedManuscriptsTable.id, projectId));
+        if (!manuscript) return res.status(404).json({ error: "Imported manuscript not found" });
+        projectTitle = manuscript.title;
+        volumeNumber = manuscript.seriesOrder || 1;
+        const chapters = await dbImport.select().from(importedChaptersTable).where(eq(importedChaptersTable.manuscriptId, projectId));
+        chaptersList = chapters.map(c => ({
+          chapterNumber: c.chapterNumber,
+          title: c.title,
+          content: c.content,
+          wordCount: (c.content || "").split(/\s+/).length,
+        }));
+      } else {
+        const project = await storage.getProject(projectId);
+        if (!project) return res.status(404).json({ error: "Project not found" });
+        projectTitle = project.title;
+        volumeNumber = project.seriesOrder || 1;
+        worldBible = await storage.getWorldBibleByProject(projectId);
+        const chapters = await storage.getChaptersByProject(projectId);
+        chaptersList = chapters.map(c => ({
+          chapterNumber: c.chapterNumber,
+          title: c.title,
+          content: c.content,
+          status: c.status,
+          wordCount: c.wordCount || (c.content?.split(/\s+/).length || 0),
+        }));
+      }
+
       const milestones = await storage.getMilestonesBySeries(seriesId);
       const threads = await storage.getPlotThreadsBySeries(seriesId);
 
-      const sortedChapters = chapters.sort((a: any, b: any) => a.chapterNumber - b.chapterNumber);
+      const sortedChapters = chaptersList.sort((a, b) => {
+        const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
+        const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
+        return orderA - orderB;
+      });
       const totalChapters = sortedChapters.length;
-      const chaptersWithContent = sortedChapters.filter((c: any) => c.content && c.content.length > 50);
+      const chaptersWithContent = sortedChapters.filter(c => c.content && c.content.length > 50);
       
-      const chaptersSummary = sortedChapters.map((c: any) => {
+      const chaptersSummary = sortedChapters.map((c) => {
         const chapterLabel = c.chapterNumber === 0 ? "Prólogo" : 
                             c.chapterNumber === -1 ? "Epílogo" : 
+                            c.chapterNumber === -2 ? "Nota del Autor" :
                             `Capítulo ${c.chapterNumber}`;
         const title = c.title ? `: ${c.title}` : "";
         const wordCount = c.wordCount || (c.content?.split(/\s+/).length || 0);
@@ -4204,15 +4251,15 @@ IMPORTANTE:
         return `${chapterLabel}${title} (${wordCount} palabras)\n${contentPreview}${isTruncated ? "\n[...contenido truncado para verificación...]" : ""}`;
       }).join("\n\n---\n\n");
       
-      console.log(`[Arc Verification] Building summary: ${totalChapters} chapters, ${chaptersWithContent.length} with content`);
+      console.log(`[Arc Verification] Building summary for ${volumeType || "project"}: ${totalChapters} chapters, ${chaptersWithContent.length} with content`);
 
       const { ArcValidatorAgent } = await import("./agents/arc-validator");
       const arcValidator = new ArcValidatorAgent();
       
       const result = await arcValidator.execute({
-        projectTitle: project.title,
+        projectTitle: projectTitle,
         seriesTitle: series.title,
-        volumeNumber: project.seriesOrder || 1,
+        volumeNumber: volumeNumber,
         totalVolumes: series.totalPlannedBooks || 10,
         chaptersSummary,
         milestones,
@@ -4224,7 +4271,8 @@ IMPORTANTE:
         const verification = await storage.createArcVerification({
           seriesId,
           projectId,
-          volumeNumber: project.seriesOrder || 1,
+          volumeType: volumeType || "project",
+          volumeNumber: volumeNumber,
           status: result.result.passed ? "passed" : "needs_attention",
           overallScore: result.result.overallScore,
           milestonesChecked: result.result.milestonesChecked,
@@ -4240,6 +4288,7 @@ IMPORTANTE:
             await storage.updateMilestone(mv.milestoneId, {
               isFulfilled: true,
               fulfilledInProjectId: projectId,
+              fulfilledVolumeType: volumeType || "project",
               fulfilledInChapter: mv.fulfilledInChapter,
               verificationNotes: mv.verificationNotes,
             });
@@ -4250,7 +4299,7 @@ IMPORTANTE:
           if (tp.currentStatus !== "active") {
             await storage.updatePlotThread(tp.threadId, {
               status: tp.currentStatus,
-              resolvedVolume: tp.resolvedInVolume ? project.seriesOrder : undefined,
+              resolvedVolume: tp.resolvedInVolume ? volumeNumber : undefined,
               resolvedChapter: tp.resolvedInChapter,
             });
           }
@@ -4277,15 +4326,10 @@ IMPORTANTE:
   app.post("/api/series/:id/apply-corrections", async (req: Request, res: Response) => {
     try {
       const seriesId = parseInt(req.params.id);
-      const { projectId, corrections } = req.body;
+      const { projectId, volumeType, corrections } = req.body;
 
       if (!projectId || !corrections || !corrections.length) {
         return res.status(400).json({ error: "projectId and corrections array required" });
-      }
-
-      const project = await storage.getProject(projectId);
-      if (!project) {
-        return res.status(404).json({ error: "Project not found" });
       }
 
       const series = await storage.getSeries(seriesId);
@@ -4304,8 +4348,23 @@ IMPORTANTE:
       for (const correction of corrections) {
         const { chapterNumber, instruction, milestoneId } = correction;
         
-        const chapters = await storage.getChaptersByProject(projectId);
-        const chapter = chapters.find((c: any) => c.chapterNumber === chapterNumber);
+        let chapter: any = null;
+        if (volumeType === "reedit") {
+          const chapters = await storage.getReeditChaptersByProject(projectId);
+          chapter = chapters.find(c => c.chapterNumber === chapterNumber);
+          if (chapter) chapter = { ...chapter, content: chapter.editedContent || chapter.originalContent, _sourceType: "reedit" };
+        } else if (volumeType === "imported") {
+          const importedChaptersTable = (await import("@shared/schema")).importedChapters;
+          const { db: dbImport } = await import("./db");
+          const { eq } = await import("drizzle-orm");
+          const chapters = await dbImport.select().from(importedChaptersTable).where(eq(importedChaptersTable.manuscriptId, projectId));
+          chapter = chapters.find(c => c.chapterNumber === chapterNumber);
+          if (chapter) chapter = { ...chapter, _sourceType: "imported" };
+        } else {
+          const chapters = await storage.getChaptersByProject(projectId);
+          chapter = chapters.find((c: any) => c.chapterNumber === chapterNumber);
+          if (chapter) chapter = { ...chapter, _sourceType: "project" };
+        }
         
         if (!chapter) {
           results.push({ chapterNumber, success: false, error: "Chapter not found" });
@@ -4398,17 +4457,23 @@ Añade contenido narrativo explícito que cumpla este requisito, manteniendo tod
           }
         }
         
-        // Save the final result
         if (lastResult?.result?.texto_final) {
-          await storage.updateChapter(chapter.id, {
-            content: currentContent,
-            status: "completed", // Always mark completed - the correction was applied
-          });
+          if (chapter._sourceType === "reedit") {
+            await storage.updateReeditChapter(chapter.id, { editedContent: currentContent });
+          } else if (chapter._sourceType === "imported") {
+            const importedChaptersTable = (await import("@shared/schema")).importedChapters;
+            const { db: dbImport } = await import("./db");
+            const { eq } = await import("drizzle-orm");
+            await dbImport.update(importedChaptersTable).set({ content: currentContent }).where(eq(importedChaptersTable.id, chapter.id));
+          } else {
+            await storage.updateChapter(chapter.id, { content: currentContent, status: "completed" });
+          }
           
           if (milestoneId && milestone) {
             await storage.updateMilestone(milestoneId, {
               isFulfilled: verificationPassed,
               fulfilledInProjectId: projectId,
+              fulfilledVolumeType: volumeType || "project",
               fulfilledInChapter: chapterNumber,
               verificationNotes: verificationPassed 
                 ? `Corregido y verificado (${attempts} intentos)` 
@@ -4451,15 +4516,10 @@ Añade contenido narrativo explícito que cumpla este requisito, manteniendo tod
   app.post("/api/series/:id/structural-rewrite", async (req: Request, res: Response) => {
     try {
       const seriesId = parseInt(req.params.id);
-      const { projectId, chapterNumbers, structuralInstructions } = req.body;
+      const { projectId, volumeType, chapterNumbers, structuralInstructions } = req.body;
 
       if (!projectId || !chapterNumbers?.length || !structuralInstructions) {
         return res.status(400).json({ error: "projectId, chapterNumbers array, and structuralInstructions required" });
-      }
-
-      const project = await storage.getProject(projectId);
-      if (!project) {
-        return res.status(404).json({ error: "Project not found" });
       }
 
       const series = await storage.getSeries(seriesId);
@@ -4467,17 +4527,57 @@ Añade contenido narrativo explícito que cumpla este requisito, manteniendo tod
         return res.status(404).json({ error: "Series not found" });
       }
 
-      const worldBible = await storage.getWorldBibleByProject(projectId);
-      const styleGuide = project.styleGuideId ? await storage.getStyleGuide(project.styleGuideId) : null;
-      
+      let projectTitle = "";
+      let projectTone = "";
+      let projectGenre = "";
+      let worldBible: any = null;
+      let styleGuide: any = null;
+
+      if (volumeType === "reedit") {
+        const reeditProject = await storage.getReeditProject(projectId);
+        if (!reeditProject) return res.status(404).json({ error: "Reedit project not found" });
+        projectTitle = reeditProject.title;
+        if (reeditProject.styleGuideId) styleGuide = await storage.getStyleGuide(reeditProject.styleGuideId);
+      } else if (volumeType === "imported") {
+        const importedManuscriptsTable = (await import("@shared/schema")).importedManuscripts;
+        const { db: dbImport } = await import("./db");
+        const { eq } = await import("drizzle-orm");
+        const [manuscript] = await dbImport.select().from(importedManuscriptsTable).where(eq(importedManuscriptsTable.id, projectId));
+        if (!manuscript) return res.status(404).json({ error: "Imported manuscript not found" });
+        projectTitle = manuscript.title;
+      } else {
+        const project = await storage.getProject(projectId);
+        if (!project) return res.status(404).json({ error: "Project not found" });
+        projectTitle = project.title;
+        projectTone = project.tone || "";
+        projectGenre = project.genre || "";
+        worldBible = await storage.getWorldBibleByProject(projectId);
+        if (project.styleGuideId) styleGuide = await storage.getStyleGuide(project.styleGuideId);
+      }
+
       const { GhostwriterAgent } = await import("./agents/ghostwriter");
       const ghostwriter = new GhostwriterAgent();
       
       const results: any[] = [];
       
       for (const chapterNumber of chapterNumbers) {
-        const chapters = await storage.getChaptersByProject(projectId);
-        const chapter = chapters.find((c: any) => c.chapterNumber === chapterNumber);
+        let chapter: any = null;
+        if (volumeType === "reedit") {
+          const chapters = await storage.getReeditChaptersByProject(projectId);
+          const found = chapters.find(c => c.chapterNumber === chapterNumber);
+          if (found) chapter = { id: found.id, chapterNumber: found.chapterNumber, title: found.chapterTitle, content: found.editedContent || found.originalContent, _sourceType: "reedit" };
+        } else if (volumeType === "imported") {
+          const importedChaptersTable = (await import("@shared/schema")).importedChapters;
+          const { db: dbImport } = await import("./db");
+          const { eq } = await import("drizzle-orm");
+          const chapters = await dbImport.select().from(importedChaptersTable).where(eq(importedChaptersTable.manuscriptId, projectId));
+          const found = chapters.find(c => c.chapterNumber === chapterNumber);
+          if (found) chapter = { ...found, _sourceType: "imported" };
+        } else {
+          const chapters = await storage.getChaptersByProject(projectId);
+          const found = chapters.find((c: any) => c.chapterNumber === chapterNumber);
+          if (found) chapter = { ...found, _sourceType: "project" };
+        }
         
         if (!chapter) {
           results.push({ chapterNumber, success: false, error: "Chapter not found" });
@@ -4507,8 +4607,8 @@ Añade contenido narrativo explícito que cumpla este requisito, manteniendo tod
 
         const guiaEstilo = styleGuide?.content || `
 Estilo: Prosa profesional de bestseller internacional
-Tono: ${project.tone || "Dramático y envolvente"}
-Género: ${project.genre || "Ficción literaria"}
+Tono: ${projectTone || "Dramático y envolvente"}
+Género: ${projectGenre || "Ficción literaria"}
 
 INSTRUCCIONES ESPECIALES DE REESCRITURA:
 ${structuralInstructions}
@@ -4517,7 +4617,7 @@ CONTENIDO ORIGINAL DEL CAPÍTULO (para referencia y expansión):
 ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
 `;
 
-        console.log(`[StructuralRewrite] Rewriting ${chapterLabel} with instructions: ${structuralInstructions.substring(0, 100)}...`);
+        console.log(`[StructuralRewrite] Rewriting ${chapterLabel} (${volumeType || "project"}) with instructions: ${structuralInstructions.substring(0, 100)}...`);
 
         const result = await ghostwriter.execute({
           chapterNumber,
@@ -4530,11 +4630,16 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
         if ((result as any).result?.prose) {
           const newContent = (result as any).result.prose;
           
-          await storage.updateChapter(chapter.id, {
-            content: newContent,
-            status: "completed",
-            wordCount: newContent.split(/\s+/).length,
-          });
+          if (chapter._sourceType === "reedit") {
+            await storage.updateReeditChapter(chapter.id, { editedContent: newContent });
+          } else if (chapter._sourceType === "imported") {
+            const importedChaptersTable = (await import("@shared/schema")).importedChapters;
+            const { db: dbImport } = await import("./db");
+            const { eq } = await import("drizzle-orm");
+            await dbImport.update(importedChaptersTable).set({ content: newContent }).where(eq(importedChaptersTable.id, chapter.id));
+          } else {
+            await storage.updateChapter(chapter.id, { content: newContent, status: "completed", wordCount: newContent.split(/\s+/).length });
+          }
 
           results.push({ 
             chapterNumber, 

@@ -25,7 +25,16 @@ import {
   Pencil,
   LayoutTemplate
 } from "lucide-react";
-import type { SeriesArcMilestone, SeriesPlotThread, SeriesArcVerification, Project } from "@shared/schema";
+import type { SeriesArcMilestone, SeriesPlotThread, SeriesArcVerification } from "@shared/schema";
+
+interface SeriesVolume {
+  type: "project" | "imported" | "reedit";
+  id: number;
+  title: string;
+  seriesOrder: number | null;
+  status: string;
+  wordCount: number;
+}
 
 interface ArcVerificationPanelProps {
   seriesId: number;
@@ -52,12 +61,13 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
     importance: "major" as const,
   });
 
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [selectedVolumeKey, setSelectedVolumeKey] = useState<string>("");
   const [lastVerificationResult, setLastVerificationResult] = useState<any>(null);
 
-  const { data: projects = [] } = useQuery<Project[]>({
-    queryKey: [`/api/series/${seriesId}/projects`],
+  const { data: volumesData } = useQuery<{ volumes: SeriesVolume[] }>({
+    queryKey: [`/api/series/${seriesId}/volumes`],
   });
+  const volumes = volumesData?.volumes || [];
 
   const { data: milestones = [], isLoading: milestonesLoading } = useQuery<SeriesArcMilestone[]>({
     queryKey: [`/api/series/${seriesId}/milestones`],
@@ -125,9 +135,14 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
     },
   });
 
+  const parseVolumeKey = (key: string) => {
+    const [type, idStr] = key.split("-");
+    return { volumeType: type as "project" | "imported" | "reedit", volumeId: parseInt(idStr) };
+  };
+
   const verifyProjectMutation = useMutation({
-    mutationFn: async (projectId: number) => {
-      const response = await apiRequest("POST", `/api/series/${seriesId}/verify-project`, { projectId });
+    mutationFn: async ({ volumeType, volumeId }: { volumeType: string; volumeId: number }) => {
+      const response = await apiRequest("POST", `/api/series/${seriesId}/verify-project`, { projectId: volumeId, volumeType });
       return response.json();
     },
     onSuccess: (data) => {
@@ -147,8 +162,10 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
 
   const applyCorrectionssMutation = useMutation({
     mutationFn: async (corrections: any[]) => {
+      const { volumeType, volumeId } = parseVolumeKey(selectedVolumeKey);
       const response = await apiRequest("POST", `/api/series/${seriesId}/apply-corrections`, { 
-        projectId: parseInt(selectedProjectId), 
+        projectId: volumeId,
+        volumeType,
         corrections 
       });
       return response.json();
@@ -156,7 +173,7 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [`/api/series/${seriesId}/verifications`] });
       queryClient.invalidateQueries({ queryKey: [`/api/series/${seriesId}/milestones`] });
-      queryClient.invalidateQueries({ queryKey: ['/api/chapters', parseInt(selectedProjectId)] });
+      queryClient.invalidateQueries({ queryKey: [`/api/series/${seriesId}/volumes`] });
       setLastVerificationResult(null);
       
       const hasUnverified = data.needsReview > 0;
@@ -172,8 +189,10 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
 
   const structuralRewriteMutation = useMutation({
     mutationFn: async ({ chapterNumbers, instructions }: { chapterNumbers: number[], instructions: string }) => {
+      const { volumeType, volumeId } = parseVolumeKey(selectedVolumeKey);
       const response = await apiRequest("POST", `/api/series/${seriesId}/structural-rewrite`, { 
-        projectId: parseInt(selectedProjectId), 
+        projectId: volumeId,
+        volumeType,
         chapterNumbers,
         structuralInstructions: instructions
       });
@@ -181,7 +200,7 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [`/api/series/${seriesId}/verifications`] });
-      queryClient.invalidateQueries({ queryKey: ['/api/chapters', parseInt(selectedProjectId)] });
+      queryClient.invalidateQueries({ queryKey: [`/api/series/${seriesId}/volumes`] });
       toast({ 
         title: "Reescritura completada",
         description: data.message || `${data.totalRewritten} capitulos reescritos`
@@ -193,11 +212,12 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
   });
 
   const handleRunVerification = () => {
-    if (!selectedProjectId) {
-      toast({ title: "Error", description: "Selecciona un proyecto primero", variant: "destructive" });
+    if (!selectedVolumeKey) {
+      toast({ title: "Error", description: "Selecciona un volumen primero", variant: "destructive" });
       return;
     }
-    verifyProjectMutation.mutate(parseInt(selectedProjectId));
+    const { volumeType, volumeId } = parseVolumeKey(selectedVolumeKey);
+    verifyProjectMutation.mutate({ volumeType, volumeId });
   };
 
   const handleApplyCorrections = () => {
@@ -265,23 +285,26 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex-1 min-w-48">
             <Label className="text-sm text-muted-foreground mb-1 block">Proyecto a verificar</Label>
-            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+            <Select value={selectedVolumeKey} onValueChange={setSelectedVolumeKey}>
               <SelectTrigger data-testid="select-project-verify">
                 <SelectValue placeholder="Seleccionar volumen..." />
               </SelectTrigger>
               <SelectContent>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id.toString()}>
-                    Vol. {p.seriesOrder}: {p.title}
-                  </SelectItem>
-                ))}
+                {volumes.map((v) => {
+                  const typeLabel = v.type === "reedit" ? " [Re-editado]" : v.type === "imported" ? " [Importado]" : "";
+                  return (
+                    <SelectItem key={`${v.type}-${v.id}`} value={`${v.type}-${v.id}`}>
+                      Vol. {v.seriesOrder}: {v.title}{typeLabel}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
           <div className="flex gap-2 pt-5">
             <Button 
               onClick={handleRunVerification}
-              disabled={!selectedProjectId || verifyProjectMutation.isPending}
+              disabled={!selectedVolumeKey || verifyProjectMutation.isPending}
               data-testid="button-run-verification"
             >
               {verifyProjectMutation.isPending ? (
@@ -350,7 +373,7 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
                         size="sm"
                         variant="outline"
                         className="shrink-0 h-6 text-xs"
-                        disabled={structuralRewriteMutation.isPending || !selectedProjectId}
+                        disabled={structuralRewriteMutation.isPending || !selectedVolumeKey}
                         onClick={() => {
                           structuralRewriteMutation.mutate({
                             chapterNumbers: cf.affectedChapters?.length > 0 ? cf.affectedChapters : [1],
@@ -370,7 +393,7 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
                         size="sm"
                         variant="ghost"
                         className="shrink-0 h-6 text-xs"
-                        disabled={applyCorrectionssMutation.isPending || !selectedProjectId}
+                        disabled={applyCorrectionssMutation.isPending || !selectedVolumeKey}
                         onClick={() => {
                           applyCorrectionssMutation.mutate([{
                             chapterNumber: cf.affectedChapters?.[0] || 1,
@@ -403,7 +426,7 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
                       size="sm"
                       variant="ghost"
                       className="shrink-0 h-6 text-xs"
-                      disabled={applyCorrectionssMutation.isPending || !selectedProjectId}
+                      disabled={applyCorrectionssMutation.isPending || !selectedVolumeKey}
                       onClick={() => {
                         applyCorrectionssMutation.mutate([{
                           chapterNumber: 1,
