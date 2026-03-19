@@ -16,10 +16,10 @@ import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2, Pencil
 import { SERIES_WRITING_GUIDE_TEMPLATE, downloadTemplate } from "@/lib/writing-templates";
 import { ArcVerificationPanel } from "@/components/arc-verification-panel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { Pseudonym, Project, Series, ImportedManuscript } from "@shared/schema";
+import type { Pseudonym, Project, Series, ImportedManuscript, ReeditProject } from "@shared/schema";
 
 interface SeriesVolume {
-  type: "project" | "imported";
+  type: "project" | "imported" | "reedit";
   id: number;
   title: string;
   seriesOrder: number | null;
@@ -33,6 +33,7 @@ interface SeriesWithDetails extends Series {
   pseudonym: Pseudonym | null;
   projects: Project[];
   importedManuscripts?: ImportedManuscript[];
+  reeditProjects?: ReeditProject[];
   volumes?: SeriesVolume[];
   completedVolumes: number;
 }
@@ -58,6 +59,8 @@ export default function SeriesPage() {
   const [linkingSeriesId, setLinkingSeriesId] = useState<number | null>(null);
   const [linkManuscriptId, setLinkManuscriptId] = useState<string>("");
   const [linkSeriesOrder, setLinkSeriesOrder] = useState<number>(1);
+  const [linkType, setLinkType] = useState<"manuscript" | "reedit">("manuscript");
+  const [unlinkingVolume, setUnlinkingVolume] = useState<{ seriesId: number; volumeId: number; volumeType: string; title: string } | null>(null);
   
   const [uploadingVolumeSeriesId, setUploadingVolumeSeriesId] = useState<number | null>(null);
   const uploadingVolumeSeriesIdRef = useRef<number | null>(null);
@@ -73,6 +76,10 @@ export default function SeriesPage() {
   
   const { data: allManuscripts = [] } = useQuery<ImportedManuscript[]>({
     queryKey: ["/api/imported-manuscripts"],
+  });
+
+  const { data: allReeditProjects = [] } = useQuery<ReeditProject[]>({
+    queryKey: ["/api/reedit-projects"],
   });
 
   const createSeriesMutation = useMutation({
@@ -236,6 +243,49 @@ export default function SeriesPage() {
     },
   });
 
+  const linkReeditMutation = useMutation({
+    mutationFn: async ({ seriesId, reeditProjectId, seriesOrder }: { seriesId: number; reeditProjectId: number; seriesOrder: number }) => {
+      const response = await apiRequest("POST", `/api/series/${seriesId}/link-reedit`, { reeditProjectId, seriesOrder });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
+      setLinkingSeriesId(null);
+      setLinkManuscriptId("");
+      setLinkSeriesOrder(1);
+      toast({ title: "Volumen vinculado", description: "El libro reeditado ha sido añadido a la serie" });
+    },
+    onError: async (error: any) => {
+      let details = "No se pudo vincular el libro reeditado";
+      try {
+        if (error?.response) {
+          const data = await error.response.json();
+          details = data.error || details;
+        }
+      } catch { /* ignore */ }
+      toast({ title: "Error", description: details, variant: "destructive" });
+    },
+  });
+
+  const unlinkVolumeMutation = useMutation({
+    mutationFn: async ({ seriesId, volumeId, volumeType }: { seriesId: number; volumeId: number; volumeType: string }) => {
+      const response = await apiRequest("POST", `/api/series/${seriesId}/unlink-volume`, { volumeId, volumeType });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/imported-manuscripts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setUnlinkingVolume(null);
+      toast({ title: "Volumen desvinculado", description: "El libro ha sido eliminado de la serie" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo desvincular el volumen", variant: "destructive" });
+    },
+  });
+
   const uploadVolumeMutation = useMutation({
     mutationFn: async ({ seriesId, file }: { seriesId: number; file: File }) => {
       const formData = new FormData();
@@ -333,18 +383,27 @@ export default function SeriesPage() {
     },
   });
 
-  const handleLinkManuscript = () => {
+  const handleLinkVolume = () => {
     if (!linkingSeriesId || !linkManuscriptId) return;
-    linkManuscriptMutation.mutate({
-      seriesId: linkingSeriesId,
-      manuscriptId: parseInt(linkManuscriptId),
-      seriesOrder: linkSeriesOrder,
-    });
+    if (linkType === "reedit") {
+      linkReeditMutation.mutate({
+        seriesId: linkingSeriesId,
+        reeditProjectId: parseInt(linkManuscriptId),
+        seriesOrder: linkSeriesOrder,
+      });
+    } else {
+      linkManuscriptMutation.mutate({
+        seriesId: linkingSeriesId,
+        manuscriptId: parseInt(linkManuscriptId),
+        seriesOrder: linkSeriesOrder,
+      });
+    }
   };
 
   const openLinkModal = async (seriesId: number) => {
     setLinkingSeriesId(seriesId);
     setLinkManuscriptId("");
+    setLinkType("manuscript");
     
     try {
       const response = await fetch(`/api/series/${seriesId}/volumes`, { credentials: "include" });
@@ -360,6 +419,8 @@ export default function SeriesPage() {
   };
 
   const availableManuscriptsForLinking = allManuscripts.filter(m => !m.seriesId);
+  const availableReeditsForLinking = allReeditProjects.filter(rp => !rp.seriesId);
+  const hasAvailableVolumes = availableManuscriptsForLinking.length > 0 || availableReeditsForLinking.length > 0;
 
   const handleCreateSeries = () => {
     if (!newTitle.trim()) return;
@@ -811,7 +872,7 @@ export default function SeriesPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => openLinkModal(s.id)}
-                        disabled={availableManuscriptsForLinking.length === 0}
+                        disabled={!hasAvailableVolumes}
                         data-testid={`button-link-manuscript-${s.id}`}
                       >
                         <Link2 className="h-4 w-4 mr-2" />
@@ -845,10 +906,20 @@ export default function SeriesPage() {
                                 Importado
                               </Badge>
                             )}
+                            {vol.type === "reedit" && (
+                              <Badge variant="secondary" className="shrink-0 text-violet-600 dark:text-violet-400">
+                                <Pencil className="h-3 w-3 mr-1" />
+                                Re-editado
+                              </Badge>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             {vol.type === "project" ? (
                               <Badge className={statusColors[vol.status] || ""}>
+                                {statusLabels[vol.status] || vol.status}
+                              </Badge>
+                            ) : vol.type === "reedit" ? (
+                              <Badge variant="outline" className={vol.status === "completed" ? "text-green-600 dark:text-green-400" : ""}>
                                 {statusLabels[vol.status] || vol.status}
                               </Badge>
                             ) : (
@@ -891,6 +962,15 @@ export default function SeriesPage() {
                                 {vol.wordCount.toLocaleString()} palabras
                               </Badge>
                             )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => setUnlinkingVolume({ seriesId: s.id, volumeId: vol.id, volumeType: vol.type, title: vol.title })}
+                              data-testid={`button-unlink-volume-${vol.type}-${vol.id}`}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
                           </div>
                         </div>
                       ))}
@@ -932,6 +1012,23 @@ export default function SeriesPage() {
         }}
       />
 
+      <ConfirmDialog
+        open={unlinkingVolume !== null}
+        onOpenChange={(open) => !open && setUnlinkingVolume(null)}
+        title="Desvincular Volumen"
+        description={`¿Quieres eliminar "${unlinkingVolume?.title}" de esta serie? El libro no se borrara, solo se desvinculara.`}
+        confirmText="Desvincular"
+        onConfirm={() => {
+          if (unlinkingVolume) {
+            unlinkVolumeMutation.mutate({
+              seriesId: unlinkingVolume.seriesId,
+              volumeId: unlinkingVolume.volumeId,
+              volumeType: unlinkingVolume.volumeType,
+            });
+          }
+        }}
+      />
+
       <Dialog open={linkingSeriesId !== null} onOpenChange={(open) => !open && setLinkingSeriesId(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -939,22 +1036,47 @@ export default function SeriesPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Manuscrito Importado</Label>
-              <Select value={linkManuscriptId} onValueChange={setLinkManuscriptId}>
-                <SelectTrigger data-testid="select-link-manuscript">
-                  <SelectValue placeholder="Seleccionar manuscrito..." />
+              <Label>Tipo de Libro</Label>
+              <Select value={linkType} onValueChange={(v) => { setLinkType(v as "manuscript" | "reedit"); setLinkManuscriptId(""); }}>
+                <SelectTrigger data-testid="select-link-type">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableManuscriptsForLinking.map((m) => (
-                    <SelectItem key={m.id} value={m.id.toString()}>
-                      {m.title} ({m.totalChapters} caps.)
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="manuscript">Manuscrito Importado</SelectItem>
+                  <SelectItem value="reedit">Libro Re-editado</SelectItem>
                 </SelectContent>
               </Select>
-              {availableManuscriptsForLinking.length === 0 && (
+            </div>
+            <div className="space-y-2">
+              <Label>{linkType === "reedit" ? "Libro Re-editado" : "Manuscrito Importado"}</Label>
+              <Select value={linkManuscriptId} onValueChange={setLinkManuscriptId}>
+                <SelectTrigger data-testid="select-link-manuscript">
+                  <SelectValue placeholder={linkType === "reedit" ? "Seleccionar libro reeditado..." : "Seleccionar manuscrito..."} />
+                </SelectTrigger>
+                <SelectContent>
+                  {linkType === "reedit" ? (
+                    availableReeditsForLinking.map((rp) => (
+                      <SelectItem key={rp.id} value={rp.id.toString()}>
+                        {rp.title} ({rp.totalChapters} caps.)
+                      </SelectItem>
+                    ))
+                  ) : (
+                    availableManuscriptsForLinking.map((m) => (
+                      <SelectItem key={m.id} value={m.id.toString()}>
+                        {m.title} ({m.totalChapters} caps.)
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {linkType === "manuscript" && availableManuscriptsForLinking.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                   No hay manuscritos disponibles. Importa un manuscrito primero desde la seccion "Edicion".
+                </p>
+              )}
+              {linkType === "reedit" && availableReeditsForLinking.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No hay libros reeditados disponibles sin serie asignada.
                 </p>
               )}
             </div>
@@ -974,11 +1096,11 @@ export default function SeriesPage() {
             </div>
             <div className="flex gap-2 pt-2">
               <Button
-                onClick={handleLinkManuscript}
-                disabled={!linkManuscriptId || linkManuscriptMutation.isPending}
+                onClick={handleLinkVolume}
+                disabled={!linkManuscriptId || linkManuscriptMutation.isPending || linkReeditMutation.isPending}
                 data-testid="button-confirm-link"
               >
-                {linkManuscriptMutation.isPending ? (
+                {(linkManuscriptMutation.isPending || linkReeditMutation.isPending) ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 ) : (
                   <Link2 className="h-4 w-4 mr-2" />

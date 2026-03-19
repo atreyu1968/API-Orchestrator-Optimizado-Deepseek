@@ -1681,13 +1681,15 @@ export async function registerRoutes(
   app.get("/api/series/:id/volumes", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
-      const series = await storage.getSeries(id);
-      if (!series) {
+      const foundSeries = await storage.getSeries(id);
+      if (!foundSeries) {
         return res.status(404).json({ error: "Series not found" });
       }
       
       const projects = await storage.getProjectsBySeries(id);
       const manuscripts = await storage.getImportedManuscriptsBySeries(id);
+      const allReedits = await storage.getAllReeditProjects();
+      const reeditProjects = allReedits.filter(rp => rp.seriesId === id);
       
       const volumes = [
         ...projects.map(p => ({
@@ -1707,6 +1709,15 @@ export async function registerRoutes(
           status: "imported" as const,
           wordCount: m.totalWordCount || 0,
           createdAt: m.createdAt,
+        })),
+        ...reeditProjects.map(rp => ({
+          type: "reedit" as const,
+          id: rp.id,
+          title: rp.title,
+          seriesOrder: rp.seriesOrder,
+          status: rp.status,
+          wordCount: rp.totalWordCount || 0,
+          createdAt: rp.createdAt,
         })),
       ].sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
       
@@ -1740,10 +1751,12 @@ export async function registerRoutes(
       
       const existingProjects = await storage.getProjectsBySeries(seriesId);
       const existingManuscripts = await storage.getImportedManuscriptsBySeries(seriesId);
+      const existingReedits = (await storage.getAllReeditProjects()).filter(rp => rp.seriesId === seriesId);
       
       const orderConflict = [
         ...existingProjects.map(p => p.seriesOrder),
-        ...existingManuscripts.filter(m => m.id !== manuscriptId).map(m => m.seriesOrder)
+        ...existingManuscripts.filter(m => m.id !== manuscriptId).map(m => m.seriesOrder),
+        ...existingReedits.map(rp => rp.seriesOrder),
       ].includes(seriesOrder);
       
       if (orderConflict) {
@@ -1761,6 +1774,103 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error linking manuscript to series:", error);
       res.status(500).json({ error: "Failed to link manuscript to series" });
+    }
+  });
+
+  app.post("/api/series/:id/link-reedit", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const { reeditProjectId, seriesOrder } = req.body;
+
+      if (!reeditProjectId || !seriesOrder) {
+        return res.status(400).json({ error: "reeditProjectId and seriesOrder are required" });
+      }
+
+      const foundSeries = await storage.getSeries(seriesId);
+      if (!foundSeries) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+
+      const reeditProject = await storage.getReeditProject(reeditProjectId);
+      if (!reeditProject) {
+        return res.status(404).json({ error: "Reedit project not found" });
+      }
+
+      const existingProjects = await storage.getProjectsBySeries(seriesId);
+      const existingManuscripts = await storage.getImportedManuscriptsBySeries(seriesId);
+      const existingReedits = (await storage.getAllReeditProjects()).filter(rp => rp.seriesId === seriesId && rp.id !== reeditProjectId);
+
+      const orderConflict = [
+        ...existingProjects.map(p => p.seriesOrder),
+        ...existingManuscripts.map(m => m.seriesOrder),
+        ...existingReedits.map(rp => rp.seriesOrder),
+      ].includes(seriesOrder);
+
+      if (orderConflict) {
+        return res.status(400).json({ error: `El numero de volumen ${seriesOrder} ya esta en uso en esta serie` });
+      }
+
+      const updated = await storage.updateReeditProject(reeditProjectId, {
+        seriesId,
+        seriesOrder,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error linking reedit project to series:", error);
+      res.status(500).json({ error: "Failed to link reedit project to series" });
+    }
+  });
+
+  app.post("/api/series/:id/unlink-volume", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const { volumeId, volumeType } = req.body;
+
+      if (!volumeId || !volumeType) {
+        return res.status(400).json({ error: "volumeId and volumeType are required" });
+      }
+
+      const foundSeries = await storage.getSeries(seriesId);
+      if (!foundSeries) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+
+      if (volumeType === "imported") {
+        const manuscript = await storage.getImportedManuscript(volumeId);
+        if (!manuscript || manuscript.seriesId !== seriesId) {
+          return res.status(404).json({ error: "Volume not found in this series" });
+        }
+        await storage.updateImportedManuscript(volumeId, {
+          seriesId: null,
+          seriesOrder: null,
+        });
+      } else if (volumeType === "reedit") {
+        const reedit = await storage.getReeditProject(volumeId);
+        if (!reedit || reedit.seriesId !== seriesId) {
+          return res.status(404).json({ error: "Volume not found in this series" });
+        }
+        await storage.updateReeditProject(volumeId, {
+          seriesId: null,
+          seriesOrder: null,
+        });
+      } else if (volumeType === "project") {
+        const project = await storage.getProject(volumeId);
+        if (!project || project.seriesId !== seriesId) {
+          return res.status(404).json({ error: "Volume not found in this series" });
+        }
+        await storage.updateProject(volumeId, {
+          seriesId: null,
+          seriesOrder: null,
+        });
+      } else {
+        return res.status(400).json({ error: "Invalid volumeType. Must be 'project', 'imported', or 'reedit'" });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error unlinking volume from series:", error);
+      res.status(500).json({ error: "Failed to unlink volume from series" });
     }
   });
 
@@ -1787,9 +1897,11 @@ export async function registerRoutes(
 
       const existingProjects = await storage.getProjectsBySeries(seriesId);
       const existingManuscripts = await storage.getImportedManuscriptsBySeries(seriesId);
+      const existingReedits = (await storage.getAllReeditProjects()).filter(rp => rp.seriesId === seriesId);
       const nextOrder = Math.max(0, 
         ...existingProjects.map(p => p.seriesOrder || 0),
-        ...existingManuscripts.map(m => m.seriesOrder || 0)
+        ...existingManuscripts.map(m => m.seriesOrder || 0),
+        ...existingReedits.map(rp => rp.seriesOrder || 0)
       ) + 1;
 
       const chapterPattern = /(?:^|\n)(?:(?:CAPÍTULO|CAPITULO|CAP[ÍI]TULO|Capítulo|Capitulo|Capìtulo|Chapter|CHAPTER|CHAPITRE|Chapitre|CAPITOLO|Capitolo|KAPITEL|Kapitel|CAPÍTOL|Capítol)[ \t.:]*(\d+|[IVXLCDM]+)(?:[ \t.:—–-]+)?([^\n]*))/gi;
