@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2, Sparkles } from "lucide-react";
+import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2, Sparkles, Pencil, Check, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { useProject } from "@/lib/project-context";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -31,6 +32,8 @@ export default function ManuscriptPage() {
   const [agentType, setAgentType] = useState<"architect" | "reeditor">("architect");
   const [showAutoEditDialog, setShowAutoEditDialog] = useState(false);
   const [autoEditInstructions, setAutoEditInstructions] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
   const { currentProject, isLoading: projectsLoading } = useProject();
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -87,6 +90,21 @@ export default function ManuscriptPage() {
         description: error.message || "No se pudo clonar el proyecto",
         variant: "destructive",
       });
+    },
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: async (newTitle: string) => {
+      await apiRequest("PATCH", `/api/projects/${currentProject!.id}`, { title: newTitle });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id] });
+      toast({ title: "Título actualizado" });
+      setEditingTitle(false);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
 
@@ -201,7 +219,46 @@ export default function ManuscriptPage() {
     <div className="h-full flex flex-col p-6" data-testid="manuscript-page">
       <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold">{currentProject.title}</h1>
+          {editingTitle ? (
+            <div className="flex items-center gap-2">
+              <Input
+                data-testid="input-edit-project-title"
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && titleDraft.trim()) renameMutation.mutate(titleDraft.trim());
+                  if (e.key === "Escape") setEditingTitle(false);
+                }}
+                className="text-3xl font-bold h-11"
+                autoFocus
+              />
+              <Button
+                data-testid="button-save-project-title"
+                variant="ghost"
+                size="icon"
+                onClick={() => titleDraft.trim() && renameMutation.mutate(titleDraft.trim())}
+                disabled={renameMutation.isPending || !titleDraft.trim()}
+              >
+                {renameMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              </Button>
+              <Button data-testid="button-cancel-project-title" variant="ghost" size="icon" onClick={() => setEditingTitle(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-bold">{currentProject.title}</h1>
+              <Button
+                data-testid="button-edit-project-title"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => { setTitleDraft(currentProject.title); setEditingTitle(true); }}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
           <div className="flex items-center gap-3 mt-2 flex-wrap">
             <Badge variant="secondary">{currentProject.genre}</Badge>
             <Badge variant="outline">{currentProject.tone}</Badge>
