@@ -2080,6 +2080,48 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/projects/:id/convert-to-series", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Proyecto no encontrado" });
+      }
+      if (project.workType !== "standalone") {
+        return res.status(400).json({ error: "Solo los proyectos independientes pueden convertirse en serie" });
+      }
+      if (project.seriesId) {
+        return res.status(400).json({ error: "Este proyecto ya pertenece a una serie" });
+      }
+
+      const seriesTitle = req.body.seriesTitle || `Serie de ${project.title}`;
+      const totalPlannedBooks = req.body.totalPlannedBooks || 3;
+
+      const newSeries = await storage.createSeries({
+        title: seriesTitle,
+        description: `Serie creada automáticamente a partir del proyecto "${project.title}"`,
+        workType: totalPlannedBooks === 3 ? "trilogy" : "series",
+        totalPlannedBooks,
+        pseudonymId: project.pseudonymId,
+      });
+
+      const updated = await storage.updateProject(projectId, {
+        workType: "series",
+        seriesId: newSeries.id,
+        seriesOrder: 1,
+      });
+
+      res.json({
+        project: updated,
+        series: newSeries,
+        message: `Proyecto convertido en libro #1 de la serie "${newSeries.title}"`,
+      });
+    } catch (error: any) {
+      console.error("Error converting project to series:", error);
+      res.status(500).json({ error: error.message || "Error al convertir en serie" });
+    }
+  });
+
   app.post("/api/series/:id/guide", upload.single('file'), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);

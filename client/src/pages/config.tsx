@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, Search, Download } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, Search, Download, Library } from "lucide-react";
 import { BOOK_WRITING_GUIDE_TEMPLATE, downloadTemplate } from "@/lib/writing-templates";
 import { Link } from "wouter";
 import type { Project, ExtendedGuide } from "@shared/schema";
@@ -22,6 +23,9 @@ export default function ConfigPage() {
   const [deleteProjectId, setDeleteProjectId] = useState<number | null>(null);
   const [deleteGuideId, setDeleteGuideId] = useState<number | null>(null);
   const [projectSearch, setProjectSearch] = useState("");
+  const [convertProject, setConvertProject] = useState<Project | null>(null);
+  const [seriesTitle, setSeriesTitle] = useState("");
+  const [totalPlannedBooks, setTotalPlannedBooks] = useState(3);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
@@ -106,6 +110,29 @@ export default function ConfigPage() {
       toast({
         title: "Error",
         description: "No se pudo actualizar el proyecto",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const convertToSeriesMutation = useMutation({
+    mutationFn: async ({ projectId, seriesTitle, totalPlannedBooks }: { projectId: number; seriesTitle: string; totalPlannedBooks: number }) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/convert-to-series`, { seriesTitle, totalPlannedBooks });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/series"] });
+      setConvertProject(null);
+      toast({
+        title: "Convertido en serie",
+        description: data.message,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudo convertir en serie",
         variant: "destructive",
       });
     },
@@ -322,6 +349,21 @@ export default function ConfigPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
+                        {project.workType === "standalone" && !project.seriesId && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setConvertProject(project);
+                              setSeriesTitle(`Serie de ${project.title}`);
+                              setTotalPlannedBooks(3);
+                            }}
+                            data-testid={`button-convert-series-${project.id}`}
+                            title="Convertir en serie"
+                          >
+                            <Library className="h-4 w-4" />
+                          </Button>
+                        )}
                         {project.status === "idle" && (
                           <Button 
                             variant="ghost" 
@@ -559,6 +601,69 @@ export default function ConfigPage() {
           setDeleteGuideId(null);
         }}
       />
+
+      <Dialog open={convertProject !== null} onOpenChange={(open) => !open && setConvertProject(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Library className="h-5 w-5" />
+              Convertir en Serie
+            </DialogTitle>
+          </DialogHeader>
+          {convertProject && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                El proyecto <strong>"{convertProject.title}"</strong> se convertirá en el libro #1 de una nueva serie.
+              </p>
+              <div>
+                <Label htmlFor="series-title">Nombre de la serie</Label>
+                <Input
+                  id="series-title"
+                  data-testid="input-series-title"
+                  value={seriesTitle}
+                  onChange={(e) => setSeriesTitle(e.target.value)}
+                  placeholder="Nombre de la serie..."
+                />
+              </div>
+              <div>
+                <Label htmlFor="total-books">Libros planificados</Label>
+                <Input
+                  id="total-books"
+                  data-testid="input-total-books"
+                  type="number"
+                  min={2}
+                  max={100}
+                  value={totalPlannedBooks}
+                  onChange={(e) => setTotalPlannedBooks(parseInt(e.target.value) || 3)}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {totalPlannedBooks === 3 ? "Se creará como trilogía" : "Se creará como serie"}
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setConvertProject(null)} data-testid="button-cancel-convert">
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (convertProject) {
+                      convertToSeriesMutation.mutate({
+                        projectId: convertProject.id,
+                        seriesTitle: seriesTitle.trim(),
+                        totalPlannedBooks,
+                      });
+                    }
+                  }}
+                  disabled={!seriesTitle.trim() || convertToSeriesMutation.isPending}
+                  data-testid="button-confirm-convert"
+                >
+                  {convertToSeriesMutation.isPending ? "Convirtiendo..." : "Convertir en Serie"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
