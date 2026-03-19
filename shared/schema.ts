@@ -641,6 +641,7 @@ export const reeditWorldBibles = pgTable("reedit_world_bibles", {
   historicalPeriod: text("historical_period"),
   historicalDetails: jsonb("historical_details"), // {era, location, socialContext, technology}
   // Extraction metadata
+  authorNotes: jsonb("author_notes").default([]),
   extractedFromChapters: integer("extracted_from_chapters"),
   confidence: integer("confidence"), // 1-10
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
