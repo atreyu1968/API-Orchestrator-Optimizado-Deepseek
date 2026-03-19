@@ -9,7 +9,7 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 - **Generador de Novelas**: Pipeline completo con 13+ agentes especializados para escribir novelas de principio a fin
 - **Re-editor de Manuscritos (LitEditors)**: Importa y edita profesionalmente manuscritos externos en multiples idiomas con 12 agentes especializados
 - **Adaptacion Literaria Profesional (LitTranslators)**: Sistema de adaptacion literaria (no traduccion literal) con resultado listo para publicacion
-- **Taller de Guias**: Generacion de guias de estilo, escritura por idea, identidad de pseudonimo y coherencia de serie
+- **Taller de Guias**: Generacion de guias de estilo, escritura por idea, identidad de pseudonimo y guias extendidas de serie con creacion automatica de proyecto
 - **World Bible Progresiva**: Base de datos de consistencia que se enriquece automaticamente capitulo a capitulo
 - **Notas del Autor**: Instrucciones personalizadas para que los agentes eviten errores conocidos
 - **Zero Continuity Errors**: Validacion inmediata post-escritura, deteccion de personajes muertos, filtraciones de conocimiento y drift de apariencia
@@ -120,6 +120,14 @@ Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando c
 - Si las puntuaciones se estancan por debajo del umbral minimo durante 4+ ciclos, el sistema rechaza y no aprueba con calidad insuficiente
 - Tracking de hashes de issues para evitar re-reportar problemas resueltos
 - QA re-ejecuta auditores si hay capitulos modificados en el ciclo
+
+### Taller de Guias
+- **4 tipos de guia**: Estilo de autor, escritura por idea, identidad de pseudonimo, escritura de serie
+- **Guia por Idea**: Genera guia extendida + crea proyecto automaticamente con todos los parametros (capitulos, palabras, pseudonimo, estilo)
+- **Guia de Serie Extendida**: Selecciona una serie existente y un pseudonimo, configura el siguiente libro (titulo, capitulos, genero, tono, palabras por capitulo). El sistema analiza todos los libros de la serie (proyectos, re-ediciones, manuscritos importados) para generar una guia contextualizada. Crea automaticamente la guia extendida, el proyecto vinculado a la serie con el orden correcto, y actualiza la guia de serie
+- **Estilo de Autor**: Emula el estilo de un autor conocido y lo vincula a un pseudonimo
+- **Estilo de Pseudonimo**: Define la identidad literaria unica de un pseudonimo existente
+- **Biblioteca**: Visualiza, descarga en Markdown, aplica a pseudonimos o elimina guias generadas
 
 ### Gestion de Series
 - **Snapshots de continuidad automaticos**: Extrae sinopsis, estado de personajes, hilos pendientes y eventos clave al completar cada libro
