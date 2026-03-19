@@ -1,0 +1,59 @@
+root@escritorasd:~/escritorasdgemini# cd /var/www/litagents
+sudo git fetch --all
+sudo git reset --hard origin/main
+HEAD is now at 006ee79 Add audiobook generation functionality with Fish Audio integration
+root@escritorasd:/var/www/litagents# sudo bash update.sh
+=== Actualizando LitAgents ===
+1. Obteniendo últimos cambios...
+HEAD is now at 006ee79 Add audiobook generation functionality with Fish Audio integration
+2. Instalando dependencias...
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+3. Compilando aplicación...
+building server...
+
+  dist/index.cjs  1.9mb ⚠️
+
+⚡ Done in 244ms
+4. Ejecutando migraciones de schema (drizzle-kit push)...
+[⣟] Pulling schema from database...
+[⡿] Pulling schema from database...
+[⢿] Pulling schema from database...
+[✓] Pulling schema from database...
+[✓] Changes applied
+5. Aplicando migraciones SQL adicionales...
+   Aplicando 0000_jazzy_annihilus.sql...
+   Aplicando 0001_natural_bromley.sql...
+   Aplicando 0002_add_words_per_chapter.sql...
+ALTER TABLE
+ALTER TABLE
+   Aplicando 0002_remarkable_wilson_fisk.sql...
+   Aplicando 0003_add_bookbox_structure.sql...
+   Aplicando 0004_add_author_notes.sql...
+ALTER TABLE
+ALTER TABLE
+6. Reiniciando servicio...
+
+=== Verificando que la aplicación responde ===
+Aplicación respondiendo correctamente
+
+=== Actualización completada correctamente ===
+* litagents.service - LitAgents Application
+     Loaded: loaded (/etc/systemd/system/litagents.service; enabled; preset: enabled)
+     Active: active (running) since Thu 2026-03-19 20:48:59 UTC; 5s ago
+ Invocation: af12d5a1ed184d47bf71728b671f7fc3
+       Docs: https://github.com/atreyu1968/escritorasdgemini
+   Main PID: 29862 (npm start)
+      Tasks: 23 (limit: 18751)
+     Memory: 73.3M (max: 2G, available: 1.9G, peak: 73.3M)
+        CPU: 924ms
+     CGroup: /system.slice/litagents.service
+             |-29862 "npm start"
+             |-29874 sh -c "NODE_ENV=production node dist/index.cjs"
+             `-29875 node dist/index.cjs
+
+Mar 19 20:48:59 escritorasd systemd[1]: Started litagents.service - LitAgents Application.
+root@escritorasd:/var/www/litagents# 
