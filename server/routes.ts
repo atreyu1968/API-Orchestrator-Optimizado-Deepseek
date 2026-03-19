@@ -6502,6 +6502,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       }
 
       if (project.status === "processing") {
+        if (!activeReeditOrchestrators.has(projectId)) {
+          console.log(`[ReeditStart] Project ${projectId} stuck in 'processing' with no active orchestrator, resetting to 'error'`);
+          await storage.updateReeditProject(projectId, { status: "error", errorMessage: "Proceso interrumpido (reinicio del servidor)" });
+          return res.status(400).json({ error: "El proyecto estaba atascado en 'procesando'. Se ha reseteado a estado de error. Intenta de nuevo." });
+        }
         return res.status(400).json({ error: "Project is already being processed" });
       }
 
@@ -6567,7 +6572,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       }
 
       if (activeReeditOrchestrators.has(projectId)) {
-        return res.status(400).json({ error: "Project is already being processed" });
+        const freshProject = await storage.getReeditProject(projectId);
+        if (freshProject && (freshProject.status === "error" || freshProject.status === "paused" || freshProject.status === "completed")) {
+          console.log(`[ReeditResume] Cleaning stale orchestrator for project ${projectId} (status: ${freshProject.status})`);
+          activeReeditOrchestrators.delete(projectId);
+        } else {
+          return res.status(400).json({ error: "Project is already being processed" });
+        }
       }
 
       // Save user instructions if provided (for awaiting_instructions status)
@@ -6623,7 +6634,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       }
 
       if (activeReeditOrchestrators.has(projectId)) {
-        return res.status(400).json({ error: "Project is already being processed" });
+        if (project.status === "error" || project.status === "paused" || project.status === "completed") {
+          activeReeditOrchestrators.delete(projectId);
+        } else {
+          return res.status(400).json({ error: "Project is already being processed" });
+        }
       }
 
       const orchestrator = new ReeditOrchestrator();
@@ -6667,7 +6682,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       }
 
       if (activeReeditOrchestrators.has(projectId)) {
-        return res.status(400).json({ error: "Project is already being processed" });
+        if (project.status === "error" || project.status === "paused" || project.status === "completed") {
+          activeReeditOrchestrators.delete(projectId);
+        } else {
+          return res.status(400).json({ error: "Project is already being processed" });
+        }
       }
 
       const orchestrator = new ReeditOrchestrator();
