@@ -8703,6 +8703,24 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  app.patch("/api/audiobooks/:id", async (req: Request, res: Response) => {
+    try {
+      const projectId = Number(req.params.id);
+      const project = await storage.getAudiobookProject(projectId);
+      if (!project) return res.status(404).json({ error: "Audiobook project not found" });
+
+      const { title } = req.body;
+      if (!title || typeof title !== "string" || title.trim().length === 0) {
+        return res.status(400).json({ error: "Title is required" });
+      }
+
+      const updated = await storage.updateAudiobookProject(projectId, { title: title.trim() });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.delete("/api/audiobooks/:id", async (req: Request, res: Response) => {
     try {
       const projectId = Number(req.params.id);

@@ -14,7 +14,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Headphones, Play, Download, Trash2, RefreshCw, AlertCircle, CheckCircle2,
-  Clock, Volume2, FileAudio, Loader2, Plus, ArrowLeft, Upload, Music
+  Clock, Volume2, FileAudio, Loader2, Plus, ArrowLeft, Upload, Music, Pencil, Check, X
 } from "lucide-react";
 import type { AudiobookProject, AudiobookChapter } from "@shared/schema";
 
@@ -299,6 +299,8 @@ function CreateAudiobookForm({ onCreated, onCancel }: { onCreated: () => void; o
 
 function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () => void }) {
   const { toast } = useToast();
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
 
   const { data: project, isLoading } = useQuery<AudiobookProjectWithChapters>({
     queryKey: ["/api/audiobooks", projectId],
@@ -329,6 +331,21 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/audiobooks", projectId] });
       toast({ title: "Capítulo generado" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: async (newTitle: string) => {
+      await apiRequest("PATCH", `/api/audiobooks/${projectId}`, { title: newTitle });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/audiobooks", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/audiobooks"] });
+      toast({ title: "Título actualizado" });
+      setEditingTitle(false);
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -381,7 +398,46 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
-          <h2 className="text-xl font-semibold" data-testid="text-project-title">{project.title}</h2>
+          {editingTitle ? (
+            <div className="flex items-center gap-2">
+              <Input
+                data-testid="input-edit-title"
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && titleDraft.trim()) renameMutation.mutate(titleDraft.trim());
+                  if (e.key === "Escape") setEditingTitle(false);
+                }}
+                className="text-xl font-semibold h-9"
+                autoFocus
+              />
+              <Button
+                data-testid="button-save-title"
+                variant="ghost"
+                size="icon"
+                onClick={() => titleDraft.trim() && renameMutation.mutate(titleDraft.trim())}
+                disabled={renameMutation.isPending || !titleDraft.trim()}
+              >
+                {renameMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              </Button>
+              <Button data-testid="button-cancel-title" variant="ghost" size="icon" onClick={() => setEditingTitle(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-semibold" data-testid="text-project-title">{project.title}</h2>
+              <Button
+                data-testid="button-edit-title"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => { setTitleDraft(project.title); setEditingTitle(true); }}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
           <p className="text-sm text-muted-foreground">
             {sourceTypeLabels[project.sourceType] || project.sourceType} · {project.sourceLanguage?.toUpperCase()} · {project.voiceName || project.voiceId}
           </p>
