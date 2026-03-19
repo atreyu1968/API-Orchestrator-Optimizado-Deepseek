@@ -8405,28 +8405,36 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       let chaptersData: { number: number; title: string; content: string }[] = [];
       const sid = Number(sourceId);
 
+      const audiobookSortOrder = (n: number) => n === 0 ? -1000 : n === -1 ? 1000 : n === -2 ? 1001 : n;
+      const audiobookChapterLabel = (n: number, title?: string | null) => {
+        if (n === 0) return title || "Prólogo";
+        if (n === -1) return title || "Epílogo";
+        if (n === -2) return title || "Nota del Autor";
+        return title || `Capítulo ${n}`;
+      };
+
       if (sourceType === "project") {
         const chapters = await storage.getChaptersByProject(sid);
         chaptersData = chapters
           .filter(c => c.content && c.content.trim().length > 0)
-          .sort((a, b) => a.chapterNumber - b.chapterNumber)
-          .map(c => ({ number: c.chapterNumber, title: c.title || `Capítulo ${c.chapterNumber}`, content: c.content! }));
+          .sort((a, b) => audiobookSortOrder(a.chapterNumber) - audiobookSortOrder(b.chapterNumber))
+          .map((c, idx) => ({ number: idx + 1, title: audiobookChapterLabel(c.chapterNumber, c.title), content: c.content! }));
       } else if (sourceType === "reedit") {
         const chapters = await storage.getReeditChaptersByProject(sid);
         chaptersData = chapters
           .filter(c => c.editedContent && c.editedContent.trim().length > 0)
-          .sort((a, b) => a.chapterNumber - b.chapterNumber)
-          .map(c => ({ number: c.chapterNumber, title: c.chapterTitle || `Capítulo ${c.chapterNumber}`, content: c.editedContent! }));
+          .sort((a, b) => audiobookSortOrder(a.chapterNumber) - audiobookSortOrder(b.chapterNumber))
+          .map((c, idx) => ({ number: idx + 1, title: audiobookChapterLabel(c.chapterNumber, c.chapterTitle), content: c.editedContent! }));
       } else if (sourceType === "imported") {
         const importedChaptersTable = (await import("@shared/schema")).importedChapters;
         const { db: dbImport } = await import("./db");
         const { eq, asc } = await import("drizzle-orm");
         const chapters = await dbImport.select().from(importedChaptersTable)
-          .where(eq(importedChaptersTable.manuscriptId, sid))
-          .orderBy(asc(importedChaptersTable.chapterNumber));
+          .where(eq(importedChaptersTable.manuscriptId, sid));
         chaptersData = chapters
           .filter(c => c.content && c.content.trim().length > 0)
-          .map(c => ({ number: c.chapterNumber, title: c.title || `Capítulo ${c.chapterNumber}`, content: c.content! }));
+          .sort((a, b) => audiobookSortOrder(a.chapterNumber) - audiobookSortOrder(b.chapterNumber))
+          .map((c, idx) => ({ number: idx + 1, title: audiobookChapterLabel(c.chapterNumber, c.title), content: c.content! }));
       } else if (sourceType === "translation") {
         const translationsTable = (await import("@shared/schema")).translations;
         const { db: dbTrans } = await import("./db");
