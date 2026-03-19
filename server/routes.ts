@@ -8648,119 +8648,119 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       let completedCount = 0;
       let hasError = false;
       let wasCancelled = false;
+      const CONCURRENCY = 3;
 
-      for (const chapter of chapters) {
-        if (abortController.signal.aborted) {
-          wasCancelled = true;
-          console.log(`[Audiobook] Project ${projectId}: Generation stopped by user`);
-          break;
-        }
+      async function generateChapterAudio(chapter: any): Promise<"completed" | "skipped" | "error" | "cancelled"> {
+        if (abortController.signal.aborted) return "cancelled";
 
         if (chapter.status === "completed" && chapter.audioFileName) {
           const audioPath = path.join(projectDir, chapter.audioFileName);
-          if (fs.existsSync(audioPath)) {
-            completedCount++;
-            continue;
-          }
+          if (fs.existsSync(audioPath)) return "skipped";
         }
 
-        try {
-          await storage.updateAudiobookChapter(chapter.id, { status: "processing", errorMessage: null });
+        await storage.updateAudiobookChapter(chapter.id, { status: "processing", errorMessage: null });
 
-          const textContent = prepareTtsText(chapter.textContent);
-
-          const MAX_CHARS = 9500;
-          const textChunks: string[] = [];
-          if (textContent.length <= MAX_CHARS) {
-            textChunks.push(textContent);
-          } else {
-            const paragraphs = textContent.split(/\n\n+/);
-            let currentChunk = '';
-            for (const para of paragraphs) {
-              const sentences = para.match(/[^.!?]+[.!?]+/g) || [para];
-              for (const sentence of sentences) {
-                if ((currentChunk + sentence).length > MAX_CHARS && currentChunk.length > 0) {
-                  textChunks.push(currentChunk.trim());
-                  currentChunk = sentence;
-                } else {
-                  currentChunk += sentence;
-                }
+        const textContent = prepareTtsText(chapter.textContent);
+        const MAX_CHARS = 9500;
+        const textChunks: string[] = [];
+        if (textContent.length <= MAX_CHARS) {
+          textChunks.push(textContent);
+        } else {
+          const paragraphs = textContent.split(/\n\n+/);
+          let currentChunk = '';
+          for (const para of paragraphs) {
+            const sentences = para.match(/[^.!?]+[.!?]+/g) || [para];
+            for (const sentence of sentences) {
+              if ((currentChunk + sentence).length > MAX_CHARS && currentChunk.length > 0) {
+                textChunks.push(currentChunk.trim());
+                currentChunk = sentence;
+              } else {
+                currentChunk += sentence;
               }
-              currentChunk += "\n\n";
             }
-            if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+            currentChunk += "\n\n";
           }
+          if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+        }
 
-          const audioBuffers: Buffer[] = [];
-
-          for (const chunk of textChunks) {
-            if (abortController.signal.aborted) {
-              throw new Error("Generation cancelled");
-            }
-
-            const ttsResponse = await fetch("https://api.fish.audio/v1/tts", {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-                "model": "speech-1.6",
-              },
-              body: JSON.stringify({
-                text: chunk,
-                reference_id: project.voiceId,
-                format: project.format || "mp3",
-                mp3_bitrate: project.bitrate || 128,
-                prosody: {
-                  speed: project.speed || 1.0,
-                  volume: 0,
-                },
-                top_p: 0.8,
-                temperature: 0.8,
-                repetition_penalty: 1.3,
-                latency: "normal",
-              }),
-              signal: abortController.signal,
-            });
-
-            if (!ttsResponse.ok) {
-              const errorText = await ttsResponse.text();
-              throw new Error(`Fish Audio API error (${ttsResponse.status}): ${errorText}`);
-            }
-
-            const arrayBuffer = await ttsResponse.arrayBuffer();
-            audioBuffers.push(Buffer.from(arrayBuffer));
-          }
-
-          const finalAudio = Buffer.concat(audioBuffers);
-          const audioFilename = `chapter_${String(chapter.chapterNumber).padStart(3, '0')}.${project.format || 'mp3'}`;
-          const audioPath = path.join(projectDir, audioFilename);
-          fs.writeFileSync(audioPath, finalAudio);
-
-          await storage.updateAudiobookChapter(chapter.id, {
-            status: "completed",
-            audioFileName: audioFilename,
-            audioSizeBytes: finalAudio.length,
+        const audioBuffers: Buffer[] = [];
+        for (const chunk of textChunks) {
+          if (abortController.signal.aborted) throw new Error("Generation cancelled");
+          const ttsResponse = await fetch("https://api.fish.audio/v1/tts", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+              "model": "speech-1.6",
+            },
+            body: JSON.stringify({
+              text: chunk,
+              reference_id: project.voiceId,
+              format: project.format || "mp3",
+              mp3_bitrate: project.bitrate || 128,
+              prosody: { speed: project.speed || 1.0, volume: 0 },
+              top_p: 0.8,
+              temperature: 0.8,
+              repetition_penalty: 1.3,
+              latency: "normal",
+            }),
+            signal: abortController.signal,
           });
+          if (!ttsResponse.ok) {
+            const errorText = await ttsResponse.text();
+            throw new Error(`Fish Audio API error (${ttsResponse.status}): ${errorText}`);
+          }
+          audioBuffers.push(Buffer.from(await ttsResponse.arrayBuffer()));
+        }
 
-          completedCount++;
-          await storage.updateAudiobookProject(projectId, { completedChapters: completedCount });
+        const finalAudio = Buffer.concat(audioBuffers);
+        const audioFilename = `chapter_${String(chapter.chapterNumber).padStart(3, '0')}.${project.format || 'mp3'}`;
+        fs.writeFileSync(path.join(projectDir, audioFilename), finalAudio);
+        await storage.updateAudiobookChapter(chapter.id, {
+          status: "completed",
+          audioFileName: audioFilename,
+          audioSizeBytes: finalAudio.length,
+        });
+        console.log(`[Audiobook] Project ${projectId}: Chapter ${chapter.chapterNumber} completed (${finalAudio.length} bytes)`);
+        return "completed";
+      }
 
-          console.log(`[Audiobook] Project ${projectId}: Chapter ${chapter.chapterNumber}/${chapters.length} completed (${finalAudio.length} bytes)`);
+      async function processChapter(chapter: any) {
+        try {
+          const result = await generateChapterAudio(chapter);
+          if (result === "completed" || result === "skipped") {
+            completedCount++;
+            await storage.updateAudiobookProject(projectId, { completedChapters: completedCount });
+          } else if (result === "cancelled") {
+            wasCancelled = true;
+          }
         } catch (chapterError: any) {
-          if (abortController.signal.aborted) {
+          if (abortController.signal.aborted || chapterError.name === "AbortError" || chapterError.message === "Generation cancelled") {
             await storage.updateAudiobookChapter(chapter.id, { status: "pending", errorMessage: null }).catch(() => {});
             wasCancelled = true;
-            console.log(`[Audiobook] Project ${projectId}: Generation stopped by user during chapter ${chapter.chapterNumber}`);
-            break;
+            console.log(`[Audiobook] Project ${projectId}: Generation stopped during chapter ${chapter.chapterNumber}`);
+          } else {
+            console.error(`[Audiobook] Error generating chapter ${chapter.chapterNumber}:`, chapterError.message);
+            await storage.updateAudiobookChapter(chapter.id, { status: "error", errorMessage: chapterError.message });
+            hasError = true;
           }
-          console.error(`[Audiobook] Error generating chapter ${chapter.chapterNumber}:`, chapterError.message);
-          await storage.updateAudiobookChapter(chapter.id, {
-            status: "error",
-            errorMessage: chapterError.message,
-          });
-          hasError = true;
         }
       }
+
+      for (let i = 0; i < chapters.length; i += CONCURRENCY) {
+        if (abortController.signal.aborted || wasCancelled) {
+          wasCancelled = true;
+          break;
+        }
+        const batch = chapters.slice(i, i + CONCURRENCY);
+        console.log(`[Audiobook] Project ${projectId}: Processing batch of ${batch.length} chapters (${i + 1}-${Math.min(i + CONCURRENCY, chapters.length)}/${chapters.length})`);
+        await Promise.all(batch.map(ch => processChapter(ch)));
+      }
+
+      if (abortController.signal.aborted) wasCancelled = true;
+
+      const updatedChapters = await storage.getAudiobookChaptersByProject(projectId);
+      completedCount = updatedChapters.filter((ch: any) => ch.status === "completed").length;
 
       if (activeAudiobookGenerations.get(projectId) === abortController) {
         activeAudiobookGenerations.delete(projectId);
