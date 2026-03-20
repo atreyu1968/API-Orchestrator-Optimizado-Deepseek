@@ -8618,7 +8618,21 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
         await storage.updateAudiobookChapter(chapter.id, { status: "processing", errorMessage: null });
 
-        const textContent = prepareTtsText(chapter.textContent);
+        let chapterAnnouncement = "";
+        if (chapter.chapterNumber === 0) {
+          chapterAnnouncement = chapter.chapterTitle ? `Prólogo: ${chapter.chapterTitle}` : "Prólogo";
+        } else if (chapter.chapterNumber === -1) {
+          chapterAnnouncement = chapter.chapterTitle ? `Epílogo: ${chapter.chapterTitle}` : "Epílogo";
+        } else if (chapter.chapterNumber === -2) {
+          chapterAnnouncement = chapter.chapterTitle ? `Nota del Autor: ${chapter.chapterTitle}` : "Nota del Autor";
+        } else {
+          chapterAnnouncement = chapter.chapterTitle
+            ? `Capítulo ${chapter.chapterNumber}: ${chapter.chapterTitle}`
+            : `Capítulo ${chapter.chapterNumber}`;
+        }
+
+        const rawText = `${chapterAnnouncement}\n\n\n${chapter.textContent}`;
+        const textContent = prepareTtsText(rawText);
         const MAX_CHARS = 9500;
         const textChunks: string[] = [];
         if (textContent.length <= MAX_CHARS) {
@@ -8799,7 +8813,21 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
       await storage.updateAudiobookChapter(chapterId, { status: "processing", errorMessage: null });
 
-      const textContent = prepareTtsText(chapter.textContent);
+      let chapterAnnouncement = "";
+      if (chapter.chapterNumber === 0) {
+        chapterAnnouncement = chapter.chapterTitle ? `Prólogo: ${chapter.chapterTitle}` : "Prólogo";
+      } else if (chapter.chapterNumber === -1) {
+        chapterAnnouncement = chapter.chapterTitle ? `Epílogo: ${chapter.chapterTitle}` : "Epílogo";
+      } else if (chapter.chapterNumber === -2) {
+        chapterAnnouncement = chapter.chapterTitle ? `Nota del Autor: ${chapter.chapterTitle}` : "Nota del Autor";
+      } else {
+        chapterAnnouncement = chapter.chapterTitle
+          ? `Capítulo ${chapter.chapterNumber}: ${chapter.chapterTitle}`
+          : `Capítulo ${chapter.chapterNumber}`;
+      }
+
+      const rawText = `${chapterAnnouncement}\n\n\n${chapter.textContent}`;
+      const textContent = prepareTtsText(rawText);
 
       const MAX_CHARS = 9500;
       const textChunks: string[] = [];
