@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface CopyEditorInput {
   chapterContent: string;
@@ -293,11 +294,8 @@ export class CopyEditorAgent extends BaseAgent {
     const response = await this.generateContent(prompt);
     
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as CopyEditorResult;
-        return { ...response, result };
-      }
+      const result = repairJson(response.content) as CopyEditorResult;
+      return { ...response, result };
     } catch (e) {
       console.error("[CopyEditor] Failed to parse JSON response");
     }
@@ -305,9 +303,9 @@ export class CopyEditorAgent extends BaseAgent {
     return { 
       ...response, 
       result: { 
-        texto_final: `# Capítulo ${input.chapterNumber}: ${input.chapterTitle}\n\n${input.chapterContent}`,
-        cambios_realizados: "Sin cambios adicionales",
-        idioma_detectado: detectedLang
+      texto_final: `# Capítulo ${input.chapterNumber}: ${input.chapterTitle}\n\n${input.chapterContent}`,
+      cambios_realizados: "Sin cambios adicionales",
+      idioma_detectado: detectedLang
       } 
     };
   }

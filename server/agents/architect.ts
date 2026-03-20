@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface ArchitectInput {
   title: string;
@@ -283,12 +284,8 @@ export class ArchitectAgent extends BaseAgent {
 
     let phase1Json: any;
     try {
-      const jsonMatch = phase1Response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        phase1Json = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error("No JSON found in Phase 1 response");
-      }
+      phase1Json = repairJson(phase1Response.content);
+      console.log(`[El Arquitecto] Fase 1: JSON parseado correctamente`);
     } catch (e) {
       console.error(`[El Arquitecto] Fase 1: Error parseando JSON - ${(e as Error).message}`);
       return {
@@ -370,12 +367,8 @@ export class ArchitectAgent extends BaseAgent {
 
     let phase2Json: any;
     try {
-      const jsonMatch = phase2Response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        phase2Json = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error("No JSON found in Phase 2 response");
-      }
+      phase2Json = repairJson(phase2Response.content);
+      console.log(`[El Arquitecto] Fase 2: JSON parseado correctamente`);
     } catch (e) {
       console.error(`[El Arquitecto] Fase 2: Error parseando JSON - ${(e as Error).message}`);
       return {

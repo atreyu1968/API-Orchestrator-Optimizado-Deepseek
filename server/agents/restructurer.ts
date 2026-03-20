@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface RestructurerInput {
   chapterNumber: number;
@@ -168,10 +169,7 @@ Responde SOLO con el JSON estructurado.
     let result: RestructurerResult | undefined;
     
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]) as RestructurerResult;
-      }
+      result = repairJson(response.content) as RestructurerResult;
     } catch (error) {
       console.error("Error parsing restructurer response:", error);
     }

@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface TranslatorInput {
   content: string;
@@ -426,20 +427,17 @@ RESPOND WITH JSON ONLY, no additional text.
         console.log(`[Translator] Stripped markdown code block from response`);
       }
       
-      const jsonMatch = contentToParse.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as TranslatorResult;
-        // CRITICAL: Clean the translated text to remove any code artifacts
-        const cleanedText = this.cleanTranslatedText(result.translated_text);
-        console.log(`[Translator] Successfully parsed and cleaned translation result`);
-        return { 
-          ...response, 
-          result: {
-            ...result,
-            translated_text: cleanedText,
-          }
-        };
-      }
+      const result = repairJson(contentToParse) as TranslatorResult;
+      // CRITICAL: Clean the translated text to remove any code artifacts
+      const cleanedText = this.cleanTranslatedText(result.translated_text);
+      console.log(`[Translator] Successfully parsed and cleaned translation result`);
+      return { 
+        ...response, 
+        result: {
+          ...result,
+          translated_text: cleanedText,
+        }
+      };
     } catch (e) {
       console.error("[Translator] Failed to parse JSON response:", e);
     }
@@ -451,10 +449,10 @@ RESPOND WITH JSON ONLY, no additional text.
     return {
       ...response,
       result: {
-        translated_text: cleanedFallback,
-        source_language: input.sourceLanguage,
-        target_language: input.targetLanguage,
-        notes: "Respuesta no estructurada - contenido limpiado y devuelto",
+      translated_text: cleanedFallback,
+      source_language: input.sourceLanguage,
+      target_language: input.targetLanguage,
+      notes: "Respuesta no estructurada - contenido limpiado y devuelto",
       }
     };
   }

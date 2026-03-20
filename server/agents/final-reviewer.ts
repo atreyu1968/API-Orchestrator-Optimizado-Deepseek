@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface FinalReviewerInput {
   projectTitle: string;
@@ -560,11 +561,8 @@ la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad sufici
     const response = await this.generateContent(prompt);
     
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as FinalReviewerResult;
-        return { ...response, result };
-      }
+      const result = repairJson(response.content) as FinalReviewerResult;
+      return { ...response, result };
     } catch (e) {
       console.error("[FinalReviewer] Failed to parse JSON response");
     }
@@ -572,25 +570,25 @@ la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad sufici
     return { 
       ...response, 
       result: { 
-        veredicto: "APROBADO",
-        resumen_general: "Revisión completada automáticamente",
-        puntuacion_global: 8,
-        justificacion_puntuacion: {
-          puntuacion_desglosada: {
-            enganche: 8,
-            personajes: 8,
-            trama: 8,
-            atmosfera: 8,
-            ritmo: 8,
-            cumplimiento_genero: 8
-          },
-          fortalezas_principales: ["Manuscrito completado"],
-          debilidades_principales: [],
-          comparacion_mercado: "Evaluación automática por fallo de parsing",
-          recomendaciones_proceso: []
+      veredicto: "APROBADO",
+      resumen_general: "Revisión completada automáticamente",
+      puntuacion_global: 8,
+      justificacion_puntuacion: {
+        puntuacion_desglosada: {
+          enganche: 8,
+          personajes: 8,
+          trama: 8,
+          atmosfera: 8,
+          ritmo: 8,
+          cumplimiento_genero: 8
         },
-        issues: [],
-        capitulos_para_reescribir: []
+        fortalezas_principales: ["Manuscrito completado"],
+        debilidades_principales: [],
+        comparacion_mercado: "Evaluación automática por fallo de parsing",
+        recomendaciones_proceso: []
+      },
+      issues: [],
+      capitulos_para_reescribir: []
       } 
     };
   }

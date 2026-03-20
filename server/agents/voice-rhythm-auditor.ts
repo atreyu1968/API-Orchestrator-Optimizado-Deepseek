@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface VoiceRhythmAuditorInput {
   projectTitle: string;
@@ -185,11 +186,8 @@ Responde ÚNICAMENTE con el JSON estructurado.
     const response = await this.generateContent(prompt);
     
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as VoiceRhythmAuditorResult;
-        return { ...response, result };
-      }
+      const result = repairJson(response.content) as VoiceRhythmAuditorResult;
+      return { ...response, result };
     } catch (e) {
       console.error("[VoiceRhythmAuditor] Failed to parse JSON response");
     }
@@ -197,14 +195,14 @@ Responde ÚNICAMENTE con el JSON estructurado.
     return { 
       ...response, 
       result: { 
-        tranche_aprobado: true,
-        puntuacion_voz: 8,
-        puntuacion_ritmo: 8,
-        resumen: "Tramo aprobado automáticamente",
-        perfil_tonal_detectado: "Consistente con el género",
-        issues: [],
-        capitulos_para_revision: [],
-        recomendaciones_estilo: []
+      tranche_aprobado: true,
+      puntuacion_voz: 8,
+      puntuacion_ritmo: 8,
+      resumen: "Tramo aprobado automáticamente",
+      perfil_tonal_detectado: "Consistente con el género",
+      issues: [],
+      capitulos_para_revision: [],
+      recomendaciones_estilo: []
       } 
     };
   }

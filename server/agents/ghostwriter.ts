@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface GhostwriterInput {
   chapterNumber: number;
@@ -876,17 +877,14 @@ export class GhostwriterAgent extends BaseAgent {
       return { cleanContent, continuityState };
     } catch (e) {
       console.log("[Ghostwriter] Failed to parse continuity state JSON:", e);
-      const jsonMatch = stateJson.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          const continuityState = JSON.parse(jsonMatch[0]);
-          console.log("[Ghostwriter] Extracted continuity state via regex");
-          return { cleanContent, continuityState };
-        } catch (e2) {
-          console.log("[Ghostwriter] Regex extraction also failed");
-        }
+      try {
+        const continuityState = repairJson(stateJson);
+        console.log("[Ghostwriter] Extracted continuity state via regex");
+        return { cleanContent, continuityState };
+      } catch (e2) {
+        console.log("[Ghostwriter] Regex extraction also failed");
+      }
       }
       return { cleanContent: content, continuityState: null };
     }
   }
-}

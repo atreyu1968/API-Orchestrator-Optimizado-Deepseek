@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface SemanticRepetitionDetectorInput {
   projectTitle: string;
@@ -212,11 +213,8 @@ Responde ÚNICAMENTE con el JSON estructurado.
     const response = await this.generateContent(prompt);
     
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as SemanticRepetitionResult;
-        return { ...response, result };
-      }
+      const result = repairJson(response.content) as SemanticRepetitionResult;
+      return { ...response, result };
     } catch (e) {
       console.error("[SemanticRepetitionDetector] Failed to parse JSON response");
     }
@@ -224,13 +222,13 @@ Responde ÚNICAMENTE con el JSON estructurado.
     return { 
       ...response, 
       result: { 
-        analisis_aprobado: true,
-        puntuacion_originalidad: 8,
-        puntuacion_foreshadowing: 8,
-        resumen: "Análisis aprobado automáticamente",
-        clusters: [],
-        capitulos_para_revision: [],
-        foreshadowing_detectado: []
+      analisis_aprobado: true,
+      puntuacion_originalidad: 8,
+      puntuacion_foreshadowing: 8,
+      resumen: "Análisis aprobado automáticamente",
+      clusters: [],
+      capitulos_para_revision: [],
+      foreshadowing_detectado: []
       } 
     };
   }

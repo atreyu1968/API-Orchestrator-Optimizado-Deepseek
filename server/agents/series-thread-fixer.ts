@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 import type { SeriesArcMilestone, SeriesPlotThread, Chapter } from "@shared/schema";
 
 interface ThreadFixerInput {
@@ -393,12 +394,9 @@ Responde ÚNICAMENTE con JSON válido.
     }
 
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as ThreadFixerResult;
-        console.log(`[SeriesThreadFixer] Found ${result.fixes?.length || 0} fixes, recommendation: ${result.autoFixRecommendation}`);
-        return { ...response, result };
-      }
+      const result = repairJson(response.content) as ThreadFixerResult;
+      console.log(`[SeriesThreadFixer] Found ${result.fixes?.length || 0} fixes, recommendation: ${result.autoFixRecommendation}`);
+      return { ...response, result };
     } catch (e) {
       console.error("[SeriesThreadFixer] Failed to parse JSON:", e);
     }
@@ -406,14 +404,14 @@ Responde ÚNICAMENTE con JSON válido.
     return { 
       ...response, 
       result: {
-        analysisComplete: false,
-        totalIssuesFound: 0,
-        fixableIssues: 0,
-        fixes: [],
-        unfulfilledMilestones: [],
-        stagnantThreads: [],
-        overallAssessment: "Error al parsear respuesta de IA",
-        autoFixRecommendation: "manual_intervention_required",
+      analysisComplete: false,
+      totalIssuesFound: 0,
+      fixableIssues: 0,
+      fixes: [],
+      unfulfilledMilestones: [],
+      stagnantThreads: [],
+      overallAssessment: "Error al parsear respuesta de IA",
+      autoFixRecommendation: "manual_intervention_required",
       }
     };
   }

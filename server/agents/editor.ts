@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface EditorInput {
   chapterNumber: number;
@@ -364,11 +365,8 @@ Responde ÚNICAMENTE con el JSON estructurado.
     const response = await this.generateContent(prompt);
     
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as EditorResult;
-        return { ...response, result };
-      }
+      const result = repairJson(response.content) as EditorResult;
+      return { ...response, result };
     } catch (e) {
       console.error("[Editor] Failed to parse JSON response, approving by default");
     }
@@ -376,12 +374,12 @@ Responde ÚNICAMENTE con el JSON estructurado.
     return { 
       ...response, 
       result: { 
-        puntuacion: 8, 
-        veredicto: "Aprobado automáticamente", 
-        fortalezas: [],
-        debilidades_criticas: [],
-        plan_quirurgico: { diagnostico: "", procedimiento: "", objetivo: "" },
-        aprobado: true 
+      puntuacion: 8, 
+      veredicto: "Aprobado automáticamente", 
+      fortalezas: [],
+      debilidades_criticas: [],
+      plan_quirurgico: { diagnostico: "", procedimiento: "", objetivo: "" },
+      aprobado: true 
       } 
     };
   }

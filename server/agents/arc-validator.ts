@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 import type { SeriesArcMilestone, SeriesPlotThread } from "@shared/schema";
 
 interface ArcValidatorInput {
@@ -303,41 +304,10 @@ IMPORTANTE: Responde UNICAMENTE con JSON valido siguiendo el formato especificad
       let cleanContent = response.content;
       cleanContent = cleanContent.replace(/```(?:json)?\s*/g, "").replace(/```\s*$/g, "");
       
-      const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        let jsonStr = jsonMatch[0];
-        
-        try {
-          JSON.parse(jsonStr);
-        } catch (parseErr) {
-          console.log("[ArcValidator] JSON truncated, attempting repair...");
-          let depth = 0;
-          let inString = false;
-          let escape = false;
-          let lastValidPos = 0;
-          for (let i = 0; i < jsonStr.length; i++) {
-            const ch = jsonStr[i];
-            if (escape) { escape = false; continue; }
-            if (ch === '\\') { escape = true; continue; }
-            if (ch === '"') { inString = !inString; continue; }
-            if (inString) continue;
-            if (ch === '{' || ch === '[') depth++;
-            if (ch === '}' || ch === ']') { depth--; if (depth === 0) lastValidPos = i; }
-          }
-          if (depth > 0 && lastValidPos > 0) {
-            jsonStr = jsonStr.substring(0, lastValidPos + 1);
-          } else if (depth > 0) {
-            while (depth > 0) { jsonStr += "}"; depth--; }
-          }
-        }
-        
-        const result = JSON.parse(jsonStr) as ArcValidatorResult;
-        result.classifiedFindings = this.classifyFindings(result.findings || [], result.recommendations || "");
-        console.log(`[ArcValidator] Successfully parsed result: score=${result.overallScore}, passed=${result.passed}, classifiedFindings=${result.classifiedFindings.length}`);
-        return { ...response, result };
-      } else {
-        console.error("[ArcValidator] No JSON found in response. Content preview:", response.content.substring(0, 500));
-      }
+      const result = repairJson(cleanContent) as ArcValidatorResult;
+      result.classifiedFindings = this.classifyFindings(result.findings || [], result.recommendations || "");
+      console.log(`[ArcValidator] Successfully parsed result: score=${result.overallScore}, passed=${result.passed}, classifiedFindings=${result.classifiedFindings.length}`);
+      return { ...response, result };
     } catch (e) {
       console.error("[ArcValidator] Failed to parse JSON response:", e);
       console.error("[ArcValidator] Content that failed to parse:", response.content.substring(0, 1000));

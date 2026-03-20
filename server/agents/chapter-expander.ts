@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface ChapterSummary {
   chapterNumber: number;
@@ -244,12 +245,9 @@ IMPORTANTE:
     }
 
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as ExpansionPlan;
-        console.log(`[ExpansionAnalyzer] Found ${result.chaptersToExpand?.length || 0} chapters to expand, ${result.newChaptersToInsert?.length || 0} new chapters to insert`);
-        return { ...response, result };
-      }
+      const result = repairJson(response.content) as ExpansionPlan;
+      console.log(`[ExpansionAnalyzer] Found ${result.chaptersToExpand?.length || 0} chapters to expand, ${result.newChaptersToInsert?.length || 0} new chapters to insert`);
+      return { ...response, result };
     } catch (e) {
       console.error("[ExpansionAnalyzer] Failed to parse response:", e);
     }
@@ -321,12 +319,9 @@ RESPONDE CON JSON:
     }
 
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as ExpandedChapterResult;
-        console.log(`[ChapterExpander] Chapter ${input.chapterNumber} expanded: ${result.originalWordCount} -> ${result.newWordCount} words`);
-        return { ...response, result };
-      }
+      const result = repairJson(response.content) as ExpandedChapterResult;
+      console.log(`[ChapterExpander] Chapter ${input.chapterNumber} expanded: ${result.originalWordCount} -> ${result.newWordCount} words`);
+      return { ...response, result };
     } catch (e) {
       console.error("[ChapterExpander] Failed to parse response:", e);
     }
@@ -342,13 +337,13 @@ RESPONDE CON JSON:
     if (worldBible.characters?.length > 0) {
       const mainChars = worldBible.characters.slice(0, 5);
       sections.push("Personajes principales: " + mainChars.map((c: any) => 
-        `${c.nombre || c.name} (${c.rol || c.role || 'personaje'})`
+      `${c.nombre || c.name} (${c.rol || c.role || 'personaje'})`
       ).join(", "));
     }
     
     if (worldBible.locations?.length > 0) {
       sections.push("Ubicaciones: " + worldBible.locations.slice(0, 5).map((l: any) => 
-        l.nombre || l.name || l
+      l.nombre || l.name || l
       ).join(", "));
     }
     
@@ -417,12 +412,9 @@ RESPONDE CON JSON:
     }
 
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as NewChapterResult;
-        console.log(`[NewChapterGenerator] New chapter created: "${result.title}" (${result.wordCount} words)`);
-        return { ...response, result };
-      }
+      const result = repairJson(response.content) as NewChapterResult;
+      console.log(`[NewChapterGenerator] New chapter created: "${result.title}" (${result.wordCount} words)`);
+      return { ...response, result };
     } catch (e) {
       console.error("[NewChapterGenerator] Failed to parse response:", e);
     }
@@ -438,21 +430,21 @@ RESPONDE CON JSON:
     if (worldBible.characters?.length > 0) {
       sections.push("PERSONAJES:");
       worldBible.characters.slice(0, 10).forEach((c: any) => {
-        sections.push(`  - ${c.nombre || c.name}: ${c.descripcion || c.description || c.rol || 'personaje'}`);
+      sections.push(`  - ${c.nombre || c.name}: ${c.descripcion || c.description || c.rol || 'personaje'}`);
       });
     }
     
     if (worldBible.locations?.length > 0) {
       sections.push("UBICACIONES:");
       worldBible.locations.slice(0, 5).forEach((l: any) => {
-        sections.push(`  - ${l.nombre || l.name}: ${l.descripcion || l.description || ''}`);
+      sections.push(`  - ${l.nombre || l.name}: ${l.descripcion || l.description || ''}`);
       });
     }
     
     if (worldBible.rules?.length > 0) {
       sections.push("REGLAS DEL MUNDO:");
       worldBible.rules.slice(0, 5).forEach((r: any) => {
-        sections.push(`  - ${r.nombre || r.name || r}: ${r.descripcion || r.description || ''}`);
+      sections.push(`  - ${r.nombre || r.name || r}: ${r.descripcion || r.description || ''}`);
       });
     }
     

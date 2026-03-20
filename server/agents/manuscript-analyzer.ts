@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse, TokenUsage } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface ManuscriptContinuitySnapshot {
   synopsis: string;
@@ -146,18 +147,13 @@ Asegúrate de que el JSON sea válido y esté completo.`;
     console.log(`[ManuscriptAnalyzer] Got response of ${response.content.length} chars`);
 
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]) as ManuscriptContinuitySnapshot;
-        console.log(`[ManuscriptAnalyzer] Successfully parsed: ${parsed.characterStates?.length || 0} chars, ${parsed.unresolvedThreads?.length || 0} threads`);
-        return {
-          result: parsed,
-          tokenUsage: response.tokenUsage || { inputTokens: 0, outputTokens: 0, thinkingTokens: 0 },
-          thoughtSignature: response.thoughtSignature,
-        };
-      } else {
-        console.error("[ManuscriptAnalyzer] No JSON found in response. First 500 chars:", response.content.substring(0, 500));
-      }
+      const parsed = repairJson(response.content) as ManuscriptContinuitySnapshot;
+      console.log(`[ManuscriptAnalyzer] Successfully parsed: ${parsed.characterStates?.length || 0} chars, ${parsed.unresolvedThreads?.length || 0} threads`);
+      return {
+        result: parsed,
+        tokenUsage: response.tokenUsage || { inputTokens: 0, outputTokens: 0, thinkingTokens: 0 },
+        thoughtSignature: response.thoughtSignature,
+      };
     } catch (e) {
       console.error("[ManuscriptAnalyzer] Error parsing JSON:", e);
       console.error("[ManuscriptAnalyzer] Raw response (first 1000 chars):", response.content.substring(0, 1000));

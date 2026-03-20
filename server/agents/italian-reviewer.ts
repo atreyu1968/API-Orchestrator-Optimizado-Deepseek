@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface ItalianReviewInput {
   chapterContent: string;
@@ -102,11 +103,8 @@ Rispondi SOLO con il JSON strutturato come specificato nel system prompt.
     const response = await this.generateContent(prompt);
     
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as ItalianReviewResult;
-        return { ...response, result };
-      }
+      const result = repairJson(response.content) as ItalianReviewResult;
+      return { ...response, result };
     } catch (e) {
       console.error("[ItalianReviewer] Failed to parse JSON response:", e);
     }

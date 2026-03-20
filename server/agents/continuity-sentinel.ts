@@ -1,4 +1,5 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
+import { repairJson } from "../utils/json-repair";
 
 interface ContinuitySentinelInput {
   projectTitle: string;
@@ -191,11 +192,8 @@ Responde ÚNICAMENTE con el JSON estructurado.
     const response = await this.generateContent(prompt);
     
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as ContinuitySentinelResult;
-        return { ...response, result };
-      }
+      const result = repairJson(response.content) as ContinuitySentinelResult;
+      return { ...response, result };
     } catch (e) {
       console.error("[ContinuitySentinel] Failed to parse JSON response");
     }
@@ -203,12 +201,12 @@ Responde ÚNICAMENTE con el JSON estructurado.
     return { 
       ...response, 
       result: { 
-        checkpoint_aprobado: true,
-        puntuacion: 8,
-        resumen: "Checkpoint aprobado automáticamente",
-        issues: [],
-        capitulos_para_revision: [],
-        continuity_fix_plan: ""
+      checkpoint_aprobado: true,
+      puntuacion: 8,
+      resumen: "Checkpoint aprobado automáticamente",
+      issues: [],
+      capitulos_para_revision: [],
+      continuity_fix_plan: ""
       } 
     };
   }
