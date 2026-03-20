@@ -307,6 +307,7 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
     refetchInterval: (query) => {
       const d = query.state.data;
       if (d && d.status === "processing") return 3000;
+      if (d && d.chapters?.some((ch: any) => ch.status === "processing")) return 3000;
       return false;
     },
   });
@@ -331,7 +332,7 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/audiobooks", projectId] });
-      toast({ title: "Capítulo generado" });
+      toast({ title: "Generando capítulo...", description: "Se procesará en segundo plano" });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
