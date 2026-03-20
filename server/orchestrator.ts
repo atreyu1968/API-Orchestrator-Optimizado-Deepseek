@@ -103,6 +103,24 @@ export class Orchestrator {
     thinkingTokens: 0,
   };
 
+  private enforceApprovalLogic(editorResult: any): void {
+    if (!editorResult?.result) return;
+    const r = editorResult.result;
+    const score = r.puntuacion || 0;
+    const hasCriticalContinuityError = 
+      (Array.isArray(r.errores_continuidad) && r.errores_continuidad.length > 0) ||
+      (Array.isArray(r.filtracion_conocimiento) && r.filtracion_conocimiento.length > 0);
+
+    if (score >= 9 && !hasCriticalContinuityError && !r.aprobado) {
+      console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=false with no critical continuity errors. Forcing aprobado=true.`);
+      r.aprobado = true;
+    }
+    if (score < 9 && r.aprobado) {
+      console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=true. Forcing aprobado=false (threshold is 9).`);
+      r.aprobado = false;
+    }
+  }
+
   /**
    * Calculate per-chapter word count target from total novel target
    * @param totalNovelTarget - Total word count for the entire novel (e.g., 90000)
@@ -1129,6 +1147,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             });
           }
 
+          this.enforceApprovalLogic(editorResult);
           const currentScore = editorResult.result?.puntuacion || 0;
           
           if (currentScore >= bestVersion.score) {
@@ -1728,6 +1747,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
           const currentScore = editorResult.result?.puntuacion || 0;
           
+          this.enforceApprovalLogic(editorResult);
           if (currentScore >= bestVersion.score) {
             bestVersion = { 
               content: currentContent, 
@@ -2630,6 +2650,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
         await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "qa_edit");
 
+        this.enforceApprovalLogic(editorResult);
         if (!editorResult.result?.aprobado) {
           const refinementInstructions = this.buildRefinementInstructions(editorResult.result);
           const rewriteResult = await this.ghostwriter.execute({
