@@ -3212,8 +3212,7 @@ export class ReeditOrchestrator {
       let bestsellerScore = 0;
       const correctedIssueDescriptions: string[] = [];
       
-      // Maximum non-10 scores before pausing for user instructions
-      const MAX_NON_PERFECT_BEFORE_PAUSE = 15;
+      const MAX_NON_PERFECT_BEFORE_PAUSE = 5;
       // TOTAL cycle limit to prevent infinite loops (uses dedicated field that never resets)
       const MAX_TOTAL_CYCLES = 30;
       let totalCyclesExecuted = (savedProject?.totalReviewCycles || 0);
@@ -3355,19 +3354,17 @@ export class ReeditOrchestrator {
         }
         
         if (nonPerfectCount >= MAX_NON_PERFECT_BEFORE_PAUSE) {
-          if (rawScore >= 9) {
-            const onlyMinorIssues = !criticalIssues.length && filteredIssuesForApproval.every(i => i.severidad === "menor");
-            if (onlyMinorIssues || !hasAnyNewIssues) {
-              console.log(`[ReeditOrchestrator] Auto-approving after ${nonPerfectCount} cycles. Score ${rawScore}/10 (9+), no critical issues.`);
-              this.emitProgress({
-                projectId,
-                stage: "reviewing",
-                currentChapter: validChapters.length,
-                totalChapters: validChapters.length,
-                message: `Manuscrito APROBADO tras ${nonPerfectCount} ciclos de refinamiento. Puntuación: ${rawScore}/10. Calidad consistente demostrada.`,
-              });
-              break;
-            }
+          if (rawScore >= 9 && !hasCriticalIssues) {
+            console.log(`[ReeditOrchestrator] Auto-approving after ${nonPerfectCount} cycles. Score ${rawScore}/10 (9+), no critical issues.`);
+            consecutiveHighScores = this.requiredConsecutiveHighScores;
+            this.emitProgress({
+              projectId,
+              stage: "reviewing",
+              currentChapter: validChapters.length,
+              totalChapters: validChapters.length,
+              message: `Manuscrito APROBADO tras ${nonPerfectCount} ciclos de refinamiento. Puntuación: ${rawScore}/10. Calidad consistente demostrada.`,
+            });
+            break;
           }
           
           const pauseReason = `Después de ${nonPerfectCount} evaluaciones sin alcanzar 9/10, el proceso se ha pausado. Última puntuación: ${rawScore}/10. Issues detectados: ${issuesCount}. Por favor, proporciona instrucciones para continuar.`;
@@ -3400,20 +3397,17 @@ export class ReeditOrchestrator {
           return;
         }
         
-        // Auto-approve at 9+ after 3+ cycles if only minor issues remain
-        if (revisionCycle >= 2 && rawScore >= 9) {
-          const onlyMinorIssues = !criticalIssues.length && filteredIssuesForApproval.every(i => i.severidad === "menor");
-          if (onlyMinorIssues || !hasAnyNewIssues) {
-            console.log(`[ReeditOrchestrator] Auto-approving after ${revisionCycle + 1} cycles. Score ${rawScore}/10, only minor/no issues.`);
-            this.emitProgress({
-              projectId,
-              stage: "reviewing",
-              currentChapter: validChapters.length,
-              totalChapters: validChapters.length,
-              message: `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos. Puntuación: ${rawScore}/10. Solo observaciones menores — calidad suficiente.`,
-            });
-            break;
-          }
+        if (revisionCycle >= 2 && rawScore >= 9 && !hasCriticalIssues) {
+          console.log(`[ReeditOrchestrator] Auto-approving after ${revisionCycle + 1} cycles. Score ${rawScore}/10, no critical issues.`);
+          consecutiveHighScores = this.requiredConsecutiveHighScores;
+          this.emitProgress({
+            projectId,
+            stage: "reviewing",
+            currentChapter: validChapters.length,
+            totalChapters: validChapters.length,
+            message: `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos. Puntuación: ${rawScore}/10. Sin problemas críticos — calidad suficiente.`,
+          });
+          break;
         }
 
         if (consecutiveHighScores >= this.requiredConsecutiveHighScores) {
@@ -3707,7 +3701,7 @@ export class ReeditOrchestrator {
     let bestsellerScore = project.bestsellerScore || 0;
     let nonPerfectCount = project.nonPerfectFinalReviews || 0;
     const correctedIssueDescriptions: string[] = [];
-    const MAX_NON_PERFECT_BEFORE_PAUSE = 15;
+    const MAX_NON_PERFECT_BEFORE_PAUSE = 5;
     
     // TOTAL cycle limit to prevent infinite loops (uses dedicated field that never resets)
     const MAX_TOTAL_CYCLES = 30;
@@ -3955,19 +3949,17 @@ export class ReeditOrchestrator {
       }
       
       if (nonPerfectCount >= MAX_NON_PERFECT_BEFORE_PAUSE) {
-        if (rawScore >= 9) {
-          const onlyMinorIssuesFRO = !criticalIssuesFRO.length && filteredIssuesFROApproval.every(i => i.severidad === "menor");
-          if (onlyMinorIssuesFRO || !hasAnyNewIssuesFRO) {
-            console.log(`[ReeditOrchestrator] FRO Auto-approving after ${nonPerfectCount} cycles. Score ${rawScore}/10 (9+), no critical issues.`);
-            this.emitProgress({
-              projectId,
-              stage: "reviewing",
-              currentChapter: validChapters.length,
-              totalChapters: validChapters.length,
-              message: `Manuscrito APROBADO tras ${nonPerfectCount} ciclos de refinamiento. Puntuación: ${rawScore}/10. Calidad consistente demostrada.`,
-            });
-            break;
-          }
+        if (rawScore >= 9 && !hasCriticalIssuesFRO) {
+          console.log(`[ReeditOrchestrator] FRO Auto-approving after ${nonPerfectCount} cycles. Score ${rawScore}/10 (9+), no critical issues.`);
+          consecutiveHighScores = this.requiredConsecutiveHighScores;
+          this.emitProgress({
+            projectId,
+            stage: "reviewing",
+            currentChapter: validChapters.length,
+            totalChapters: validChapters.length,
+            message: `Manuscrito APROBADO tras ${nonPerfectCount} ciclos de refinamiento. Puntuación: ${rawScore}/10. Calidad consistente demostrada.`,
+          });
+          break;
         }
         
         const pauseReason = `Después de ${nonPerfectCount} evaluaciones sin alcanzar 9/10, el proceso se ha pausado. Última puntuación: ${rawScore}/10. Issues detectados: ${issuesCount}. Por favor, proporciona instrucciones para continuar.`;
@@ -4000,20 +3992,17 @@ export class ReeditOrchestrator {
         return;
       }
       
-      // Auto-approve at 9+ after 3+ cycles if only minor issues remain
-      if (revisionCycle >= 2 && rawScore >= 9) {
-        const onlyMinorIssuesFRO = !criticalIssuesFRO.length && filteredIssuesFROApproval.every(i => i.severidad === "menor");
-        if (onlyMinorIssuesFRO || !hasAnyNewIssuesFRO) {
-          console.log(`[ReeditOrchestrator] FRO Auto-approving after ${revisionCycle + 1} cycles. Score ${rawScore}/10, only minor/no issues.`);
-          this.emitProgress({
-            projectId,
-            stage: "reviewing",
-            currentChapter: validChapters.length,
-            totalChapters: validChapters.length,
-            message: `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos. Puntuación: ${rawScore}/10. Solo observaciones menores — calidad suficiente.`,
-          });
-          break;
-        }
+      if (revisionCycle >= 2 && rawScore >= 9 && !hasCriticalIssuesFRO) {
+        console.log(`[ReeditOrchestrator] FRO Auto-approving after ${revisionCycle + 1} cycles. Score ${rawScore}/10, no critical issues.`);
+        consecutiveHighScores = this.requiredConsecutiveHighScores;
+        this.emitProgress({
+          projectId,
+          stage: "reviewing",
+          currentChapter: validChapters.length,
+          totalChapters: validChapters.length,
+          message: `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos. Puntuación: ${rawScore}/10. Sin problemas críticos — calidad suficiente.`,
+        });
+        break;
       }
 
       if (consecutiveHighScores >= this.requiredConsecutiveHighScores) {

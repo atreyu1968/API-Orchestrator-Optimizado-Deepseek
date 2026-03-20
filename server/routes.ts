@@ -7402,6 +7402,75 @@ CRITERIOS:
     }
   });
 
+  app.post("/api/reedit-projects/:id/force-complete", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getReeditProject(projectId);
+
+      if (!project) {
+        return res.status(404).json({ error: "Proyecto no encontrado" });
+      }
+
+      if (project.status === "completed") {
+        return res.status(400).json({ error: "El proyecto ya está completado" });
+      }
+
+      console.log(`[ForceComplete] Forcing completion for reedit project ${projectId} (was: ${project.status}, score: ${project.bestsellerScore})`);
+
+      if (activeReeditOrchestrators.has(projectId)) {
+        activeReeditOrchestrators.delete(projectId);
+        await storage.updateReeditProject(projectId, { cancelRequested: true });
+        console.log(`[ForceComplete] Removed project ${projectId} from active orchestrators`);
+      }
+
+      const chapters = await storage.getReeditChaptersByProject(projectId);
+      const editedChapters = chapters.filter(c => c.editedContent);
+      const totalWords = editedChapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
+
+      for (const ch of editedChapters) {
+        await storage.updateReeditChapter(ch.id, { status: "completed", processingStage: "completed" });
+      }
+
+      const score = project.bestsellerScore || 0;
+
+      if (!project.finalReviewResult) {
+        await storage.createReeditAuditReport({
+          projectId,
+          auditType: "final_review",
+          chapterRange: "all",
+          score,
+          findings: {
+            veredicto: score >= 9 ? "APROBADO" : "APROBADO_POR_USUARIO",
+            puntuacion_global: score,
+            forzado_por_usuario: true,
+          },
+          recommendations: ["Completado forzosamente por el usuario"],
+        });
+      }
+
+      await storage.updateReeditProject(projectId, {
+        currentStage: "completed",
+        status: "completed",
+        bestsellerScore: score,
+        totalWordCount: totalWords,
+        cancelRequested: false,
+        pauseReason: null,
+        pendingUserInstructions: null,
+      });
+
+      res.json({
+        success: true,
+        message: `Proyecto completado forzosamente. Puntuación: ${score}/10. ${editedChapters.length} capítulos editados, ${totalWords.toLocaleString()} palabras.`,
+        score,
+        totalWords,
+        chaptersEdited: editedChapters.length,
+      });
+    } catch (error: any) {
+      console.error("[ForceComplete] Error:", error);
+      res.status(500).json({ error: "Error al forzar completado del proyecto" });
+    }
+  });
+
   app.post("/api/reedit-projects/:id/force-unlock", async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);

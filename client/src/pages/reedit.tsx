@@ -808,6 +808,27 @@ export default function ReeditPage() {
     },
   });
 
+  const forceCompleteMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      const res = await apiRequest("POST", `/api/reedit-projects/${projectId}/force-complete`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Proyecto Completado", description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
+    },
+    onError: (error: any) => {
+      let msg = "No se pudo completar el proyecto";
+      try {
+        const parsed = JSON.parse(error.message.replace(/^\d+:\s*/, ""));
+        if (parsed.error) msg = parsed.error;
+      } catch {
+        if (error.message) msg = error.message;
+      }
+      toast({ title: "Error", description: msg, variant: "destructive" });
+    },
+  });
+
   const resumeMutation = useMutation({
     mutationFn: async ({ projectId, instructions }: { projectId: number; instructions?: string }) => {
       return apiRequest("POST", `/api/reedit-projects/${projectId}/resume`, { instructions });
@@ -1240,6 +1261,23 @@ export default function ReeditPage() {
                           )}
                           Desbloquear
                         </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            if (confirm("¿Forzar completado? El proyecto se marcará como terminado con la puntuación actual y podrás acceder al informe final.")) {
+                              forceCompleteMutation.mutate(selectedProjectData.id);
+                            }
+                          }}
+                          disabled={forceCompleteMutation.isPending}
+                          data-testid="button-force-complete-processing"
+                        >
+                          {forceCompleteMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                          )}
+                          Forzar Completado
+                        </Button>
                       </>
                     )}
                     {selectedProjectData.status === "error" && (
@@ -1257,18 +1295,37 @@ export default function ReeditPage() {
                       </Button>
                     )}
                     {selectedProjectData.status === "awaiting_instructions" && (
-                      <Button
-                        onClick={() => resumeMutation.mutate({ projectId: selectedProjectData.id, instructions: userInstructions })}
-                        disabled={resumeMutation.isPending}
-                        data-testid="button-resume-with-instructions"
-                      >
-                        {resumeMutation.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        ) : (
-                          <Play className="h-4 w-4 mr-2" />
-                        )}
-                        Continuar con Instrucciones
-                      </Button>
+                      <>
+                        <Button
+                          onClick={() => resumeMutation.mutate({ projectId: selectedProjectData.id, instructions: userInstructions })}
+                          disabled={resumeMutation.isPending}
+                          data-testid="button-resume-with-instructions"
+                        >
+                          {resumeMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : (
+                            <Play className="h-4 w-4 mr-2" />
+                          )}
+                          Continuar con Instrucciones
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            if (confirm("¿Forzar completado? El proyecto se marcará como terminado con la puntuación actual y podrás acceder al informe final.")) {
+                              forceCompleteMutation.mutate(selectedProjectData.id);
+                            }
+                          }}
+                          disabled={forceCompleteMutation.isPending}
+                          data-testid="button-force-complete-awaiting"
+                        >
+                          {forceCompleteMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                          )}
+                          Forzar Completado
+                        </Button>
+                      </>
                     )}
                     {selectedProjectData.status === "completed" && (
                       <Button
