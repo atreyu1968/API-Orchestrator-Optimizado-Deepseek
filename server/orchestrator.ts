@@ -17,6 +17,7 @@ import {
 } from "./agents";
 import type { TokenUsage } from "./agents/base-agent";
 import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, TimelineEvent } from "@shared/schema";
+import { ensureChapterNumbers } from "./utils/extract-chapters";
 
 interface OrchestratorCallbacks {
   onAgentStatus: (role: string, status: string, message?: string) => void;
@@ -2526,7 +2527,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         if (result?.issues && result.issues.length > 0) {
           const affectedChapters = new Set<number>();
           result.issues.forEach(issue => {
-            issue.capitulos_afectados.forEach(ch => affectedChapters.add(ch));
+            const resolved = ensureChapterNumbers(issue);
+            issue.capitulos_afectados = resolved;
+            resolved.forEach(ch => affectedChapters.add(ch));
           });
           
           if (affectedChapters.size > 0) {
@@ -2573,7 +2576,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         if (!chapter || !sectionData) continue;
 
         const issuesForChapter = result?.issues?.filter(
-          i => i.capitulos_afectados.includes(chapterNum)
+          i => (i.capitulos_afectados || []).includes(chapterNum)
         ) || [];
         
         const revisionInstructions = issuesForChapter.map(issue => {
@@ -2703,7 +2706,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // Acumular los issues corregidos para informar al revisor en la siguiente pasada
       if (result?.issues) {
         const issuesDeEsteCiclo = result.issues.map(i => 
-          `[${i.categoria}] ${i.descripcion} (Caps ${i.capitulos_afectados.join(", ")})`
+          `[${i.categoria}] ${i.descripcion} (Caps ${(i.capitulos_afectados || []).join(", ") || "sin especificar"})`
         );
         issuesPreviosCorregidos = [...issuesPreviosCorregidos, ...issuesDeEsteCiclo];
       }

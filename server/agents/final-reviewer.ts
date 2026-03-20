@@ -325,6 +325,11 @@ REGLA CRÍTICA ABSOLUTA: Solo emitir APROBADO cuando la puntuación sea 10/10.
 En cada pasada donde puntuación < 10, incluye en analisis_bestseller.como_subir_a_10
 instrucciones CONCRETAS para elevar la puntuación a la perfección.
 
+REGLA OBLIGATORIA PARA ISSUES:
+- El campo "capitulos_afectados" NUNCA puede estar vacío ni omitirse. SIEMPRE debe contener al menos un número de capítulo.
+- Si un issue afecta a los capítulos 13, 29 y 30, escribe: "capitulos_afectados": [13, 29, 30]
+- Sin este campo, el sistema no puede aplicar las correcciones. Es CRÍTICO.
+
 SALIDA OBLIGATORIA (JSON):
 {
   "veredicto": "APROBADO" | "APROBADO_CON_RESERVAS" | "REQUIERE_REVISION",
@@ -356,10 +361,10 @@ SALIDA OBLIGATORIA (JSON):
     {
       "capitulos_afectados": [1, 5],
       "categoria": "enganche" | "personajes" | "trama" | "atmosfera" | "ritmo" | "continuidad_fisica" | "timeline" | "repeticion_lexica" | "arco_incompleto" | "tension_insuficiente" | "giro_predecible" | "identidad_confusa" | "capitulo_huerfano" | "otro",
-      "descripcion": "Lo que me sacó de la historia como lector",
+      "descripcion": "Lo que me sacó de la historia como lector. SIEMPRE incluir número(s) de capítulo en la descripción (ej: 'En el Capítulo 29, ...')",
       "severidad": "critica" | "mayor" | "menor",
       "elementos_a_preservar": "Lista ESPECÍFICA de escenas, diálogos y elementos del capítulo que funcionan bien y NO deben modificarse",
-      "instrucciones_correccion": "Cambio QUIRÚRGICO: qué párrafos/líneas específicas modificar y cómo. El resto del capítulo permanece INTACTO"
+      "instrucciones_correccion": "Cambio QUIRÚRGICO: qué párrafos/líneas específicas modificar y cómo. Incluir siempre el número de capítulo (ej: 'En el Capítulo 29, modificar la frase...'). El resto del capítulo permanece INTACTO"
     }
   ],
   "capitulos_para_reescribir": [2, 5],

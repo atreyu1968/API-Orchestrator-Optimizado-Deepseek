@@ -1490,10 +1490,72 @@ export default function ReeditPage() {
                             <div>
                               <p className="font-medium text-amber-800 dark:text-amber-200">Pausa Automática - Instrucciones Requeridas</p>
                               <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
-                                {(selectedProjectData as any).pauseReason || "El sistema ha pausado después de 15 evaluaciones sin alcanzar la puntuación perfecta (10/10)."}
+                                {(selectedProjectData as any).pauseReason || "El sistema ha pausado después de 5 evaluaciones sin alcanzar la puntuación deseada."}
                               </p>
                             </div>
                           </div>
+
+                          {(selectedProjectData as any).previousScores && (selectedProjectData as any).previousScores.length > 0 && (
+                            <div className="bg-background/50 rounded-md p-3">
+                              <p className="text-xs font-medium text-muted-foreground mb-2">Historial de puntuaciones:</p>
+                              <div className="flex flex-wrap gap-2">
+                                {((selectedProjectData as any).previousScores as number[]).map((score: number, idx: number) => (
+                                  <Badge
+                                    key={idx}
+                                    variant={score >= 9 ? "default" : "outline"}
+                                    className={`text-xs ${score >= 9 ? 'bg-green-600' : score >= 7 ? 'bg-amber-500 text-white border-0' : 'bg-red-500 text-white border-0'}`}
+                                  >
+                                    Ciclo {idx + 1}: {score}/10
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {(() => {
+                            const frResult = (selectedProjectData as any).finalReviewResult;
+                            const issuesList = frResult?.issues || [];
+                            const weaknesses = frResult?.weaknesses || frResult?.debilidades || [];
+                            if (issuesList.length === 0 && weaknesses.length === 0) return null;
+                            return (
+                              <div className="bg-background/50 rounded-md p-3 space-y-3">
+                                <p className="text-xs font-medium text-muted-foreground">Problemas detectados en la última evaluación:</p>
+                                {issuesList.length > 0 && (
+                                  <div className="space-y-2">
+                                    {issuesList.map((issue: any, idx: number) => (
+                                      <div key={idx} className="border rounded-md p-2 text-sm space-y-1">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <Badge variant="outline" className={`text-xs ${issue.severidad === 'critica' ? 'border-red-500 text-red-600' : issue.severidad === 'mayor' ? 'border-amber-500 text-amber-600' : 'border-blue-500 text-blue-600'}`}>
+                                            {issue.severidad || 'media'}
+                                          </Badge>
+                                          {issue.categoria && (
+                                            <Badge variant="secondary" className="text-xs">{issue.categoria}</Badge>
+                                          )}
+                                          {issue.capitulos_afectados && issue.capitulos_afectados.length > 0 && (
+                                            <span className="text-xs text-muted-foreground">
+                                              Cap. {issue.capitulos_afectados.join(', ')}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-sm">{issue.descripcion}</p>
+                                        {issue.instrucciones_correccion && (
+                                          <p className="text-xs text-muted-foreground italic">{issue.instrucciones_correccion}</p>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {weaknesses.length > 0 && issuesList.length === 0 && (
+                                  <ul className="list-disc list-inside text-sm space-y-1">
+                                    {weaknesses.map((w: string, idx: number) => (
+                                      <li key={idx}>{w}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            );
+                          })()}
+
                           <div className="space-y-2">
                             <label className="text-sm font-medium">Instrucciones para el agente (opcional):</label>
                             <textarea

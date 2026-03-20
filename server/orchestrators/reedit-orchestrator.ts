@@ -12,6 +12,7 @@ import {
   type FinalReviewerResult, 
   type FinalReviewIssue 
 } from "../agents/final-reviewer";
+import { ensureChapterNumbers } from "../utils/extract-chapters";
 
 function getChapterSortOrder(chapterNumber: number): number {
   if (chapterNumber === 0) return -1000;
@@ -3239,6 +3240,9 @@ export class ReeditOrchestrator {
       // Track resolved hashes locally to avoid stale data from project object
       let localResolvedHashes: string[] = (project.resolvedIssueHashes as string[]) || [];
       
+      // Snapshots of chapter content before corrections, keyed by chapter ID
+      const chapterSnapshots = new Map<number, { content: string; wordCount: number }>();
+      
       while (revisionCycle < this.maxFinalReviewCycles) {
         // Check for cancellation at start of each cycle
         if (await this.checkCancellation(projectId)) {
@@ -3449,6 +3453,47 @@ export class ReeditOrchestrator {
           // NO reseteamos revisionCycle - dejamos que MAX_TOTAL_CYCLES controle el bucle
         }
 
+        // SCORE REGRESSION CHECK: If score dropped by 2+ points from the best score,
+        // revert to pre-correction snapshots and pause
+        const bestPreviousScore = previousScores.length > 1 
+          ? Math.max(...previousScores.slice(0, -1)) 
+          : 0;
+        if (bestPreviousScore > 0 && rawScore <= bestPreviousScore - 2 && chapterSnapshots.size > 0) {
+          console.log(`[ReeditOrchestrator] SCORE REGRESSION: ${rawScore}/10 dropped from best ${bestPreviousScore}/10. Reverting ${chapterSnapshots.size} chapters to pre-correction state.`);
+          
+          for (const [chapterId, snapshot] of chapterSnapshots.entries()) {
+            await storage.updateReeditChapter(chapterId, {
+              editedContent: snapshot.content,
+              wordCount: snapshot.wordCount,
+            });
+          }
+          
+          bestsellerScore = bestPreviousScore;
+          
+          const pauseReason = `Las correcciones degradaron la puntuación de ${bestPreviousScore}/10 a ${rawScore}/10. Se revirtieron ${chapterSnapshots.size} capítulos a la versión anterior (${bestPreviousScore}/10). Puedes forzar completado o dar instrucciones específicas.`;
+          
+          await storage.updateReeditProject(projectId, {
+            status: "awaiting_instructions",
+            pauseReason,
+            revisionCycle,
+            totalReviewCycles: totalCyclesExecuted,
+            consecutiveHighScores: 0,
+            nonPerfectFinalReviews: nonPerfectCount,
+            previousScores: previousScores as any,
+            finalReviewResult: finalResult,
+            bestsellerScore: Math.round(bestPreviousScore),
+          });
+          
+          this.emitProgress({
+            projectId,
+            stage: "paused",
+            currentChapter: validChapters.length,
+            totalChapters: validChapters.length,
+            message: pauseReason,
+          });
+          return;
+        }
+
         this.emitProgress({
           projectId,
           stage: "reviewing",
@@ -3461,36 +3506,41 @@ export class ReeditOrchestrator {
         const rawIssues = finalResult?.issues || [];
         const chaptersToRewrite = finalResult?.capitulos_para_reescribir || [];
         
-        // Filter out issues that have already been resolved in previous cycles
-        // Use localResolvedHashes which is refreshed each cycle instead of stale project data
         const { newIssues: issues, filteredCount } = this.filterNewIssues(rawIssues, localResolvedHashes);
         
         if (filteredCount > 0) {
           console.log(`[ReeditOrchestrator] ${filteredCount} issues ya resueltos fueron filtrados, quedan ${issues.length} nuevos`);
         }
         
+        // Save snapshots BEFORE applying corrections so we can revert if score drops
+        chapterSnapshots.clear();
+        
         if (issues.length > 0 || chaptersToRewrite.length > 0) {
-          // Get unique chapter numbers that need fixes
           const chapterNumbersToFix = new Set<number>(chaptersToRewrite);
           for (const issue of issues) {
-            if (issue.capitulos_afectados) {
-              for (const chNum of issue.capitulos_afectados) {
-                chapterNumbersToFix.add(chNum);
-              }
+            const resolvedChapters = ensureChapterNumbers(issue);
+            issue.capitulos_afectados = resolvedChapters;
+            for (const chNum of resolvedChapters) {
+              chapterNumbersToFix.add(chNum);
             }
           }
 
-          // Get chapters that need improvement
           const chaptersToFix = await storage.getReeditChaptersByProject(projectId);
           const editableChapters = chaptersToFix.filter(c => c.editedContent);
           
-          // Only fix chapters specifically mentioned, limit to 5 per cycle
           const chaptersNeedingFix = editableChapters
             .filter(c => chapterNumbersToFix.has(c.chapterNumber))
             .slice(0, 5);
           
+          // Save pre-correction snapshots
+          for (const ch of chaptersNeedingFix) {
+            chapterSnapshots.set(ch.id, {
+              content: ch.editedContent || ch.originalContent,
+              wordCount: ch.wordCount || 0,
+            });
+          }
+          
           for (let i = 0; i < chaptersNeedingFix.length; i++) {
-            // Check cancellation before each chapter fix
             if (await this.checkCancellation(projectId)) {
               console.log(`[ReeditOrchestrator] Cancelled during chapter correction ${i + 1}/${chaptersNeedingFix.length}`);
               return;
@@ -3498,7 +3548,6 @@ export class ReeditOrchestrator {
             
             const chapter = chaptersNeedingFix[i];
             
-            // Get issues specific to this chapter
             const chapterIssues = issues.filter(iss => 
               iss.capitulos_afectados?.includes(chapter.chapterNumber)
             );
@@ -3516,7 +3565,6 @@ export class ReeditOrchestrator {
             });
 
             try {
-              // Convert FinalReviewIssues to problem format for NarrativeRewriter
               const problems = chapterIssues.map((issue, idx) => ({
                 id: `issue-${idx}`,
                 tipo: issue.categoria || "otro",
@@ -3525,7 +3573,6 @@ export class ReeditOrchestrator {
                 accionSugerida: issue.instrucciones_correccion || "Corregir según indicación"
               }));
 
-              // Build adjacent context
               const prevChapter = editableChapters.find(c => c.chapterNumber === chapter.chapterNumber - 1);
               const nextChapter = editableChapters.find(c => c.chapterNumber === chapter.chapterNumber + 1);
               const adjacentContext = {
@@ -3732,10 +3779,10 @@ export class ReeditOrchestrator {
       // Get unique chapter numbers that need fixes
       const chapterNumbersToFix = new Set<number>(chaptersToRewrite);
       for (const issue of issues) {
-        if (issue.capitulos_afectados) {
-          for (const chNum of issue.capitulos_afectados) {
-            chapterNumbersToFix.add(chNum);
-          }
+        const resolvedChapters = ensureChapterNumbers(issue);
+        issue.capitulos_afectados = resolvedChapters;
+        for (const chNum of resolvedChapters) {
+          chapterNumbersToFix.add(chNum);
         }
       }
       
@@ -3834,6 +3881,9 @@ export class ReeditOrchestrator {
 
     // Track resolved hashes locally to avoid stale data from project object
     let localResolvedHashesFRO: string[] = (project.resolvedIssueHashes as string[]) || [];
+    
+    // Snapshots of chapter content before corrections, keyed by chapter ID
+    const chapterSnapshotsFRO = new Map<number, { content: string; wordCount: number }>();
     
     while (revisionCycle < this.maxFinalReviewCycles) {
       // Check for cancellation at start of each cycle
@@ -4043,6 +4093,47 @@ export class ReeditOrchestrator {
         // NO reseteamos revisionCycle - dejamos que MAX_TOTAL_CYCLES controle
       }
 
+      // SCORE REGRESSION CHECK (FRO): If score dropped by 2+ points from the best score,
+      // revert to pre-correction snapshots and pause
+      const bestPreviousScoreFRO = previousScores.length > 1 
+        ? Math.max(...previousScores.slice(0, -1)) 
+        : 0;
+      if (bestPreviousScoreFRO > 0 && rawScore <= bestPreviousScoreFRO - 2 && chapterSnapshotsFRO.size > 0) {
+        console.log(`[ReeditOrchestrator] FRO SCORE REGRESSION: ${rawScore}/10 dropped from best ${bestPreviousScoreFRO}/10. Reverting ${chapterSnapshotsFRO.size} chapters.`);
+        
+        for (const [chapterId, snapshot] of chapterSnapshotsFRO.entries()) {
+          await storage.updateReeditChapter(chapterId, {
+            editedContent: snapshot.content,
+            wordCount: snapshot.wordCount,
+          });
+        }
+        
+        bestsellerScore = bestPreviousScoreFRO;
+        
+        const pauseReasonFRO = `Las correcciones degradaron la puntuación de ${bestPreviousScoreFRO}/10 a ${rawScore}/10. Se revirtieron ${chapterSnapshotsFRO.size} capítulos a la versión anterior (${bestPreviousScoreFRO}/10). Puedes forzar completado o dar instrucciones específicas.`;
+        
+        await storage.updateReeditProject(projectId, {
+          status: "awaiting_instructions",
+          pauseReason: pauseReasonFRO,
+          revisionCycle,
+          totalReviewCycles: totalCyclesExecuted,
+          consecutiveHighScores: 0,
+          nonPerfectFinalReviews: nonPerfectCount,
+          previousScores: previousScores as any,
+          finalReviewResult: finalResult,
+          bestsellerScore: Math.round(bestPreviousScoreFRO),
+        });
+        
+        this.emitProgress({
+          projectId,
+          stage: "paused",
+          currentChapter: validChapters.length,
+          totalChapters: validChapters.length,
+          message: pauseReasonFRO,
+        });
+        return;
+      }
+
       this.emitProgress({
         projectId,
         stage: "reviewing",
@@ -4055,32 +4146,38 @@ export class ReeditOrchestrator {
       const rawIssuesFRO = finalResult?.issues || [];
       const chaptersToRewrite = finalResult?.capitulos_para_reescribir || [];
       
-      // Filter out issues that have already been resolved in previous cycles
-      // Use localResolvedHashesFRO which is refreshed each cycle instead of stale project data
       const { newIssues: issues, filteredCount: filteredCountFRO } = this.filterNewIssues(rawIssuesFRO, localResolvedHashesFRO);
       
       if (filteredCountFRO > 0) {
         console.log(`[ReeditOrchestrator] FRO: ${filteredCountFRO} issues ya resueltos fueron filtrados, quedan ${issues.length} nuevos`);
       }
       
+      // Save snapshots BEFORE applying corrections so we can revert if score drops
+      chapterSnapshotsFRO.clear();
+      
       if (issues.length > 0 || chaptersToRewrite.length > 0) {
-        // Get unique chapter numbers that need fixes
         const chapterNumbersToFix = new Set<number>(chaptersToRewrite);
         for (const issue of issues) {
-          if (issue.capitulos_afectados) {
-            for (const chNum of issue.capitulos_afectados) {
-              chapterNumbersToFix.add(chNum);
-            }
+          const resolvedChapters = ensureChapterNumbers(issue);
+          issue.capitulos_afectados = resolvedChapters;
+          for (const chNum of resolvedChapters) {
+            chapterNumbersToFix.add(chNum);
           }
         }
 
-        // Only fix chapters specifically mentioned, limit to 5 per cycle
         const chaptersNeedingFix = validChapters
           .filter(c => chapterNumbersToFix.has(c.chapterNumber))
           .slice(0, 5);
         
+        // Save pre-correction snapshots
+        for (const ch of chaptersNeedingFix) {
+          chapterSnapshotsFRO.set(ch.id, {
+            content: ch.editedContent || ch.originalContent,
+            wordCount: ch.wordCount || 0,
+          });
+        }
+        
         for (let i = 0; i < chaptersNeedingFix.length; i++) {
-          // Check cancellation before each chapter fix
           if (await this.checkCancellation(projectId)) {
             console.log(`[ReeditOrchestrator] Cancelled during chapter correction (FRO) ${i + 1}/${chaptersNeedingFix.length}`);
             return;
@@ -4088,7 +4185,6 @@ export class ReeditOrchestrator {
           
           const chapter = chaptersNeedingFix[i];
           
-          // Get issues specific to this chapter
           const chapterIssues = issues.filter(iss => 
             iss.capitulos_afectados?.includes(chapter.chapterNumber)
           );
@@ -4106,7 +4202,6 @@ export class ReeditOrchestrator {
           });
 
           try {
-            // Convert FinalReviewIssues to problem format for NarrativeRewriter
             const problems = chapterIssues.map((issue, idx) => ({
               id: `issue-${idx}`,
               tipo: issue.categoria || "otro",
@@ -4115,7 +4210,6 @@ export class ReeditOrchestrator {
               accionSugerida: issue.instrucciones_correccion || "Corregir según indicación"
             }));
 
-            // Build adjacent context
             const prevChapter = validChapters.find(c => c.chapterNumber === chapter.chapterNumber - 1);
             const nextChapter = validChapters.find(c => c.chapterNumber === chapter.chapterNumber + 1);
             const adjacentContext = {
@@ -4155,7 +4249,6 @@ export class ReeditOrchestrator {
           }
         }
 
-        // Refresh validChapters for next review
         const refreshedChapters = await storage.getReeditChaptersByProject(projectId);
         validChapters = refreshedChapters.filter(ch => ch.editedContent).sort((a, b) => getChapterSortOrder(a.chapterNumber) - getChapterSortOrder(b.chapterNumber));
       }
