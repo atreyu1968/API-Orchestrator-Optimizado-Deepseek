@@ -7391,74 +7391,32 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return res.status(400).json({ error: "No chapters to export" });
       }
 
-      const { Document, Packer, Paragraph, TextRun, HeadingLevel } = await import("docx");
-
-      // Localized chapter labels based on detected language
-      const exportLabels: Record<string, { prologue: string; epilogue: string; authorNote: string; chapter: string }> = {
-        es: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota del Autor", chapter: "Capítulo" },
-        en: { prologue: "Prologue", epilogue: "Epilogue", authorNote: "Author's Note", chapter: "Chapter" },
-        fr: { prologue: "Prologue", epilogue: "Épilogue", authorNote: "Note de l'Auteur", chapter: "Chapitre" },
-        de: { prologue: "Prolog", epilogue: "Epilog", authorNote: "Anmerkung des Autors", chapter: "Kapitel" },
-        it: { prologue: "Prologo", epilogue: "Epilogo", authorNote: "Nota dell'Autore", chapter: "Capitolo" },
-        pt: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota do Autor", chapter: "Capítulo" },
-        ca: { prologue: "Pròleg", epilogue: "Epíleg", authorNote: "Nota de l'Autor", chapter: "Capítol" },
-      };
-      const labels = exportLabels[project.detectedLanguage || 'es'] || exportLabels.es;
-
-      const docSections: any[] = [];
-      
-      const getReeditChapterSortOrder3 = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
-      const sortedChapters = [...chapters].sort((a, b) => getReeditChapterSortOrder3(a.chapterNumber) - getReeditChapterSortOrder3(b.chapterNumber));
-      
-      for (const chapter of sortedChapters) {
-        const content = chapter.editedContent || chapter.originalContent;
-        if (!content) continue;
-
-        let chapterTitle = chapter.title || `${labels.chapter} ${chapter.chapterNumber}`;
-        if (chapter.chapterNumber === 0) {
-          chapterTitle = chapter.title || labels.prologue;
-        } else if (chapter.chapterNumber === -1 || chapter.chapterNumber === 998) {
-          chapterTitle = chapter.title || labels.epilogue;
-        } else if (chapter.chapterNumber === -2 || chapter.chapterNumber === 999) {
-          chapterTitle = chapter.title || labels.authorNote;
-        }
-
-        docSections.push(
-          new Paragraph({
-            text: chapterTitle,
-            heading: HeadingLevel.HEADING_1,
-            spacing: { before: 400, after: 200 },
-          })
-        );
-
-        const splitContent = splitLongParagraphs(content);
-        const paragraphs = splitContent.split(/\n\n+/);
-        for (const para of paragraphs) {
-          if (para.trim()) {
-            docSections.push(
-              new Paragraph({
-                children: [new TextRun({ text: para.trim() })],
-                spacing: { after: 200 },
-              })
-            );
-          }
-        }
+      let authorName: string | undefined;
+      if (project.pseudonymId) {
+        const pseudonym = await storage.getPseudonym(project.pseudonymId);
+        if (pseudonym) authorName = pseudonym.name;
       }
 
-      const doc = new Document({
-        sections: [{
-          properties: {},
-          children: docSections,
-        }],
+      const { generateGenericManuscriptDocx } = await import("./services/docx-exporter");
+      const buffer = await generateGenericManuscriptDocx({
+        title: project.title,
+        authorName,
+        language: project.detectedLanguage || "es",
+        chapters: chapters
+          .filter(c => c.editedContent || c.originalContent)
+          .map(c => ({
+            chapterNumber: c.chapterNumber,
+            title: c.title,
+            content: c.editedContent || c.originalContent || "",
+          })),
       });
-
-      const buffer = await Packer.toBuffer(doc);
       
       const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñüÁÉÍÓÚÑÜ\s-]/g, "").trim();
       const filename = `${safeTitle}_editado.docx`;
 
       res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      res.setHeader("Content-Length", buffer.length);
       res.send(buffer);
     } catch (error) {
       console.error("Error exporting reedit manuscript:", error);

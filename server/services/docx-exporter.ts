@@ -23,6 +23,21 @@ interface ManuscriptData {
   authorNote?: Chapter | null;
 }
 
+interface GenericChapter {
+  chapterNumber: number;
+  title?: string | null;
+  content: string;
+}
+
+interface GenericManuscriptData {
+  title: string;
+  authorName?: string;
+  genre?: string;
+  tone?: string;
+  language?: string;
+  chapters: GenericChapter[];
+}
+
 export async function generateManuscriptDocx(data: ManuscriptData): Promise<Buffer> {
   const { project, chapters, pseudonym, prologue, epilogue, authorNote } = data;
 
@@ -392,4 +407,206 @@ function addContentParagraphs(children: Paragraph[], content: string): void {
       );
     }
   }
+}
+
+export async function generateGenericManuscriptDocx(data: GenericManuscriptData): Promise<Buffer> {
+  const { title, authorName, genre, tone, language, chapters } = data;
+
+  const labels: Record<string, { prologue: string; epilogue: string; authorNote: string; chapter: string }> = {
+    es: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota del Autor", chapter: "Capítulo" },
+    en: { prologue: "Prologue", epilogue: "Epilogue", authorNote: "Author's Note", chapter: "Chapter" },
+    fr: { prologue: "Prologue", epilogue: "Épilogue", authorNote: "Note de l'Auteur", chapter: "Chapitre" },
+    de: { prologue: "Prolog", epilogue: "Epilog", authorNote: "Anmerkung des Autors", chapter: "Kapitel" },
+    it: { prologue: "Prologo", epilogue: "Epilogo", authorNote: "Nota dell'Autore", chapter: "Capitolo" },
+    pt: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota do Autor", chapter: "Capítulo" },
+    ca: { prologue: "Pròleg", epilogue: "Epíleg", authorNote: "Nota de l'Autor", chapter: "Capítol" },
+  };
+  const l = labels[language || "es"] || labels.es;
+
+  const getSortOrder = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
+  const sorted = [...chapters].sort((a, b) => getSortOrder(a.chapterNumber) - getSortOrder(b.chapterNumber));
+
+  const prologue = sorted.find(c => c.chapterNumber === 0);
+  const epilogue = sorted.find(c => c.chapterNumber === -1 || c.chapterNumber === 998);
+  const authorNoteChapter = sorted.find(c => c.chapterNumber === -2 || c.chapterNumber === 999);
+  const regularChapters = sorted.filter(c => c.chapterNumber > 0 && c.chapterNumber < 900);
+
+  const children: Paragraph[] = [];
+
+  children.push(
+    new Paragraph({ children: [new TextRun({ text: "", break: 5 })] }),
+    new Paragraph({
+      text: title,
+      heading: HeadingLevel.TITLE,
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 400 },
+    }),
+    new Paragraph({ children: [new TextRun({ text: "", break: 2 })] }),
+  );
+
+  if (authorName) {
+    children.push(
+      new Paragraph({
+        text: `por ${authorName}`,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 },
+        style: "author",
+      }),
+      new Paragraph({ children: [new TextRun({ text: "", break: 2 })] }),
+    );
+  }
+
+  if (genre || tone) {
+    const metaParts = [genre ? `Género: ${genre}` : "", tone ? `Tono: ${tone}` : ""].filter(Boolean).join(" | ");
+    children.push(
+      new Paragraph({
+        text: metaParts,
+        alignment: AlignmentType.CENTER,
+        style: "metadata",
+      }),
+    );
+  }
+
+  children.push(new Paragraph({ children: [new PageBreak()] }));
+
+  if (prologue && prologue.content) {
+    children.push(
+      new Paragraph({
+        text: prologue.title || l.prologue,
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 400, after: 400 },
+      })
+    );
+    addContentParagraphs(children, prologue.content);
+    children.push(new Paragraph({ children: [new PageBreak()] }));
+  }
+
+  for (const chapter of regularChapters) {
+    const chapterTitle = chapter.title
+      ? `${l.chapter} ${chapter.chapterNumber}: ${chapter.title}`
+      : `${l.chapter} ${chapter.chapterNumber}`;
+
+    children.push(
+      new Paragraph({
+        text: chapterTitle,
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 400, after: 400 },
+      })
+    );
+    addContentParagraphs(children, chapter.content);
+    children.push(new Paragraph({ children: [new PageBreak()] }));
+  }
+
+  if (epilogue && epilogue.content) {
+    children.push(
+      new Paragraph({
+        text: epilogue.title || l.epilogue,
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 400, after: 400 },
+      })
+    );
+    addContentParagraphs(children, epilogue.content);
+    children.push(new Paragraph({ children: [new PageBreak()] }));
+  }
+
+  if (authorNoteChapter && authorNoteChapter.content) {
+    children.push(
+      new Paragraph({
+        text: authorNoteChapter.title || l.authorNote,
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 400, after: 400 },
+      })
+    );
+    addContentParagraphs(children, authorNoteChapter.content);
+  }
+
+  const doc = new Document({
+    styles: {
+      paragraphStyles: [
+        {
+          id: "Normal",
+          name: "Normal",
+          basedOn: "Normal",
+          next: "Normal",
+          run: { font: "Georgia", size: 24 },
+          paragraph: {
+            spacing: { line: 360, after: 200 },
+            indent: { firstLine: convertInchesToTwip(0.5) },
+          },
+        },
+        {
+          id: "author",
+          name: "Author",
+          basedOn: "Normal",
+          run: { font: "Georgia", size: 28, italics: true },
+        },
+        {
+          id: "metadata",
+          name: "Metadata",
+          basedOn: "Normal",
+          run: { font: "Georgia", size: 22, color: "666666" },
+        },
+        {
+          id: "Heading1",
+          name: "Heading 1",
+          basedOn: "Normal",
+          next: "Normal",
+          run: { font: "Georgia", size: 32, bold: true },
+          paragraph: { spacing: { before: 480, after: 240 } },
+        },
+        {
+          id: "Title",
+          name: "Title",
+          basedOn: "Normal",
+          next: "Normal",
+          run: { font: "Georgia", size: 56, bold: true },
+        },
+      ],
+    },
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: {
+              top: convertInchesToTwip(1),
+              right: convertInchesToTwip(1),
+              bottom: convertInchesToTwip(1),
+              left: convertInchesToTwip(1.25),
+            },
+          },
+        },
+        headers: {
+          default: new Header({
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: title, font: "Georgia", size: 20, italics: true }),
+                ],
+                alignment: AlignmentType.CENTER,
+              }),
+            ],
+          }),
+        },
+        footers: {
+          default: new Footer({
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ children: [PageNumber.CURRENT], font: "Georgia", size: 20 }),
+                ],
+                alignment: AlignmentType.CENTER,
+              }),
+            ],
+          }),
+        },
+        children,
+      },
+    ],
+  });
+
+  return await Packer.toBuffer(doc);
 }
