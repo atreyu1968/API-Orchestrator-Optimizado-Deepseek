@@ -53,7 +53,26 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction):
   res.status(401).json({ error: "No autorizado", requiresAuth: true });
 };
 
-function createSessionStore(): session.Store | undefined {
+async function ensureSessionTable(pool: pg.Pool): Promise<void> {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS "user_sessions" (
+        "sid" varchar NOT NULL COLLATE "default",
+        "sess" json NOT NULL,
+        "expire" timestamp(6) NOT NULL,
+        CONSTRAINT "user_sessions_pkey" PRIMARY KEY ("sid")
+      )
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS "IDX_user_sessions_expire" ON "user_sessions" ("expire")
+    `);
+    console.log("[Auth] Session table verified/created successfully");
+  } catch (err: any) {
+    console.error("[Auth] Error creating session table:", err.message);
+  }
+}
+
+async function createSessionStore(): Promise<session.Store | undefined> {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) {
     console.warn("[Auth] DATABASE_URL not set, using in-memory session store");
@@ -61,7 +80,6 @@ function createSessionStore(): session.Store | undefined {
   }
 
   try {
-    const PgStore = connectPgSimple(session);
     const pool = new pg.Pool({
       connectionString: dbUrl,
     });
@@ -70,10 +88,13 @@ function createSessionStore(): session.Store | undefined {
       console.error("[Auth] Session store pool error:", err.message);
     });
 
+    await ensureSessionTable(pool);
+
+    const PgStore = connectPgSimple(session);
     const store = new PgStore({
       pool,
       tableName: "user_sessions",
-      createTableIfMissing: true,
+      createTableIfMissing: false,
       pruneSessionInterval: 60 * 15,
     });
 
@@ -89,7 +110,7 @@ function createSessionStore(): session.Store | undefined {
   }
 }
 
-export const setupAuth = (app: any): void => {
+export const setupAuth = async (app: any): Promise<void> => {
   const sessionSecret = process.env.SESSION_SECRET;
   const secureCookies = process.env.SECURE_COOKIES === "true";
   
@@ -100,7 +121,7 @@ export const setupAuth = (app: any): void => {
   }
   
   const secret = sessionSecret || "dev-only-not-for-production";
-  const store = createSessionStore();
+  const store = await createSessionStore();
 
   const sessionConfig: session.SessionOptions = {
     secret: secret,
@@ -138,14 +159,7 @@ export const setupAuth = (app: any): void => {
 
     if (password === correctPassword) {
       req.session.authenticated = true;
-      req.session.save((err) => {
-        if (err) {
-          console.error("[Auth] Error saving session:", err);
-          res.status(500).json({ error: "Error al guardar la sesion" });
-          return;
-        }
-        res.json({ success: true, message: "Login exitoso" });
-      });
+      res.json({ success: true, message: "Login exitoso" });
     } else {
       res.status(401).json({ error: "Contrasena incorrecta" });
     }
