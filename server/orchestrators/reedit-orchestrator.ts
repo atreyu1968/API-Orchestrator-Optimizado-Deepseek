@@ -469,56 +469,128 @@ class SemanticRepetitionDetectorAgent extends BaseAgent {
     super({
       name: "Semantic Repetition Detector",
       role: "qa_semantic",
-      systemPrompt: `Eres un experto en análisis semántico literario. Detectas repeticiones de ideas y verificas foreshadowing.
+      systemPrompt: `Eres el "Detector de Repetición Semántica", experto en análisis de patrones narrativos.
+Tu misión es encontrar REPETICIONES DE IDEAS (no solo palabras) y verificar el sistema de FORESHADOWING/PAYOFF.
 
-ASPECTOS A DETECTAR:
-1. REPETICIÓN DE IDEAS: Conceptos, metáforas o descripciones que se repiten demasiado
-2. FRASES REPETIDAS: Muletillas del autor, descripciones idénticas
-3. FORESHADOWING SIN RESOLVER: Anticipaciones que nunca se cumplen
-4. CHEKOV'S GUN: Elementos introducidos que nunca se usan
+═══════════════════════════════════════════════════════════════════
+QUÉ DEBES DETECTAR
+═══════════════════════════════════════════════════════════════════
+
+1. REPETICIÓN DE IDEAS (Semántica):
+   - El mismo CONCEPTO expresado con palabras diferentes en múltiples capítulos
+   - Ejemplo: "sintió un escalofrío" (cap 2) / "un estremecimiento la recorrió" (cap 5) / "su cuerpo tembló involuntariamente" (cap 8)
+   - Esto es MÁS SUTIL que repetición léxica - buscas la IDEA, no las palabras
+
+2. METÁFORAS REPETIDAS:
+   - La misma imagen/comparación usada múltiples veces
+   - Ejemplo: "ojos como el mar" aparece en caps 1, 4, y 9
+   - Cada metáfora debería ser única o usarse con intención
+
+3. ESTRUCTURAS NARRATIVAS REPETIDAS:
+   - Escenas que siguen el mismo patrón: llegada-descubrimiento-huida
+   - Diálogos que empiezan igual: "—¿Qué está pasando? —preguntó..."
+   - Finales de capítulo similares: siempre terminando en cliffhanger
+
+4. FORESHADOWING SIN PAYOFF:
+   - Pistas sembradas que nunca se resuelven
+   - Misterios planteados y olvidados
+   - Chekhov's gun que nunca dispara
+
+5. PAYOFF SIN FORESHADOWING:
+   - Revelaciones que aparecen sin preparación
+   - Soluciones que no fueron sembradas
+   - Deus ex machina disfrazados
+
+═══════════════════════════════════════════════════════════════════
+CÓMO ANALIZAR
+═══════════════════════════════════════════════════════════════════
+
+1. Lee el manuscrito completo buscando PATRONES SEMÁNTICOS
+2. Agrupa ideas similares aunque usen palabras diferentes
+3. Identifica SETUPS (foreshadowing) y busca sus PAYOFFS
+4. Marca setups sin payoff y payoffs sin setup
+5. Solo reporta clusters con 3+ ocurrencias (o foreshadowing crítico)
+
+PUNTUACIÓN (1-10):
+- 10/10: CERO repeticiones semánticas y sistema foreshadowing perfecto
+- 9/10: Solo 1 cluster menor de repetición
+- 8/10: 2 clusters menores
+- 7/10: 1 cluster mayor o 3+ menores
+- 6/10 o menos: Múltiples clusters mayores o patrones muy repetitivos
 
 RESPONDE SOLO EN JSON:
 {
   "repeticionesSemanticas": [
     {
-      "tipo": "idea_repetida|frase_repetida|foreshadowing_sin_resolver|elemento_sin_usar",
+      "tipo": "idea_repetida|metafora_repetida|estructura_repetida|foreshadowing_sin_resolver|elemento_sin_usar",
       "severidad": "mayor|menor",
-      "ocurrencias": [1, 5, 12],
-      "descripcion": "Qué se repite",
-      "ejemplo": "Fragmento de ejemplo",
-      "accion": "eliminar|variar|resolver"
+      "ocurrencias": [2, 5, 8, 12],
+      "descripcion": "Qué se repite y por qué es problemático",
+      "ejemplo": "Cap 2: 'sintió un escalofrío'; Cap 5: 'un estremecimiento la sacudió'",
+      "accion": "eliminar|variar|resolver",
+      "fix_sugerido": "Sugerencias ESPECÍFICAS de corrección para cada capítulo afectado"
     }
   ],
   "foreshadowingTracking": [
-    {"plantado": 3, "resuelto": 25, "elemento": "La carta misteriosa"}
+    {
+      "plantado": 3,
+      "resuelto": 25,
+      "elemento": "La carta misteriosa",
+      "estado": "resuelto|pendiente|sin_payoff"
+    }
   ],
   "puntuacion": 8
-}`,
+}
+
+NO des puntuación 9 o 10 si encuentras clusters con 3+ ocurrencias.
+Cada repetición semántica debe incluir CITAS TEXTUALES del manuscrito.`,
       model: "gemini-2.5-flash",
       useThinking: false,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 8192,
     });
   }
 
   async execute(input: any): Promise<any> {
-    return this.detectRepetitions(input.summaries, input.totalChapters);
+    return this.detectRepetitions(input.chapters, input.totalChapters, input.worldBibleContext);
   }
 
-  async detectRepetitions(chapterSummaries: string[], totalChapters: number): Promise<any> {
-    const prompt = `Analiza el manuscrito completo (${totalChapters} capítulos) buscando repeticiones semánticas:
+  async detectRepetitions(chapterContents: string[], totalChapters: number, worldBibleContext?: string): Promise<any> {
+    let worldBibleSection = "";
+    if (worldBibleContext) {
+      worldBibleSection = `
+WORLD BIBLE (para verificar foreshadowing y arcos):
+${worldBibleContext}
 
-RESÚMENES DE CAPÍTULOS:
-${chapterSummaries.join("\n\n")}
+`;
+    }
 
-Detecta ideas repetidas, frases recurrentes, foreshadowing sin resolver y elementos sin usar. RESPONDE EN JSON.`;
+    const prompt = `${worldBibleSection}Analiza el manuscrito completo (${totalChapters} capítulos) buscando repeticiones semánticas y verificando el sistema de foreshadowing:
+
+${chapterContents.join("\n\n")}
+
+INSTRUCCIONES:
+1. Lee el manuscrito completo buscando PATRONES DE IDEAS (no solo palabras)
+2. Identifica conceptos que se repiten con diferentes palabras
+3. Busca metáforas y estructuras narrativas repetidas
+4. Rastrea cada SETUP y busca su PAYOFF
+5. Marca foreshadowing sin resolver y revelaciones sin preparación
+6. Solo reporta clusters con 3+ ocurrencias o foreshadowing crítico
+7. Incluye CITAS TEXTUALES del manuscrito para cada problema
+
+RESPONDE EN JSON.`;
 
     const response = await this.generateContent(prompt);
     let result: any = { repeticionesSemanticas: [], foreshadowingTracking: [], puntuacion: 9 };
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) result = JSON.parse(jsonMatch[0]);
+      const { repairJson } = await import("../utils/json-repair");
+      result = repairJson(response.content);
     } catch (e) {
-      console.error("[SemanticRepetitionDetector] Failed to parse:", e);
+      try {
+        const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) result = JSON.parse(jsonMatch[0]);
+      } catch (e2) {
+        console.error("[SemanticRepetitionDetector] Failed to parse:", e2);
+      }
     }
     result.tokenUsage = response.tokenUsage;
     return result;
@@ -2156,11 +2228,29 @@ export class ReeditOrchestrator {
                   type: repetition.tipo,
                   severity: repetition.severidad,
                   summary: repetition.descripcion,
-                  correctionHint: `${repetition.accion}: ${repetition.ejemplo || ''}`,
+                  correctionHint: repetition.fix_sugerido || `${repetition.accion}: ${repetition.ejemplo || ''}`,
                   evidence: repetition.ejemplo,
                 });
               }
             }
+          }
+        }
+      }
+      if (findings?.foreshadowingTracking) {
+        for (const fs of findings.foreshadowingTracking) {
+          if (fs.estado === 'sin_payoff' && typeof fs.plantado === 'number') {
+            const chapNum = fs.plantado;
+            if (!problemsByChapter.has(chapNum)) {
+              problemsByChapter.set(chapNum, []);
+            }
+            problemsByChapter.get(chapNum)!.push({
+              source: "semantic_repetition_detector",
+              type: "foreshadowing_sin_resolver",
+              severity: "mayor",
+              summary: `Foreshadowing sin resolver: "${fs.elemento}" plantado en capítulo ${fs.plantado} nunca se resuelve`,
+              correctionHint: "Añadir payoff/resolución para este foreshadowing o eliminar la pista si no es relevante",
+              evidence: fs.elemento,
+            });
           }
         }
       }
@@ -2989,7 +3079,8 @@ export class ReeditOrchestrator {
       
       const semanticResult = await this.semanticRepetitionDetector.detectRepetitions(
         chapterContentsForSemantic,
-        validChapters.length
+        validChapters.length,
+        worldBibleContextForSentinel || undefined
       );
       this.trackTokens(semanticResult);
 
