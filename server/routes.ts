@@ -7688,30 +7688,32 @@ CRITERIOS:
       let markdown = `# ${project.title}\n\n`;
       let totalWords = 0;
       
-      // Filter chapters with content first to know which is last
       const chaptersWithContent = sortedChapters.filter(c => c.editedContent || c.originalContent);
       
       for (let i = 0; i < chaptersWithContent.length; i++) {
         const chapter = chaptersWithContent[i];
         const content = chapter.editedContent || chapter.originalContent;
         if (!content) continue;
-        
-        const isLastChapter = i === chaptersWithContent.length - 1;
 
-        let chapterTitle = chapter.title || `${labels.chapter} ${chapter.chapterNumber}`;
+        let chapterHeader: string;
         if (chapter.chapterNumber === 0) {
-          chapterTitle = chapter.title || labels.prologue;
+          chapterHeader = chapter.title 
+            ? `# ${labels.prologue}: ${chapter.title}`
+            : `# ${labels.prologue}`;
         } else if (chapter.chapterNumber === -1 || chapter.chapterNumber === 998) {
-          chapterTitle = chapter.title || labels.epilogue;
+          chapterHeader = chapter.title 
+            ? `# ${labels.epilogue}: ${chapter.title}`
+            : `# ${labels.epilogue}`;
         } else if (chapter.chapterNumber === -2 || chapter.chapterNumber === 999) {
-          chapterTitle = chapter.title || labels.authorNote;
+          chapterHeader = `# ${labels.authorNote}`;
+        } else {
+          chapterHeader = chapter.title 
+            ? `# ${labels.chapter} ${chapter.chapterNumber}: ${chapter.title}`
+            : `# ${labels.chapter} ${chapter.chapterNumber}`;
         }
 
-        markdown += `## ${chapterTitle}\n\n`;
-        markdown += splitLongParagraphs(content.trim()) + "\n\n";
-        if (!isLastChapter) {
-          markdown += "---\n\n";
-        }
+        markdown += `${chapterHeader}\n\n`;
+        markdown += splitLongParagraphs(content.trim()) + "\n\n\n";
         totalWords += content.split(/\s+/).filter((w: string) => w.length > 0).length;
       }
       
@@ -7756,7 +7758,6 @@ CRITERIOS:
       };
       const labels = exportLabels[project.detectedLanguage || 'es'] || exportLabels.es;
       
-      // Filter chapters with content first to know which is last
       const chaptersWithContent = sortedChapters.filter(c => c.editedContent || c.originalContent);
       
       let markdown = `# ${project.title}\n\n`;
@@ -7765,23 +7766,26 @@ CRITERIOS:
         const chapter = chaptersWithContent[i];
         const content = chapter.editedContent || chapter.originalContent;
         if (!content) continue;
-        
-        const isLastChapter = i === chaptersWithContent.length - 1;
 
-        let chapterTitle = chapter.title || `${labels.chapter} ${chapter.chapterNumber}`;
+        let chapterHeader: string;
         if (chapter.chapterNumber === 0) {
-          chapterTitle = chapter.title || labels.prologue;
+          chapterHeader = chapter.title 
+            ? `# ${labels.prologue}: ${chapter.title}`
+            : `# ${labels.prologue}`;
         } else if (chapter.chapterNumber === -1 || chapter.chapterNumber === 998) {
-          chapterTitle = chapter.title || labels.epilogue;
+          chapterHeader = chapter.title 
+            ? `# ${labels.epilogue}: ${chapter.title}`
+            : `# ${labels.epilogue}`;
         } else if (chapter.chapterNumber === -2 || chapter.chapterNumber === 999) {
-          chapterTitle = chapter.title || labels.authorNote;
+          chapterHeader = `# ${labels.authorNote}`;
+        } else {
+          chapterHeader = chapter.title 
+            ? `# ${labels.chapter} ${chapter.chapterNumber}: ${chapter.title}`
+            : `# ${labels.chapter} ${chapter.chapterNumber}`;
         }
 
-        markdown += `## ${chapterTitle}\n\n`;
-        markdown += splitLongParagraphs(content.trim()) + "\n\n";
-        if (!isLastChapter) {
-          markdown += "---\n\n";
-        }
+        markdown += `${chapterHeader}\n\n`;
+        markdown += splitLongParagraphs(content.trim()) + "\n\n\n";
       }
       
       const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñüÁÉÍÓÚÑÜ\s-]/g, "").trim();
