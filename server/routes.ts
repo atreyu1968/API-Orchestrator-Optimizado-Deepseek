@@ -8949,34 +8949,80 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
       archive.pipe(res);
 
-      for (const ch of completedChapters) {
+      let authorName = "";
+      try {
+        if (project.sourceType === "project") {
+          const srcProject = await storage.getProject(project.sourceId);
+          if (srcProject?.pseudonymId) {
+            const pseudonym = await storage.getPseudonym(srcProject.pseudonymId);
+            if (pseudonym) authorName = pseudonym.name;
+          }
+        } else if (project.sourceType === "reedit") {
+          const srcReedit = await storage.getReeditProject(project.sourceId);
+          if (srcReedit?.pseudonymId) {
+            const pseudonym = await storage.getPseudonym(srcReedit.pseudonymId);
+            if (pseudonym) authorName = pseudonym.name;
+          }
+        } else if (project.sourceType === "imported") {
+          const importedManuscriptsTable = (await import("@shared/schema")).importedManuscripts;
+          const { db: dbImp } = await import("./db");
+          const { eq } = await import("drizzle-orm");
+          const [manuscript] = await dbImp.select().from(importedManuscriptsTable).where(eq(importedManuscriptsTable.id, project.sourceId));
+          if (manuscript?.pseudonymId) {
+            const pseudonym = await storage.getPseudonym(manuscript.pseudonymId);
+            if (pseudonym) authorName = pseudonym.name;
+          }
+        }
+      } catch (e) {
+        console.log("[Audiobook] Could not resolve author name:", (e as any).message);
+      }
+
+      const sortedCompleted = [...completedChapters].sort((a, b) => {
+        const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
+        const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
+        return orderA - orderB;
+      });
+
+      for (const ch of sortedCompleted) {
         const audioPath = path.join(projectDir, ch.audioFileName!);
         if (fs.existsSync(audioPath)) {
           archive.file(audioPath, { name: ch.audioFileName! });
         }
       }
 
+      let coverFileName: string | null = null;
       if (project.coverImage) {
         const coverPath = path.join(AUDIOBOOKS_DIR, "covers", project.coverImage);
         if (fs.existsSync(coverPath)) {
-          archive.file(coverPath, { name: `cover_${path.extname(project.coverImage)}` });
+          const ext = path.extname(project.coverImage);
+          coverFileName = `cover${ext}`;
+          archive.file(coverPath, { name: coverFileName });
         }
       }
 
       const metadata = {
         title: project.title,
-        sourceType: project.sourceType,
-        language: project.sourceLanguage,
-        voiceId: project.voiceId,
-        voiceName: project.voiceName,
-        format: project.format,
-        totalChapters: completedChapters.length,
-        chapters: completedChapters.map(c => ({
-          number: c.chapterNumber,
-          title: c.chapterTitle,
-          file: c.audioFileName,
-          sizeBytes: c.audioSizeBytes,
-        })),
+        author: authorName || undefined,
+        narrator: project.voiceName || undefined,
+        description: `Audiolibro generado por LitAgents — ${project.title}`,
+        category: "Fiction",
+        language: project.sourceLanguage || "es",
+        coverImage: coverFileName || undefined,
+        chapters: sortedCompleted.map((c, idx) => {
+          const label = c.chapterNumber === 0 ? "Prólogo" :
+                        c.chapterNumber === -1 ? "Epílogo" :
+                        c.chapterNumber === -2 ? "Nota del Autor" :
+                        `Capítulo ${c.chapterNumber}`;
+          const titleStr = c.chapterTitle ? `${label}: ${c.chapterTitle}` : label;
+          return {
+            title: titleStr,
+            chapterNumber: idx + 1,
+            audioFile: c.audioFileName,
+            duration: c.audioDurationSeconds || undefined,
+            isSample: idx === 0,
+            description: titleStr,
+          };
+        }),
         generatedAt: new Date().toISOString(),
       };
       archive.append(JSON.stringify(metadata, null, 2), { name: "metadata.json" });
