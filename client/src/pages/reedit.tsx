@@ -1181,36 +1181,36 @@ export default function ReeditPage() {
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     {getStatusBadge(selectedProjectData.status)}
+                    {(selectedProjectData.status === "pending" || selectedProjectData.status === "completed") && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => assessMutation.mutate(selectedProjectData.id)}
+                        disabled={assessMutation.isPending}
+                        data-testid="button-assess-reedit-project"
+                      >
+                        {assessMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : reeditAssessment && reeditAssessment.projectId === selectedProjectData.id ? (
+                          <RotateCcw className="h-4 w-4 mr-2" />
+                        ) : (
+                          <Search className="h-4 w-4 mr-2" />
+                        )}
+                        {assessMutation.isPending ? "Analizando..." : reeditAssessment && reeditAssessment.projectId === selectedProjectData.id ? "Re-evaluar" : "Evaluar"}
+                      </Button>
+                    )}
                     {selectedProjectData.status === "pending" && (
-                      <>
-                        <Button
-                          variant="secondary"
-                          onClick={() => assessMutation.mutate(selectedProjectData.id)}
-                          disabled={assessMutation.isPending}
-                          data-testid="button-assess-reedit-project"
-                        >
-                          {assessMutation.isPending ? (
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          ) : reeditAssessment && reeditAssessment.projectId === selectedProjectData.id ? (
-                            <RotateCcw className="h-4 w-4 mr-2" />
-                          ) : (
-                            <Search className="h-4 w-4 mr-2" />
-                          )}
-                          {assessMutation.isPending ? "Analizando..." : reeditAssessment && reeditAssessment.projectId === selectedProjectData.id ? "Re-evaluar" : "Evaluar"}
-                        </Button>
-                        <Button
-                          onClick={() => startMutation.mutate(selectedProjectData.id)}
-                          disabled={startMutation.isPending}
-                          data-testid="button-start-reedit"
-                        >
-                          {startMutation.isPending ? (
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          ) : (
-                            <Play className="h-4 w-4 mr-2" />
-                          )}
-                          Iniciar Reedición
-                        </Button>
-                      </>
+                      <Button
+                        onClick={() => startMutation.mutate(selectedProjectData.id)}
+                        disabled={startMutation.isPending}
+                        data-testid="button-start-reedit"
+                      >
+                        {startMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Play className="h-4 w-4 mr-2" />
+                        )}
+                        Iniciar Reedición
+                      </Button>
                     )}
                     {selectedProjectData.status === "processing" && (
                       <>
