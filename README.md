@@ -84,7 +84,7 @@ Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando c
 - **Thinking desactivado por defecto**: Solo los agentes que lo necesitan (Ghostwriter, Arquitecto, Reestructurador, Expansor, correctores estructurales) lo activan explicitamente
 - **Limites de salida por rol**: 65536 (escritores/traductores), 16384 (revisores/analizadores), 8192 (editores), 4096 (validadores/auditores)
 - **Contexto deslizante comprimido**: 1 capitulo completo + 4 resumenes, truncados a 5000 caracteres
-- **Maximo 10 ciclos de revision final** con deteccion de estancamiento (early exit si las puntuaciones se estancan por 4 ciclos consecutivos)
+- **Maximo 10 ciclos de revision final** con deteccion de estancamiento y regresion de puntuacion (auto-revert si la calidad baja 2+ puntos)
 
 ## Funcionalidades Avanzadas
 
@@ -116,9 +116,14 @@ Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando c
 - **Retroalimentacion en ciclos de correccion**: Si se detectan repeticiones, el Ghostwriter recibe instrucciones especificas para reestructurar usando mecanismos narrativos diferentes
 
 ### Sistema de Calidad
-- Pausa automatica tras multiples evaluaciones no perfectas
+- Pausa automatica tras 5 evaluaciones no perfectas (antes 15)
 - Aprobacion requiere puntuacion 9/10 sin problemas criticos
-- Si las puntuaciones se estancan por debajo del umbral minimo durante 4+ ciclos, el sistema rechaza y no aprueba con calidad insuficiente
+- Auto-aprobacion tras 3+ ciclos si puntuacion >= 9 y sin issues criticos
+- **Deteccion de regresion de puntuacion**: Si las correcciones empeoran la puntuacion (caida de 2+ puntos), el sistema revierte automaticamente los capitulos a la version anterior y pausa para instrucciones del usuario
+- **Snapshots pre-correccion**: Antes de aplicar cambios, se guarda una copia de cada capitulo que se va a modificar para poder revertir si la calidad baja
+- **Extraccion inteligente de capitulos**: Cuando el revisor no especifica `capitulos_afectados`, el sistema los extrae automaticamente del texto de la descripcion (detecta "Capitulo 29", "Cap. 13", etc.)
+- **Panel de issues detallado**: Al pausar, la interfaz muestra historial de puntuaciones por ciclo, lista de issues con severidad/categoria/capitulos afectados e instrucciones de correccion
+- **Forzar completado**: Boton para finalizar manualmente proyectos de reedicion en cualquier momento, marcando como completado con la puntuacion actual
 - Tracking de hashes de issues para evitar re-reportar problemas resueltos
 - QA re-ejecuta auditores si hay capitulos modificados en el ciclo
 
