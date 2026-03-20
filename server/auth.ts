@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import pg from "pg";
 
 declare module "express-session" {
   interface SessionData {
@@ -63,15 +65,25 @@ export const setupAuth = (app: any): void => {
   
   const secret = sessionSecret || "dev-only-not-for-production";
 
+  const PgStore = connectPgSimple(session);
+  const pool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+  });
+
   app.use(
     session({
+      store: new PgStore({
+        pool,
+        tableName: "user_sessions",
+        createTableIfMissing: true,
+      }),
       secret: secret,
       resave: false,
       saveUninitialized: false,
       cookie: {
         secure: secureCookies,
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
         sameSite: secureCookies ? "none" : "lax",
       },
     })
