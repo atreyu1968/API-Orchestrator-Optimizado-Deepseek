@@ -247,7 +247,7 @@ SALIDA JSON OBLIGATORIA:
     "objetivo": "Resultado esperado según plan del arquitecto",
     "palabras_objetivo": (número de palabras que debe tener el capítulo corregido - NUNCA menor que el actual)
   },
-  "aprobado": (Boolean: true si puntuacion >= 7 Y sin errores graves)
+  "aprobado": (Boolean: true si puntuacion >= 9 Y sin errores graves)
 }
 `;
 

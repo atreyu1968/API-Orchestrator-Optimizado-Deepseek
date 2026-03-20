@@ -3355,10 +3355,10 @@ export class ReeditOrchestrator {
         }
         
         if (nonPerfectCount >= MAX_NON_PERFECT_BEFORE_PAUSE) {
-          if (rawScore >= 8) {
+          if (rawScore >= 9) {
             const onlyMinorIssues = !criticalIssues.length && filteredIssuesForApproval.every(i => i.severidad === "menor");
             if (onlyMinorIssues || !hasAnyNewIssues) {
-              console.log(`[ReeditOrchestrator] Auto-approving after ${nonPerfectCount} cycles. Score ${rawScore}/10 (8+), no critical issues.`);
+              console.log(`[ReeditOrchestrator] Auto-approving after ${nonPerfectCount} cycles. Score ${rawScore}/10 (9+), no critical issues.`);
               this.emitProgress({
                 projectId,
                 stage: "reviewing",
@@ -3400,8 +3400,8 @@ export class ReeditOrchestrator {
           return;
         }
         
-        // Auto-approve at 8+ after 3+ cycles if only minor issues remain
-        if (revisionCycle >= 2 && rawScore >= 8) {
+        // Auto-approve at 9+ after 3+ cycles if only minor issues remain
+        if (revisionCycle >= 2 && rawScore >= 9) {
           const onlyMinorIssues = !criticalIssues.length && filteredIssuesForApproval.every(i => i.severidad === "menor");
           if (onlyMinorIssues || !hasAnyNewIssues) {
             console.log(`[ReeditOrchestrator] Auto-approving after ${revisionCycle + 1} cycles. Score ${rawScore}/10, only minor/no issues.`);
@@ -3955,10 +3955,10 @@ export class ReeditOrchestrator {
       }
       
       if (nonPerfectCount >= MAX_NON_PERFECT_BEFORE_PAUSE) {
-        if (rawScore >= 8) {
+        if (rawScore >= 9) {
           const onlyMinorIssuesFRO = !criticalIssuesFRO.length && filteredIssuesFROApproval.every(i => i.severidad === "menor");
           if (onlyMinorIssuesFRO || !hasAnyNewIssuesFRO) {
-            console.log(`[ReeditOrchestrator] FRO Auto-approving after ${nonPerfectCount} cycles. Score ${rawScore}/10 (8+), no critical issues.`);
+            console.log(`[ReeditOrchestrator] FRO Auto-approving after ${nonPerfectCount} cycles. Score ${rawScore}/10 (9+), no critical issues.`);
             this.emitProgress({
               projectId,
               stage: "reviewing",
@@ -4000,8 +4000,8 @@ export class ReeditOrchestrator {
         return;
       }
       
-      // Auto-approve at 8+ after 3+ cycles if only minor issues remain
-      if (revisionCycle >= 2 && rawScore >= 8) {
+      // Auto-approve at 9+ after 3+ cycles if only minor issues remain
+      if (revisionCycle >= 2 && rawScore >= 9) {
         const onlyMinorIssuesFRO = !criticalIssuesFRO.length && filteredIssuesFROApproval.every(i => i.severidad === "menor");
         if (onlyMinorIssuesFRO || !hasAnyNewIssuesFRO) {
           console.log(`[ReeditOrchestrator] FRO Auto-approving after ${revisionCycle + 1} cycles. Score ${rawScore}/10, only minor/no issues.`);

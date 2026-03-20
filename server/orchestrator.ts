@@ -2389,18 +2389,18 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           const avgScore = (lastFour.reduce((a, b) => a + b, 0) / lastFour.length).toFixed(1);
           const bestOverall = Math.max(...previousScores);
           
-          if (maxRecent >= 8) {
+          if (maxRecent >= 9) {
             this.callbacks.onAgentStatus("final-reviewer", "completed", 
               `Puntuación estabilizada en ~${avgScore}/10 tras ${previousScores.length} ciclos de corrección. Manuscrito aprobado — calidad consistente demostrada.`
             );
-            console.log(`[Orchestrator] Score plateaued at ${lastFour.join(', ')} (maxRecent ${maxRecent} >= 8) — auto-approving after ${previousScores.length} cycles`);
+            console.log(`[Orchestrator] Score plateaued at ${lastFour.join(', ')} (maxRecent ${maxRecent} >= 9) — auto-approving after ${previousScores.length} cycles`);
             return true;
           }
           
           this.callbacks.onAgentStatus("final-reviewer", "error", 
-            `Puntuación estancada en ~${avgScore}/10 tras ${previousScores.length} ciclos. Umbral mínimo: 8. NO APROBADO — calidad insuficiente.`
+            `Puntuación estancada en ~${avgScore}/10 tras ${previousScores.length} ciclos. Umbral mínimo: 9. NO APROBADO — calidad insuficiente.`
           );
-          console.log(`[Orchestrator] Early exit: scores plateaued at ${lastFour.join(', ')} - maxRecent ${maxRecent} below 8, rejecting`);
+          console.log(`[Orchestrator] Early exit: scores plateaued at ${lastFour.join(', ')} - maxRecent ${maxRecent} below 9, rejecting`);
           return false;
         }
       }
@@ -2434,7 +2434,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       if ((result?.veredicto === "APROBADO" || result?.veredicto === "APROBADO_CON_RESERVAS") && currentScore < this.minAcceptableScore) {
         // After 3+ cycles, if score is 8+ and no major/critical issues, accept
         const hasSerious = result?.issues?.some(i => i.severidad === "critica" || i.severidad === "mayor");
-        if (revisionCycle >= 2 && currentScore >= 8 && !hasSerious) {
+        if (revisionCycle >= 2 && currentScore >= 9 && !hasSerious) {
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
             `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos de refinamiento. Puntuación: ${currentScore}/10. Sin defectos objetivos adicionales.`
           );
@@ -2464,8 +2464,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
       }
       
-      // In cycles 3+, if score is 8+ and all remaining issues are "menor", approve
-      if (revisionCycle >= 2 && currentScore >= 8 && result?.issues?.length) {
+      // In cycles 3+, if score is 9+ and all remaining issues are "menor", approve
+      if (revisionCycle >= 2 && currentScore >= 9 && result?.issues?.length) {
         const hasSeriousIssues = result.issues.some(i => i.severidad === "critica" || i.severidad === "mayor");
         if (!hasSeriousIssues) {
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
@@ -2482,14 +2482,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           : currentScore;
         const bestOverall = Math.max(...previousScores);
         
-        if (currentScore >= 8) {
+        if (currentScore >= 9) {
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
             `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 (promedio: ${avgScore}). APROBADO.`
           );
           return true;
         } else {
           this.callbacks.onAgentStatus("final-reviewer", "error", 
-            `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 NO alcanza el mínimo de 8. Proyecto NO APROBADO.`
+            `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 NO alcanza el mínimo de 9. Proyecto NO APROBADO.`
           );
           return false;
         }
@@ -3046,7 +3046,7 @@ Responde SOLO con un JSON válido con la estructura:
               bestVersion = { content: currentContent, score, continuityState: currentContinuityState };
             }
 
-            if (score >= 8 || refinementAttempts >= this.maxRefinementLoops - 1) {
+            if (score >= 9 || refinementAttempts >= this.maxRefinementLoops - 1) {
               approved = true;
               chapterContent = bestVersion.content;
               extractedContinuityState = bestVersion.continuityState;
