@@ -581,7 +581,7 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
                   <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                 )}
 
-                {ch.status === "completed" && ch.audioFileName && (
+                {ch.status === "completed" && ch.audioFileName && (ch.audioSizeBytes ?? 0) > 10000 && (
                   <>
                     <CheckCircle2 className="h-4 w-4 text-green-500" />
                     <audio
@@ -592,6 +592,13 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
                       src={`/api/audiobooks/${projectId}/chapter/${ch.id}/audio`}
                     />
                   </>
+                )}
+
+                {ch.status === "completed" && (ch.audioSizeBytes ?? 0) <= 10000 && (
+                  <div className="flex items-center gap-1 text-orange-500 text-xs">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>Audio corrupto</span>
+                  </div>
                 )}
 
                 {ch.status === "error" && (
@@ -605,7 +612,7 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
                   <Clock className="h-4 w-4 text-muted-foreground" />
                 )}
 
-                {(ch.status === "pending" || ch.status === "error") && !isProcessing && (
+                {(ch.status === "pending" || ch.status === "error" || (ch.status === "completed" && (ch.audioSizeBytes ?? 0) <= 10000)) && !isProcessing && (
                   <Button
                     data-testid={`button-generate-chapter-${ch.id}`}
                     variant="ghost"

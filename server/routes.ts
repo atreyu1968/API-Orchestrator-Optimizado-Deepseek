@@ -8626,7 +8626,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
         if (chapter.status === "completed" && chapter.audioFileName) {
           const audioPath = path.join(projectDir, chapter.audioFileName);
-          if (fs.existsSync(audioPath)) return "skipped";
+          if (fs.existsSync(audioPath)) {
+            const fileStats = fs.statSync(audioPath);
+            if (fileStats.size > 10000) {
+              return "skipped";
+            }
+            console.log(`[Audiobook] Project ${projectId}: Chapter ${chapter.chapterNumber} has tiny audio (${fileStats.size} bytes), regenerating...`);
+          }
         }
 
         await storage.updateAudiobookChapter(chapter.id, { status: "processing", errorMessage: null });
@@ -8695,10 +8701,18 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
             const errorText = await ttsResponse.text();
             throw new Error(`Fish Audio API error (${ttsResponse.status}): ${errorText}`);
           }
-          audioBuffers.push(Buffer.from(await ttsResponse.arrayBuffer()));
+          const chunkBuffer = Buffer.from(await ttsResponse.arrayBuffer());
+          if (chunkBuffer.length < 1000) {
+            const possibleError = chunkBuffer.toString('utf-8').substring(0, 200);
+            throw new Error(`Fish Audio returned invalid audio (${chunkBuffer.length} bytes). Response: ${possibleError}`);
+          }
+          audioBuffers.push(chunkBuffer);
         }
 
         const finalAudio = Buffer.concat(audioBuffers);
+        if (finalAudio.length < 10000) {
+          throw new Error(`Generated audio too small (${finalAudio.length} bytes) — likely invalid. Expected at least 10KB for a chapter.`);
+        }
         const audioFilename = `chapter_${String(chapter.chapterNumber).padStart(3, '0')}.${project.format || 'mp3'}`;
         fs.writeFileSync(path.join(projectDir, audioFilename), finalAudio);
         await storage.updateAudiobookChapter(chapter.id, {
@@ -8891,11 +8905,18 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           throw new Error(`Fish Audio API error (${ttsResponse.status}): ${errorText}`);
         }
 
-        const arrayBuffer = await ttsResponse.arrayBuffer();
-        audioBuffers.push(Buffer.from(arrayBuffer));
+        const chunkBuffer = Buffer.from(await ttsResponse.arrayBuffer());
+        if (chunkBuffer.length < 1000) {
+          const possibleError = chunkBuffer.toString('utf-8').substring(0, 200);
+          throw new Error(`Fish Audio returned invalid audio (${chunkBuffer.length} bytes). Response: ${possibleError}`);
+        }
+        audioBuffers.push(chunkBuffer);
       }
 
       const finalAudio = Buffer.concat(audioBuffers);
+      if (finalAudio.length < 10000) {
+        throw new Error(`Generated audio too small (${finalAudio.length} bytes) — likely invalid. Expected at least 10KB for a chapter.`);
+      }
       const projectDir = path.join(AUDIOBOOKS_DIR, `project_${projectId}`);
       if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
 
