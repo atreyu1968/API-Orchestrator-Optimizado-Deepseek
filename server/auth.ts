@@ -53,6 +53,42 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction):
   res.status(401).json({ error: "No autorizado", requiresAuth: true });
 };
 
+function createSessionStore(): session.Store | undefined {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    console.warn("[Auth] DATABASE_URL not set, using in-memory session store");
+    return undefined;
+  }
+
+  try {
+    const PgStore = connectPgSimple(session);
+    const pool = new pg.Pool({
+      connectionString: dbUrl,
+    });
+
+    pool.on("error", (err) => {
+      console.error("[Auth] Session store pool error:", err.message);
+    });
+
+    const store = new PgStore({
+      pool,
+      tableName: "user_sessions",
+      createTableIfMissing: true,
+      pruneSessionInterval: 60 * 15,
+    });
+
+    store.on("error", (err: Error) => {
+      console.error("[Auth] Session store error:", err.message);
+    });
+
+    console.log("[Auth] Using PostgreSQL session store (persistent sessions)");
+    return store;
+  } catch (err: any) {
+    console.error("[Auth] Failed to create PG session store, falling back to memory:", err.message);
+    return undefined;
+  }
+}
+
 export const setupAuth = (app: any): void => {
   const sessionSecret = process.env.SESSION_SECRET;
   const secureCookies = process.env.SECURE_COOKIES === "true";
@@ -64,30 +100,27 @@ export const setupAuth = (app: any): void => {
   }
   
   const secret = sessionSecret || "dev-only-not-for-production";
+  const store = createSessionStore();
 
-  const PgStore = connectPgSimple(session);
-  const pool = new pg.Pool({
-    connectionString: process.env.DATABASE_URL,
-  });
+  const sessionConfig: session.SessionOptions = {
+    secret: secret,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: secureCookies,
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      sameSite: secureCookies ? "none" : "lax",
+    },
+  };
 
-  app.use(
-    session({
-      store: new PgStore({
-        pool,
-        tableName: "user_sessions",
-        createTableIfMissing: true,
-      }),
-      secret: secret,
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        secure: secureCookies,
-        httpOnly: true,
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-        sameSite: secureCookies ? "none" : "lax",
-      },
-    })
-  );
+  if (store) {
+    sessionConfig.store = store;
+  } else {
+    console.warn("[Auth] Using in-memory session store (sessions will be lost on restart)");
+  }
+
+  app.use(session(sessionConfig));
 
   app.post("/api/auth/login", (req: Request, res: Response) => {
     const { password } = req.body;
@@ -105,7 +138,14 @@ export const setupAuth = (app: any): void => {
 
     if (password === correctPassword) {
       req.session.authenticated = true;
-      res.json({ success: true, message: "Login exitoso" });
+      req.session.save((err) => {
+        if (err) {
+          console.error("[Auth] Error saving session:", err);
+          res.status(500).json({ error: "Error al guardar la sesion" });
+          return;
+        }
+        res.json({ success: true, message: "Login exitoso" });
+      });
     } else {
       res.status(401).json({ error: "Contrasena incorrecta" });
     }
