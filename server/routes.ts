@@ -8325,12 +8325,25 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
     text = text.replace(/\r\n/g, '\n');
 
+    text = text.replace(/\.{3,}/g, '...');
+    text = text.replace(/…/g, '...');
+
     const paragraphs = text.split(/\n\s*\n/);
     const processed = paragraphs.map(para => {
       let p = para.replace(/[ \t]+/g, ' ').trim();
+
       p = p.replace(/([.])(\s+)(?=[A-ZÁÉÍÓÚÑÜ¿¡])/g, '$1\n$2');
       p = p.replace(/([!?])(\s+)/g, '$1\n$2');
-      p = p.replace(/([—])(\s*["«])/g, '$1\n$2');
+
+      p = p.replace(/(\.\.\.)(\s*)/g, '$1\n$2');
+
+      p = p.replace(/([:;])(\s+)(?=[A-ZÁÉÍÓÚÑÜ¿¡])/g, '$1\n$2');
+
+      p = p.replace(/\n\s*(—\s*)/g, '\n\n$1');
+      p = p.replace(/^(—\s*)/g, '\n$1');
+
+      p = p.replace(/([.!?])(["»"'\u201D])(\s+)/g, '$1$2\n$3');
+
       return p;
     }).filter(p => p.length > 0);
 
@@ -8671,9 +8684,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
               format: project.format || "mp3",
               mp3_bitrate: project.bitrate || 128,
               prosody: { speed: project.speed || 1.0, volume: 0 },
-              top_p: 0.8,
-              temperature: 0.8,
-              repetition_penalty: 1.3,
+              top_p: 0.7,
+              temperature: 0.9,
+              repetition_penalty: 1.0,
               latency: "normal",
             }),
             signal: abortController.signal,
@@ -8866,9 +8879,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
             format: project.format || "mp3",
             mp3_bitrate: project.bitrate || 128,
             prosody: { speed: project.speed || 1.0, volume: 0 },
-            top_p: 0.8,
-            temperature: 0.8,
-            repetition_penalty: 1.3,
+            top_p: 0.7,
+            temperature: 0.9,
+            repetition_penalty: 1.0,
             latency: "normal",
           }),
         });

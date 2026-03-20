@@ -140,7 +140,7 @@ Preferred communication style: Simple, everyday language.
 - **Drizzle Kit**: Used for database migrations.
 
 ### TTS / Audiobook Services
-- **Fish Audio API**: `FISH_AUDIO_API_KEY` — TTS model `speech-1.6` for audiobook generation. Supports MP3/WAV/Opus output, voice cloning via `reference_id`, prosody control (speed/volume), and expressiveness params (`top_p: 0.8`, `temperature: 0.8`, `repetition_penalty: 1.3`).
+- **Fish Audio API**: `FISH_AUDIO_API_KEY` — TTS model `speech-1.6` for audiobook generation. Supports MP3/WAV/Opus output, voice cloning via `reference_id`, prosody control (speed/volume), and expressiveness params (`top_p: 0.7`, `temperature: 0.9`, `repetition_penalty: 1.0`).
 
 #### Audiobook Generation (v5.0)
 - Converts completed books (projects, reedit projects, imported manuscripts, translations) into audiobooks chapter by chapter using Fish Audio TTS API.
