@@ -32,6 +32,7 @@ Preferred communication style: Simple, everyday language.
 - **Models**: Gemini 2.5 Flash (all agents — Architect, Ghostwriter, Editor, CopyEditor, FinalReviewer, Translator, validators, Chapter Expander, Restructurer, Reedit agents), Gemini 2.0 Flash (ManuscriptAnalyzer).
 - **Thinking Support**: Gemini 2.5 Flash (budget: 1024) for agents that need it (Ghostwriter, Architect, Restructurer, Chapter Expander). Thinking is OFF by default; agents must opt-in with `useThinking: true`.
 - **Token Optimization**: System prompts sent via `systemInstruction` (not as user messages). Per-agent `maxOutputTokens` limits: 65536 for writers/translators, 16384 for reviewers, 8192 for editors/analyzers, 4096 for validators/auditors. Default model is `gemini-2.5-flash` (not Pro).
+- **Ghostwriter Quality System**: System prompt includes "Estándar de Excelencia Editorial" section targeting 9/10 on first draft, with 6 quality pillars (human-like prose, concrete sensory immersion, dialogue subtexto, emotional arc progression, hook opening/memorable close, beats as full scenes). Also includes a mandatory pre-delivery self-audit checklist (10 checkpoints matching Editor criteria).
 - **Configuration**: `temperature: 1.0`, `topP: 0.95`.
 - **Client Setup**: `@google/genai` SDK using `GEMINI_API_KEY`.
 

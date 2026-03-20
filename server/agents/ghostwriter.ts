@@ -271,6 +271,50 @@ En escenas de combate o acción física:
    - Las armas se pierden, se rompen, se atascan
 
 ═══════════════════════════════════════════════════════════════════
+ESTÁNDAR DE EXCELENCIA EDITORIAL (OBJETIVO: 9/10 EN PRIMERA ESCRITURA)
+═══════════════════════════════════════════════════════════════════
+Tu texto será evaluado por un Editor con estándar de excelencia (umbral 9/10).
+Para aprobar a la primera SIN reescrituras, cumple ESTOS criterios:
+
+A) PROSA DE AUTOR HUMANO (NO de IA):
+   - Cada personaje habla con VOZ PROPIA: vocabulario, ritmo, muletillas únicas
+   - El narrador tiene PERSONALIDAD: no es una cámara neutral, sino una voz con textura
+   - Escribe con IRREGULARIDADES HUMANAS: frases a medio terminar, pensamientos que se desvían
+   - Un párrafo de 5 líneas seguido de uno de 1 línea. Un diálogo largo seguido de un silencio descrito
+   - Evita la "prosa de informe": nunca narres como si resumieras, VIVE la escena
+
+B) INMERSIÓN SENSORIAL CONCRETA (no abstracta):
+   - PROHIBIDO: "Sintió miedo" / "El ambiente era tenso" / "La situación era peligrosa"
+   - OBLIGATORIO: "La bilis le subió a la garganta. Los dedos le temblaban tanto que no podía cerrar el puño"
+   - Cada escena debe activar AL MENOS 3 sentidos diferentes (no solo la vista)
+   - Los olores y texturas anclan al lector mejor que cualquier descripción visual
+   - Detalles CONCRETOS: no "una flor", sino "un lirio marchito con los pétalos pardos"
+
+C) SUBTEXTO EN DIÁLOGOS (lo que NO se dice):
+   - Los personajes RARA VEZ dicen exactamente lo que piensan
+   - Escribir subtexto: lo que dicen vs lo que quieren decir vs lo que sienten
+   - Incluye silencios, evasiones, cambios de tema, respuestas indirectas
+   - El monólogo interno puede CONTRADECIR lo que el personaje dice en voz alta
+   - Un buen diálogo tiene tensión DEBAJO de las palabras
+
+D) ARCO EMOCIONAL CON PROGRESIÓN (no plano):
+   - El capítulo debe tener VALLES y CIMAS emocionales, no un tono constante
+   - Alterna tensión con momentos de respiro (pero breves)
+   - El estado emocional del protagonista al final DEBE ser diferente al del inicio
+   - Las transiciones emocionales son GRADUALES: no pases de calma a terror sin escalones intermedios
+
+E) GANCHO DE APERTURA + CIERRE MEMORABLE:
+   - Las primeras 3 frases determinan si el lector sigue. Empieza IN MEDIA RES o con una imagen potente
+   - Las últimas 3 frases del capítulo deben dejar una MARCA: pregunta sin respuesta, revelación, giro, imagen persistente
+   - NUNCA abras con descripción genérica del clima o del lugar
+   - NUNCA cierres con el personaje simplemente "yéndose a dormir" o "pensando en lo ocurrido"
+
+F) CADA BEAT = UNA ESCENA COMPLETA:
+   - Un beat NO es un párrafo de resumen. Es una ESCENA con entrada, desarrollo y salida
+   - Incluye en cada beat: descripción del espacio, acciones físicas, diálogos o pensamientos, y una micro-resolución o escalada
+   - Si un beat dice "X descubre Y", NO escribas "X descubrió Y". Narra el PROCESO del descubrimiento
+
+═══════════════════════════════════════════════════════════════════
 PROCESO DE ESCRITURA (Thinking Level: High)
 ═══════════════════════════════════════════════════════════════════
 
@@ -281,16 +325,20 @@ ANTES DE ESCRIBIR:
 4. Estudia la "informacion_nueva" que DEBE revelarse en este capítulo.
 5. Comprende el "giro_emocional" que debe experimentar el lector.
 6. Revisa las "prohibiciones_este_capitulo" si las hay.
+7. Planifica la CURVA EMOCIONAL del capítulo: ¿dónde están los valles, las cimas y los giros?
+8. Decide la PRIMERA y ÚLTIMA frase del capítulo ANTES de escribir el resto.
 
 MIENTRAS ESCRIBES:
-7. Sigue los BEATS en orden, desarrollando cada uno con riqueza sensorial.
-8. Implementa los "recursos_literarios_sugeridos" si los hay.
-9. Mantén un registro mental de expresiones ya usadas para NO repetirlas.
+9. Sigue los BEATS en orden, desarrollando cada uno como escena COMPLETA con riqueza sensorial.
+10. Implementa los "recursos_literarios_sugeridos" si los hay.
+11. Mantén un registro mental de expresiones ya usadas para NO repetirlas.
+12. AUTOAUDITA cada párrafo: ¿suena a IA o a autor humano? ¿Es concreto o abstracto? ¿Repite algo previo?
 
 AL TERMINAR:
-10. Verifica que la "continuidad_salida" queda establecida.
-11. Confirma que la "pregunta_dramatica" queda planteada.
-12. Revisa que NO hayas repetido frases, metáforas o conceptos.
+13. Verifica que la "continuidad_salida" queda establecida.
+14. Confirma que la "pregunta_dramatica" queda planteada.
+15. Revisa que NO hayas repetido frases, metáforas o conceptos.
+16. RELEE las primeras y últimas 3 frases: ¿enganchan? ¿Son memorables?
 `;
 
 export class GhostwriterAgent extends BaseAgent {
@@ -824,6 +872,24 @@ export class GhostwriterAgent extends BaseAgent {
     
     ⚠️ TU CAPÍTULO DEBE TENER MÍNIMO ${minWords} PALABRAS ⚠️
     Si escribes menos, serás obligado a reescribir. Desarrolla cada escena con detalle.
+
+    ═══════════════════════════════════════════════════════════════════
+    🔍 AUTO-REVISIÓN OBLIGATORIA (ANTES DE ENTREGAR)
+    ═══════════════════════════════════════════════════════════════════
+    Cuando termines de escribir, RELEE tu texto y verifica:
+    
+    □ APERTURA: ¿Las primeras 3 frases enganchan? ¿Evito empezar con clima/paisaje genérico?
+    □ CIERRE: ¿Las últimas 3 frases dejan marca? ¿Hay gancho, revelación o imagen persistente?
+    □ SENTIDOS: ¿Cada escena activa al menos 3 sentidos (no solo vista)?
+    □ SHOW DON'T TELL: ¿Todas las emociones se MUESTRAN con el cuerpo, nunca se DICEN?
+    □ DIÁLOGOS: ¿Tienen subtexto? ¿Cada personaje tiene voz propia?
+    □ RITMO: ¿Alterno frases cortas/largas? ¿Hay valles y cimas emocionales?
+    □ BEATS: ¿Cada beat es una escena completa, no un resumen?
+    □ CLICHÉS IA: ¿Usé "crucial", "enigmático", "fascinante", "torbellino", "palpable"? → ELIMINAR
+    □ REPETICIONES: ¿Repetí alguna metáfora, expresión o estructura dentro del capítulo?
+    □ CONTINUIDAD: ¿Los estados de personajes son coherentes con el capítulo anterior?
+    
+    Si algún punto falla, CORRIGE antes de entregar. El Editor rechazará por debajo de 9/10.
     
     ═══════════════════════════════════════════════════════════════════
     ESTADO DE CONTINUIDAD (OBLIGATORIO AL FINAL)
