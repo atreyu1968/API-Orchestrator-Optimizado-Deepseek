@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2, Sparkles, Pencil, Check, X } from "lucide-react";
+import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2, Sparkles, Pencil, Check, X, Search, AlertTriangle, CheckCircle2, RotateCcw } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { useProject } from "@/lib/project-context";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -34,6 +35,8 @@ export default function ManuscriptPage() {
   const [autoEditInstructions, setAutoEditInstructions] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [reeditAssessment, setReeditAssessment] = useState<any>(null);
+  const [rewriteWarningAcknowledged, setRewriteWarningAcknowledged] = useState(false);
   const { currentProject, isLoading: projectsLoading } = useProject();
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -88,6 +91,23 @@ export default function ManuscriptPage() {
       toast({
         title: "Error",
         description: error.message || "No se pudo clonar el proyecto",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const assessReeditMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/assess-reedit`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setReeditAssessment(data);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error al evaluar",
+        description: error.message || "No se pudo analizar el manuscrito",
         variant: "destructive",
       });
     },
@@ -365,15 +385,95 @@ export default function ManuscriptPage() {
       </div>
 
       {/* Auto Re-edit Dialog */}
-      <Dialog open={showAutoEditDialog} onOpenChange={setShowAutoEditDialog}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={showAutoEditDialog} onOpenChange={(open) => {
+        setShowAutoEditDialog(open);
+        if (!open) {
+          setReeditAssessment(null);
+          setRewriteWarningAcknowledged(false);
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Re-edición Automática</DialogTitle>
             <DialogDescription>
               El sistema creará una copia del manuscrito y aplicará las instrucciones de edición automáticamente a todos los capítulos. El manuscrito original no se modificará.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+
+          {reeditAssessment && reeditAssessment.assessment && (
+            <div className="border rounded-lg p-4 space-y-3" data-testid="reedit-assessment-results">
+              <div className="flex items-center gap-2">
+                {reeditAssessment.assessment.recommendation === "reedit" ? (
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                ) : (
+                  <AlertTriangle className="h-5 w-5 text-amber-500" />
+                )}
+                <h4 className="font-semibold text-base">
+                  {reeditAssessment.assessment.recommendation === "reedit"
+                    ? "Recomendación: Re-editar"
+                    : "Recomendación: Reescribir desde cero"}
+                </h4>
+                <Badge variant={reeditAssessment.assessment.recommendation === "reedit" ? "default" : "destructive"}>
+                  {reeditAssessment.assessment.currentScore}/10
+                </Badge>
+                <Badge variant="outline">
+                  Confianza: {reeditAssessment.assessment.confidence}
+                </Badge>
+              </div>
+
+              <p className="text-sm text-muted-foreground">{reeditAssessment.assessment.summary}</p>
+
+              {reeditAssessment.existingFinalScore && (
+                <p className="text-xs text-muted-foreground">
+                  Puntuación final anterior: {reeditAssessment.existingFinalScore}/10 | Capítulos analizados: {reeditAssessment.chaptersSampled} de {reeditAssessment.totalChapters}
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { key: "prose", label: "Prosa y estilo" },
+                  { key: "structure", label: "Estructura" },
+                  { key: "characters", label: "Personajes" },
+                  { key: "dialogue", label: "Diálogos" },
+                  { key: "pacing", label: "Ritmo" },
+                  { key: "coherence", label: "Coherencia" },
+                ].map(({ key, label }) => {
+                  const item = reeditAssessment.assessment[key];
+                  if (!item) return null;
+                  return (
+                    <div key={key} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium">{label}</span>
+                        <span className={`font-bold ${item.score >= 7 ? "text-green-600 dark:text-green-400" : item.score >= 5 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
+                          {item.score}/10
+                        </span>
+                      </div>
+                      <Progress value={item.score * 10} className="h-1.5" />
+                      <p className="text-[11px] text-muted-foreground leading-tight">{item.comment}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {reeditAssessment.assessment.recommendation === "reedit" && reeditAssessment.assessment.reeditEstimate && (
+                <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded p-2">
+                  <p className="text-xs text-green-700 dark:text-green-300">
+                    <strong>Esfuerzo estimado:</strong> {reeditAssessment.assessment.reeditEstimate}
+                  </p>
+                </div>
+              )}
+
+              {reeditAssessment.assessment.recommendation === "rewrite" && reeditAssessment.assessment.rewriteJustification && (
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded p-2">
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    <strong>Por qué reescribir:</strong> {reeditAssessment.assessment.rewriteJustification}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label htmlFor="instructions">Instrucciones de edición</Label>
               <Textarea
@@ -381,7 +481,7 @@ export default function ManuscriptPage() {
                 placeholder="Escribe las instrucciones de edición. Ejemplos:&#10;&#10;- Recortar 20% de introspección en todos los capítulos&#10;- Añadir más tensión y ganchos al final de cada capítulo&#10;- Eliminar repeticiones y mejorar el ritmo&#10;- Mantener las escenas de clímax sin modificar"
                 value={autoEditInstructions}
                 onChange={(e) => setAutoEditInstructions(e.target.value)}
-                className="min-h-[200px]"
+                className="min-h-[150px]"
                 data-testid="input-auto-edit-instructions"
               />
             </div>
@@ -389,34 +489,73 @@ export default function ManuscriptPage() {
               <p><strong>Consejo:</strong> Sé específico. Indica qué capítulos afectar, porcentajes de recorte, elementos a preservar, y qué tipo de mejoras aplicar.</p>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAutoEditDialog(false)}>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => { setShowAutoEditDialog(false); setReeditAssessment(null); }}>
               Cancelar
             </Button>
             <Button
+              variant="secondary"
               onClick={() => {
-                if (currentProject && autoEditInstructions.trim()) {
-                  cloneToReeditMutation.mutate({
-                    projectId: currentProject.id,
-                    instructions: autoEditInstructions,
-                  });
+                if (currentProject) {
+                  assessReeditMutation.mutate(currentProject.id);
                 }
               }}
-              disabled={!autoEditInstructions.trim() || cloneToReeditMutation.isPending}
-              data-testid="button-start-auto-reedit"
+              disabled={assessReeditMutation.isPending}
+              data-testid="button-assess-reedit"
             >
-              {cloneToReeditMutation.isPending ? (
+              {assessReeditMutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Clonando...
+                  Analizando...
+                </>
+              ) : reeditAssessment ? (
+                <>
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Re-evaluar
                 </>
               ) : (
                 <>
-                  <Wand2 className="h-4 w-4 mr-2" />
-                  Iniciar Re-edición
+                  <Search className="h-4 w-4 mr-2" />
+                  Evaluar manuscrito
                 </>
               )}
             </Button>
+            {reeditAssessment?.assessment?.recommendation === "rewrite" && !rewriteWarningAcknowledged ? (
+              <Button
+                variant="destructive"
+                onClick={() => setRewriteWarningAcknowledged(true)}
+                disabled={!autoEditInstructions.trim()}
+                data-testid="button-acknowledge-rewrite-warning"
+              >
+                <AlertTriangle className="h-4 w-4 mr-2" />
+                Re-editar de todos modos
+              </Button>
+            ) : (
+              <Button
+                onClick={() => {
+                  if (currentProject && autoEditInstructions.trim()) {
+                    cloneToReeditMutation.mutate({
+                      projectId: currentProject.id,
+                      instructions: autoEditInstructions,
+                    });
+                  }
+                }}
+                disabled={!autoEditInstructions.trim() || cloneToReeditMutation.isPending}
+                data-testid="button-start-auto-reedit"
+              >
+                {cloneToReeditMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Clonando...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="h-4 w-4 mr-2" />
+                    Iniciar Re-edición
+                  </>
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
