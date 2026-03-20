@@ -287,49 +287,101 @@ class ContinuitySentinelAgent extends BaseAgent {
     super({
       name: "Continuity Sentinel",
       role: "qa_continuity",
-      systemPrompt: `Eres un experto en continuidad narrativa. Tu trabajo es detectar errores de continuidad en bloques de capítulos.
+      systemPrompt: `Eres un AUDITOR FORENSE de continuidad narrativa. Tu trabajo es detectar TODOS los errores de coherencia, por sutiles que sean.
 
-TIPOS DE ERRORES A DETECTAR:
-1. TEMPORALES: Inconsistencias en el paso del tiempo (ej: "amaneció" pero luego "la luna brillaba")
-2. ESPACIALES: Personajes que aparecen en lugares imposibles sin transición
-3. DE ESTADO: Objetos/personajes que cambian estado sin explicación (heridas que desaparecen, ropa que cambia)
-4. DE CONOCIMIENTO: Personajes que saben cosas que no deberían saber aún
+ERES EXTREMADAMENTE ESTRICTO. No perdones errores por "contexto". Si algo no está narrado explícitamente, NO pasó.
+
+TIPOS DE ERRORES A DETECTAR (revisa CADA UNO con rigor):
+
+1. TEMPORALES: 
+   - Inconsistencias en el paso del tiempo ("amaneció" pero luego "la luna brillaba")
+   - Saltos temporales sin transición ("ayer" → de repente "tres semanas después" sin narrar)
+   - Acciones que requieren más tiempo del disponible
+
+2. ESPACIALES:
+   - Personajes que aparecen en lugares imposibles sin transición
+   - Desplazamientos instantáneos sin narrar el viaje
+   - Cambios de escenario sin explicación
+
+3. DE ESTADO FÍSICO (CRÍTICO — revisar contra la World Bible si se proporciona):
+   - Heridas/lesiones que desaparecen o se ignoran
+   - Personaje con brazo roto que usa ambos brazos normalmente después
+   - Objetos perdidos/destruidos que reaparecen
+   - Ropa/aspecto que cambia sin explicación
+   - Si la World Bible dice que un personaje tiene una lesión/limitación, VERIFICAR que se respeta en CADA capítulo
+
+4. DE CONOCIMIENTO:
+   - Personajes que saben cosas que NO deberían saber
+   - Información revelada en capítulo X que un personaje usa en capítulo X-N (antes de saberlo)
+   - Personaje A sabe algo que solo se dijo en presencia de personaje B
+
+5. DEUS EX MACHINA:
+   - Resoluciones convenientes sin preparación previa
+   - Personajes que aparecen "justo a tiempo" sin justificación narrativa
+   - Habilidades/recursos usados que nunca se establecieron
+
+REGLA FUNDAMENTAL: Si algo NO está narrado, NO pasó. No inventes justificaciones para el autor.
+Si un personaje tiene una herida grave, DEBE afectar sus acciones en capítulos posteriores.
 
 RESPONDE SOLO EN JSON:
 {
   "erroresContinuidad": [
     {
-      "tipo": "temporal|espacial|estado|conocimiento",
+      "tipo": "temporal|espacial|estado|conocimiento|deus_ex_machina",
       "severidad": "critica|mayor|menor",
       "capitulo": 5,
-      "descripcion": "Descripción del error",
-      "contexto": "Fragmento relevante del texto",
-      "correccion": "Sugerencia de corrección"
+      "descripcion": "Descripción CONCRETA del error con cita textual",
+      "contexto": "Fragmento EXACTO del texto que contiene el error",
+      "correccion": "Sugerencia de corrección específica"
     }
   ],
   "resumen": "Resumen general de la continuidad",
   "puntuacion": 8
-}`,
+}
+
+IMPORTANTE: NO des puntuación 9 o 10 a menos que hayas verificado EXHAUSTIVAMENTE cada tipo de error.
+Si encuentras CUALQUIER inconsistencia de estado físico, la puntuación NO puede superar 7.
+Si un personaje herido usa su extremidad herida sin mención de dolor/limitación, es error CRÍTICO.`,
       model: "gemini-2.5-flash",
       useThinking: false,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 8192,
     });
   }
 
   async execute(input: any): Promise<any> {
-    return this.auditContinuity(input.chapters, input.startChapter, input.endChapter);
+    return this.auditContinuity(input.chapters, input.startChapter, input.endChapter, input.worldBibleContext);
   }
 
-  async auditContinuity(chapterContents: string[], startChapter: number, endChapter: number): Promise<any> {
+  async auditContinuity(chapterContents: string[], startChapter: number, endChapter: number, worldBibleContext?: string): Promise<any> {
     const combinedContent = chapterContents.map((c, i) => 
       `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 15000)}`
     ).join("\n\n");
 
-    const prompt = `Analiza la continuidad narrativa de los capítulos ${startChapter} a ${endChapter}:
+    let worldBibleSection = "";
+    if (worldBibleContext) {
+      worldBibleSection = `
+═══════════════════════════════════════════
+WORLD BIBLE — FUENTE DE VERDAD CANÓNICA
+═══════════════════════════════════════════
+Usa esta información como REFERENCIA OBLIGATORIA para verificar estados físicos,
+rasgos de personajes, lesiones, objetos y ubicaciones:
+
+${worldBibleContext}
+
+CUALQUIER contradicción entre el texto y la World Bible es un error de continuidad.
+═══════════════════════════════════════════
+
+`;
+    }
+
+    const prompt = `${worldBibleSection}Analiza la continuidad narrativa de los capítulos ${startChapter} a ${endChapter} con RIGOR FORENSE:
 
 ${combinedContent}
 
-Detecta errores de continuidad temporal, espacial, de estado y de conocimiento. RESPONDE EN JSON.`;
+Detecta TODOS los errores de continuidad: temporal, espacial, de estado físico, de conocimiento y deus ex machina.
+Verifica especialmente: heridas/lesiones, objetos, ubicaciones y conocimiento de personajes.
+NO perdones errores. Si algo no está narrado, NO pasó.
+RESPONDE EN JSON.`;
 
     const response = await this.generateContent(prompt);
     let result: any = { erroresContinuidad: [], resumen: "Sin problemas detectados", puntuacion: 9 };
@@ -2810,6 +2862,39 @@ export class ReeditOrchestrator {
         chapterBlocks5.push(validChapters.slice(i, Math.min(i + 5, validChapters.length)));
       }
 
+      // Build compact World Bible context for continuity verification
+      let worldBibleContextForSentinel = "";
+      if (worldBibleResult) {
+        const parts: string[] = [];
+        if (worldBibleResult.personajes?.length > 0) {
+          const charSummaries = worldBibleResult.personajes.slice(0, 20).map((p: any) => {
+            const traits: string[] = [];
+            if (p.nombre) traits.push(`Nombre: ${p.nombre}`);
+            if (p.rol) traits.push(`Rol: ${p.rol}`);
+            if (p.descripcionFisica) traits.push(`Físico: ${p.descripcionFisica}`);
+            if (p.rasgosDistintivos) traits.push(`Rasgos: ${p.rasgosDistintivos}`);
+            if (p.lesiones || p.estadoFisico) traits.push(`Estado/Lesiones: ${p.lesiones || p.estadoFisico}`);
+            if (p.objetosImportantes) traits.push(`Objetos: ${p.objetosImportantes}`);
+            if (p.conocimiento) traits.push(`Conoce: ${p.conocimiento}`);
+            return traits.join('; ');
+          });
+          parts.push("PERSONAJES:\n" + charSummaries.join("\n"));
+        }
+        if (worldBibleResult.ubicaciones?.length > 0) {
+          const locs = worldBibleResult.ubicaciones.slice(0, 10).map((u: any) =>
+            `${u.nombre || u.name}: ${u.descripcion || u.description || ''}`
+          );
+          parts.push("UBICACIONES:\n" + locs.join("\n"));
+        }
+        if (worldBibleResult.lineaTemporal?.length > 0) {
+          const timeline = worldBibleResult.lineaTemporal.slice(0, 15).map((e: any) =>
+            `Cap ${e.capitulo || '?'}: ${e.evento || e.descripcion || ''}`
+          );
+          parts.push("LÍNEA TEMPORAL:\n" + timeline.join("\n"));
+        }
+        worldBibleContextForSentinel = parts.join("\n\n");
+      }
+
       // Calculate total QA operations for progress tracking
       const chapterBlocks10Count = Math.ceil(validChapters.length / 10);
       const totalQaOps = chapterBlocks5.length + chapterBlocks10Count + 2;
@@ -2831,7 +2916,8 @@ export class ReeditOrchestrator {
         const continuityResult = await this.continuitySentinel.auditContinuity(
           block.map(c => c.editedContent || c.originalContent),
           startChap,
-          endChap
+          endChap,
+          worldBibleContextForSentinel || undefined
         );
         this.trackTokens(continuityResult);
 

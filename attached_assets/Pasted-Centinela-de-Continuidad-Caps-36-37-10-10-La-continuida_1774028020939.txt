@@ -1,0 +1,52 @@
+Centinela de Continuidad
+Caps. 36-37
+10/10
+La continuidad narrativa entre los capítulos 36 y 37 es excelente. El salto temporal de tres meses al inicio del capítulo 37 está claramente establecido y justifica los cambios de estado de los personajes (la curación del brazo de Tiago, el cambio de vestimenta de Ananya) y el desarrollo de sus nuevas funciones. Los detalles sobre las heridas de Tiago, el estado de Ananya y las referencias al paradero de Vishudhananda se mantienen coherentes y evolucionan de manera lógica a lo largo de los capítulos. No se detectan inconsistencias temporales, espaciales, de estado o de conocimiento.
+
+Centinela de Continuidad
+Caps. 31-35
+9/10
+Sin problemas detectados
+
+Centinela de Continuidad
+Caps. 26-30
+9/10
+Sin problemas detectados
+
+Centinela de Continuidad
+Caps. 21-25
+9/10
+Sin problemas detectados
+
+Centinela de Continuidad
+Caps. 16-20
+9/10
+Sin problemas detectados
+
+Centinela de Continuidad
+Caps. 11-15
+9/10
+Sin problemas detectados
+
+Centinela de Continuidad
+Caps. 6-10
+8/10
+La continuidad narrativa entre los capítulos 6 y 10 es sólida en general, con una fuerte coherencia en la progresión de la trama, el desarrollo del protagonista y la gestión de los elementos espaciales y de estado. El dolor en la muñeca de Tiago se mantiene como un obstáculo constante, la revelación de la existencia de Ananya y su papel como corrector anónimo se maneja bien, y la evolución del conflicto con Swami Vishudhananda es consistente. La descripción de los entornos, desde el fuerte hasta Jaipur, es detallada y verosímil. Solo se detecta una inconsistencia temporal menor, donde una acción del protagonista parece contradecir inmediatamente las órdenes recibidas, sin una justificación narrativa explícita de desobediencia inmediata.
+
+Recomendaciones:
+
+La narrativa establece que Kaydar le impone nuevas restricciones a Tiago al amanecer, incluyendo que las observaciones matutinas requieren permiso y que no debe 'demorarse en otros pasillos'. Sin embargo, en la siguiente secuencia, Tiago 'llegó allí al alba' (sinónimo de amanecer) para observar, lo que implica una violación inmediata de las reglas sin que el texto lo presente explícitamente como un acto de desafío consciente en ese momento. Se podría ajustar el tiempo de la visita de Kaydar (hacerla más tarde), o que Tiago ya estuviera en la terraza cuando Kaydar lo busca (cambiando la escena), o añadir una reflexión de Tiago sobre su decisión de ignorar las órdenes de inmediato.
+Centinela de Continuidad
+Caps. 1-5
+9/10
+Sin problemas detectados
+
+Análisis Arquitectónico
+3/10
+El manuscrito presenta una trama ambiciosa y una prosa evocadora, con una ambientación rica y personajes iniciales sólidos. Sin embargo, su arquitectura narrativa sufre de múltiples problemas críticos y mayores de coherencia. Se detectan numerosos saltos temporales y espaciales sin explicación, eventos 'Deus Ex Machina' que resuelven conflictos de forma conveniente, inconsistencias en el estado físico del protagonista y en la lógica del conocimiento de los personajes clave. Estos fallos estructurales y de trama impiden que la narrativa se sostenga con credibilidad y cohesión, afectando gravemente la inmersión y la lógica interna de la historia. Las constantes repeticiones de estilo, aunque menores, también restan fluidez. Se requiere una revisión exhaustiva para subsanar estos huecos y contradicciones.
+
+Recomendaciones:
+
+**Resolver Saltos Temporales y Espaciales Críticos:** Narrar explícitamente las transiciones entre capítulos, incluyendo la llegada de Tiago al fuerte (Cap 4), su escape de la celda (Cap 31), su llegada al observatorio para el juicio (Cap 32), y cómo Gonçalo evade y regresa de la emboscada (Caps 25, 26). Estos son huecos narrativos fundamentales que rompen la inmersión.
+**Mantener la Coherencia de la Lesión de Tiago:** Establecer una causa clara para la lesión en la muñeca derecha de Tiago al inicio de la historia y ser riguroso con sus limitaciones. Si la mano es inútil, no puede realizar acciones que requieran fuerza o habilidad con ella (ej. escribir con cálamo en Cap 15). Cualquier mejora debe ser un proceso gradual y narrado.
+**Justificar el Conocimiento de Personajes Clave:** Evitar que el Maharajá (Cap 10, 27) y Gonçalo da Silva (Caps 25, 26) adquieran información crítica (ej. el nombre de Ananya, la ubicación de la cámara secreta) de forma abrupta o sin una fuente clara. Introducir espías, investigaciones o revelaciones que hagan su conocimiento creíble dentro del mundo establecido.
