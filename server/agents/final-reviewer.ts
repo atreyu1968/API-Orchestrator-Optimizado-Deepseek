@@ -188,20 +188,42 @@ ESCALA DE PUNTUACIÓN ESTRICTA (OBJETIVO: 10/10)
 REGLA ABSOLUTA: Solo das 10/10 si NO hay ningún issue de ningún tipo.
 Cualquier issue (incluso menor) reduce automáticamente la puntuación por debajo de 10.
 
-IMPORTANTE - CAPACIDAD DE DAR 10/10:
-Cuando un manuscrito ha sido corregido y NO encuentras problemas reales, DEBES dar 10/10.
+IMPORTANTE - CAPACIDAD DE DAR 9/10 Y 10/10:
+Cuando un manuscrito ha sido corregido y NO encuentras problemas CONCRETOS, DEBES dar 9 o 10.
 No busques problemas inexistentes para justificar una puntuación menor.
 Si el hook es irresistible, los giros sorprenden, la tensión escala, los personajes emocionan,
-y el clímax satisface - entonces ES un 10/10. No te resistas a darlo.
+y el clímax satisface - entonces ES un 9 o 10. No te resistas a darlo.
+
+SEÑALES DE UN 9/10:
+- Solo hay 1 issue menor que no afecta la experiencia general
+- La experiencia de lectura fue fluida y adictiva
+- Todos los arcos están cerrados satisfactoriamente
+- No hay contradicciones ni deus ex machina
 
 SEÑALES DE UN 10/10:
 - No puedes identificar ningún issue concreto con evidencia textual
-- La experiencia de lectura fue fluida y adictiva
-- Todos los arcos están cerrados satisfactoriamente
-- No hay contradicciones, repeticiones excesivas ni deus ex machina
-- El manuscrito cumple o supera las expectativas del género
+- Cumple todos los criterios del 9 sin ningún issue
 
-Si todas estas señales están presentes, la puntuación DEBE ser 10/10.
+Si estas señales están presentes, la puntuación DEBE ser 9 o 10.
+
+═══════════════════════════════════════════════════════════════════
+🚨 ERRORES COMUNES QUE DEBES EVITAR 🚨
+═══════════════════════════════════════════════════════════════════
+
+NO reduzcas la puntuación por:
+- Preferencias estilísticas personales (eso no es un defecto)
+- Desear "más" de algo que ya funciona bien (más giros, más tensión, más profundidad)
+- Sugerir mejoras teóricas que no corrigen un problema real
+- Comparar con un ideal imposible en lugar de evaluar lo que hay
+- Repetir en esencia issues de pasadas anteriores con diferente redacción
+
+Un issue REAL debe cumplir TODAS estas condiciones:
+1. Puedes señalar párrafos/escenas ESPECÍFICAS donde ocurre
+2. Un lector promedio del género lo notaría y le molestaría
+3. Es un DEFECTO objetivo, no una mejora opcional
+4. NO fue reportado ni corregido en una pasada anterior
+
+Si no puedes cumplir las 4 condiciones, NO ES UN ISSUE → no lo reportes.
 
 ═══════════════════════════════════════════════════════════════════
 CÓMO ELEVAR DE 8 A 9+ (INSTRUCCIONES PRECISAS PARA CORRECCIÓN)
@@ -449,7 +471,28 @@ REGLAS CRÍTICAS PARA ESTA PASADA:
 
 IMPORTANTE: Si un issue previo fue corregido satisfactoriamente, NO lo menciones.
 Si el mismo problema persiste EXACTAMENTE igual, puedes reportarlo, pero con nueva redacción.
-El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
+El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.
+
+═══════════════════════════════════════════════════════════════════
+⚠️ REGLA DE RENDIMIENTOS DECRECIENTES (PASADA ${input.pasadaNumero})
+═══════════════════════════════════════════════════════════════════
+${input.pasadaNumero && input.pasadaNumero >= 3 ? `
+Han habido ${input.pasadaNumero - 1} rondas de correcciones. El manuscrito ha sido refinado múltiples veces.
+En esta etapa, SOLO debes reportar issues que sean DEFECTOS OBJETIVOS VERIFICABLES:
+- Contradicciones factuales (fechas, nombres, descripciones físicas inconsistentes)
+- Errores de continuidad (personaje muerto que aparece vivo, objeto perdido que reaparece)
+- Filtraciones de conocimiento (personaje sabe algo que no debería)
+- Deus ex machina obvios
+
+NO son defectos en esta etapa:
+- "Podría tener más tensión" → Es una preferencia, no un defecto
+- "El giro es predecible" → Si no se identificó en pasadas anteriores, no es un problema real
+- "Falta profundidad emocional" → Subjetivo y no corregible de forma quirúrgica
+- "El ritmo podría mejorar" → Vago, no accionable
+
+Si después de ${input.pasadaNumero - 1} correcciones no encuentras defectos objetivos verificables,
+la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad suficiente.
+` : "Evalúa con rigor pero justicia. No inventes problemas para evitar dar una puntuación alta."}`;
     }
 
     let seriesSection = "";

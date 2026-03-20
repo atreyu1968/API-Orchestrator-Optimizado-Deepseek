@@ -3355,7 +3355,22 @@ export class ReeditOrchestrator {
         }
         
         if (nonPerfectCount >= MAX_NON_PERFECT_BEFORE_PAUSE) {
-          const pauseReason = `Después de ${nonPerfectCount} evaluaciones sin alcanzar 10/10, el proceso se ha pausado. Última puntuación: ${rawScore}/10. Issues detectados: ${issuesCount}. Por favor, proporciona instrucciones para continuar.`;
+          if (rawScore >= 8) {
+            const onlyMinorIssues = !criticalIssues.length && filteredIssuesForApproval.every(i => i.severidad === "menor");
+            if (onlyMinorIssues || !hasAnyNewIssues) {
+              console.log(`[ReeditOrchestrator] Auto-approving after ${nonPerfectCount} cycles. Score ${rawScore}/10 (8+), no critical issues.`);
+              this.emitProgress({
+                projectId,
+                stage: "reviewing",
+                currentChapter: validChapters.length,
+                totalChapters: validChapters.length,
+                message: `Manuscrito APROBADO tras ${nonPerfectCount} ciclos de refinamiento. Puntuación: ${rawScore}/10. Calidad consistente demostrada.`,
+              });
+              break;
+            }
+          }
+          
+          const pauseReason = `Después de ${nonPerfectCount} evaluaciones sin alcanzar 9/10, el proceso se ha pausado. Última puntuación: ${rawScore}/10. Issues detectados: ${issuesCount}. Por favor, proporciona instrucciones para continuar.`;
           
           console.log(`[ReeditOrchestrator] PAUSING after ${nonPerfectCount} non-perfect scores. Waiting for user instructions.`);
           
@@ -3383,6 +3398,22 @@ export class ReeditOrchestrator {
           });
           
           return;
+        }
+        
+        // Auto-approve at 8+ after 3+ cycles if only minor issues remain
+        if (revisionCycle >= 2 && rawScore >= 8) {
+          const onlyMinorIssues = !criticalIssues.length && filteredIssuesForApproval.every(i => i.severidad === "menor");
+          if (onlyMinorIssues || !hasAnyNewIssues) {
+            console.log(`[ReeditOrchestrator] Auto-approving after ${revisionCycle + 1} cycles. Score ${rawScore}/10, only minor/no issues.`);
+            this.emitProgress({
+              projectId,
+              stage: "reviewing",
+              currentChapter: validChapters.length,
+              totalChapters: validChapters.length,
+              message: `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos. Puntuación: ${rawScore}/10. Solo observaciones menores — calidad suficiente.`,
+            });
+            break;
+          }
         }
 
         if (consecutiveHighScores >= this.requiredConsecutiveHighScores) {
@@ -3924,7 +3955,22 @@ export class ReeditOrchestrator {
       }
       
       if (nonPerfectCount >= MAX_NON_PERFECT_BEFORE_PAUSE) {
-        const pauseReason = `Después de ${nonPerfectCount} evaluaciones sin alcanzar 10/10, el proceso se ha pausado. Última puntuación: ${rawScore}/10. Issues detectados: ${issuesCount}. Por favor, proporciona instrucciones para continuar.`;
+        if (rawScore >= 8) {
+          const onlyMinorIssuesFRO = !criticalIssuesFRO.length && filteredIssuesFROApproval.every(i => i.severidad === "menor");
+          if (onlyMinorIssuesFRO || !hasAnyNewIssuesFRO) {
+            console.log(`[ReeditOrchestrator] FRO Auto-approving after ${nonPerfectCount} cycles. Score ${rawScore}/10 (8+), no critical issues.`);
+            this.emitProgress({
+              projectId,
+              stage: "reviewing",
+              currentChapter: validChapters.length,
+              totalChapters: validChapters.length,
+              message: `Manuscrito APROBADO tras ${nonPerfectCount} ciclos de refinamiento. Puntuación: ${rawScore}/10. Calidad consistente demostrada.`,
+            });
+            break;
+          }
+        }
+        
+        const pauseReason = `Después de ${nonPerfectCount} evaluaciones sin alcanzar 9/10, el proceso se ha pausado. Última puntuación: ${rawScore}/10. Issues detectados: ${issuesCount}. Por favor, proporciona instrucciones para continuar.`;
         
         console.log(`[ReeditOrchestrator] FRO PAUSING after ${nonPerfectCount} non-perfect scores. Waiting for user instructions.`);
         
@@ -3952,6 +3998,22 @@ export class ReeditOrchestrator {
         });
         
         return;
+      }
+      
+      // Auto-approve at 8+ after 3+ cycles if only minor issues remain
+      if (revisionCycle >= 2 && rawScore >= 8) {
+        const onlyMinorIssuesFRO = !criticalIssuesFRO.length && filteredIssuesFROApproval.every(i => i.severidad === "menor");
+        if (onlyMinorIssuesFRO || !hasAnyNewIssuesFRO) {
+          console.log(`[ReeditOrchestrator] FRO Auto-approving after ${revisionCycle + 1} cycles. Score ${rawScore}/10, only minor/no issues.`);
+          this.emitProgress({
+            projectId,
+            stage: "reviewing",
+            currentChapter: validChapters.length,
+            totalChapters: validChapters.length,
+            message: `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos. Puntuación: ${rawScore}/10. Solo observaciones menores — calidad suficiente.`,
+          });
+          break;
+        }
       }
 
       if (consecutiveHighScores >= this.requiredConsecutiveHighScores) {

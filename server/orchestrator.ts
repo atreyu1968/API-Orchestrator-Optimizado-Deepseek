@@ -2388,10 +2388,19 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         if (maxRecent - minRecent <= 0.5 && maxRecent < this.minAcceptableScore) {
           const avgScore = (lastFour.reduce((a, b) => a + b, 0) / lastFour.length).toFixed(1);
           const bestOverall = Math.max(...previousScores);
+          
+          if (maxRecent >= 8) {
+            this.callbacks.onAgentStatus("final-reviewer", "completed", 
+              `Puntuación estabilizada en ~${avgScore}/10 tras ${previousScores.length} ciclos de corrección. Manuscrito aprobado — calidad consistente demostrada.`
+            );
+            console.log(`[Orchestrator] Score plateaued at ${lastFour.join(', ')} (maxRecent ${maxRecent} >= 8) — auto-approving after ${previousScores.length} cycles`);
+            return true;
+          }
+          
           this.callbacks.onAgentStatus("final-reviewer", "error", 
-            `Puntuación estancada en ~${avgScore}/10 tras ${previousScores.length} ciclos (mejor: ${bestOverall}). Umbral mínimo: ${this.minAcceptableScore}. NO APROBADO — calidad insuficiente.`
+            `Puntuación estancada en ~${avgScore}/10 tras ${previousScores.length} ciclos. Umbral mínimo: 8. NO APROBADO — calidad insuficiente.`
           );
-          console.log(`[Orchestrator] Early exit: scores plateaued at ${lastFour.join(', ')} - best overall ${bestOverall} below min ${this.minAcceptableScore}, rejecting`);
+          console.log(`[Orchestrator] Early exit: scores plateaued at ${lastFour.join(', ')} - maxRecent ${maxRecent} below 8, rejecting`);
           return false;
         }
       }
@@ -2421,15 +2430,24 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         continue; // Re-evaluate without rewriting
       }
       
-      // Si el revisor aprobó pero la puntuación es < 9, continuamos refinando
+      // Si el revisor aprobó pero la puntuación es < 9, decidir si seguir refinando
       if ((result?.veredicto === "APROBADO" || result?.veredicto === "APROBADO_CON_RESERVAS") && currentScore < this.minAcceptableScore) {
+        // After 3+ cycles, if score is 8+ and no major/critical issues, accept
+        const hasSerious = result?.issues?.some(i => i.severidad === "critica" || i.severidad === "mayor");
+        if (revisionCycle >= 2 && currentScore >= 8 && !hasSerious) {
+          this.callbacks.onAgentStatus("final-reviewer", "completed", 
+            `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos de refinamiento. Puntuación: ${currentScore}/10. Sin defectos objetivos adicionales.`
+          );
+          return true;
+        }
+        
         this.callbacks.onAgentStatus("final-reviewer", "editing", 
           `Puntuación ${currentScore}/10 insuficiente. Objetivo: ${this.minAcceptableScore}+ (${this.requiredConsecutiveHighScores}x consecutivas). Refinando...`
         );
         // Create generic issues based on the bestseller analysis if available
         const genericIssues = result?.analisis_bestseller?.como_subir_a_9 
           ? [{ 
-              capitulos_afectados: [1], // Will be expanded below
+              capitulos_afectados: [1],
               categoria: "enganche" as const,
               descripcion: result.analisis_bestseller.como_subir_a_9,
               severidad: "mayor" as const,
@@ -2446,20 +2464,32 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
       }
       
+      // In cycles 3+, if score is 8+ and all remaining issues are "menor", approve
+      if (revisionCycle >= 2 && currentScore >= 8 && result?.issues?.length) {
+        const hasSeriousIssues = result.issues.some(i => i.severidad === "critica" || i.severidad === "mayor");
+        if (!hasSeriousIssues) {
+          this.callbacks.onAgentStatus("final-reviewer", "completed", 
+            `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos. Puntuación: ${currentScore}/10. Solo quedan ${result.issues.length} observación(es) menor(es) — calidad suficiente demostrada.`
+          );
+          return true;
+        }
+      }
+      
       // LÍMITE MÁXIMO DE CICLOS alcanzado
       if (revisionCycle === this.maxFinalReviewCycles - 1) {
         const avgScore = previousScores.length > 0 
           ? (previousScores.reduce((a, b) => a + b, 0) / previousScores.length).toFixed(1)
           : currentScore;
+        const bestOverall = Math.max(...previousScores);
         
-        if (currentScore >= this.minAcceptableScore) {
+        if (currentScore >= 8) {
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
             `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 (promedio: ${avgScore}). APROBADO.`
           );
           return true;
         } else {
           this.callbacks.onAgentStatus("final-reviewer", "error", 
-            `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 NO alcanza el mínimo de ${this.minAcceptableScore}. Proyecto NO APROBADO.`
+            `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 NO alcanza el mínimo de 8. Proyecto NO APROBADO.`
           );
           return false;
         }
@@ -2489,14 +2519,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             continue;
           }
         } else {
-          if (currentScore >= this.minAcceptableScore) {
+          if (currentScore >= 8) {
             this.callbacks.onAgentStatus("final-reviewer", "completed", 
-              `Revisión completada sin problemas específicos. Puntuación: ${currentScore}/10.`
+              `Revisión completada sin problemas específicos. Puntuación: ${currentScore}/10. APROBADO.`
             );
             return true;
           } else {
             this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
-              `Sin problemas específicos pero puntuación ${currentScore}/10 < ${this.minAcceptableScore}. Continuando refinamiento...`
+              `Sin problemas específicos pero puntuación ${currentScore}/10 < 8. Continuando refinamiento...`
             );
             revisionCycle++;
             continue;
