@@ -1023,6 +1023,10 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           let currentContent = cleanContent;
           const currentContinuityState = continuityState;
           
+          if (writerResult.error) {
+            console.warn(`[Orchestrator] Ghostwriter returned error: ${writerResult.error}`);
+          }
+          
           const ABSOLUTE_MIN = 500;
           const TARGET_MIN = perChapterTarget;
           const TARGET_MAX = perChapterMax;
@@ -1038,12 +1042,23 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             }
             if (wordCountRetries < MAX_WORD_COUNT_RETRIES) {
               wordCountRetries++;
-              console.warn(`[Orchestrator] Capítulo severamente truncado: ${contentWordCount} palabras < ${ABSOLUTE_MIN}. Reintentando (${wordCountRetries}/${MAX_WORD_COUNT_RETRIES})...`);
-              this.callbacks.onAgentStatus("ghostwriter", "warning", 
-                `${sectionLabel} truncado (${contentWordCount} palabras). Reintentando ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
-              );
-              refinementInstructions = `CRÍTICO: Tu respuesta fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con ${TARGET_MIN}-${TARGET_MAX} palabras.`;
-              await new Promise(resolve => setTimeout(resolve, 10000));
+              const isEmptyResponse = contentWordCount === 0;
+              const waitTime = isEmptyResponse ? 20000 : 10000;
+              
+              if (isEmptyResponse) {
+                console.warn(`[Orchestrator] ⚠️ Respuesta VACÍA (0 palabras) para ${sectionLabel}. Error API: ${writerResult.error || 'ninguno'}. Reintentando ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES} tras ${waitTime/1000}s...`);
+                this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                  `${sectionLabel}: respuesta vacía del modelo. Reintentando ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
+                );
+                refinementInstructions = "";
+              } else {
+                console.warn(`[Orchestrator] Capítulo severamente truncado: ${contentWordCount} palabras < ${ABSOLUTE_MIN}. Reintentando (${wordCountRetries}/${MAX_WORD_COUNT_RETRIES})...`);
+                this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                  `${sectionLabel} truncado (${contentWordCount} palabras). Reintentando ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
+                );
+                refinementInstructions = `CRÍTICO: Tu respuesta fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con ${TARGET_MIN}-${TARGET_MAX} palabras.`;
+              }
+              await new Promise(resolve => setTimeout(resolve, waitTime));
               continue;
             } else {
               console.warn(`[Orchestrator] ⚠️ ${sectionLabel} severamente truncado (${contentWordCount} palabras) después de ${MAX_WORD_COUNT_RETRIES} intentos. Continuando con mejor resultado.`);
@@ -1621,6 +1636,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           let currentContent = cleanContent;
           const currentContinuityState = continuityState;
           
+          if (writerResult.error) {
+            console.warn(`[Orchestrator] Ghostwriter returned error: ${writerResult.error}`);
+          }
+          
           const ABSOLUTE_MIN = 500;
           const TARGET_MIN = perChapterMinResume;
           const TARGET_MAX = perChapterMaxResume;
@@ -1636,12 +1655,23 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             }
             if (wordCountRetries < MAX_WORD_COUNT_RETRIES) {
               wordCountRetries++;
-              console.warn(`[Orchestrator] Capítulo severamente truncado: ${contentWordCount} palabras < ${ABSOLUTE_MIN}. Reintentando (${wordCountRetries}/${MAX_WORD_COUNT_RETRIES})...`);
-              this.callbacks.onAgentStatus("ghostwriter", "warning", 
-                `${sectionLabel} truncado (${contentWordCount} palabras). Reintentando ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
-              );
-              refinementInstructions = `CRÍTICO: Tu respuesta fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con ${TARGET_MIN}-${TARGET_MAX} palabras.`;
-              await new Promise(resolve => setTimeout(resolve, 10000));
+              const isEmptyResponse = contentWordCount === 0;
+              const waitTime = isEmptyResponse ? 20000 : 10000;
+              
+              if (isEmptyResponse) {
+                console.warn(`[Orchestrator] ⚠️ Respuesta VACÍA (0 palabras) para ${sectionLabel}. Error API: ${writerResult.error || 'ninguno'}. Reintentando ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES} tras ${waitTime/1000}s...`);
+                this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                  `${sectionLabel}: respuesta vacía del modelo. Reintentando ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
+                );
+                refinementInstructions = "";
+              } else {
+                console.warn(`[Orchestrator] Capítulo severamente truncado: ${contentWordCount} palabras < ${ABSOLUTE_MIN}. Reintentando (${wordCountRetries}/${MAX_WORD_COUNT_RETRIES})...`);
+                this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                  `${sectionLabel} truncado (${contentWordCount} palabras). Reintentando ${wordCountRetries}/${MAX_WORD_COUNT_RETRIES}...`
+                );
+                refinementInstructions = `CRÍTICO: Tu respuesta fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con ${TARGET_MIN}-${TARGET_MAX} palabras.`;
+              }
+              await new Promise(resolve => setTimeout(resolve, waitTime));
               continue;
             } else {
               console.warn(`[Orchestrator] ⚠️ ${sectionLabel} severamente truncado (${contentWordCount} palabras) después de ${MAX_WORD_COUNT_RETRIES} intentos. Continuando con mejor resultado.`);

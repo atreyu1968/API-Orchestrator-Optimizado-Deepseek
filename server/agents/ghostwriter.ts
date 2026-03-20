@@ -926,31 +926,53 @@ export class GhostwriterAgent extends BaseAgent {
   }
   
   extractContinuityState(content: string): { cleanContent: string; continuityState: any | null } {
+    if (!content || content.trim().length === 0) {
+      console.warn("[Ghostwriter] extractContinuityState called with empty content");
+      return { cleanContent: "", continuityState: null };
+    }
+    
     const separator = "---CONTINUITY_STATE---";
-    const parts = content.split(separator);
+    const lastSepIdx = content.lastIndexOf(separator);
     
-    if (parts.length < 2) {
+    if (lastSepIdx === -1) {
       console.log("[Ghostwriter] No continuity state separator found in content");
-      return { cleanContent: content, continuityState: null };
+      return { cleanContent: content.trim(), continuityState: null };
     }
     
-    const cleanContent = parts[0].trim();
-    const stateJson = parts[1].trim();
+    let chapterText = content.substring(0, lastSepIdx).trim();
+    const afterLastSep = content.substring(lastSepIdx + separator.length).trim();
     
-    try {
-      const continuityState = JSON.parse(stateJson);
-      console.log("[Ghostwriter] Successfully extracted continuity state:", Object.keys(continuityState.characterStates || {}));
-      return { cleanContent, continuityState };
-    } catch (e) {
-      console.log("[Ghostwriter] Failed to parse continuity state JSON:", e);
+    if (chapterText.startsWith(separator)) {
+      chapterText = chapterText.substring(separator.length).trim();
+    }
+    while (chapterText.includes(separator)) {
+      chapterText = chapterText.split(separator).join("").trim();
+    }
+    
+    const chapterWordCount = chapterText.split(/\s+/).filter((w: string) => w.length > 0).length;
+    
+    if (chapterWordCount === 0 && afterLastSep.length > 200) {
+      console.warn(`[Ghostwriter] Chapter text empty after separator extraction. After-separator content is ${afterLastSep.length} chars. Treating full content as chapter text (no continuity state).`);
+      const fullClean = content.replace(new RegExp(separator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').trim();
+      return { cleanContent: fullClean, continuityState: null };
+    }
+    
+    let continuityState = null;
+    if (afterLastSep.length > 0) {
       try {
-        const continuityState = repairJson(stateJson);
-        console.log("[Ghostwriter] Extracted continuity state via regex");
-        return { cleanContent, continuityState };
-      } catch (e2) {
-        console.log("[Ghostwriter] Regex extraction also failed");
+        continuityState = JSON.parse(afterLastSep);
+        console.log("[Ghostwriter] Successfully extracted continuity state:", Object.keys(continuityState.characterStates || {}));
+      } catch (e) {
+        console.log("[Ghostwriter] Failed to parse continuity state JSON:", e);
+        try {
+          continuityState = repairJson(afterLastSep);
+          console.log("[Ghostwriter] Extracted continuity state via repairJson");
+        } catch (e2) {
+          console.log("[Ghostwriter] repairJson extraction also failed");
+        }
       }
-      }
-      return { cleanContent: content, continuityState: null };
     }
+    
+    return { cleanContent: chapterText || content.trim(), continuityState };
   }
+}
