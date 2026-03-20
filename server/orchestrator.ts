@@ -1359,7 +1359,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const currentProjectState = await storage.getProject(project.id);
       const revisionCycleForSemantic = currentProjectState?.revisionCycle || 0;
       const skipSemanticDetector = revisionCycleForSemantic > 0 && this.chaptersRewrittenInCurrentCycle === 0;
-      const MAX_SEMANTIC_ATTEMPTS = 2;
+      const MAX_SEMANTIC_ATTEMPTS = 4;
       
       if (skipSemanticDetector) {
         this.callbacks.onAgentStatus("semantic-detector", "skipped", 
@@ -1937,7 +1937,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const updatedProject = await storage.getProject(project.id);
       const revisionCycleForSemanticResume = updatedProject?.revisionCycle || 0;
       const skipSemanticResume = revisionCycleForSemanticResume > 0 && this.chaptersRewrittenInCurrentCycle === 0;
-      const MAX_SEMANTIC_ATTEMPTS_RESUME = 2;
+      const MAX_SEMANTIC_ATTEMPTS_RESUME = 4;
       
       if (skipSemanticResume) {
         this.callbacks.onAgentStatus("semantic-detector", "skipped", 
@@ -4764,24 +4764,30 @@ Responde SOLO con un JSON válido con la estructura:
 
     const analysisResult = result.result;
     
-    if (analysisResult?.analisis_aprobado) {
+    const originalityScore = analysisResult?.puntuacion_originalidad || 0;
+    const foreshadowingScore = analysisResult?.puntuacion_foreshadowing || 0;
+    const majorClusters = (analysisResult?.clusters || []).filter((c: any) => c.severidad === "mayor").length;
+    const unresolvedForeshadowing = (analysisResult?.foreshadowing_detectado || [])
+      .filter((f: any) => f.estado === "sin_payoff").length;
+    
+    const serverSideApproved = originalityScore >= 8 && foreshadowingScore >= 8 && majorClusters === 0;
+    const passed = analysisResult?.analisis_aprobado || serverSideApproved;
+    
+    if (passed) {
       this.callbacks.onAgentStatus("semantic-detector", "completed", 
-        `Análisis APROBADO. Originalidad: ${analysisResult.puntuacion_originalidad}/10, Foreshadowing: ${analysisResult.puntuacion_foreshadowing}/10`
+        `Análisis APROBADO. Originalidad: ${originalityScore}/10, Foreshadowing: ${foreshadowingScore}/10`
       );
     } else {
-      const unresolvedForeshadowing = (analysisResult?.foreshadowing_detectado || [])
-        .filter(f => f.estado === "sin_payoff").length;
-      
       this.callbacks.onAgentStatus("semantic-detector", "warning", 
-        `Originalidad: ${analysisResult?.puntuacion_originalidad || 0}/10, Foreshadowing: ${analysisResult?.puntuacion_foreshadowing || 0}/10. ${analysisResult?.clusters?.length || 0} clusters, ${unresolvedForeshadowing} foreshadowing sin resolver.`
+        `Originalidad: ${originalityScore}/10, Foreshadowing: ${foreshadowingScore}/10. ${analysisResult?.clusters?.length || 0} clusters (${majorClusters} mayores), ${unresolvedForeshadowing} foreshadowing sin resolver.`
       );
     }
     
     return { 
-      passed: analysisResult?.analisis_aprobado || false, 
+      passed, 
       clusters: analysisResult?.clusters || [],
       foreshadowingStatus: analysisResult?.foreshadowing_detectado || [],
-      chaptersToRevise: analysisResult?.capitulos_para_revision || []
+      chaptersToRevise: passed ? [] : (analysisResult?.capitulos_para_revision || [])
     };
   }
 

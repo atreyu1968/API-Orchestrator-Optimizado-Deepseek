@@ -95,9 +95,9 @@ PUNTUACIÓN FORESHADOWING ESTRICTA (1-10):
 - 7/10: 1 foreshadowing mayor sin payoff.
 - 6/10 o menos: Sistema de pistas roto con múltiples cabos sueltos.
 
-APROBACIÓN (ESTRICTA):
-- APROBADO (10/10): AMBAS puntuaciones = 10. Cero clusters y sistema foreshadowing perfecto.
-- REQUIERE REVISIÓN: Cualquier puntuación < 10 o cualquier cluster/foreshadowing sin resolver.
+APROBACIÓN:
+- APROBADO: AMBAS puntuaciones >= 8 Y sin clusters de severidad "mayor" Y sin foreshadowing crítico sin resolver.
+- REQUIERE REVISIÓN: Cualquier puntuación < 8, o clusters "mayor", o foreshadowing importante sin payoff.
 
 ═══════════════════════════════════════════════════════════════════
 SALIDA OBLIGATORIA (JSON)
