@@ -39,7 +39,9 @@ import {
   Unlock,
   MessageSquare,
   Wand2,
-  Library
+  Library,
+  Search,
+  CheckCircle2
 } from "lucide-react";
 import type { ReeditProject, ReeditChapter, ReeditAuditReport } from "@shared/schema";
 
@@ -719,6 +721,7 @@ export default function ReeditPage() {
   
   // Chat panel state
   const [showChat, setShowChat] = useState(false);
+  const [reeditAssessment, setReeditAssessment] = useState<any>(null);
 
   const { data: projects = [], isLoading: projectsLoading } = useQuery<ReeditProject[]>({
     queryKey: ["/api/reedit-projects"],
@@ -841,6 +844,30 @@ export default function ReeditPage() {
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "No se pudo formatear", variant: "destructive" });
+    },
+  });
+
+  const assessMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      const res = await apiRequest("POST", `/api/reedit-projects/${projectId}/assess`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setReeditAssessment(data);
+    },
+    onError: (error: any) => {
+      let msg = "No se pudo analizar el manuscrito";
+      try {
+        const parsed = JSON.parse(error.message.replace(/^\d+:\s*/, ""));
+        if (parsed.error) msg = parsed.error;
+      } catch { 
+        if (error.message) msg = error.message;
+      }
+      toast({
+        title: "Error al evaluar",
+        description: msg,
+        variant: "destructive",
+      });
     },
   });
 
@@ -1155,18 +1182,35 @@ export default function ReeditPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     {getStatusBadge(selectedProjectData.status)}
                     {selectedProjectData.status === "pending" && (
-                      <Button
-                        onClick={() => startMutation.mutate(selectedProjectData.id)}
-                        disabled={startMutation.isPending}
-                        data-testid="button-start-reedit"
-                      >
-                        {startMutation.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        ) : (
-                          <Play className="h-4 w-4 mr-2" />
-                        )}
-                        Iniciar Reedición
-                      </Button>
+                      <>
+                        <Button
+                          variant="secondary"
+                          onClick={() => assessMutation.mutate(selectedProjectData.id)}
+                          disabled={assessMutation.isPending}
+                          data-testid="button-assess-reedit-project"
+                        >
+                          {assessMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : reeditAssessment && reeditAssessment.projectId === selectedProjectData.id ? (
+                            <RotateCcw className="h-4 w-4 mr-2" />
+                          ) : (
+                            <Search className="h-4 w-4 mr-2" />
+                          )}
+                          {assessMutation.isPending ? "Analizando..." : reeditAssessment && reeditAssessment.projectId === selectedProjectData.id ? "Re-evaluar" : "Evaluar"}
+                        </Button>
+                        <Button
+                          onClick={() => startMutation.mutate(selectedProjectData.id)}
+                          disabled={startMutation.isPending}
+                          data-testid="button-start-reedit"
+                        >
+                          {startMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : (
+                            <Play className="h-4 w-4 mr-2" />
+                          )}
+                          Iniciar Reedición
+                        </Button>
+                      </>
                     )}
                     {selectedProjectData.status === "processing" && (
                       <>
@@ -1256,6 +1300,81 @@ export default function ReeditPage() {
                   </div>
                 </div>
               </CardHeader>
+
+              {reeditAssessment && reeditAssessment.projectId === selectedProjectData.id && (
+                <div className="px-6 pb-4" data-testid="reedit-assessment-results">
+                  <Card className={reeditAssessment.assessment.recommendation === "rewrite" ? "border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-950/30" : "border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-950/30"}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          {reeditAssessment.assessment.recommendation === "reedit" ? (
+                            <CheckCircle2 className="h-5 w-5 text-green-600" />
+                          ) : (
+                            <AlertTriangle className="h-5 w-5 text-red-600" />
+                          )}
+                          Pre-evaluación del Manuscrito
+                        </CardTitle>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant={reeditAssessment.assessment.recommendation === "reedit" ? "default" : "destructive"}>
+                            {reeditAssessment.assessment.recommendation === "reedit" ? "Apto para Re-edición" : "Se Recomienda Reescribir"}
+                          </Badge>
+                          <Badge variant="outline">
+                            Confianza: {reeditAssessment.assessment.confidence}
+                          </Badge>
+                          <Badge variant="outline">
+                            Puntuación: {reeditAssessment.assessment.currentScore}/10
+                          </Badge>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <p className="text-sm text-muted-foreground" data-testid="text-assessment-summary">
+                        {reeditAssessment.assessment.summary}
+                      </p>
+                      <div className="text-xs text-muted-foreground">
+                        Muestreados {reeditAssessment.chaptersSampled} de {reeditAssessment.totalChapters} capítulos ({reeditAssessment.totalWords?.toLocaleString()} palabras)
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {[
+                          { key: "prose", label: "Prosa y Estilo" },
+                          { key: "structure", label: "Estructura" },
+                          { key: "characters", label: "Personajes" },
+                          { key: "dialogue", label: "Diálogos" },
+                          { key: "pacing", label: "Ritmo" },
+                          { key: "coherence", label: "Coherencia" },
+                        ].map(({ key, label }) => {
+                          const cat = reeditAssessment.assessment[key];
+                          if (!cat) return null;
+                          return (
+                            <div key={key} className="space-y-1">
+                              <div className="flex justify-between text-xs">
+                                <span className="font-medium">{label}</span>
+                                <span>{cat.score}/10</span>
+                              </div>
+                              <Progress value={cat.score * 10} className="h-2" />
+                              <p className="text-xs text-muted-foreground line-clamp-2">{cat.comment}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {reeditAssessment.assessment.reeditEstimate && (
+                        <div className="text-sm">
+                          <span className="font-medium">Estimación de esfuerzo: </span>
+                          <span className="text-muted-foreground">{reeditAssessment.assessment.reeditEstimate}</span>
+                        </div>
+                      )}
+                      {reeditAssessment.assessment.recommendation === "rewrite" && reeditAssessment.assessment.rewriteJustification && (
+                        <div className="p-3 bg-red-100 dark:bg-red-950/50 rounded-md">
+                          <p className="text-sm text-red-800 dark:text-red-300">
+                            <strong>¿Por qué reescribir?</strong> {reeditAssessment.assessment.rewriteJustification}
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
               <CardContent>
                 <Tabs defaultValue="progress">
                   <TabsList className="flex-wrap h-auto">

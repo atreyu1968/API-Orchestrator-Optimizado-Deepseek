@@ -6895,6 +6895,182 @@ CRITERIOS:
     }
   });
 
+  app.post("/api/reedit-projects/:id/assess", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+
+      const lastAssess = assessCooldowns.get(-projectId) || 0;
+      const cooldownMs = 60_000;
+      if (Date.now() - lastAssess < cooldownMs) {
+        const remaining = Math.ceil((cooldownMs - (Date.now() - lastAssess)) / 1000);
+        return res.status(429).json({ error: `Espera ${remaining}s antes de volver a evaluar este proyecto` });
+      }
+
+      const project = await storage.getReeditProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Proyecto no encontrado" });
+      }
+
+      const chapters = await storage.getReeditChaptersByProject(projectId);
+      if (chapters.length === 0) {
+        return res.status(400).json({ error: "El proyecto no tiene capítulos" });
+      }
+
+      const chaptersWithContent = chapters.filter(c => {
+        const text = c.editedContent || c.originalContent;
+        return text && text.trim().length > 0;
+      });
+      if (chaptersWithContent.length === 0) {
+        return res.status(400).json({ error: "No hay capítulos con contenido para evaluar" });
+      }
+
+      const sorted = chaptersWithContent.sort((a, b) => a.chapterNumber - b.chapterNumber);
+      const sampleSize = Math.min(5, sorted.length);
+      const sampleIndices: number[] = [];
+      if (sorted.length <= 5) {
+        sorted.forEach((_, i) => sampleIndices.push(i));
+      } else {
+        sampleIndices.push(0);
+        sampleIndices.push(sorted.length - 1);
+        const mid = Math.floor(sorted.length / 2);
+        sampleIndices.push(mid);
+        const q1 = Math.floor(sorted.length / 4);
+        const q3 = Math.floor((sorted.length * 3) / 4);
+        if (!sampleIndices.includes(q1)) sampleIndices.push(q1);
+        if (!sampleIndices.includes(q3)) sampleIndices.push(q3);
+      }
+
+      const uniqueIndices = [...new Set(sampleIndices)].slice(0, sampleSize);
+      const sampledChapters = uniqueIndices.map(i => sorted[i]);
+
+      const chapterSummaries = sampledChapters.map(ch => {
+        const content = ch.editedContent || ch.originalContent;
+        const words = content.split(/\s+/).length;
+        const preview = content.substring(0, 2000);
+        return `--- Capítulo ${ch.chapterNumber}: "${ch.title || 'Sin título'}" (${words} palabras) ---\n${preview}${content.length > 2000 ? "\n[...texto truncado...]" : ""}`;
+      });
+
+      const totalWords = chaptersWithContent.reduce((sum, ch) => {
+        const text = ch.editedContent || ch.originalContent;
+        return sum + (text?.split(/\s+/).length || 0);
+      }, 0);
+
+      const { GoogleGenAI } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+      const prompt = `Eres un consultor editorial experto. Analiza esta muestra de ${sampleSize} capítulos de un manuscrito de ${chaptersWithContent.length} capítulos (${totalWords.toLocaleString()} palabras totales) y determina si vale la pena RE-EDITARLO (corregir y pulir lo existente) o es mejor REESCRIBIRLO desde cero.
+
+CONTEXTO DEL PROYECTO:
+- Título: "${project.title}"
+- Idioma detectado: ${project.detectedLanguage || "es"}
+- Total capítulos: ${chaptersWithContent.length}
+- Puntuación bestseller actual: ${project.bestsellerScore ? project.bestsellerScore + "/10" : "Sin evaluar"}
+
+MUESTRA DE CAPÍTULOS:
+${chapterSummaries.join("\n\n")}
+
+Evalúa estos aspectos de la calidad ACTUAL del manuscrito:
+1. **Prosa y estilo**: ¿La escritura es fluida o torpe? ¿Hay variedad de vocabulario?
+2. **Estructura narrativa**: ¿Las escenas tienen propósito? ¿Hay arco dramático?
+3. **Personajes**: ¿Tienen voz propia? ¿Actúan de forma coherente?
+4. **Diálogos**: ¿Son naturales o artificiales?
+5. **Ritmo**: ¿Se mantiene el interés o hay secciones que arrastran?
+6. **Coherencia interna**: ¿Se perciben contradicciones o descuidos?
+
+RESPONDE ÚNICAMENTE CON JSON:
+{
+  "currentScore": 7,
+  "recommendation": "reedit" | "rewrite",
+  "confidence": "alta" | "media" | "baja",
+  "prose": { "score": 7, "comment": "..." },
+  "structure": { "score": 7, "comment": "..." },
+  "characters": { "score": 7, "comment": "..." },
+  "dialogue": { "score": 7, "comment": "..." },
+  "pacing": { "score": 7, "comment": "..." },
+  "coherence": { "score": 7, "comment": "..." },
+  "summary": "Resumen de 2-3 oraciones explicando la recomendación",
+  "reeditEstimate": "Descripción breve del esfuerzo de re-edición necesario",
+  "rewriteJustification": "Si recomiendas reescribir, explica por qué no vale la pena reeditar"
+}
+
+CRITERIOS:
+- Si la puntuación media es >= 6 y la prosa tiene base sólida → recomienda "reedit"
+- Si la puntuación media es < 5, o la prosa es fundamentalmente débil, o hay problemas estructurales graves → recomienda "rewrite"
+- Considera que la re-edición puede subir 1-2 puntos, pero no hacer milagros con prosa muy pobre`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: {
+          temperature: 0.7,
+          topP: 0.9,
+          maxOutputTokens: 4096,
+        },
+      });
+
+      const responseText = response.text || "";
+      let assessment: any = null;
+
+      try {
+        const { repairJson } = await import("./utils/json-repair.js");
+        assessment = repairJson(responseText);
+      } catch (e) {
+        try {
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            assessment = JSON.parse(jsonMatch[0]);
+          }
+        } catch (e2) {
+          console.error("[AssessReedit] Failed to parse AI response:", e2);
+        }
+      }
+
+      if (!assessment) {
+        return res.status(502).json({ error: "El modelo no devolvió una evaluación válida. Inténtalo de nuevo." });
+      }
+
+      const clampScore = (v: any) => {
+        const n = typeof v === "number" ? v : parseInt(v);
+        if (isNaN(n)) return 5;
+        return Math.max(0, Math.min(10, n));
+      };
+
+      assessment.currentScore = clampScore(assessment.currentScore);
+      for (const key of ["prose", "structure", "characters", "dialogue", "pacing", "coherence"]) {
+        if (assessment[key] && typeof assessment[key] === "object") {
+          assessment[key].score = clampScore(assessment[key].score);
+          if (typeof assessment[key].comment !== "string") assessment[key].comment = "";
+        } else {
+          assessment[key] = { score: 5, comment: "Sin datos" };
+        }
+      }
+      if (!["reedit", "rewrite"].includes(assessment.recommendation)) {
+        assessment.recommendation = assessment.currentScore >= 6 ? "reedit" : "rewrite";
+      }
+      if (!["alta", "media", "baja"].includes(assessment.confidence)) {
+        assessment.confidence = "media";
+      }
+      if (typeof assessment.summary !== "string") assessment.summary = "";
+      if (typeof assessment.reeditEstimate !== "string") assessment.reeditEstimate = "";
+      if (typeof assessment.rewriteJustification !== "string") assessment.rewriteJustification = "";
+
+      assessCooldowns.set(-projectId, Date.now());
+
+      res.json({
+        projectId,
+        title: project.title,
+        existingScore: project.bestsellerScore,
+        totalChapters: chaptersWithContent.length,
+        totalWords,
+        chaptersSampled: sampleSize,
+        assessment,
+      });
+    } catch (error: any) {
+      console.error("[AssessReedit] Error:", error);
+      res.status(500).json({ error: "Error al evaluar el manuscrito. Inténtalo de nuevo." });
+    }
+  });
+
   app.post("/api/reedit-projects/:id/start", async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
