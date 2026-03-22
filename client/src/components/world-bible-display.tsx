@@ -469,22 +469,28 @@ function PlotDecisionsTab({ decisions }: { decisions: PlotDecision[] }) {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between gap-2">
                 <CardTitle className="text-sm font-medium">{decision.decision}</CardTitle>
-                <Badge 
-                  variant={decision.consistencia_actual === "consistente" ? "secondary" : "destructive"}
-                  className="text-xs"
-                >
-                  {decision.consistencia_actual === "consistente" ? "Consistente" : "Inconsistente"}
-                </Badge>
+                {decision.consistencia_actual && (
+                  <Badge 
+                    variant={decision.consistencia_actual === "consistente" ? "secondary" : "destructive"}
+                    className="text-xs"
+                  >
+                    {decision.consistencia_actual === "consistente" ? "Consistente" : "Inconsistente"}
+                  </Badge>
+                )}
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex flex-wrap gap-2">
-                <Badge variant="outline" className="text-xs">
-                  Establecido: Cap. {decision.capitulo_establecido}
-                </Badge>
-                <span className="text-xs text-muted-foreground">
-                  Afecta: {decision.capitulos_afectados.map(c => `Cap. ${c}`).join(", ")}
-                </span>
+                {decision.capitulo_establecido != null && (
+                  <Badge variant="outline" className="text-xs">
+                    Establecido: Cap. {decision.capitulo_establecido}
+                  </Badge>
+                )}
+                {Array.isArray(decision.capitulos_afectados) && decision.capitulos_afectados.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    Afecta: {decision.capitulos_afectados.map(c => `Cap. ${c}`).join(", ")}
+                  </span>
+                )}
               </div>
               {decision.problema && (
                 <p className="text-xs text-destructive mt-2">{decision.problema}</p>
@@ -516,7 +522,7 @@ function PersistentInjuriesTab({ injuries }: { injuries: PersistentInjury[] }) {
         {injuries.map((injury, index) => (
           <Card 
             key={index} 
-            className={injury.consistencia === "ignorada" ? "border-destructive/50" : ""}
+            className={injury?.consistencia === "ignorada" ? "border-destructive/50" : ""}
             data-testid={`persistent-injury-${index}`}
           >
             <CardHeader className="pb-2">
@@ -525,12 +531,14 @@ function PersistentInjuriesTab({ injuries }: { injuries: PersistentInjury[] }) {
                   <Skull className="h-4 w-4" />
                   {injury.personaje}
                 </CardTitle>
-                <Badge 
-                  variant={injury.consistencia === "mantenida" ? "secondary" : "destructive"}
-                  className="text-xs"
-                >
-                  {injury.consistencia === "mantenida" ? "Mantenida" : "Ignorada"}
-                </Badge>
+                {injury.consistencia && (
+                  <Badge 
+                    variant={injury.consistencia === "mantenida" ? "secondary" : "destructive"}
+                    className="text-xs"
+                  >
+                    {injury.consistencia === "mantenida" ? "Mantenida" : "Ignorada"}
+                  </Badge>
+                )}
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -540,12 +548,16 @@ function PersistentInjuriesTab({ injuries }: { injuries: PersistentInjury[] }) {
                   Ocurre: Cap. {injury.capitulo_ocurre}
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">
-                <span className="font-medium">Efecto esperado:</span> {injury.efecto_esperado}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                <span className="font-medium">Verificado en:</span> {injury.capitulos_verificados.map(c => `Cap. ${c}`).join(", ")}
-              </p>
+              {injury.efecto_esperado && (
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">Efecto esperado:</span> {injury.efecto_esperado}
+                </p>
+              )}
+              {Array.isArray(injury.capitulos_verificados) && injury.capitulos_verificados.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">Verificado en:</span> {injury.capitulos_verificados.map(c => `Cap. ${c}`).join(", ")}
+                </p>
+              )}
               {injury.problema && (
                 <p className="text-xs text-destructive mt-2">{injury.problema}</p>
               )}
