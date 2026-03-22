@@ -905,7 +905,8 @@ export class GhostwriterAgent extends BaseAgent {
           "status": "alive|dead|injured|unconscious|missing|imprisoned",
           "hasItems": ["objetos que posee"],
           "emotionalState": "estado emocional al final",
-          "knowledgeGained": ["información nueva que sabe"]
+          "knowledgeGained": ["información nueva que sabe"],
+          "injuries": ["heridas o limitaciones físicas activas"]
         }
       },
       "narrativeTime": "Fecha/hora narrativa al terminar el capítulo",
@@ -914,7 +915,14 @@ export class GhostwriterAgent extends BaseAgent {
       "resolvedThreads": ["hilos narrativos cerrados en este capítulo"],
       "locationState": {
         "Nombre ubicación": "estado actual de la ubicación"
-      }
+      },
+      "scenePatterns": {
+        "openingType": "cómo abre el capítulo (despertar/acción/diálogo/atmosférica/flashback/in-media-res)",
+        "closingType": "cómo cierra el capítulo (cliffhanger/revelación/decisión/reflexión/cierre-emocional)",
+        "revelationMechanism": "cómo se revela información clave (confesión/documento/espionaje/deducción/visión/ninguna)",
+        "mainSceneStructures": ["tipos de escenas: confrontación/persecución/exploración/negociación/intimidad/descubrimiento"]
+      },
+      "keyDecisions": ["decisiones narrativas importantes tomadas que NO deben contradecirse"]
     }
     
     INCLUYE TODOS los personajes que aparecen en el capítulo, no solo el protagonista.

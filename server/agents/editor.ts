@@ -181,13 +181,25 @@ PROTOCOLO DE EVALUACIÓN INTEGRADO
    - 4-6 repeticiones: -1 punto
    - Más de 6 repeticiones: -2 puntos máximo
 
-4b. REPETICIÓN DE TRAMA ENTRE CAPÍTULOS (CRÍTICO):
-   - Compara este capítulo con el texto de capítulos anteriores proporcionado en la World Bible/contexto.
+4b. REPETICIÓN DE TRAMA ENTRE CAPÍTULOS (CRÍTICO - MÁXIMA PRIORIDAD):
+   - Compara EXHAUSTIVAMENTE este capítulo con el texto de capítulos anteriores.
    - ¿Se repite la ESTRUCTURA de una escena previa? (ej: misma secuencia llegada-descubrimiento-escape)
-   - ¿Se reutiliza el mismo MECANISMO de revelación? (ej: "encuentra una carta", "escucha una conversación")
-   - ¿Se repite el mismo TIPO de cliffhanger o final?
+   - ¿Se reutiliza el mismo MECANISMO de revelación? (ej: "encuentra una carta" de nuevo, "escucha una conversación" de nuevo)
+   - ¿Se repite el mismo TIPO de apertura? (ej: otro capítulo que abre con el personaje despertando)
+   - ¿Se repite el mismo TIPO de cierre/cliffhanger? (ej: otro capítulo que termina con revelación impactante)
    - ¿Se duplican metáforas o imágenes ya usadas en capítulos anteriores?
-   - Si detectas repetición de trama: reportar en "repeticiones_trama" y penalizar -1 punto
+   - ¿El personaje vuelve a tener la MISMA reacción emocional ante una situación similar?
+   - ¿Se repite un PATRÓN de resolución? (ej: siempre resuelve problemas con la misma estrategia)
+   - PENALIZACIÓN: Primera repetición de trama: -1 punto. Dos o más repeticiones: -2 puntos y aprobado=false
+   
+4c. CONTRADICCIONES CON LO NARRADO (CRÍTICO):
+   - ¿El capítulo introduce hechos que CONTRADICEN lo establecido en capítulos anteriores?
+   - ¿Un personaje cambia de opinión/actitud sin justificación narrativa?
+   - ¿Un evento se narra de forma diferente a como ocurrió originalmente?
+   - ¿Se introduce una habilidad, recurso o aliado que no existía antes?
+   - ¿La geografía, distancias o tiempos de viaje son inconsistentes?
+   - Reportar en "errores_continuidad" con cita exacta del texto contradictorio
+   - PENALIZACIÓN: Cada contradicción con lo narrado: -1 punto. Contradicción grave: aprobado=false
 
 5. RITMO Y PACING:
    - ¿Los eventos dramáticos tienen suficiente SETUP emocional?
@@ -215,7 +227,9 @@ Cuando rechaces un capítulo, tu plan_quirurgico debe incluir:
 
 CHECKLIST DE RECHAZO (Cualquiera = aprobado: false):
 - ERROR DE CONTINUIDAD GRAVE (timeline, ubicación, personaje muerto actuando, filtración de conocimiento, objeto perdido reaparecido)
+- CONTRADICCIÓN con hechos/decisiones establecidos en capítulos anteriores
 - Inconsistencia física con World Bible
+- REPETICIÓN DE ESCENAS/MECANISMOS de capítulos anteriores (2+ repeticiones de trama)
 - Más de 3 repeticiones de la misma expresión
 - Beats del arquitecto no cumplidos
 - Violación de prohibiciones de la guía de estilo
@@ -335,9 +349,16 @@ TEXTO DE CAPÍTULOS ANTERIORES (PARA DETECCIÓN DE REPETICIONES):
 ═══════════════════════════════════════════════════════════════════
 ${input.previousChaptersContext}
 ═══════════════════════════════════════════════════════════════════
-COMPARA el capítulo actual contra estos textos anteriores.
-Detecta: escenas con misma estructura, mecanismos de revelación repetidos,
-metáforas/imágenes duplicadas, y patrones narrativos reciclados.
+COMPARA EXHAUSTIVAMENTE el capítulo actual contra estos textos anteriores.
+Detecta con MÁXIMA ATENCIÓN:
+1. ESCENAS CON MISMA ESTRUCTURA (ej: si Cap anterior tuvo "llegada→exploración→descubrimiento", este NO debe seguir el mismo patrón)
+2. MECANISMOS DE REVELACIÓN REPETIDOS (ej: "encuentra carta/documento" usado dos veces = FALLO)
+3. MISMO TIPO DE APERTURA (ej: dos capítulos seguidos abriendo con el personaje despertando)
+4. MISMO TIPO DE CIERRE (ej: dos capítulos seguidos cerrando con cliffhanger/revelación)
+5. REACCIONES EMOCIONALES IDÉNTICAS ante situaciones similares
+6. METÁFORAS/IMÁGENES DUPLICADAS entre capítulos
+7. PATRONES DE RESOLUCIÓN repetidos (ej: siempre resuelve con ayuda inesperada)
+8. CONTRADICCIONES con hechos/decisiones narrados en capítulos previos
 ═══════════════════════════════════════════════════════════════════
 ` : ""}
 
@@ -350,14 +371,19 @@ ${input.chapterContent}
 INSTRUCCIONES:
 1. Verifica que el texto CUMPLA con la Guía de Estilo (voz, tono, prohibiciones).
 2. Verifica que el texto EJECUTE el Plan del Arquitecto (beats, conflicto, arcos).
-3. Verifica CONTINUIDAD con la World Bible (rasgos físicos, datos).
+3. Verifica CONTINUIDAD con la World Bible (rasgos físicos, datos) y con capítulos anteriores.
 4. Busca REPETICIONES léxicas dentro del capítulo.
-5. Evalúa el RITMO y PACING.
+5. Compara EXHAUSTIVAMENTE con capítulos anteriores: busca escenas repetidas, mecanismos reciclados, mismos tipos de apertura/cierre, y contradicciones con lo narrado.
+6. Evalúa el RITMO y PACING.
+
+⚠️ LA DETECCIÓN DE REPETICIONES ENTRE CAPÍTULOS Y CONTRADICCIONES ES TU TAREA MÁS CRÍTICA.
+Un capítulo que repite escenas de capítulos anteriores o contradice hechos establecidos NUNCA debe aprobarse.
 
 Si rechazas, tu plan_quirurgico debe ser ESPECÍFICO:
 - Cita párrafos exactos que deben cambiar
 - Indica qué beats faltan y cómo incorporarlos
 - Referencia la guía de estilo para correcciones de voz
+- Si hay repetición de escenas: indica QUÉ escena del capítulo anterior se repite y sugiere una estructura ALTERNATIVA
 
 Responde ÚNICAMENTE con el JSON estructurado.
     `;

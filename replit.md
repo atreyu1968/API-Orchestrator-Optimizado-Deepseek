@@ -109,10 +109,19 @@ Preferred communication style: Simple, everyday language.
 - **Reedit Assessment**: Before starting a re-edit, users can run `/api/projects/:id/assess-reedit` to get an AI-powered quality assessment (samples 5 chapters, evaluates prose/structure/characters/dialogue/pacing/coherence). Returns "reedit" or "rewrite" recommendation with per-category scores. Has 60s per-project cooldown. Frontend shows results in the auto-reedit dialog with a warning gate when "rewrite" is recommended.
 - **Issue Tracking**: Issue hash tracking prevents re-reporting of resolved issues.
 - **Enhanced Cancellation & Resume**: Immediate process cancellation and optimized project resumption from `awaiting_instructions`. All three orchestrator methods (`processProject`, `runFinalReviewOnly`, `applyReviewerCorrections`) have full try/catch error handling with status/token persistence on failure.
-- **Continuity Validation & Constraints**: Three-layer continuity system: (1) Immediate pre-Editor validation for dead characters, ignored injuries, and location inconsistencies. (2) Editor acts as primary continuity sentinel with full 6-category analysis (physical, temporal, spatial, character state, objects, knowledge leaks) — continuity errors auto-reject the chapter. (3) Continuity Sentinel runs every 5 chapters but only checks multi-chapter panoramic patterns (accumulated timeline drift, abandoned threads, cross-chapter contradictions) — only triggers rewrites for CRITICAL severity issues, not MAJOR.
+- **Continuity Validation & Constraints**: Three-layer continuity system: (1) Immediate pre-Editor validation for dead characters, ignored injuries, and location inconsistencies. (2) Editor acts as primary continuity sentinel with full 6-category analysis (physical, temporal, spatial, character state, objects, knowledge leaks) — continuity errors auto-reject the chapter. (3) Continuity Sentinel runs every 3 chapters (reduced from 5) checking multi-chapter panoramic patterns (accumulated timeline drift, abandoned threads, cross-chapter contradictions) — only triggers rewrites for CRITICAL severity issues, not MAJOR.
 - **World Bible Enrichment**: Automatic update and enrichment of the World Bible with character states and narrative threads after each chapter. Includes full-text sliding context window for Ghostwriter.
 - **Author Notes System**: Users can add prioritized author instructions to the World Bible, injected into Ghostwriter and Editor prompts.
-- **Cross-Chapter Anti-Repetition**: Explicit rules and context (up to 3 previous chapters) for Ghostwriter and Editor to prevent thematic and narrative repetition.
+- **Cross-Chapter Anti-Repetition**: Multi-layer scene repetition prevention system:
+  - `extractScenePatternSummary()` analyzes chapter text for opening/closing/mechanism patterns (regex-based) + AI-reported `scenePatterns` from continuity state
+  - Scene patterns from last 6 chapters injected into Ghostwriter as "PATRONES NARRATIVOS YA USADOS" mandatory constraints
+  - Editor receives 5 previous chapters (up from 3) with larger excerpts (5000 chars for 2 nearest, 3000 for farther) showing beginning+end for pattern detection
+  - Editor has explicit 8-point cross-chapter comparison checklist (scene structure, revelation mechanism, opening/closing type, emotional reactions, resolution patterns, contradictions)
+  - `enforceApprovalLogic` treats 2+ `repeticiones_trama` as hard rejection (overrides even 9+/10 score)
+  - Ghostwriter continuity state now includes `scenePatterns` (openingType, closingType, revelationMechanism, mainSceneStructures) and `keyDecisions` for tracking
+  - `keyDecisions` from continuity state injected into mandatory constraints as "[DECISIÓN]" entries
+  - Summary chapter extracts expanded to 1500 chars (800 start + 700 end) instead of 500 chars
+  - Local `chapters` array updated in-memory after completion to ensure `buildSlidingContextWindow` has access to completed chapter content during generation
 - **PWA Support**: Progressive Web App capabilities including `manifest.json`, service worker, and install-to-home-screen.
 
 ### Series Management (Complete Inter-Book Continuity System)

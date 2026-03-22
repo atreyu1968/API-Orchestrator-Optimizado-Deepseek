@@ -94,7 +94,7 @@ export class Orchestrator {
   private maxFinalReviewCycles = 10;
   private minAcceptableScore = 9; // Minimum score required for approval
   private requiredConsecutiveHighScores = 2; // Must achieve 9+ this many times in a row
-  private continuityCheckpointInterval = 5;
+  private continuityCheckpointInterval = 3;
   private currentProjectGenre = "";
   private chaptersRewrittenInCurrentCycle = 0;
   
@@ -111,9 +111,23 @@ export class Orchestrator {
     const hasCriticalContinuityError = 
       (Array.isArray(r.errores_continuidad) && r.errores_continuidad.length > 0) ||
       (Array.isArray(r.filtracion_conocimiento) && r.filtracion_conocimiento.length > 0);
+    
+    const hasPlotRepetition = Array.isArray(r.repeticiones_trama) && r.repeticiones_trama.length >= 2;
+    const hasObjectInconsistency = Array.isArray(r.inconsistencias_objetos) && r.inconsistencias_objetos.length > 0;
+    const hasHardRejectCondition = hasCriticalContinuityError || hasPlotRepetition || hasObjectInconsistency;
 
-    if (score >= 9 && !hasCriticalContinuityError && !r.aprobado) {
-      console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=false with no critical continuity errors. Forcing aprobado=true.`);
+    if (hasHardRejectCondition && r.aprobado) {
+      const reasons: string[] = [];
+      if (hasCriticalContinuityError) reasons.push("errores de continuidad");
+      if (hasPlotRepetition) reasons.push(`${r.repeticiones_trama.length} repeticiones de trama`);
+      if (hasObjectInconsistency) reasons.push("inconsistencias de objetos");
+      console.log(`[Orchestrator] OVERRIDE: Forcing aprobado=false despite score ${score}/10 due to: ${reasons.join(", ")}`);
+      r.aprobado = false;
+      return;
+    }
+
+    if (score >= 9 && !hasHardRejectCondition && !r.aprobado) {
+      console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=false with no critical issues. Forcing aprobado=true.`);
       r.aprobado = true;
     }
     if (score < 9 && r.aprobado) {
@@ -386,6 +400,47 @@ export class Orchestrator {
     };
   }
 
+  private extractScenePatternSummary(chapter: Chapter, state: any): string | null {
+    const content = ((chapter as any).editedContent || chapter.originalContent || (chapter as any).content || "") as string;
+    if (!content || content.length < 200) return null;
+    
+    const patterns: string[] = [];
+    
+    const first300 = content.substring(0, 300).toLowerCase();
+    if (first300.match(/despert[óo]|abri[óo] los ojos|amaneció|la luz del/)) patterns.push("apertura:despertar");
+    else if (first300.match(/corr[ií]a|huy[óo]|escapab|persegu/)) patterns.push("apertura:acción/persecución");
+    else if (first300.match(/recordab|memori|soñ[óo]|flashback/)) patterns.push("apertura:recuerdo/flashback");
+    else if (first300.match(/silencio|oscuridad|noche|sombra/)) patterns.push("apertura:atmosférica");
+    else if (first300.match(/—[^—]+—|dij[oe]|pregunt[óo]/)) patterns.push("apertura:diálogo");
+    
+    const last500 = content.substring(content.length - 500).toLowerCase();
+    if (last500.match(/pero entonces|de repente|sin embargo.*final|y entonces/)) patterns.push("cierre:cliffhanger");
+    else if (last500.match(/cerr[óo] los ojos|durmi[óo]|descansar/)) patterns.push("cierre:descanso");
+    else if (last500.match(/decisi[óo]n|decid[ií]|jurament|prometi/)) patterns.push("cierre:decisión");
+    else if (last500.match(/revel[óo]|descubri[óo]|secret[oa]|verdad/)) patterns.push("cierre:revelación");
+    
+    if (content.match(/carta|nota|mensaje|documento|pergamino/gi)) {
+      const matches = content.match(/carta|nota|mensaje|documento|pergamino/gi);
+      if (matches && matches.length >= 2) patterns.push("mecanismo:descubrimiento-por-documento");
+    }
+    if (content.match(/escuch[óo].*conversaci[óo]n|espiar|escondid[oa].*o[iyí]/i)) patterns.push("mecanismo:espionaje/escuchar-conversación");
+    if (content.match(/justo a tiempo|en el último momento|apareci[óo].*salvar/i)) patterns.push("mecanismo:rescate-último-momento");
+    if (content.match(/traicion[óo]|traici[óo]n|lo engañ[óo]/i)) patterns.push("mecanismo:traición");
+    if (content.match(/confes[óo]|contar.*verdad|revel[óo].*secret/i)) patterns.push("mecanismo:confesión/revelación");
+    
+    if (state?.scenePatterns) {
+      const sp = state.scenePatterns;
+      if (sp.openingType) patterns.push(`apertura:${sp.openingType}`);
+      if (sp.closingType) patterns.push(`cierre:${sp.closingType}`);
+      if (sp.revelationMechanism) patterns.push(`mecanismo:${sp.revelationMechanism}`);
+    }
+    
+    if (patterns.length === 0) return null;
+    
+    const uniquePatterns = [...new Set(patterns)];
+    return `Cap ${chapter.chapterNumber}: [${uniquePatterns.join(", ")}]`;
+  }
+
   private buildSlidingContextWindow(
     completedChapters: Chapter[],
     currentChapterIndex: number,
@@ -437,6 +492,14 @@ export class Orchestrator {
         const events = state.key_events || state.keyReveals || [];
         keyEvents.push(...events.slice(-2));
       }
+      if (state?.keyDecisions) {
+        const decisions = state.keyDecisions || [];
+        for (const decision of decisions) {
+          if (decision && typeof decision === 'string') {
+            keyEvents.push(`[DECISIÓN Cap ${chapter.chapterNumber}] ${decision}`);
+          }
+        }
+      }
     }
 
     const mandatoryConstraints: string[] = [];
@@ -485,9 +548,17 @@ export class Orchestrator {
       mandatoryConstraints.push(`  - Cada capítulo debe avanzar la trama con NUEVOS elementos`);
     }
 
+    const recentScenePatterns: string[] = [];
+    
     for (let i = sortedChapters.length - 1; i >= 0; i--) {
       const chapter = sortedChapters[i];
       const distanceFromCurrent = sortedChapters.length - 1 - i;
+      const state = chapter.continuityState as any;
+
+      if (distanceFromCurrent < 6) {
+        const sceneInfo = this.extractScenePatternSummary(chapter, state);
+        if (sceneInfo) recentScenePatterns.push(sceneInfo);
+      }
 
       if (distanceFromCurrent < FULL_CONTEXT_CHAPTERS) {
         const content = (chapter as any).editedContent || chapter.originalContent || chapter.content || "";
@@ -505,17 +576,25 @@ Estado de continuidad: ${continuityState || "No disponible"}
       } else if (distanceFromCurrent < FULL_CONTEXT_CHAPTERS + SUMMARY_CONTEXT_CHAPTERS) {
         const section = allSections.find(s => s.numero === chapter.chapterNumber);
         const chapterContent = (chapter as any).editedContent || chapter.originalContent || chapter.content || "";
-        const contentSummary = typeof chapterContent === 'string' && chapterContent.length > 500
-          ? chapterContent.substring(0, 500) + "..."
+        const contentExtract = typeof chapterContent === 'string' && chapterContent.length > 1500
+          ? chapterContent.substring(0, 800) + "\n[...]\n" + chapterContent.substring(chapterContent.length - 700)
           : chapterContent;
         const planInfo = section 
           ? `Objetivo: ${section.objetivo_narrativo || "N/A"}. Ubicación: ${section.ubicacion || "N/A"}. Elenco: ${section.elenco_presente?.join(", ") || "N/A"}.`
           : "";
         
-        contextParts.unshift(`[Cap ${chapter.chapterNumber}: ${chapter.title}] ${planInfo}\nExtracto: ${contentSummary || "N/A"}`);
+        contextParts.unshift(`[Cap ${chapter.chapterNumber}: ${chapter.title}] ${planInfo}\nExtracto: ${contentExtract || "N/A"}`);
       } else {
         contextParts.unshift(`[Cap ${chapter.chapterNumber}: ${chapter.title}]`);
       }
+    }
+    
+    if (recentScenePatterns.length > 0) {
+      mandatoryConstraints.push(`\n🔄 PATRONES NARRATIVOS YA USADOS (NO REPETIR):`);
+      recentScenePatterns.forEach(pattern => {
+        mandatoryConstraints.push(`  ${pattern}`);
+      });
+      mandatoryConstraints.push(`  ⛔ Usa ESTRUCTURAS DIFERENTES para las escenas de este capítulo`);
     }
 
     // Build the context with mandatory constraints at the top
@@ -538,7 +617,7 @@ ${contextParts.join("\n")}
   private buildPreviousChaptersContextForEditor(
     completedChapters: Chapter[],
     currentChapterNumber: number,
-    maxChapters: number = 3
+    maxChapters: number = 5
   ): string {
     const sorted = [...completedChapters]
       .filter(c => c.status === "completed" && c.chapterNumber < currentChapterNumber)
@@ -550,8 +629,12 @@ ${contextParts.join("\n")}
     const parts: string[] = [];
     for (const ch of sorted.reverse()) {
       const content = ((ch as any).editedContent || ch.originalContent || ch.content || "") as string;
-      const excerpt = content.length > 4000 ? content.substring(content.length - 4000) : content;
-      parts.push(`--- Capítulo ${ch.chapterNumber}: ${ch.title} (últimos ${excerpt.length} caracteres) ---\n${excerpt}`);
+      const distanceFromCurrent = currentChapterNumber - ch.chapterNumber;
+      const excerptSize = distanceFromCurrent <= 2 ? 5000 : 3000;
+      const excerpt = content.length > excerptSize
+        ? content.substring(0, Math.floor(excerptSize * 0.4)) + "\n[...]\n" + content.substring(content.length - Math.floor(excerptSize * 0.6))
+        : content;
+      parts.push(`--- Capítulo ${ch.chapterNumber}: ${ch.title} (${excerpt.length} caracteres) ---\n${excerpt}`);
     }
     return parts.join("\n\n");
   }
@@ -1245,6 +1328,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           status: "completed",
           continuityState: extractedContinuityState,
         });
+
+        (chapter as any).content = finalContent;
+        (chapter as any).originalContent = finalContent;
+        (chapter as any).editedContent = finalContent;
+        chapter.wordCount = wordCount;
+        chapter.status = "completed";
+        chapter.continuityState = extractedContinuityState;
 
         if (extractedContinuityState) {
           previousContinuity = JSON.stringify(extractedContinuityState);
