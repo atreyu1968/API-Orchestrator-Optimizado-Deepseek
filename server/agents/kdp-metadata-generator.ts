@@ -149,14 +149,66 @@ RESPONDE SIEMPRE EN JSON con este formato:
 
     const parsed = repairJson(response.content);
     
-    const keywords = (parsed.keywords || []).slice(0, 7).map((k: string) => 
+    let keywords = (parsed.keywords || []).slice(0, 7).map((k: string) => 
       typeof k === "string" ? k.substring(0, 50) : String(k).substring(0, 50)
     );
+    keywords = this.sanitizeKeywords(keywords, context.title);
     while (keywords.length < 7) {
       keywords.push("");
     }
     
-    let description = parsed.description || "";
+    let description = this.sanitizeDescription(parsed.description || "");
+
+    const seriesName = this.sanitizeSeriesName(parsed.seriesName || null);
+
+    const aiDisclosure = ["ai-generated", "ai-assisted"].includes(parsed.aiDisclosure)
+      ? parsed.aiDisclosure
+      : "ai-assisted";
+
+    return {
+      subtitle: (parsed.subtitle || "").substring(0, 200),
+      description,
+      keywords,
+      bisacCategories: (parsed.bisacCategories || []).slice(0, 2).map((c: string) => String(c).substring(0, 200)),
+      seriesName,
+      seriesNumber: typeof parsed.seriesNumber === "number" ? parsed.seriesNumber : null,
+      seriesDescription: parsed.seriesDescription ? String(parsed.seriesDescription).substring(0, 500) : null,
+      aiDisclosure,
+      contentWarnings: parsed.contentWarnings || null,
+    };
+  }
+
+  private sanitizeDescription(description: string): string {
+    const KDP_ALLOWED_TAGS = new Set(["b", "i", "em", "strong", "br", "p", "h4", "h5", "h6", "ul", "ol", "li", "hr"]);
+    description = description.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/gi, (match, tag) => {
+      return KDP_ALLOWED_TAGS.has(tag.toLowerCase()) ? match : "";
+    });
+
+    const forbiddenPatterns = [
+      /compra\s+ahora/gi,
+      /haz\s+clic/gi,
+      /buy\s+now/gi,
+      /click\s+here/gi,
+      /el\s+mejor/gi,
+      /más\s+vendido/gi,
+      /best\s*seller/gi,
+      /número\s+1/gi,
+      /#1/g,
+      /en\s+oferta/gi,
+      /precio\s+especial/gi,
+      /por\s+tiempo\s+limitado/gi,
+      /gratis/gi,
+      /free/gi,
+      /descuento/gi,
+      /★+/g,
+      /⭐+/g,
+    ];
+    for (const pattern of forbiddenPatterns) {
+      description = description.replace(pattern, "");
+    }
+
+    description = description.replace(/\s{2,}/g, " ").trim();
+
     if (description.length > 4000) {
       const lastTag = description.lastIndexOf("<", 3990);
       if (lastTag > 3500) {
@@ -166,17 +218,36 @@ RESPONDE SIEMPRE EN JSON con este formato:
       }
     }
 
-    return {
-      subtitle: parsed.subtitle || "",
-      description,
-      keywords,
-      bisacCategories: (parsed.bisacCategories || []).slice(0, 2),
-      seriesName: parsed.seriesName || null,
-      seriesNumber: parsed.seriesNumber || null,
-      seriesDescription: parsed.seriesDescription || null,
-      aiDisclosure: parsed.aiDisclosure || "ai-assisted",
-      contentWarnings: parsed.contentWarnings || null,
-    };
+    return description;
+  }
+
+  private sanitizeKeywords(keywords: string[], title: string): string[] {
+    const forbiddenTerms = ["kindle", "ebook", "e-book", "amazon", "gratis", "free", "bestseller", "best seller"];
+    const titleWords = new Set(title.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+
+    return keywords.map(kw => {
+      let cleaned = kw;
+      for (const term of forbiddenTerms) {
+        const regex = new RegExp(`\\b${term}\\b`, "gi");
+        cleaned = cleaned.replace(regex, "").trim();
+      }
+      cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
+      return cleaned.substring(0, 50);
+    }).filter(kw => {
+      if (!kw || kw.length < 2) return false;
+      const kwLower = kw.toLowerCase();
+      const kwWords = kwLower.split(/\s+/);
+      const allInTitle = kwWords.every(w => titleWords.has(w));
+      if (allInTitle && kwWords.length <= 2) return false;
+      return true;
+    });
+  }
+
+  private sanitizeSeriesName(name: string | null): string | null {
+    if (!name) return null;
+    let cleaned = name.replace(/\b(libro|book|vol(umen)?|volume|tomo|parte|part)\s*\.?\s*\d+\b/gi, "").trim();
+    cleaned = cleaned.replace(/\s*[,\-–—]\s*$/, "").trim();
+    return cleaned || null;
   }
 }
 

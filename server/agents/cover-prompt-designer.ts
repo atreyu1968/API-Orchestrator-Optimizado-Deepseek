@@ -141,16 +141,51 @@ RESPONDE SIEMPRE EN JSON con este formato:
 
     const parsed = repairJson(response.content);
     
+    let prompt = String(parsed.prompt || "").trim();
+    prompt = this.sanitizeCoverPrompt(prompt, context.title);
+
     return {
-      prompt: parsed.prompt || "",
-      negativePrompt: parsed.negativePrompt || "",
-      style: parsed.style || "realistic",
-      colorPalette: parsed.colorPalette || "",
-      mood: parsed.mood || "",
-      typography: parsed.typography || "",
-      composition: parsed.composition || "",
+      prompt,
+      negativePrompt: String(parsed.negativePrompt || "").substring(0, 2000),
+      style: String(parsed.style || "realistic").substring(0, 100),
+      colorPalette: String(parsed.colorPalette || "").substring(0, 500),
+      mood: String(parsed.mood || "").substring(0, 200),
+      typography: String(parsed.typography || "").substring(0, 500),
+      composition: String(parsed.composition || "").substring(0, 500),
       seriesDesignSystem: parsed.seriesDesignSystem || null,
     };
+  }
+
+  private sanitizeCoverPrompt(prompt: string, title: string): string {
+    const titleLower = title.toLowerCase();
+    const promptLower = prompt.toLowerCase();
+    if (promptLower.includes(`"${titleLower}"`) || promptLower.includes(`'${titleLower}'`)) {
+      prompt = prompt.replace(new RegExp(`["']${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`, "gi"), "[book title text]");
+    }
+
+    const kdpTerms = [
+      /\b2560\s*x\s*1600\b/g,
+      /\b1600\s*x\s*2560\b/g,
+      /\b300\s*dpi\b/gi,
+      /\brgb\s+color\s+space\b/gi,
+      /\bjpeg\b/gi,
+      /\btiff\b/gi,
+    ];
+    for (const term of kdpTerms) {
+      prompt = prompt.replace(term, "");
+    }
+
+    prompt = prompt.replace(/\s{2,}/g, " ").trim();
+
+    if (!promptLower.includes("portrait") && !promptLower.includes("vertical")) {
+      prompt += ", vertical portrait orientation";
+    }
+
+    if (!promptLower.includes("book cover")) {
+      prompt = "Book cover design, " + prompt;
+    }
+
+    return prompt.substring(0, 5000);
   }
 }
 
