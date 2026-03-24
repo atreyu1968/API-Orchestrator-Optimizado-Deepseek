@@ -9645,7 +9645,10 @@ CRITERIOS:
 
           if (project.pseudonymId) {
             const pseudo = await storage.getPseudonym(project.pseudonymId);
-            if (pseudo) context.pseudonymName = pseudo.name;
+            if (pseudo) {
+              context.pseudonymName = pseudo.name;
+              context.pseudonymGenre = pseudo.defaultGenre;
+            }
           }
 
           if (project.seriesId) {

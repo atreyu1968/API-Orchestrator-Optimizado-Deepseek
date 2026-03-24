@@ -96,25 +96,38 @@ RESPONDE SIEMPRE EN JSON con este formato:
       userPrompt += `\nMUNDO/AMBIENTACIÓN (resumen):\n${context.worldBibleSummary.substring(0, 3000)}\n`;
     }
     
-    if (context.scope === "series") {
-      userPrompt += `\nÁMBITO: SERIE COMPLETA\n`;
+    if (context.seriesTitle) {
+      if (context.scope === "series") {
+        userPrompt += `\nÁMBITO: SERIE COMPLETA\n`;
+      } else {
+        userPrompt += `\nSERIE: Este libro pertenece a la serie "${context.seriesTitle}"\n`;
+      }
       userPrompt += `Serie: "${context.seriesTitle}"\n`;
       if (context.seriesDescription) {
         userPrompt += `Descripción de la serie: ${context.seriesDescription.substring(0, 1500)}\n`;
       }
       if (context.seriesDesignSystem) {
-        userPrompt += `\nSISTEMA DE DISEÑO EXISTENTE DE LA SERIE (mantener coherencia):\n${JSON.stringify(context.seriesDesignSystem, null, 2)}\n`;
+        userPrompt += `\nSISTEMA DE DISEÑO EXISTENTE DE LA SERIE (mantener coherencia OBLIGATORIA):\n${JSON.stringify(context.seriesDesignSystem, null, 2)}\n`;
+        userPrompt += `\nDEBES mantener coherencia visual con el sistema de diseño existente de la serie.\n`;
       }
-      userPrompt += `\nDebe incluir un "seriesDesignSystem" en la respuesta que defina los elementos visuales comunes para toda la serie.\n`;
+      if (context.scope === "series") {
+        userPrompt += `\nDebe incluir un "seriesDesignSystem" en la respuesta que defina los elementos visuales comunes para toda la serie.\n`;
+      } else if (!context.seriesDesignSystem) {
+        userPrompt += `\nEste es el primer libro de la serie con portada. Incluye un "seriesDesignSystem" que defina los elementos visuales comunes para futuros libros.\n`;
+      }
     }
     
-    if (context.scope === "pseudonym") {
-      userPrompt += `\nÁMBITO: MARCA DE AUTOR\n`;
+    if (context.pseudonymName) {
+      if (context.scope === "pseudonym") {
+        userPrompt += `\nÁMBITO: MARCA DE AUTOR\n`;
+      } else {
+        userPrompt += `\nAUTOR: `;
+      }
       userPrompt += `Seudónimo: "${context.pseudonymName}"\n`;
       if (context.pseudonymGenre) {
-        userPrompt += `Género habitual: ${context.pseudonymGenre}\n`;
+        userPrompt += `Género habitual del autor: ${context.pseudonymGenre}\n`;
       }
-      userPrompt += `El prompt debe reflejar una identidad visual consistente para este autor.\n`;
+      userPrompt += `La portada debe reflejar la identidad visual del autor "${context.pseudonymName}".\n`;
     }
     
     if (context.existingCovers && context.existingCovers.length > 0) {
