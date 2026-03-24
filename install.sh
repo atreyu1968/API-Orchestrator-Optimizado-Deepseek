@@ -422,22 +422,20 @@ sudo -u "$APP_USER" npm install --legacy-peer-deps 2>&1 | tail -5
 print_status "Compilando aplicación..."
 sudo -u "$APP_USER" npm run build 2>&1 | tail -5
 
-print_status "Ejecutando migraciones de schema (drizzle-kit push)..."
-yes | sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push 2>&1 | tail -5
+print_status "Ejecutando migraciones de schema..."
+timeout 120 bash -c 'yes | sudo -u "'$APP_USER'" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push 2>&1 | tail -5' || {
+    print_warning "drizzle-kit push se colgo. Reintentando..."
+    timeout 120 bash -c 'yes | sudo -u "'$APP_USER'" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push 2>&1 | tail -5' || {
+        print_error "drizzle-kit push fallo dos veces. Revisa la conexion a la base de datos."
+    }
+}
 
 print_status "Verificando que las tablas se crearon correctamente..."
 TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null || echo "0")
 if [ "$TABLE_COUNT" -gt 0 ] 2>/dev/null; then
     print_success "Base de datos inicializada con $TABLE_COUNT tablas"
 else
-    print_warning "No se detectaron tablas. Reintentando db:push..."
-    yes | sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push 2>&1 | tail -5
-    TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null || echo "0")
-    if [ "$TABLE_COUNT" -gt 0 ] 2>/dev/null; then
-        print_success "Base de datos inicializada con $TABLE_COUNT tablas (segundo intento)"
-    else
-        print_error "Las tablas no se crearon. Revisa la conexión a la base de datos."
-    fi
+    print_error "Las tablas no se crearon. Revisa la conexion a la base de datos."
 fi
 
 print_status "Aplicando migraciones SQL adicionales..."

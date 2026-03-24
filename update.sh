@@ -77,12 +77,62 @@ sudo -u "$APP_USER" npm install --legacy-peer-deps 2>&1 | tail -5
 echo "3. Compilando aplicacion..."
 sudo -u "$APP_USER" npm run build 2>&1 | tail -5
 
-echo "4. Ejecutando migraciones de schema (drizzle-kit push)..."
-sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push --force 2>&1 | tail -10
-if [ $? -ne 0 ]; then
-    echo "[AVISO] drizzle-kit push --force no disponible, intentando modo interactivo..."
-    yes | sudo -u "$APP_USER" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push 2>&1 | tail -10
-fi
+echo "4. Ejecutando migraciones de schema..."
+DB_PASS_M=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
+DB_USER_M=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+DB_HOST_M=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|p')
+DB_PORT_M=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:[^@]*@[^:]*:\([^/]*\)/.*|\1|p')
+DB_NAME_M=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^/]*/\([^?]*\).*|\1|p')
+
+sudo -u "$APP_USER" PGPASSWORD="$DB_PASS_M" psql -U "$DB_USER_M" -h "$DB_HOST_M" -p "$DB_PORT_M" "$DB_NAME_M" -c "
+CREATE TABLE IF NOT EXISTS cover_prompts (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+    series_id INTEGER REFERENCES series(id) ON DELETE SET NULL,
+    pseudonym_id INTEGER REFERENCES pseudonyms(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    negative_prompt TEXT,
+    style TEXT NOT NULL DEFAULT 'realistic',
+    color_palette TEXT,
+    mood TEXT,
+    typography TEXT,
+    composition TEXT,
+    series_design_system JSONB,
+    cover_specs JSONB DEFAULT '{\"width\":1600,\"height\":2560,\"dpi\":300,\"format\":\"JPEG\",\"colorMode\":\"RGB\",\"ratio\":\"1.6:1\"}',
+    status TEXT NOT NULL DEFAULT 'draft',
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS kdp_metadata (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    reedit_project_id INTEGER REFERENCES reedit_projects(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    subtitle TEXT,
+    description TEXT,
+    keywords TEXT[],
+    bisac_categories TEXT[],
+    series_name TEXT,
+    series_number INTEGER,
+    series_description TEXT,
+    language TEXT NOT NULL DEFAULT 'es',
+    target_marketplace TEXT NOT NULL DEFAULT 'amazon.es',
+    ai_disclosure TEXT NOT NULL DEFAULT 'ai-assisted',
+    content_warnings TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id SERIAL PRIMARY KEY,
+    session_token TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    expires_at TIMESTAMP NOT NULL
+);
+" 2>/dev/null && echo "[OK] Tablas verificadas" || echo "[AVISO] Algunas tablas ya existian"
 
 echo "5. Aplicando migraciones SQL adicionales..."
 DB_PASS_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
