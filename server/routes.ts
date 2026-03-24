@@ -9631,16 +9631,48 @@ CRITERIOS:
           context.tone = project.tone;
           context.premise = project.premise;
 
-          const wb = await storage.getWorldBibleByProject(projectId);
-          if (wb?.content) {
-            try {
-              const wbData = typeof wb.content === "string" ? JSON.parse(wb.content) : wb.content;
-              const summaryParts: string[] = [];
-              if (wbData.ambientacion) summaryParts.push(`Ambientación: ${JSON.stringify(wbData.ambientacion).substring(0, 1000)}`);
-              if (wbData.personajes_principales) summaryParts.push(`Personajes: ${JSON.stringify(wbData.personajes_principales).substring(0, 1000)}`);
-              if (wbData.temas_principales) summaryParts.push(`Temas: ${JSON.stringify(wbData.temas_principales).substring(0, 500)}`);
+          const snapshot = await storage.getContinuitySnapshotByProject(projectId);
+          if (snapshot) {
+            const summaryParts: string[] = [];
+            if (snapshot.synopsis) {
+              summaryParts.push(`SINOPSIS REAL: ${snapshot.synopsis.substring(0, 1500)}`);
+            }
+            if (snapshot.characterStates && Array.isArray(snapshot.characterStates)) {
+              const chars = (snapshot.characterStates as any[]).map((c: any) => {
+                const name = c.nombre || c.name || "";
+                const desc = c.descripcion_fisica || c.apariencia || "";
+                return desc ? `${name} (${desc})` : name;
+              }).filter(Boolean).join("; ");
+              if (chars) summaryParts.push(`PERSONAJES REALES: ${chars.substring(0, 800)}`);
+            }
+            if (summaryParts.length > 0) {
               context.worldBibleSummary = summaryParts.join("\n");
-            } catch {}
+            }
+          }
+
+          if (!context.worldBibleSummary) {
+            const wb = await storage.getWorldBibleByProject(projectId);
+            if (wb?.content) {
+              try {
+                const wbData = typeof wb.content === "string" ? JSON.parse(wb.content) : wb.content;
+                const summaryParts: string[] = [];
+                if (wbData.ambientacion) {
+                  const amb = wbData.ambientacion;
+                  const ambStr = typeof amb === "string" ? amb : (amb.epoca || amb.lugar || JSON.stringify(amb));
+                  summaryParts.push(`Ambientación: ${String(ambStr).substring(0, 500)}`);
+                }
+                if (wbData.personajes_principales) {
+                  const chars = wbData.personajes_principales.map((p: any) => {
+                    const name = p.nombre || "";
+                    const desc = p.descripcion_fisica || p.apariencia || p.rol || "";
+                    return desc ? `${name} (${desc})` : name;
+                  }).join("; ");
+                  summaryParts.push(`PERSONAJES REALES: ${chars.substring(0, 800)}`);
+                }
+                if (wbData.temas_principales) summaryParts.push(`Temas: ${JSON.stringify(wbData.temas_principales).substring(0, 300)}`);
+                context.worldBibleSummary = summaryParts.join("\n");
+              } catch {}
+            }
           }
 
           if (project.pseudonymId) {

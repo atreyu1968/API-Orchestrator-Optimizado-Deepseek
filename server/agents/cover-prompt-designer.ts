@@ -84,16 +84,22 @@ RESPONDE SIEMPRE EN JSON con este formato:
   async generateCoverPrompt(context: CoverContext): Promise<CoverPromptResult> {
     let userPrompt = `Genera un prompt detallado para la portada de un libro con las siguientes características:\n\n`;
     
+    userPrompt += `REGLAS ABSOLUTAS:
+1. SOLO usa información que aparezca explícitamente en los datos proporcionados abajo.
+2. NUNCA inventes personajes, escenarios, objetos ni elementos visuales que no estén en los datos.
+3. Si no tienes suficiente información, basa la portada en el GÉNERO y el TONO únicamente.
+4. La portada debe reflejar la ATMÓSFERA REAL del libro, no una versión inventada.\n\n`;
+    
     userPrompt += `TÍTULO: "${context.title}"\n`;
     userPrompt += `GÉNERO: ${context.genre}\n`;
     userPrompt += `TONO: ${context.tone}\n`;
     
     if (context.premise) {
-      userPrompt += `\nPREMISA:\n${context.premise.substring(0, 2000)}\n`;
+      userPrompt += `\nPREMISA REAL DEL LIBRO:\n${context.premise.substring(0, 2000)}\n`;
     }
     
     if (context.worldBibleSummary) {
-      userPrompt += `\nMUNDO/AMBIENTACIÓN (resumen):\n${context.worldBibleSummary.substring(0, 3000)}\n`;
+      userPrompt += `\nDATOS REALES DEL LIBRO (usa SOLO esta información, NO inventes nada más):\n${context.worldBibleSummary.substring(0, 3000)}\n`;
     }
     
     if (context.seriesTitle) {
