@@ -1,5 +1,5 @@
 import { BaseAgent } from "./base-agent";
-import { repairJSON } from "../utils/json-repair";
+import { repairJson } from "../utils/json-repair";
 
 interface MetadataContext {
   title: string;
@@ -147,7 +147,7 @@ RESPONDE SIEMPRE EN JSON con este formato:
       throw new Error(`Error generando metadatos KDP: ${response.error}`);
     }
 
-    const parsed = repairJSON(response.content);
+    const parsed = repairJson(response.content);
     
     const keywords = (parsed.keywords || []).slice(0, 7).map((k: string) => 
       typeof k === "string" ? k.substring(0, 50) : String(k).substring(0, 50)
