@@ -26,7 +26,9 @@ import {
   Edit3,
   Sparkles,
   BookMarked,
-  Headphones
+  Headphones,
+  Image,
+  Tag
 } from "lucide-react";
 
 const mainNavItems = [
@@ -43,6 +45,8 @@ const translationsNavItems = [
   { title: "Serie desde Importados", url: "/reedit-series", icon: BookMarked },
   { title: "Taller de Guías", url: "/guides", icon: Sparkles },
   { title: "Audiolibros", url: "/audiobooks", icon: Headphones },
+  { title: "Portadas", url: "/covers", icon: Image },
+  { title: "Metadatos KDP", url: "/kdp-metadata", icon: Tag },
 ];
 
 const settingsNavItems = [

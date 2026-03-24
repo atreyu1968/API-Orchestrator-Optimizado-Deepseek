@@ -168,6 +168,26 @@ Preferred communication style: Simple, everyday language.
 - **Frontend**: `client/src/pages/audiobooks.tsx` — list/create/detail views. Create form includes source selection, Fish Audio voice picker, format/bitrate/speed sliders, cover upload. Detail view shows per-chapter progress, inline audio players, pause/resume controls, generate-all or per-chapter generation, delete (works even during active generation), and ZIP download.
 - Audio files stored in `./audiobooks/project_{id}/` directory.
 
+#### Cover Prompt Generator (v5.0)
+- Generates optimized AI prompts for book cover creation, compatible with Midjourney, DALL-E, Stable Diffusion, Ideogram, Leonardo AI.
+- **Scopes**: Project (individual book), Series (coherent visual identity), Pseudonym (author branding), Independent (custom).
+- **KDP Specs**: 2560x1600px, 300 DPI, RGB, JPEG/TIFF, portrait orientation.
+- **Series Design System**: When generating for a series, creates a shared design system (common elements, color scheme, typography, layout pattern, branding notes) that subsequent covers in the series will follow.
+- **Agent**: `server/agents/cover-prompt-designer.ts` — extends BaseAgent, uses Gemini 2.5 Flash with thinking. Generates prompts in English (better AI image gen results), includes negative prompts, style, color palette, mood, typography suggestions, composition details.
+- **Schema**: `cover_prompts` table (projectId?, seriesId?, pseudonymId?, title, prompt, negativePrompt, style, colorPalette, mood, typography, composition, seriesDesignSystem, coverSpecs, status, notes).
+- **API Routes**: `GET /api/cover-prompts`, `GET /api/cover-prompts/:id`, `POST /api/cover-prompts/generate`, `PATCH /api/cover-prompts/:id`, `DELETE /api/cover-prompts/:id`.
+- **Frontend**: `client/src/pages/covers.tsx` — scope selector (tabs), prompt generation, full prompt viewer dialog, copy to clipboard, edit prompt, delete.
+
+#### KDP Metadata Generator (v5.0)
+- Generates Amazon KDP publishing metadata: subtitle, HTML description (max 4000 chars), 7 search keywords (50 chars each), 2 BISAC categories, series info, AI disclosure.
+- **Sources**: Regular projects and reedit projects.
+- **KDP Compliance**: HTML description uses only allowed tags (b, i, em, strong, br, p, h4-h6, ul, ol, li). No contact info, reviews, time-sensitive info, or quality claims in description. Keywords avoid trademark terms, "kindle", "ebook". Series name without volume numbers.
+- **AI Disclosure**: Defaults to "ai-assisted" (correct for AI-assisted writing tools per Amazon 2025 policy). Confidential to Amazon, not shown to readers.
+- **Agent**: `server/agents/kdp-metadata-generator.ts` — extends BaseAgent, uses Gemini 2.5 Flash with thinking. Generates metadata in the target language matching the marketplace.
+- **Schema**: `kdp_metadata` table (projectId?, reeditProjectId?, title, subtitle, description, keywords[], bisacCategories[], seriesName, seriesNumber, seriesDescription, language, targetMarketplace, aiDisclosure, contentWarnings, status, notes).
+- **API Routes**: `GET /api/kdp-metadata`, `GET /api/kdp-metadata/:id`, `POST /api/kdp-metadata/generate`, `PATCH /api/kdp-metadata/:id`, `DELETE /api/kdp-metadata/:id`.
+- **Frontend**: `client/src/pages/kdp-metadata.tsx` — project/reedit selector, language/marketplace picker, metadata generation, full detail viewer with HTML preview, edit all fields, copy individual fields or all metadata, character count warnings for description and keywords.
+
 ### Key NPM Packages
 - `@google/genai`: Google Gemini AI SDK.
 - `drizzle-orm` / `drizzle-zod`: ORM and schema validation.

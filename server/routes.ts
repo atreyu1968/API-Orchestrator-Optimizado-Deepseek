@@ -9574,6 +9574,349 @@ CRITERIOS:
     }
   });
 
+  // ===================== COVER PROMPTS =====================
+
+  app.get("/api/cover-prompts", async (_req: Request, res: Response) => {
+    try {
+      const prompts = await storage.getAllCoverPrompts();
+      res.json(prompts);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/cover-prompts/:id", async (req: Request, res: Response) => {
+    try {
+      const prompt = await storage.getCoverPrompt(parseInt(req.params.id));
+      if (!prompt) return res.status(404).json({ error: "Cover prompt not found" });
+      res.json(prompt);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/cover-prompts/generate", async (req: Request, res: Response) => {
+    try {
+      const bodySchema = z.object({
+        scope: z.enum(["project", "series", "pseudonym", "independent"]),
+        projectId: z.number().int().positive().optional(),
+        seriesId: z.number().int().positive().optional(),
+        pseudonymId: z.number().int().positive().optional(),
+        title: z.string().max(500).optional(),
+        genre: z.string().max(100).optional(),
+        tone: z.string().max(100).optional(),
+      });
+      
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid request", details: parsed.error.format() });
+      }
+
+      const { projectId, seriesId, pseudonymId, scope, title, genre, tone } = parsed.data;
+
+      const { coverPromptDesigner } = await import("./agents/cover-prompt-designer");
+
+      let context: any = {
+        title: title || "Sin título",
+        genre: genre || "fiction",
+        tone: tone || "dramatic",
+        scope,
+      };
+
+      if (scope === "project" && projectId) {
+        const project = await storage.getProject(projectId);
+        if (project) {
+          context.title = project.title;
+          context.genre = project.genre;
+          context.tone = project.tone;
+          context.premise = project.premise;
+
+          const wb = await storage.getWorldBibleByProject(projectId);
+          if (wb?.content) {
+            try {
+              const wbData = typeof wb.content === "string" ? JSON.parse(wb.content) : wb.content;
+              const summaryParts: string[] = [];
+              if (wbData.ambientacion) summaryParts.push(`Ambientación: ${JSON.stringify(wbData.ambientacion).substring(0, 1000)}`);
+              if (wbData.personajes_principales) summaryParts.push(`Personajes: ${JSON.stringify(wbData.personajes_principales).substring(0, 1000)}`);
+              if (wbData.temas_principales) summaryParts.push(`Temas: ${JSON.stringify(wbData.temas_principales).substring(0, 500)}`);
+              context.worldBibleSummary = summaryParts.join("\n");
+            } catch {}
+          }
+
+          if (project.pseudonymId) {
+            const pseudo = await storage.getPseudonym(project.pseudonymId);
+            if (pseudo) context.pseudonymName = pseudo.name;
+          }
+
+          if (project.seriesId) {
+            const s = await storage.getSeries(project.seriesId);
+            if (s) {
+              context.seriesTitle = s.title;
+              context.seriesDescription = s.description;
+              const existingCovers = await storage.getCoverPromptsBySeries(project.seriesId);
+              if (existingCovers.length > 0) {
+                context.existingCovers = existingCovers.map(c => ({
+                  title: c.title, style: c.style, colorPalette: c.colorPalette || "", mood: c.mood || ""
+                }));
+                const withDesign = existingCovers.find(c => c.seriesDesignSystem);
+                if (withDesign) context.seriesDesignSystem = withDesign.seriesDesignSystem;
+              }
+            }
+          }
+        }
+      }
+
+      if (scope === "series" && seriesId) {
+        const s = await storage.getSeries(seriesId);
+        if (s) {
+          context.seriesTitle = s.title;
+          context.seriesDescription = s.description;
+          context.title = title || s.title;
+          if (s.pseudonymId) {
+            const pseudo = await storage.getPseudonym(s.pseudonymId);
+            if (pseudo) {
+              context.pseudonymName = pseudo.name;
+              context.genre = genre || pseudo.defaultGenre || "fiction";
+            }
+          }
+          const existingCovers = await storage.getCoverPromptsBySeries(seriesId);
+          if (existingCovers.length > 0) {
+            context.existingCovers = existingCovers.map(c => ({
+              title: c.title, style: c.style, colorPalette: c.colorPalette || "", mood: c.mood || ""
+            }));
+            const withDesign = existingCovers.find(c => c.seriesDesignSystem);
+            if (withDesign) context.seriesDesignSystem = withDesign.seriesDesignSystem;
+          }
+        }
+      }
+
+      if (scope === "pseudonym" && pseudonymId) {
+        const pseudo = await storage.getPseudonym(pseudonymId);
+        if (pseudo) {
+          context.pseudonymName = pseudo.name;
+          context.pseudonymGenre = pseudo.defaultGenre;
+          context.genre = genre || pseudo.defaultGenre || "fiction";
+          context.title = title || `Portada para ${pseudo.name}`;
+        }
+      }
+
+      const result = await coverPromptDesigner.generateCoverPrompt(context);
+
+      const saved = await storage.createCoverPrompt({
+        projectId: projectId || null,
+        seriesId: seriesId || null,
+        pseudonymId: pseudonymId || null,
+        title: context.title,
+        prompt: result.prompt,
+        negativePrompt: result.negativePrompt,
+        style: result.style,
+        colorPalette: result.colorPalette,
+        mood: result.mood,
+        typography: result.typography,
+        composition: result.composition,
+        seriesDesignSystem: result.seriesDesignSystem,
+        status: "draft",
+      });
+
+      res.json(saved);
+    } catch (error: any) {
+      console.error("[CoverPrompts] Error generating:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/cover-prompts/:id", async (req: Request, res: Response) => {
+    try {
+      const updated = await storage.updateCoverPrompt(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ error: "Cover prompt not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/cover-prompts/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteCoverPrompt(parseInt(req.params.id));
+      res.json({ message: "Deleted" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ===================== KDP METADATA =====================
+
+  app.get("/api/kdp-metadata", async (_req: Request, res: Response) => {
+    try {
+      const metadata = await storage.getAllKdpMetadata();
+      res.json(metadata);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/kdp-metadata/:id", async (req: Request, res: Response) => {
+    try {
+      const meta = await storage.getKdpMetadata(parseInt(req.params.id));
+      if (!meta) return res.status(404).json({ error: "KDP metadata not found" });
+      res.json(meta);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/kdp-metadata/generate", async (req: Request, res: Response) => {
+    try {
+      const bodySchema = z.object({
+        projectId: z.number().int().positive().optional(),
+        reeditProjectId: z.number().int().positive().optional(),
+        language: z.string().max(10).default("es"),
+        targetMarketplace: z.string().max(50).default("amazon.es"),
+      }).refine(data => data.projectId || data.reeditProjectId, {
+        message: "Se requiere projectId o reeditProjectId",
+      });
+
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid request", details: parsed.error.format() });
+      }
+
+      const { projectId, reeditProjectId, language, targetMarketplace } = parsed.data;
+
+      const { kdpMetadataGenerator } = await import("./agents/kdp-metadata-generator");
+
+      let context: any = {
+        title: "",
+        genre: "fiction",
+        tone: "dramatic",
+        language: language || "es",
+        targetMarketplace: targetMarketplace || "amazon.es",
+      };
+
+      if (projectId) {
+        const project = await storage.getProject(projectId);
+        if (!project) return res.status(404).json({ error: "Project not found" });
+
+        context.title = project.title;
+        context.genre = project.genre;
+        context.tone = project.tone;
+        context.premise = project.premise;
+        context.chapterCount = project.chapterCount;
+
+        const chapters = await storage.getChaptersByProject(projectId);
+        if (chapters.length > 0) {
+          context.wordCount = chapters.reduce((sum, ch) => sum + (ch.wordCount || 0), 0);
+        }
+
+        const wb = await storage.getWorldBibleByProject(projectId);
+        if (wb?.content) {
+          try {
+            const wbData = typeof wb.content === "string" ? JSON.parse(wb.content) : wb.content;
+            const summaryParts: string[] = [];
+            if (wbData.personajes_principales) {
+              const chars = wbData.personajes_principales.map((p: any) => `${p.nombre}: ${p.descripcion || p.rol || ""}`).join("; ");
+              summaryParts.push(`Personajes: ${chars.substring(0, 1500)}`);
+            }
+            if (wbData.ambientacion) summaryParts.push(`Ambientación: ${JSON.stringify(wbData.ambientacion).substring(0, 1000)}`);
+            if (wbData.temas_principales) summaryParts.push(`Temas: ${JSON.stringify(wbData.temas_principales).substring(0, 500)}`);
+            if (wbData.arcos_narrativos) summaryParts.push(`Arcos: ${JSON.stringify(wbData.arcos_narrativos).substring(0, 1000)}`);
+            context.worldBibleSummary = summaryParts.join("\n");
+          } catch {}
+        }
+
+        if (project.pseudonymId) {
+          const pseudo = await storage.getPseudonym(project.pseudonymId);
+          if (pseudo) context.pseudonymName = pseudo.name;
+        }
+
+        if (project.seriesId) {
+          const s = await storage.getSeries(project.seriesId);
+          if (s) {
+            context.seriesTitle = s.title;
+            context.seriesDescription = s.description;
+            context.seriesNumber = project.seriesOrder;
+          }
+        }
+      }
+
+      if (reeditProjectId) {
+        const reedit = await storage.getReeditProject(reeditProjectId);
+        if (!reedit) return res.status(404).json({ error: "Reedit project not found" });
+
+        context.title = reedit.title;
+        context.genre = reedit.genre || "fiction";
+        context.tone = reedit.tone || "dramatic";
+
+        const chapters = await storage.getReeditChaptersByProject(reeditProjectId);
+        if (chapters.length > 0) {
+          context.chapterCount = chapters.length;
+          context.wordCount = chapters.reduce((sum, ch) => sum + (ch.editedWordCount || ch.originalWordCount || 0), 0);
+        }
+
+        const wb = await storage.getReeditWorldBibleByProject(reeditProjectId);
+        if (wb?.content) {
+          try {
+            const wbData = typeof wb.content === "string" ? JSON.parse(wb.content) : wb.content;
+            context.worldBibleSummary = JSON.stringify(wbData).substring(0, 4000);
+          } catch {}
+        }
+
+        if (reedit.seriesId) {
+          const s = await storage.getSeries(reedit.seriesId);
+          if (s) {
+            context.seriesTitle = s.title;
+            context.seriesDescription = s.description;
+            context.seriesNumber = reedit.seriesOrder;
+          }
+        }
+      }
+
+      const result = await kdpMetadataGenerator.generateMetadata(context);
+
+      const saved = await storage.createKdpMetadata({
+        projectId: projectId || null,
+        reeditProjectId: reeditProjectId || null,
+        title: context.title,
+        subtitle: result.subtitle,
+        description: result.description,
+        keywords: result.keywords,
+        bisacCategories: result.bisacCategories,
+        seriesName: result.seriesName,
+        seriesNumber: result.seriesNumber,
+        seriesDescription: result.seriesDescription,
+        language: context.language,
+        targetMarketplace: context.targetMarketplace,
+        aiDisclosure: result.aiDisclosure,
+        contentWarnings: result.contentWarnings,
+        status: "draft",
+      });
+
+      res.json(saved);
+    } catch (error: any) {
+      console.error("[KdpMetadata] Error generating:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/kdp-metadata/:id", async (req: Request, res: Response) => {
+    try {
+      const updated = await storage.updateKdpMetadata(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ error: "KDP metadata not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/kdp-metadata/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteKdpMetadata(parseInt(req.params.id));
+      res.json({ message: "Deleted" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }
 

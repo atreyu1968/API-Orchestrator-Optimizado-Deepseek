@@ -29,6 +29,8 @@ import ReeditPage from "@/pages/reedit";
 import ReeditSeriesPage from "@/pages/reedit-series";
 import GuidesPage from "@/pages/guides";
 import AudiobooksPage from "@/pages/audiobooks";
+import CoversPage from "@/pages/covers";
+import KdpMetadataPage from "@/pages/kdp-metadata";
 import asdLogo from "@assets/ASD_1766442257801.png";
 
 function Router() {
@@ -48,6 +50,8 @@ function Router() {
       <Route path="/reedit-series" component={ReeditSeriesPage} />
       <Route path="/guides" component={GuidesPage} />
       <Route path="/audiobooks" component={AudiobooksPage} />
+      <Route path="/covers" component={CoversPage} />
+      <Route path="/kdp-metadata" component={KdpMetadataPage} />
       <Route path="/config" component={ConfigPage} />
       <Route component={NotFound} />
     </Switch>
