@@ -96,7 +96,8 @@ RESPONDE SIEMPRE EN JSON con este formato:
   }
 
   async generateMetadata(context: MetadataContext): Promise<KdpMetadataResult> {
-    let userPrompt = `Genera los metadatos KDP optimizados para el siguiente libro:\n\n`;
+    let userPrompt = `Genera los metadatos KDP optimizados para VENDER el siguiente libro en Amazon.\n\n`;
+    userPrompt += `IMPORTANTE: Tu objetivo es crear metadatos COMERCIALES que vendan el libro. NO resumas la trama ni reveles spoilers. Piensa como un editor de marketing.\n\n`;
     
     userPrompt += `TÍTULO: "${context.title}"\n`;
     userPrompt += `GÉNERO: ${context.genre}\n`;
@@ -104,19 +105,16 @@ RESPONDE SIEMPRE EN JSON con este formato:
     userPrompt += `IDIOMA: ${context.language}\n`;
     userPrompt += `MARKETPLACE: ${context.targetMarketplace}\n`;
     
-    if (context.chapterCount) {
-      userPrompt += `CAPÍTULOS: ${context.chapterCount}\n`;
-    }
     if (context.wordCount) {
-      userPrompt += `PALABRAS APROXIMADAS: ${context.wordCount}\n`;
+      userPrompt += `EXTENSIÓN: ~${context.wordCount} palabras\n`;
     }
     
     if (context.premise) {
-      userPrompt += `\nPREMISA:\n${context.premise.substring(0, 3000)}\n`;
+      userPrompt += `\nPREMISA (solo para entender el libro, NO para copiar en la descripción):\n${context.premise.substring(0, 2000)}\n`;
     }
     
     if (context.worldBibleSummary) {
-      userPrompt += `\nMUNDO/PERSONAJES (resumen):\n${context.worldBibleSummary.substring(0, 4000)}\n`;
+      userPrompt += `\nCONTEXTO DEL LIBRO (solo para entender ambientación y tono, NO revelar detalles):\n${context.worldBibleSummary.substring(0, 2000)}\n`;
     }
     
     if (context.seriesTitle) {
@@ -133,11 +131,22 @@ RESPONDE SIEMPRE EN JSON con este formato:
       userPrompt += `\nAUTOR (seudónimo): ${context.pseudonymName}\n`;
     }
 
-    userPrompt += `\nIMPORTANTE:
-- Las keywords y la descripción deben estar en ${context.language === "es" ? "ESPAÑOL" : context.language === "en" ? "INGLÉS" : context.language}
-- Las categorías BISAC en formato estándar internacional
-- La descripción en HTML (max 4000 chars incluyendo tags)
+    userPrompt += `\nINSTRUCCIONES PARA LA DESCRIPCIÓN:
+- Escribe como TEXTO DE CONTRAPORTADA: engancha al lector con misterio, emoción y promesa
+- Presenta al protagonista y su conflicto principal SIN resolver nada
+- Usa preguntas retóricas, tensión y ganchos emocionales
+- NO cuentes la historia ni reveles giros argumentales
+- Termina con una frase que deje al lector queriendo más
+- Formato HTML (max 4000 chars incluyendo tags)
+
+INSTRUCCIONES PARA KEYWORDS:
+- Piensa como un LECTOR buscando libros similares en Amazon
+- Usa frases que un comprador escribiría en el buscador
+- Mezcla: subgéneros, ambientación, público objetivo, comparables de tono
+- Las keywords y la descripción en ${context.language === "es" ? "ESPAÑOL" : context.language === "en" ? "INGLÉS" : context.language}
 - 7 keywords de máximo 50 caracteres cada una
+
+- Las categorías BISAC en formato estándar internacional
 - Responder SOLO con JSON válido
 - Marketplace destino: ${context.targetMarketplace}`;
 
