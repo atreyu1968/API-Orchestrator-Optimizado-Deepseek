@@ -97,7 +97,12 @@ RESPONDE SIEMPRE EN JSON con este formato:
 
   async generateMetadata(context: MetadataContext): Promise<KdpMetadataResult> {
     let userPrompt = `Genera los metadatos KDP optimizados para VENDER el siguiente libro en Amazon.\n\n`;
-    userPrompt += `IMPORTANTE: Tu objetivo es crear metadatos COMERCIALES que vendan el libro. NO resumas la trama ni reveles spoilers. Piensa como un editor de marketing.\n\n`;
+    userPrompt += `REGLAS ABSOLUTAS:
+1. SOLO usa información que aparezca explícitamente en los datos proporcionados abajo.
+2. NUNCA inventes personajes, lugares, hechos ni situaciones que no estén en los datos.
+3. Si no tienes suficiente información, mantén la descripción genérica usando solo el género y el tono.
+4. La descripción debe ser un GANCHO COMERCIAL (texto de contraportada), NO un resumen de la trama.
+5. NO reveles spoilers ni giros argumentales.\n\n`;
     
     userPrompt += `TÍTULO: "${context.title}"\n`;
     userPrompt += `GÉNERO: ${context.genre}\n`;
@@ -114,7 +119,7 @@ RESPONDE SIEMPRE EN JSON con este formato:
     }
     
     if (context.worldBibleSummary) {
-      userPrompt += `\nCONTEXTO DEL LIBRO (solo para entender ambientación y tono, NO revelar detalles):\n${context.worldBibleSummary.substring(0, 2000)}\n`;
+      userPrompt += `\nDATOS REALES DEL LIBRO (usa SOLO esta información, NO inventes nada más):\n${context.worldBibleSummary.substring(0, 3000)}\n`;
     }
     
     if (context.seriesTitle) {
