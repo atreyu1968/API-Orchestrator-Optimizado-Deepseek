@@ -132,6 +132,9 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     created_at TIMESTAMP DEFAULT NOW(),
     expires_at TIMESTAMP NOT NULL
 );
+
+ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS goodreads_url TEXT;
 " 2>/dev/null && echo "[OK] Tablas verificadas" || echo "[AVISO] Algunas tablas ya existian"
 
 echo "5. Aplicando migraciones SQL adicionales..."

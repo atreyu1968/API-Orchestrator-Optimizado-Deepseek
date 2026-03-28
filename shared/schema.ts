@@ -23,6 +23,8 @@ export const pseudonyms = pgTable("pseudonyms", {
   bio: text("bio"),
   defaultGenre: text("default_genre"),
   defaultTone: text("default_tone"),
+  email: text("email"),
+  goodreadsUrl: text("goodreads_url"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

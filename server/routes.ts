@@ -2816,10 +2816,22 @@ ${series.seriesGuide.substring(0, 50000)}`;
   app.patch("/api/pseudonyms/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
-      const { name, bio } = req.body;
-      const updateData: { name?: string; bio?: string } = {};
+      const { name, bio, email, goodreadsUrl } = req.body;
+      const updateData: { name?: string; bio?: string; email?: string | null; goodreadsUrl?: string | null } = {};
       if (name !== undefined) updateData.name = name;
       if (bio !== undefined) updateData.bio = bio;
+      if (email !== undefined) {
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return res.status(400).json({ error: "Invalid email format" });
+        }
+        updateData.email = email || null;
+      }
+      if (goodreadsUrl !== undefined) {
+        if (goodreadsUrl && !/^https?:\/\//i.test(goodreadsUrl)) {
+          return res.status(400).json({ error: "Goodreads URL must start with http:// or https://" });
+        }
+        updateData.goodreadsUrl = goodreadsUrl || null;
+      }
       
       const updated = await storage.updatePseudonym(id, updateData);
       if (!updated) {

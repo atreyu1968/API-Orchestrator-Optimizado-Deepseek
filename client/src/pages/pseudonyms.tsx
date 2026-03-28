@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { User, Plus, Trash2, FileText, Edit2, Check, X, Upload, Loader2, Download } from "lucide-react";
+import { User, Plus, Trash2, FileText, Edit2, Check, X, Upload, Loader2, Download, Mail, ExternalLink, BookOpen } from "lucide-react";
 import type { Pseudonym, StyleGuide } from "@shared/schema";
 
 export default function PseudonymsPage() {
@@ -20,11 +20,14 @@ export default function PseudonymsPage() {
   const [isCreatingGuide, setIsCreatingGuide] = useState(false);
   const [newName, setNewName] = useState("");
   const [newBio, setNewBio] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newGoodreadsUrl, setNewGoodreadsUrl] = useState("");
   const [newGuideTitle, setNewGuideTitle] = useState("");
   const [newGuideContent, setNewGuideContent] = useState("");
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [deletePseudonymId, setDeletePseudonymId] = useState<number | null>(null);
   const [deleteGuideId, setDeleteGuideId] = useState<number | null>(null);
+  const [editingField, setEditingField] = useState<{ id: number; field: string; value: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: pseudonyms = [], isLoading } = useQuery<Pseudonym[]>({
@@ -37,7 +40,7 @@ export default function PseudonymsPage() {
   });
 
   const createPseudonymMutation = useMutation({
-    mutationFn: async (data: { name: string; bio?: string }) => {
+    mutationFn: async (data: { name: string; bio?: string; email?: string; goodreadsUrl?: string }) => {
       const response = await apiRequest("POST", "/api/pseudonyms", data);
       return response.json();
     },
@@ -46,10 +49,27 @@ export default function PseudonymsPage() {
       setIsCreating(false);
       setNewName("");
       setNewBio("");
+      setNewEmail("");
+      setNewGoodreadsUrl("");
       toast({ title: "Pseudónimo creado", description: "El nuevo pseudónimo ha sido añadido" });
     },
     onError: () => {
       toast({ title: "Error", description: "No se pudo crear el pseudónimo", variant: "destructive" });
+    },
+  });
+
+  const updatePseudonymMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Record<string, any> }) => {
+      const response = await apiRequest("PATCH", `/api/pseudonyms/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pseudonyms"] });
+      setEditingField(null);
+      toast({ title: "Actualizado" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo actualizar", variant: "destructive" });
     },
   });
 
@@ -99,7 +119,12 @@ export default function PseudonymsPage() {
 
   const handleCreatePseudonym = () => {
     if (!newName.trim()) return;
-    createPseudonymMutation.mutate({ name: newName, bio: newBio || undefined });
+    createPseudonymMutation.mutate({ 
+      name: newName, 
+      bio: newBio || undefined,
+      email: newEmail || undefined,
+      goodreadsUrl: newGoodreadsUrl || undefined,
+    });
   };
 
   const handleCreateStyleGuide = () => {
@@ -249,6 +274,19 @@ export default function PseudonymsPage() {
                   className="min-h-[60px]"
                   data-testid="input-pseudonym-bio"
                 />
+                <Input
+                  placeholder="Email del autor (opcional)"
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  data-testid="input-pseudonym-email"
+                />
+                <Input
+                  placeholder="URL de perfil Goodreads (opcional)"
+                  value={newGoodreadsUrl}
+                  onChange={(e) => setNewGoodreadsUrl(e.target.value)}
+                  data-testid="input-pseudonym-goodreads"
+                />
                 <div className="flex gap-2">
                   <Button 
                     size="sm" 
@@ -262,7 +300,7 @@ export default function PseudonymsPage() {
                   <Button 
                     size="sm" 
                     variant="ghost" 
-                    onClick={() => { setIsCreating(false); setNewName(""); setNewBio(""); }}
+                    onClick={() => { setIsCreating(false); setNewName(""); setNewBio(""); setNewEmail(""); setNewGoodreadsUrl(""); }}
                     data-testid="button-cancel-pseudonym"
                   >
                     <X className="h-3 w-3" />
@@ -345,7 +383,52 @@ export default function PseudonymsPage() {
                   Selecciona un pseudónimo de la lista para gestionar sus guías de estilo
                 </p>
               </div>
-            ) : (
+            ) : (<>
+              {selectedPseudonymData && (
+                <div className="mb-4 p-3 rounded-md bg-muted/30 space-y-2">
+                  {[
+                    { field: "email", icon: <Mail className="h-4 w-4" />, label: "Email", value: selectedPseudonymData.email },
+                    { field: "goodreadsUrl", icon: <BookOpen className="h-4 w-4" />, label: "Goodreads", value: selectedPseudonymData.goodreadsUrl },
+                  ].map(({ field, icon, label, value }) => (
+                    <div key={field} className="flex items-center gap-2 text-sm">
+                      {icon}
+                      <span className="text-muted-foreground min-w-[80px]">{label}:</span>
+                      {editingField?.id === selectedPseudonymData.id && editingField?.field === field ? (
+                        <div className="flex items-center gap-1 flex-1">
+                          <Input
+                            className="h-7 text-sm"
+                            value={editingField.value}
+                            onChange={(e) => setEditingField({ ...editingField, value: e.target.value })}
+                            data-testid={`input-edit-${field}`}
+                          />
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                            updatePseudonymMutation.mutate({ id: selectedPseudonymData.id, data: { [field]: editingField.value } });
+                          }} data-testid={`button-save-${field}`}><Check className="h-3 w-3" /></Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingField(null)} data-testid={`button-cancel-${field}`}><X className="h-3 w-3" /></Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 flex-1">
+                          {value ? (
+                            field === "goodreadsUrl" && /^https?:\/\//i.test(value) ? (
+                              <a href={value} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate" data-testid={`link-${field}`}>
+                                {value} <ExternalLink className="h-3 w-3 inline ml-1" />
+                              </a>
+                            ) : (
+                              <span className="truncate" data-testid={`text-${field}`}>{value}</span>
+                            )
+                          ) : (
+                            <span className="text-muted-foreground/50 italic" data-testid={`text-${field}-empty`}>No configurado</span>
+                          )}
+                          <Button size="icon" variant="ghost" className="h-6 w-6 ml-auto shrink-0" onClick={() => setEditingField({ id: selectedPseudonymData.id, field, value: value || "" })} data-testid={`button-edit-${field}`}>
+                            <Edit2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Separator className="mb-4" />
               <div className="space-y-4">
                 {isCreatingGuide && (
                   <div className="space-y-3 p-4 rounded-md bg-muted/50">
@@ -490,7 +573,7 @@ export default function PseudonymsPage() {
                   ))
                 )}
               </div>
-            )}
+            </>)}
           </CardContent>
         </Card>
       </div>
