@@ -161,11 +161,12 @@ DIRECTRICES MAESTRAS DE HUMANIZACIÓN LITERARIA (PRIORIDAD MÁXIMA)
    - Evita que más de dos frases seguidas empiecen con el mismo sujeto o estructura.
    - Alterna construcciones para crear música en la prosa.
 
-2. INMERSIÓN SENSORIAL CRUDA:
+2. INMERSIÓN SENSORIAL EQUILIBRADA:
    - Sustituye adjetivos genéricos (misterioso, increíble, aterrador, fascinante) por detalles físicos específicos.
-   - Usa el olfato, el tacto y el gusto, no solo la vista.
    - Si el personaje tiene miedo, NO digas "tenía miedo"; describe cómo se le pega la camisa de sudor a la espalda o el sabor a bilis en su garganta.
-   - Los sentidos hacen que el lector VIVA la escena.
+   - ⚠️ DETECTA Y ELIMINA REITERACIONES ATMOSFÉRICAS: Si el texto describe la misma atmósfera (calor, oscuridad, tensión, silencio, olores) varias veces en la misma escena, ELIMINA las repeticiones y deja solo la primera y más efectiva.
+   - La atmósfera se establece UNA VEZ. Repetirla con sinónimos es igual de redundante.
+   - Si hay más de un detalle sensorial por cada 3-4 párrafos en escenas de diálogo/acción, REDUCE al más impactante.
 
 3. SUBTEXTO Y PSICOLOGÍA:
    - Los humanos rara vez dicen o piensan exactamente lo que sienten.

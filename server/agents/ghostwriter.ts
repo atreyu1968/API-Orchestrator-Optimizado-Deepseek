@@ -134,6 +134,14 @@ D) INFORMACIÓN NO REPETIDA:
    - El lector recuerda, no necesita que le repitan
    - Cada oración debe añadir información NUEVA
 
+E) ANTI-REITERACIÓN ATMOSFÉRICA Y SENSORIAL (CRÍTICO):
+   - NO describas el mismo ambiente/atmósfera más de una vez por escena
+   - Si ya dijiste que hacía calor, NO vuelvas a mencionar el sudor, el sol abrasador ni la sequedad tres párrafos después
+   - Si ya estableciste tensión con una imagen (silencio, oscuridad, frío), NO repitas la misma idea con sinónimos
+   - Patrón PROHIBIDO: abrir párrafo con descripción atmosférica → diálogo → cerrar párrafo con otra descripción atmosférica similar
+   - Máximo 1 detalle sensorial/atmosférico por cada 3-4 párrafos en escenas de diálogo o acción
+   - Las descripciones de luz, temperatura, olores y sonidos NO deben repetirse aunque uses palabras diferentes — es la misma información
+
 ═══════════════════════════════════════════════════════════════════
 PROHIBICIONES ABSOLUTAS - VEROSIMILITUD NARRATIVA
 ═══════════════════════════════════════════════════════════════════
@@ -283,12 +291,13 @@ A) PROSA DE AUTOR HUMANO (NO de IA):
    - Un párrafo de 5 líneas seguido de uno de 1 línea. Un diálogo largo seguido de un silencio descrito
    - Evita la "prosa de informe": nunca narres como si resumieras, VIVE la escena
 
-B) INMERSIÓN SENSORIAL CONCRETA (no abstracta):
+B) INMERSIÓN SENSORIAL CONCRETA — CON MODERACIÓN:
    - PROHIBIDO: "Sintió miedo" / "El ambiente era tenso" / "La situación era peligrosa"
-   - OBLIGATORIO: "La bilis le subió a la garganta. Los dedos le temblaban tanto que no podía cerrar el puño"
-   - Cada escena debe activar AL MENOS 3 sentidos diferentes (no solo la vista)
-   - Los olores y texturas anclan al lector mejor que cualquier descripción visual
+   - MEJOR: "La bilis le subió a la garganta. Los dedos le temblaban tanto que no podía cerrar el puño"
    - Detalles CONCRETOS: no "una flor", sino "un lirio marchito con los pétalos pardos"
+   - ⚠️ PERO: NO abuses de lo sensorial. Una pincelada sensorial por escena basta. NO describas olores, texturas, luces, sonidos y temperaturas en CADA párrafo — eso satura al lector y produce prosa cargante
+   - La ambientación se establece UNA VEZ al entrar en un espacio. Después, solo menciona detalles sensoriales cuando sean relevantes para la ACCIÓN o la EMOCIÓN del momento
+   - PRIORIZA: acción, diálogo y pensamiento por encima de la descripción atmosférica. La atmósfera es el condimento, NO el plato principal
 
 C) SUBTEXTO EN DIÁLOGOS (lo que NO se dice):
    - Los personajes RARA VEZ dicen exactamente lo que piensan
@@ -329,7 +338,7 @@ ANTES DE ESCRIBIR:
 8. Decide la PRIMERA y ÚLTIMA frase del capítulo ANTES de escribir el resto.
 
 MIENTRAS ESCRIBES:
-9. Sigue los BEATS en orden, desarrollando cada uno como escena COMPLETA con riqueza sensorial.
+9. Sigue los BEATS en orden, desarrollando cada uno como escena COMPLETA con acción, diálogo y emoción (pinceladas sensoriales puntuales, sin saturar).
 10. Implementa los "recursos_literarios_sugeridos" si los hay.
 11. Mantén un registro mental de expresiones ya usadas para NO repetirlas.
 12. AUTOAUDITA cada párrafo: ¿suena a IA o a autor humano? ¿Es concreto o abstracto? ¿Repite algo previo?

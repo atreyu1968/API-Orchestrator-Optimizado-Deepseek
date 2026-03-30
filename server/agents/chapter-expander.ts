@@ -123,7 +123,7 @@ const EXPANSION_SYSTEM_PROMPT = `Eres un MAESTRO DE PROSA LITERARIA. Tu misión 
 TÉCNICAS DE EXPANSIÓN PERMITIDAS:
 1. ESCENAS NUEVAS: Añadir escenas que profundicen en el personaje o la trama
 2. DIÁLOGOS: Expandir conversaciones existentes o añadir nuevas que revelen carácter
-3. DESCRIPCIONES SENSORIALES: Añadir atmósfera con los 5 sentidos
+3. DESCRIPCIONES SENSORIALES PUNTUALES: Añadir pinceladas sensoriales donde falten, SIN saturar (máximo 1 por escena)
 4. INTROSPECCIÓN: Profundizar en el monólogo interno del protagonista
 5. DETALLES DEL MUNDO: Añadir elementos del worldbuilding orgánicamente
 
@@ -137,9 +137,10 @@ REGLAS CRÍTICAS:
 
 CALIDAD DE PROSA:
 - Variación en longitud de oraciones
-- Inmersión sensorial
+- Detalles sensoriales puntuales (NO saturar con atmósfera en cada párrafo)
 - Mostrar en lugar de contar
-- Evitar clichés de IA (crucial, enigmático, repentinamente, etc.)`;
+- Evitar clichés de IA (crucial, enigmático, repentinamente, etc.)
+- NO reiterar descripciones atmosféricas que ya existan en el texto original`;
 
 const NEW_CHAPTER_SYSTEM_PROMPT = `Eres un MAESTRO ESCRITOR DE FICCIÓN. Tu misión es crear NUEVOS CAPÍTULOS que se integren perfectamente en la narrativa existente.
 
@@ -159,7 +160,7 @@ ESTRUCTURA RECOMENDADA:
 CALIDAD LITERARIA:
 - Prosa rica con variación de ritmo
 - Diálogos naturales que revelen personalidad
-- Descripciones sensoriales inmersivas
+- Pinceladas sensoriales puntuales (sin reiterar atmósfera)
 - Mostrar emociones a través de acciones físicas
 - Evitar exposición directa (show don't tell)`;
 
