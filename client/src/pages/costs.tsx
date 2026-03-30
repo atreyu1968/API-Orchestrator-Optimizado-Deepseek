@@ -11,7 +11,8 @@ import {
   Info,
   Layers,
   Zap,
-  BookOpen
+  BookOpen,
+  Languages
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -31,6 +32,18 @@ interface ProjectSummary {
   totalOutputTokens: number;
   totalThinkingTokens: number;
   estimatedCostUsd: number;
+  createdAt: string;
+}
+
+interface TranslationSummary {
+  id: number;
+  projectTitle: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalWords: number;
+  status: string;
   createdAt: string;
 }
 
@@ -128,6 +141,19 @@ export default function CostsPage() {
   const { data: projectsSummary, isLoading: loadingProjects } = useQuery<ProjectSummary[]>({
     queryKey: ["/api/ai-usage/projects-summary"],
   });
+
+  const { data: translationsList, isLoading: loadingTranslations } = useQuery<TranslationSummary[]>({
+    queryKey: ["/api/translations"],
+  });
+
+  const calcTranslationCost = (inputTokens: number, outputTokens: number) => {
+    return ((inputTokens / 1_000_000) * 0.15) + ((outputTokens / 1_000_000) * 0.60);
+  };
+
+  const translationsWithCost = (translationsList || []).filter(t => (t.inputTokens || 0) > 0 || (t.outputTokens || 0) > 0);
+  const translationsTotalCost = translationsWithCost.reduce((sum, t) => sum + calcTranslationCost(t.inputTokens || 0, t.outputTokens || 0), 0);
+  const translationsTotalInput = translationsWithCost.reduce((sum, t) => sum + (t.inputTokens || 0), 0);
+  const translationsTotalOutput = translationsWithCost.reduce((sum, t) => sum + (t.outputTokens || 0), 0);
 
   // Calculate totals from projects if event-based data is empty
   const projectsTotalCost = projectsSummary?.reduce((sum, p) => sum + p.estimatedCostUsd, 0) || 0;
@@ -478,6 +504,89 @@ export default function CostsPage() {
                     </TableCell>
                     <TableCell className="text-right font-mono text-lg">
                       ${projectsTotalCost.toFixed(2)}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Languages className="h-5 w-5" />
+            Costos de Traducciones
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loadingTranslations ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+            </div>
+          ) : !translationsWithCost.length ? (
+            <p className="text-muted-foreground text-center py-8">
+              No hay traducciones con datos de tokens registrados
+            </p>
+          ) : (
+            <div className="max-h-[500px] overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Proyecto</TableHead>
+                    <TableHead>Idiomas</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Palabras</TableHead>
+                    <TableHead className="text-right">Input</TableHead>
+                    <TableHead className="text-right">Output</TableHead>
+                    <TableHead className="text-right">Costo</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {translationsWithCost
+                    .sort((a, b) => calcTranslationCost(b.inputTokens || 0, b.outputTokens || 0) - calcTranslationCost(a.inputTokens || 0, a.outputTokens || 0))
+                    .map((t) => (
+                    <TableRow key={t.id} data-testid={`row-translation-${t.id}`}>
+                      <TableCell className="font-medium max-w-[200px] truncate" title={t.projectTitle}>
+                        {t.projectTitle}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs">{t.sourceLanguage} → {t.targetLanguage}</span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={t.status === "completed" ? "default" : "secondary"}
+                          className="text-xs"
+                        >
+                          {t.status === "completed" ? "Completada" :
+                           t.status === "translating" ? "Traduciendo" : t.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatNumber(t.totalWords || 0)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatNumber(t.inputTokens || 0)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatNumber(t.outputTokens || 0)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm font-semibold">
+                        {formatCurrency(calcTranslationCost(t.inputTokens || 0, t.outputTokens || 0))}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="bg-muted/50 font-bold">
+                    <TableCell colSpan={4}>TOTAL TRADUCCIONES</TableCell>
+                    <TableCell className="text-right font-mono">
+                      {formatNumber(translationsTotalInput)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {formatNumber(translationsTotalOutput)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-lg">
+                      {formatCurrency(translationsTotalCost)}
                     </TableCell>
                   </TableRow>
                 </TableBody>

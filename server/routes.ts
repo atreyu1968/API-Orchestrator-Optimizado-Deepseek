@@ -9986,16 +9986,15 @@ CRITERIOS:
   return httpServer;
 }
 
-// Gemini 2.5 Pro pricing (per million tokens)
-// Input: $1.25/1M tokens (standard context <=200K)
-// Output: $10.00/1M tokens (standard context <=200K)
-// Thinking: counted as output tokens
+// Gemini 2.5 Flash pricing (per million tokens)
 function calculateProjectCost(inputTokens: number, outputTokens: number, thinkingTokens: number): number {
-  const INPUT_COST_PER_MILLION = 1.25;
-  const OUTPUT_COST_PER_MILLION = 10.00;
+  const INPUT_COST_PER_MILLION = 0.15;
+  const OUTPUT_COST_PER_MILLION = 0.60;
+  const THINKING_COST_PER_MILLION = 3.50;
   
   const inputCost = (inputTokens / 1_000_000) * INPUT_COST_PER_MILLION;
-  const outputCost = ((outputTokens + thinkingTokens) / 1_000_000) * OUTPUT_COST_PER_MILLION;
+  const outputCost = (outputTokens / 1_000_000) * OUTPUT_COST_PER_MILLION;
+  const thinkingCost = (thinkingTokens / 1_000_000) * THINKING_COST_PER_MILLION;
   
-  return Math.round((inputCost + outputCost) * 100) / 100;
+  return Math.round((inputCost + outputCost + thinkingCost) * 10000) / 10000;
 }

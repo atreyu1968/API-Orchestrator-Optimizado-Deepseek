@@ -56,9 +56,7 @@ const MODEL_PRICING_INFO = `Modelo principal: gemini-2.5-flash
 • Input: $0.15/M, Output: $0.60/M, Thinking: $3.50/M
 
 Modelo secundario: gemini-2.0-flash (analizador)
-• Input: $0.10/M, Output: $0.40/M
-
-Todos los agentes ahora usan gemini-2.5-flash para optimizar costos.`;
+• Input: $0.10/M, Output: $0.40/M`;
 
 type ConfirmType = "cancel" | "forceComplete" | "resume" | "delete" | null;
 
