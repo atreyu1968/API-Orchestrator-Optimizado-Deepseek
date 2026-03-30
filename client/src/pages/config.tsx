@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, Search, Download, Library } from "lucide-react";
 import { BOOK_WRITING_GUIDE_TEMPLATE, downloadTemplate } from "@/lib/writing-templates";
 import { Link } from "wouter";
-import type { Project, ExtendedGuide } from "@shared/schema";
+import type { Project, ExtendedGuide, Pseudonym } from "@shared/schema";
 
 export default function ConfigPage() {
   const { toast } = useToast();
@@ -35,6 +35,15 @@ export default function ConfigPage() {
   const { data: extendedGuides = [], isLoading: isLoadingGuides } = useQuery<ExtendedGuide[]>({
     queryKey: ["/api/extended-guides"],
   });
+
+  const { data: pseudonyms = [] } = useQuery<Pseudonym[]>({
+    queryKey: ["/api/pseudonyms"],
+  });
+
+  const getPseudonymName = (id: number | null) => {
+    if (!id) return null;
+    return pseudonyms.find(p => p.id === id)?.name || null;
+  };
 
   const filteredProjects = useMemo(() => {
     if (!projectSearch.trim()) return projects;
@@ -336,6 +345,11 @@ export default function ConfigPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <h3 className="font-medium text-sm truncate">{project.title}</h3>
+                          {getPseudonymName(project.pseudonymId) && (
+                            <Badge variant="secondary" className="text-xs" data-testid={`badge-pseudonym-${project.id}`}>
+                              {getPseudonymName(project.pseudonymId)}
+                            </Badge>
+                          )}
                           <Badge className={`text-xs ${statusColors[project.status] || statusColors.idle}`}>
                             {statusLabels[project.status] || project.status}
                           </Badge>
