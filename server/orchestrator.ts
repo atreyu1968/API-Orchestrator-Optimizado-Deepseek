@@ -4764,7 +4764,7 @@ Responde SOLO con un JSON válido con la estructura:
     
     if (sentinelResult?.checkpoint_aprobado) {
       const minorIssues = (sentinelResult?.issues || []).map(i => 
-        `[${i.severidad.toUpperCase()}] ${i.tipo}: ${i.descripcion}`
+        `[${(i.severidad || "menor").toUpperCase()}] ${i.tipo || "general"}: ${i.descripcion || "Sin descripción"}`
       );
       this.callbacks.onAgentStatus("continuity-sentinel", "completed", 
         `Checkpoint #${checkpointNumber} APROBADO (${sentinelResult.puntuacion}/10).${minorIssues.length > 0 ? ` ${minorIssues.length} issues menores anotados para revisión final.` : " Sin issues de continuidad."}`
@@ -4772,7 +4772,7 @@ Responde SOLO con un JSON válido con la estructura:
       return { passed: true, issues: minorIssues, chaptersToRevise: [] };
     } else {
       const issueDescriptions = (sentinelResult?.issues || []).map(i => 
-        `[${i.severidad.toUpperCase()}] ${i.tipo}: ${i.descripcion}\n⚠️ PRESERVAR: ${i.elementos_a_preservar || "El resto del capítulo"}\n✏️ CORRECCIÓN: ${i.fix_sugerido}`
+        `[${(i.severidad || "mayor").toUpperCase()}] ${i.tipo || "general"}: ${i.descripcion || "Sin descripción"}\n⚠️ PRESERVAR: ${i.elementos_a_preservar || "El resto del capítulo"}\n✏️ CORRECCIÓN: ${i.fix_sugerido || "Revisar manualmente"}`
       );
       
       this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
@@ -4832,7 +4832,7 @@ Responde SOLO con un JSON válido con la estructura:
       return { passed: true, issues: [], chaptersToRevise: [] };
     } else {
       const issueDescriptions = (auditResult?.issues || []).map(i => 
-        `[${i.severidad.toUpperCase()}] ${i.tipo}: ${i.descripcion}\n⚠️ PRESERVAR: ${i.elementos_a_preservar || "El resto del capítulo"}\n✏️ CORRECCIÓN: ${i.fix_sugerido}`
+        `[${(i.severidad || "mayor").toUpperCase()}] ${i.tipo || "general"}: ${i.descripcion || "Sin descripción"}\n⚠️ PRESERVAR: ${i.elementos_a_preservar || "El resto del capítulo"}\n✏️ CORRECCIÓN: ${i.fix_sugerido || "Revisar manualmente"}`
       );
       
       this.callbacks.onAgentStatus("voice-auditor", "warning", 
