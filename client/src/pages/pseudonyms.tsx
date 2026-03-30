@@ -10,10 +10,10 @@ import { Separator } from "@/components/ui/separator";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { User, Plus, Trash2, FileText, Edit2, Check, X, Upload, Loader2, Download, Mail, ExternalLink, BookOpen } from "lucide-react";
+import { User, Plus, Trash2, FileText, Edit2, Check, X, Upload, Loader2, Download, Mail, ExternalLink, BookOpen, Library } from "lucide-react";
 import { Link } from "wouter";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Pseudonym, StyleGuide, Project } from "@shared/schema";
+import type { Pseudonym, StyleGuide, Project, Series } from "@shared/schema";
 
 export default function PseudonymsPage() {
   const { toast } = useToast();
@@ -44,6 +44,15 @@ export default function PseudonymsPage() {
   const { data: allProjects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
+
+  const { data: allSeries = [] } = useQuery<Series[]>({
+    queryKey: ["/api/series"],
+  });
+
+  const getSeriesById = (id: number | null | undefined) => {
+    if (!id) return null;
+    return allSeries.find(s => s.id === id) || null;
+  };
 
   const pseudonymProjects = allProjects.filter(p => p.pseudonymId === selectedPseudonym);
 
@@ -445,18 +454,36 @@ export default function PseudonymsPage() {
                 {pseudonymProjects.length === 0 ? (
                   <p className="text-sm text-muted-foreground/60 italic">Este autor no tiene proyectos asignados</p>
                 ) : (
-                  <ScrollArea className={pseudonymProjects.length > 4 ? "h-[160px]" : ""}>
+                  <ScrollArea className={pseudonymProjects.length > 4 ? "h-[180px]" : ""}>
                     <div className="space-y-1.5">
-                      {pseudonymProjects.map((project) => (
-                        <Link key={project.id} href="/config" data-testid={`link-project-${project.id}`}>
-                          <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-muted/50 hover:bg-muted cursor-pointer transition-colors">
-                            <span className="text-sm truncate">{project.title}</span>
-                            <Badge variant="outline" className="text-xs shrink-0">
-                              {project.status === "completed" ? "Completado" : project.status === "generating" ? "Generando" : project.status === "error" ? "Error" : project.status === "archived" ? "Archivado" : "En espera"}
-                            </Badge>
+                      {pseudonymProjects.map((project) => {
+                        const projectSeries = getSeriesById(project.seriesId);
+                        return (
+                          <div key={project.id} className="p-2 rounded-md bg-muted/50 hover:bg-muted transition-colors">
+                            <Link href="/config" data-testid={`link-project-${project.id}`}>
+                              <div className="flex items-center justify-between gap-2 cursor-pointer">
+                                <span className="text-sm truncate">{project.title}</span>
+                                <Badge variant="outline" className="text-xs shrink-0">
+                                  {project.status === "completed" ? "Completado" : project.status === "generating" ? "Generando" : project.status === "error" ? "Error" : project.status === "archived" ? "Archivado" : "En espera"}
+                                </Badge>
+                              </div>
+                            </Link>
+                            {projectSeries && (
+                              <Link href="/series" data-testid={`link-series-${projectSeries.id}`}>
+                                <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground hover:text-primary cursor-pointer transition-colors">
+                                  <Library className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{projectSeries.title}</span>
+                                  {project.seriesOrder && (
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
+                                      Vol. {project.seriesOrder}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </Link>
+                            )}
                           </div>
-                        </Link>
-                      ))}
+                        );
+                      })}
                     </div>
                   </ScrollArea>
                 )}
