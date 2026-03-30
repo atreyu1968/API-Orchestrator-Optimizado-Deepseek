@@ -12,7 +12,8 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Label } from "@/components/ui/label";
-import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, Search, Download, Library } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, Search, Download, Library, User } from "lucide-react";
 import { BOOK_WRITING_GUIDE_TEMPLATE, downloadTemplate } from "@/lib/writing-templates";
 import { Link } from "wouter";
 import type { Project, ExtendedGuide, Pseudonym } from "@shared/schema";
@@ -26,6 +27,7 @@ export default function ConfigPage() {
   const [convertProject, setConvertProject] = useState<Project | null>(null);
   const [seriesTitle, setSeriesTitle] = useState("");
   const [totalPlannedBooks, setTotalPlannedBooks] = useState(3);
+  const [pseudonymFilter, setPseudonymFilter] = useState<string>("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
@@ -46,14 +48,22 @@ export default function ConfigPage() {
   };
 
   const filteredProjects = useMemo(() => {
-    if (!projectSearch.trim()) return projects;
-    const search = projectSearch.toLowerCase();
-    return projects.filter(p => 
-      p.title.toLowerCase().includes(search) ||
-      p.genre.toLowerCase().includes(search) ||
-      p.tone.toLowerCase().includes(search)
-    );
-  }, [projects, projectSearch]);
+    let filtered = projects;
+    if (pseudonymFilter === "none") {
+      filtered = filtered.filter(p => !p.pseudonymId);
+    } else if (pseudonymFilter !== "all") {
+      filtered = filtered.filter(p => p.pseudonymId === parseInt(pseudonymFilter));
+    }
+    if (projectSearch.trim()) {
+      const search = projectSearch.toLowerCase();
+      filtered = filtered.filter(p => 
+        p.title.toLowerCase().includes(search) ||
+        p.genre.toLowerCase().includes(search) ||
+        p.tone.toLowerCase().includes(search)
+      );
+    }
+    return filtered;
+  }, [projects, projectSearch, pseudonymFilter]);
 
   const createProjectMutation = useMutation({
     mutationFn: async (data: ConfigFormData) => {
@@ -299,15 +309,32 @@ export default function ConfigPage() {
               {projects.length} proyecto{projects.length !== 1 ? "s" : ""} creado{projects.length !== 1 ? "s" : ""}
             </CardDescription>
             {projects.length > 0 && (
-              <div className="relative mt-2">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar proyectos..."
-                  value={projectSearch}
-                  onChange={(e) => setProjectSearch(e.target.value)}
-                  className="pl-9"
-                  data-testid="input-project-search"
-                />
+              <div className="flex gap-2 mt-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar proyectos..."
+                    value={projectSearch}
+                    onChange={(e) => setProjectSearch(e.target.value)}
+                    className="pl-9"
+                    data-testid="input-project-search"
+                  />
+                </div>
+                <Select value={pseudonymFilter} onValueChange={setPseudonymFilter}>
+                  <SelectTrigger className="w-[160px]" data-testid="select-pseudonym-filter">
+                    <User className="h-4 w-4 mr-1 shrink-0" />
+                    <SelectValue placeholder="Autor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los autores</SelectItem>
+                    <SelectItem value="none">Sin autor</SelectItem>
+                    {pseudonyms.map(p => (
+                      <SelectItem key={p.id} value={p.id.toString()} data-testid={`filter-pseudonym-${p.id}`}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
           </CardHeader>
