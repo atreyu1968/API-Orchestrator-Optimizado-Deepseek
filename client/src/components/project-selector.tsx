@@ -1,6 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import type { Project } from "@shared/schema";
+import type { Project, Pseudonym } from "@shared/schema";
 
 interface ProjectSelectorProps {
   projects: Project[];
@@ -27,6 +28,15 @@ export function ProjectSelector({
   selectedProjectId, 
   onSelectProject 
 }: ProjectSelectorProps) {
+  const { data: pseudonyms = [] } = useQuery<Pseudonym[]>({
+    queryKey: ["/api/pseudonyms"],
+  });
+
+  const getPseudonymName = (id: number | null) => {
+    if (!id) return null;
+    return pseudonyms.find(p => p.id === id)?.name || null;
+  };
+
   const activeProjects = projects.filter(p => p.status !== "archived");
   const archivedProjects = projects.filter(p => p.status === "archived");
 
@@ -54,6 +64,9 @@ export function ProjectSelector({
               >
                 <div className="flex items-center gap-2">
                   <span className="truncate max-w-[180px]">{project.title}</span>
+                  {getPseudonymName(project.pseudonymId) && (
+                    <span className="text-xs text-muted-foreground">({getPseudonymName(project.pseudonymId)})</span>
+                  )}
                   <Badge 
                     variant="secondary" 
                     className={`text-xs ${statusColors[project.status] || ""}`}
@@ -78,6 +91,9 @@ export function ProjectSelector({
                 >
                   <div className="flex items-center gap-2">
                     <span className="truncate max-w-[180px] opacity-70">{project.title}</span>
+                    {getPseudonymName(project.pseudonymId) && (
+                      <span className="text-xs text-muted-foreground">({getPseudonymName(project.pseudonymId)})</span>
+                    )}
                     <Badge 
                       variant="secondary" 
                       className={`text-xs ${statusColors[project.status] || ""}`}

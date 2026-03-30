@@ -17,7 +17,7 @@ import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, Cl
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
-import type { Project, AgentStatus, Chapter, ReeditProject } from "@shared/schema";
+import type { Project, AgentStatus, Chapter, ReeditProject, Pseudonym } from "@shared/schema";
 
 import type { AgentRole } from "@/components/process-flow";
 
@@ -142,6 +142,16 @@ export default function Dashboard() {
   const { data: reeditProjects = [] } = useQuery<ReeditProject[]>({
     queryKey: ["/api/reedit-projects"],
   });
+
+  const { data: pseudonyms = [] } = useQuery<Pseudonym[]>({
+    queryKey: ["/api/pseudonyms"],
+  });
+
+  const getPseudonymName = (pseudonymId: number | null): string | null => {
+    if (!pseudonymId) return null;
+    const p = pseudonyms.find(ps => ps.id === pseudonymId);
+    return p?.name || null;
+  };
 
   const activeProject = projects.find(p => p.status === "generating");
 
@@ -581,6 +591,11 @@ export default function Dashboard() {
               <CardHeader className="flex flex-row items-center justify-between gap-4 pb-2">
                 <CardTitle className="text-lg">Progreso del Manuscrito</CardTitle>
                 <div className="flex items-center gap-4">
+                  {getPseudonymName(currentProject.pseudonymId) && (
+                    <Badge variant="outline" className="text-xs" data-testid="badge-pseudonym">
+                      {getPseudonymName(currentProject.pseudonymId)}
+                    </Badge>
+                  )}
                   <div className="flex items-center gap-2 text-sm">
                     <FileText className="h-4 w-4 text-muted-foreground" />
                     <span>{completedChapters}/{currentProject.chapterCount + (currentProject.hasPrologue ? 1 : 0) + (currentProject.hasEpilogue ? 1 : 0) + (currentProject.hasAuthorNote ? 1 : 0)} secciones</span>
