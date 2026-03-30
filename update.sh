@@ -74,10 +74,7 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 echo "2. Instalando dependencias..."
 sudo -u "$APP_USER" npm install --legacy-peer-deps 2>&1 | tail -5
 
-echo "3. Compilando aplicacion..."
-sudo -u "$APP_USER" npm run build 2>&1 | tail -5
-
-echo "4. Ejecutando migraciones de schema..."
+echo "3. Ejecutando migraciones de schema (pre-build)..."
 DB_PASS_M=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
 DB_USER_M=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
 DB_HOST_M=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|p')
@@ -137,7 +134,7 @@ ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS goodreads_url TEXT;
 " 2>/dev/null && echo "[OK] Tablas verificadas" || echo "[AVISO] Algunas tablas ya existian"
 
-echo "5. Aplicando migraciones SQL adicionales..."
+echo "4. Aplicando migraciones SQL adicionales..."
 DB_PASS_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
 DB_USER_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
 DB_HOST_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|p')
@@ -154,6 +151,12 @@ for migration in "$APP_DIR"/migrations/*.sql; do
             -f "$migration" 2>/dev/null || true
     fi
 done
+
+echo "5. Compilando aplicacion (frontend + backend)..."
+sudo -u "$APP_USER" npm run build 2>&1 | tail -20
+if [ $? -ne 0 ]; then
+    echo "[ERROR] La compilacion fallo. Revisa los errores arriba."
+fi
 
 echo "6. Reiniciando servicio..."
 systemctl daemon-reload

@@ -1,0 +1,68 @@
+root@escritorasd:~# sudo /var/www/litagents/update.sh
+=== Actualizando LitAgents ===
+[OK] Fish Audio API key ya configurada
+1. Obteniendo ultimos cambios...
+remote: Enumerating objects: 39, done.
+remote: Counting objects: 100% (39/39), done.
+remote: Compressing objects: 100% (7/7), done.
+remote: Total 25 (delta 22), reused 21 (delta 18), pack-reused 0 (from 0)
+Unpacking objects: 100% (25/25), 5.14 KiB | 135.00 KiB/s, done.
+From https://github.com/atreyu1968/escritorasdgemini
+   c42bdd4..008b08f  main       -> origin/main
+HEAD is now at 008b08f Add pseudonym names to existing project listings
+   Reparando permisos...
+2. Instalando dependencias...
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+3. Compilando aplicacion...
+building server...
+
+  dist/index.cjs  2.0mb ⚠️
+
+⚡ Done in 328ms
+4. Ejecutando migraciones de schema...
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+[OK] Tablas verificadas
+5. Aplicando migraciones SQL adicionales...
+   Aplicando 0000_jazzy_annihilus.sql...
+ALTER TABLE
+ALTER TABLE
+   Aplicando 0001_natural_bromley.sql...
+   Aplicando 0002_add_words_per_chapter.sql...
+ALTER TABLE
+ALTER TABLE
+   Aplicando 0002_remarkable_wilson_fisk.sql...
+   Aplicando 0003_add_bookbox_structure.sql...
+   Aplicando 0003_woozy_piledriver.sql...
+ALTER TABLE
+ALTER TABLE
+   Aplicando 0004_add_author_notes.sql...
+ALTER TABLE
+ALTER TABLE
+6. Reiniciando servicio...
+
+=== Verificando que la aplicacion responde ===
+Aplicacion respondiendo correctamente
+
+=== Actualizacion completada correctamente ===
+* litagents.service - LitAgents Application
+     Loaded: loaded (/etc/systemd/system/litagents.service; enabled; preset: enabled)
+     Active: active (running) since Mon 2026-03-30 17:25:32 UTC; 5s ago
+ Invocation: ef3305725171434fb349cc2da88316b0
+       Docs: https://github.com/atreyu1968/escritorasdgemini
+   Main PID: 18422 (npm start)
+      Tasks: 23 (limit: 18752)
+     Memory: 76.5M (max: 2G, available: 1.9G, peak: 76.8M)
+        CPU: 1.072s
+     CGroup: /system.slice/litagents.service
+             |-18422 "npm start"
+             |-18434 sh -c "NODE_ENV=production node dist/index.cjs"
+             `-18435 node dist/index.cjs
+
+Mar 30 17:25:32 escritorasd systemd[1]: Started litagents.service - LitAgents Application.
+root@escritorasd:~# 
