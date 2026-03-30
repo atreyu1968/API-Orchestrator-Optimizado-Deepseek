@@ -11,7 +11,9 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { User, Plus, Trash2, FileText, Edit2, Check, X, Upload, Loader2, Download, Mail, ExternalLink, BookOpen } from "lucide-react";
-import type { Pseudonym, StyleGuide } from "@shared/schema";
+import { Link } from "wouter";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import type { Pseudonym, StyleGuide, Project } from "@shared/schema";
 
 export default function PseudonymsPage() {
   const { toast } = useToast();
@@ -38,6 +40,12 @@ export default function PseudonymsPage() {
     queryKey: ["/api/pseudonyms", selectedPseudonym, "style-guides"],
     enabled: selectedPseudonym !== null,
   });
+
+  const { data: allProjects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  const pseudonymProjects = allProjects.filter(p => p.pseudonymId === selectedPseudonym);
 
   const createPseudonymMutation = useMutation({
     mutationFn: async (data: { name: string; bio?: string; email?: string; goodreadsUrl?: string }) => {
@@ -428,6 +436,32 @@ export default function PseudonymsPage() {
                   ))}
                 </div>
               )}
+
+              <div className="mb-4">
+                <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <BookOpen className="h-4 w-4" />
+                  Proyectos ({pseudonymProjects.length})
+                </h3>
+                {pseudonymProjects.length === 0 ? (
+                  <p className="text-sm text-muted-foreground/60 italic">Este autor no tiene proyectos asignados</p>
+                ) : (
+                  <ScrollArea className={pseudonymProjects.length > 4 ? "h-[160px]" : ""}>
+                    <div className="space-y-1.5">
+                      {pseudonymProjects.map((project) => (
+                        <Link key={project.id} href="/config" data-testid={`link-project-${project.id}`}>
+                          <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-muted/50 hover:bg-muted cursor-pointer transition-colors">
+                            <span className="text-sm truncate">{project.title}</span>
+                            <Badge variant="outline" className="text-xs shrink-0">
+                              {project.status === "completed" ? "Completado" : project.status === "generating" ? "Generando" : project.status === "error" ? "Error" : project.status === "archived" ? "Archivado" : "En espera"}
+                            </Badge>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+              </div>
+
               <Separator className="mb-4" />
               <div className="space-y-4">
                 {isCreatingGuide && (
