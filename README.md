@@ -18,6 +18,8 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 - **Gestion de Series**: Continuidad inter-libros con snapshots automaticos y verificacion de arcos narrativos
 - **Autenticacion**: Proteccion con contrasena para instalaciones en servidor propio
 - **Audiolibros**: Conversion de novelas a audiolibro con voces TTS de Fish Audio (modelo speech-1.6), portadas personalizadas y descarga en ZIP
+- **Catalogo de Libros y Back Matter**: Gestion centralizada de obras publicadas con generacion automatica de paginas finales (solicitud de resena + "Otras obras del autor") en exportaciones
+- **Originalidad de Nombres**: Sistema dinamico que prohibe al Arquitecto reutilizar nombres de personajes entre novelas diferentes (permitidos dentro de la misma serie)
 - **PWA**: Aplicacion web progresiva instalable con soporte offline
 
 ## Agentes del Sistema
@@ -166,12 +168,27 @@ Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando c
 - **Streaming de audio**: Reproduccion directa desde la interfaz web
 - **Chunking inteligente**: Capitulos largos (>9500 caracteres) se dividen automaticamente en fragmentos por oraciones
 
+### Catalogo de Libros y Back Matter
+- **Catalogo centralizado**: Registro de obras publicadas por pseudonimo con titulo, idioma, genero y enlace Amazon/ASIN
+- **Generacion automatica de Back Matter**: Al exportar, el sistema genera paginas finales profesionales:
+  - **Solicitud de resena**: Mensaje cordial y compatible con las normas de Amazon (sin incentivos)
+  - **"Otras obras del autor"**: Lista automatica de libros del mismo pseudonimo extraida del catalogo
+- **6 idiomas soportados**: Back matter generado en es, en, fr, de, it, pt segun el idioma del proyecto
+- **Integrado en exportaciones**: Incluido automaticamente en exportaciones Markdown y DOCX
+
+### Originalidad de Nombres de Personajes
+- **Lista negra estatica**: El Arquitecto tiene prohibido usar nombres comunes de IA (Marco, Elena, Vega, Montoya, etc.)
+- **Nombres dinamicos prohibidos**: El Orquestador extrae todos los nombres de personajes de World Bibles existentes y los pasa como `forbiddenNames` al Arquitecto
+- **Excepcion por serie**: Los nombres dentro de la misma serie SI pueden repetirse (personajes recurrentes)
+- **Fidelidad del Ghostwriter**: El Ghostwriter usa exclusivamente los nombres definidos en el World Bible, sin sustituir ni inventar
+
 ### Exportacion
 - Markdown limpio sin artefactos de codigo
 - Exportacion a DOCX con formato profesional
 - Etiquetas de capitulo localizadas (7 idiomas: es, en, fr, de, it, pt, ca)
 - Separacion automatica de parrafos largos (~3-4 oraciones por parrafo)
 - Soporte para Prologo, Epilogo y Nota del Autor
+- Paginas finales opcionales (Back Matter) con solicitud de resena y catalogo del autor
 
 ## Requisitos del Sistema
 
