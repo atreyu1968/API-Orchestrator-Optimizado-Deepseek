@@ -4297,6 +4297,11 @@ IMPORTANTE:
 
         for (const mv of result.result.milestoneVerifications) {
           if (mv.isFulfilled) {
+            const existingMilestone = milestones.find(m => m.id === mv.milestoneId);
+            if (existingMilestone?.isFulfilled) {
+              console.log(`[Arc Verification] Milestone ${mv.milestoneId} already fulfilled, preserving existing verification`);
+              continue;
+            }
             await storage.updateMilestone(mv.milestoneId, {
               isFulfilled: true,
               fulfilledInProjectId: projectId,
@@ -4307,8 +4312,16 @@ IMPORTANTE:
           }
         }
 
+        const threadStatusPriority: Record<string, number> = { "active": 0, "introduced": 0, "developing": 1, "resolved": 2, "abandoned": 1 };
         for (const tp of result.result.threadProgressions) {
           if (tp.currentStatus !== "active") {
+            const existingThread = threads.find(t => t.id === tp.threadId);
+            const existingPriority = threadStatusPriority[existingThread?.status || "active"] || 0;
+            const newPriority = threadStatusPriority[tp.currentStatus] || 0;
+            if (newPriority < existingPriority) {
+              console.log(`[Arc Verification] Thread ${tp.threadId} already "${existingThread?.status}", not regressing to "${tp.currentStatus}"`);
+              continue;
+            }
             await storage.updatePlotThread(tp.threadId, {
               status: tp.currentStatus,
               resolvedVolume: tp.resolvedInVolume ? volumeNumber : undefined,

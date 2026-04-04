@@ -201,13 +201,21 @@ export class ArcValidatorAgent extends BaseAgent {
       };
     }
 
-    const milestonesText = milestonesForVolume.map(m => `
+    const pendingMilestones = milestonesForVolume.filter(m => !m.isFulfilled);
+    const fulfilledMilestones = milestonesForVolume.filter(m => m.isFulfilled);
+
+    const milestonesText = pendingMilestones.length > 0
+      ? pendingMilestones.map(m => `
 - ID: ${m.id}
   Tipo: ${m.milestoneType}
   Descripcion: ${m.description}
   Requerido: ${m.isRequired ? "SI" : "NO"}
-  Estado actual: ${m.isFulfilled ? "CUMPLIDO" : "PENDIENTE"}
-`).join("\n");
+`).join("\n")
+      : "Todos los hitos de este volumen ya han sido verificados y cumplidos.";
+
+    const fulfilledText = fulfilledMilestones.length > 0
+      ? `\nHITOS YA VERIFICADOS Y CUMPLIDOS (NO reevaluar, mantener como isFulfilled: true):\n${fulfilledMilestones.map(m => `- ID: ${m.id} — ${m.description} [YA CUMPLIDO]`).join("\n")}`
+      : "";
 
     const threadsText = activeThreads.length > 0
       ? activeThreads.map(t => `
@@ -239,9 +247,10 @@ PERSONAJES Y REGLAS DEL MUNDO:
 ${JSON.stringify(worldBiblePreview, null, 2)}
 
 ═══════════════════════════════════════════════════════════════════
-HITOS DEFINIDOS POR EL USUARIO PARA ESTE VOLUMEN:
+HITOS PENDIENTES DE VERIFICACIÓN PARA ESTE VOLUMEN:
 ═══════════════════════════════════════════════════════════════════
 ${milestonesText || "No hay hitos definidos para este volumen. El usuario debe definir hitos desde la guia de serie."}
+${fulfilledText}
 
 ═══════════════════════════════════════════════════════════════════
 HILOS ARGUMENTALES ACTIVOS:
@@ -256,12 +265,15 @@ ${input.chaptersSummary.substring(0, 100000)}
 ═══════════════════════════════════════════════════════════════════
 INSTRUCCIONES DE VERIFICACIÓN:
 ═══════════════════════════════════════════════════════════════════
-1. Tu tarea es verificar si los HITOS DEFINIDOS arriba se cumplen en el CONTENIDO DE LOS CAPÍTULOS
-2. Para cada hito, busca evidencia concreta en los capitulos proporcionados
+1. Tu tarea es verificar si los HITOS PENDIENTES arriba se cumplen en el CONTENIDO DE LOS CAPÍTULOS
+2. Para cada hito pendiente, busca evidencia concreta en los capitulos proporcionados
 3. Verifica si los hilos argumentales activos progresan o se resuelven
 4. NO te quejes de datos faltantes en la timeline - solo verifica los hitos definidos explícitamente
 5. Los hilos argumentales pueden pausarse en algunos volúmenes - esto NO es un error si no hay hilos definidos para este volumen
 6. Basa tu verificación ÚNICAMENTE en los hitos y hilos listados arriba, NO en eventos de la timeline
+7. HITOS MARCADOS COMO "YA CUMPLIDO": Devuelve isFulfilled: true para ellos SIN reevaluarlos. Ya fueron verificados previamente
+8. HILOS CON STATUS "resolved": Devuelve currentStatus: "resolved". NO regreses su estado a "active" o "developing"
+9. NUNCA regreses el estado de un hito o hilo a un estado inferior al que tiene actualmente
 
 PUNTUACIÓN:
 - 80-100: Todos los hitos requeridos cumplidos
@@ -306,6 +318,29 @@ IMPORTANTE: Responde UNICAMENTE con JSON valido siguiendo el formato especificad
       
       const result = repairJson(cleanContent) as ArcValidatorResult;
       result.classifiedFindings = this.classifyFindings(result.findings || [], result.recommendations || "");
+
+      for (const fm of fulfilledMilestones) {
+        const alreadyInResult = result.milestoneVerifications?.some(mv => mv.milestoneId === fm.id);
+        if (!alreadyInResult) {
+          result.milestoneVerifications = result.milestoneVerifications || [];
+          result.milestoneVerifications.push({
+            milestoneId: fm.id,
+            description: fm.description,
+            isFulfilled: true,
+            verificationNotes: "Verificado previamente durante la generación del libro",
+            confidence: 100,
+          });
+        }
+      }
+
+      result.milestoneVerifications?.forEach(mv => {
+        const wasFulfilled = fulfilledMilestones.some(fm => fm.id === mv.milestoneId);
+        if (wasFulfilled) mv.isFulfilled = true;
+      });
+
+      result.milestonesChecked = milestonesForVolume.length;
+      result.milestonesFulfilled = result.milestoneVerifications?.filter(mv => mv.isFulfilled).length || 0;
+
       console.log(`[ArcValidator] Successfully parsed result: score=${result.overallScore}, passed=${result.passed}, classifiedFindings=${result.classifiedFindings.length}`);
       return { ...response, result };
     } catch (e) {
@@ -325,9 +360,9 @@ IMPORTANTE: Responde UNICAMENTE con JSON valido siguiendo el formato especificad
         milestoneVerifications: milestonesForVolume.map(m => ({
           milestoneId: m.id,
           description: m.description,
-          isFulfilled: false,
-          verificationNotes: "No se pudo analizar automaticamente",
-          confidence: 0,
+          isFulfilled: m.isFulfilled || false,
+          verificationNotes: m.isFulfilled ? "Verificado previamente" : "No se pudo analizar automaticamente",
+          confidence: m.isFulfilled ? 100 : 0,
         })),
         threadProgressions: activeThreads.map(t => ({
           threadId: t.id,

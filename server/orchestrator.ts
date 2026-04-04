@@ -4615,6 +4615,11 @@ Responde SOLO con un JSON válido con la estructura:
 
         for (const mv of result.result.milestoneVerifications) {
           if (mv.isFulfilled) {
+            const existingMilestone = milestones.find(m => m.id === mv.milestoneId);
+            if (existingMilestone?.isFulfilled) {
+              console.log(`[Orchestrator] Milestone ${mv.milestoneId} already fulfilled, preserving`);
+              continue;
+            }
             await storage.updateMilestone(mv.milestoneId, {
               isFulfilled: true,
               fulfilledInProjectId: project.id,
@@ -4622,6 +4627,7 @@ Responde SOLO con un JSON válido con la estructura:
           }
         }
 
+        const threadStatusPriority: Record<string, number> = { "active": 0, "introduced": 0, "developing": 1, "resolved": 2, "abandoned": 1 };
         for (const tp of result.result.threadProgressions) {
           const updateData: any = {};
           if (tp.resolvedInVolume) {
@@ -4633,6 +4639,13 @@ Responde SOLO con un JSON válido con la estructura:
             updateData.status = "abandoned";
           }
           if (Object.keys(updateData).length > 0) {
+            const existingThread = threads.find(t => t.id === tp.threadId);
+            const existingPriority = threadStatusPriority[existingThread?.status || "active"] || 0;
+            const newPriority = threadStatusPriority[updateData.status] || 0;
+            if (newPriority < existingPriority) {
+              console.log(`[Orchestrator] Thread ${tp.threadId} already "${existingThread?.status}", not regressing to "${updateData.status}"`);
+              continue;
+            }
             await storage.updatePlotThread(tp.threadId, updateData);
           }
         }
