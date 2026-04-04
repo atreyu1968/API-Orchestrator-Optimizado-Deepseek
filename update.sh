@@ -132,6 +132,45 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 
 ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS goodreads_url TEXT;
+
+CREATE TABLE IF NOT EXISTS book_catalog (
+    id SERIAL PRIMARY KEY,
+    pseudonym_id INTEGER REFERENCES pseudonyms(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    author_name TEXT NOT NULL,
+    amazon_url TEXT,
+    goodreads_url TEXT,
+    synopsis TEXT,
+    genre TEXT,
+    asin TEXT,
+    is_kindle_unlimited BOOLEAN NOT NULL DEFAULT false,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    display_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS project_back_matter (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    reedit_project_id INTEGER REFERENCES reedit_projects(id) ON DELETE CASCADE,
+    enable_review_request BOOLEAN NOT NULL DEFAULT true,
+    review_request_language TEXT NOT NULL DEFAULT 'es',
+    review_author_name TEXT,
+    review_amazon_url TEXT,
+    review_goodreads_url TEXT,
+    enable_also_by BOOLEAN NOT NULL DEFAULT true,
+    also_by_title TEXT,
+    selected_book_ids JSONB DEFAULT '[]',
+    created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS name_blacklist (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'nombre',
+    created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_name_blacklist_unique ON name_blacklist(LOWER(name), type);
 " 2>/dev/null && echo "[OK] Tablas verificadas" || echo "[AVISO] Algunas tablas ya existian"
 
 echo "4. Aplicando migraciones SQL adicionales..."
