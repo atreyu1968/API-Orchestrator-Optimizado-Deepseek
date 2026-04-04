@@ -28,7 +28,8 @@ import {
   BookMarked,
   Headphones,
   Image,
-  Tag
+  Tag,
+  BookCopy
 } from "lucide-react";
 
 const mainNavItems = [
@@ -47,6 +48,7 @@ const translationsNavItems = [
   { title: "Audiolibros", url: "/audiobooks", icon: Headphones },
   { title: "Portadas", url: "/covers", icon: Image },
   { title: "Metadatos KDP", url: "/kdp-metadata", icon: Tag },
+  { title: "Catálogo de Libros", url: "/book-catalog", icon: BookCopy },
 ];
 
 const settingsNavItems = [

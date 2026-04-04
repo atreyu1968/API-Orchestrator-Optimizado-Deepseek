@@ -826,4 +826,51 @@ export const insertKdpMetadataSchema = createInsertSchema(kdpMetadata).omit({
 export type KdpMetadata = typeof kdpMetadata.$inferSelect;
 export type InsertKdpMetadata = z.infer<typeof insertKdpMetadataSchema>;
 
+export const bookCatalog = pgTable("book_catalog", {
+  id: serial("id").primaryKey(),
+  pseudonymId: integer("pseudonym_id").references(() => pseudonyms.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  authorName: text("author_name").notNull(),
+  amazonUrl: text("amazon_url"),
+  goodreadsUrl: text("goodreads_url"),
+  synopsis: text("synopsis"),
+  genre: text("genre"),
+  asin: text("asin"),
+  isKindleUnlimited: boolean("is_kindle_unlimited").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  displayOrder: integer("display_order").default(0),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertBookCatalogSchema = createInsertSchema(bookCatalog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type BookCatalogEntry = typeof bookCatalog.$inferSelect;
+export type InsertBookCatalogEntry = z.infer<typeof insertBookCatalogSchema>;
+
+export const projectBackMatter = pgTable("project_back_matter", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  reeditProjectId: integer("reedit_project_id").references(() => reeditProjects.id, { onDelete: "cascade" }),
+  enableReviewRequest: boolean("enable_review_request").notNull().default(true),
+  reviewRequestLanguage: text("review_request_language").notNull().default("es"),
+  reviewAuthorName: text("review_author_name"),
+  reviewAmazonUrl: text("review_amazon_url"),
+  reviewGoodreadsUrl: text("review_goodreads_url"),
+  enableAlsoBy: boolean("enable_also_by").notNull().default(true),
+  alsoByTitle: text("also_by_title"),
+  selectedBookIds: jsonb("selected_book_ids").$type<number[]>().default([]),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertProjectBackMatterSchema = createInsertSchema(projectBackMatter).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type ProjectBackMatter = typeof projectBackMatter.$inferSelect;
+export type InsertProjectBackMatter = z.infer<typeof insertProjectBackMatterSchema>;
+
 export * from "./models/chat";

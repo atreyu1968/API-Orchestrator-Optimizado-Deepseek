@@ -31,6 +31,7 @@ import GuidesPage from "@/pages/guides";
 import AudiobooksPage from "@/pages/audiobooks";
 import CoversPage from "@/pages/covers";
 import KdpMetadataPage from "@/pages/kdp-metadata";
+import BookCatalogPage from "@/pages/book-catalog";
 import asdLogo from "@assets/ASD_1766442257801.png";
 
 function Router() {
@@ -52,6 +53,7 @@ function Router() {
       <Route path="/audiobooks" component={AudiobooksPage} />
       <Route path="/covers" component={CoversPage} />
       <Route path="/kdp-metadata" component={KdpMetadataPage} />
+      <Route path="/book-catalog" component={BookCatalogPage} />
       <Route path="/config" component={ConfigPage} />
       <Route component={NotFound} />
     </Switch>

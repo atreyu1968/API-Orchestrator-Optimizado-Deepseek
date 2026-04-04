@@ -8,6 +8,7 @@ import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, ins
 import multer from "multer";
 import mammoth from "mammoth";
 import { generateManuscriptDocx } from "./services/docx-exporter";
+import { generateBackMatterMarkdown } from "./services/back-matter-generator";
 import { z } from "zod";
 import { CopyEditorAgent, cancelProject, ItalianReviewerAgent } from "./agents";
 import { ReeditOrchestrator } from "./orchestrators/reedit-orchestrator";
@@ -222,6 +223,7 @@ export async function registerRoutes(
             id: project.id,
             title: project.title,
             genre: project.genre,
+            pseudonymId: project.pseudonymId,
             chapterCount: chapters.length,
             totalWords,
             finalScore: project.finalScore,
@@ -242,7 +244,8 @@ export async function registerRoutes(
           return {
             id: project.id,
             title: project.title,
-            genre: null, // Reedit projects don't have genre
+            genre: null,
+            pseudonymId: project.pseudonymId,
             chapterCount: chapters.length,
             totalWords: totalWords || project.totalWordCount || 0,
             finalScore: project.bestsellerScore,
@@ -617,6 +620,14 @@ export async function registerRoutes(
         pseudonym = await storage.getPseudonym(project.pseudonymId);
       }
 
+      const backMatter = await storage.getProjectBackMatter(id);
+      let backMatterBooks: any[] = [];
+      if (backMatter?.enableAlsoBy && backMatter.selectedBookIds) {
+        const allBooks = await storage.getAllBookCatalogEntries();
+        const ids = backMatter.selectedBookIds as number[];
+        backMatterBooks = allBooks.filter(b => ids.includes(b.id));
+      }
+
       const buffer = await generateManuscriptDocx({
         project,
         chapters: regularChapters,
@@ -624,6 +635,8 @@ export async function registerRoutes(
         prologue,
         epilogue,
         authorNote,
+        backMatter,
+        backMatterBooks,
       });
 
       const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, "").replace(/\s+/g, "_");
@@ -5248,6 +5261,21 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         lines.push("");
       }
       
+      const backMatter = await storage.getProjectBackMatter(projectId);
+      if (backMatter) {
+        let bmBooks: any[] = [];
+        if (backMatter.enableAlsoBy && backMatter.selectedBookIds) {
+          const allBooks = await storage.getAllBookCatalogEntries();
+          const ids = backMatter.selectedBookIds as number[];
+          bmBooks = allBooks.filter(b => ids.includes(b.id));
+        }
+        const bmMarkdown = generateBackMatterMarkdown(backMatter, bmBooks, "es");
+        if (bmMarkdown.trim()) {
+          lines.push("");
+          lines.push(bmMarkdown);
+        }
+      }
+
       const markdown = lines.join("\n");
       
       res.json({
@@ -7741,6 +7769,20 @@ CRITERIOS:
         markdown += splitLongParagraphs(content.trim()) + "\n\n\n";
         totalWords += content.split(/\s+/).filter((w: string) => w.length > 0).length;
       }
+
+      const backMatter = await storage.getProjectBackMatterByReedit(projectId);
+      if (backMatter) {
+        let bmBooks: any[] = [];
+        if (backMatter.enableAlsoBy && backMatter.selectedBookIds) {
+          const allBooks = await storage.getAllBookCatalogEntries();
+          const ids = backMatter.selectedBookIds as number[];
+          bmBooks = allBooks.filter(b => ids.includes(b.id));
+        }
+        const bmMarkdown = generateBackMatterMarkdown(backMatter, bmBooks, project.detectedLanguage || "es");
+        if (bmMarkdown.trim()) {
+          markdown += "\n" + bmMarkdown;
+        }
+      }
       
       res.json({
         projectId,
@@ -7844,6 +7886,14 @@ CRITERIOS:
         if (pseudonym) authorName = pseudonym.name;
       }
 
+      const backMatter = await storage.getProjectBackMatterByReedit(projectId);
+      let backMatterBooks: any[] = [];
+      if (backMatter?.enableAlsoBy && backMatter.selectedBookIds) {
+        const allBooks = await storage.getAllBookCatalogEntries();
+        const ids = backMatter.selectedBookIds as number[];
+        backMatterBooks = allBooks.filter(b => ids.includes(b.id));
+      }
+
       const { generateGenericManuscriptDocx } = await import("./services/docx-exporter");
       const buffer = await generateGenericManuscriptDocx({
         title: project.title,
@@ -7856,6 +7906,8 @@ CRITERIOS:
             title: c.title,
             content: c.editedContent || c.originalContent || "",
           })),
+        backMatter,
+        backMatterBooks,
       });
       
       const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñüÁÉÍÓÚÑÜ\s-]/g, "").trim();
@@ -10069,6 +10121,93 @@ CRITERIOS:
     try {
       await storage.deleteKdpMetadata(parseInt(req.params.id));
       res.json({ message: "Deleted" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ===== BOOK CATALOG ROUTES =====
+
+  app.get("/api/book-catalog", async (_req: Request, res: Response) => {
+    try {
+      const entries = await storage.getAllBookCatalogEntries();
+      res.json(entries);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/book-catalog/:id", async (req: Request, res: Response) => {
+    try {
+      const entry = await storage.getBookCatalogEntry(parseInt(req.params.id));
+      if (!entry) return res.status(404).json({ error: "Entrada no encontrada" });
+      res.json(entry);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/book-catalog", async (req: Request, res: Response) => {
+    try {
+      const entry = await storage.createBookCatalogEntry(req.body);
+      res.status(201).json(entry);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/book-catalog/:id", async (req: Request, res: Response) => {
+    try {
+      const updated = await storage.updateBookCatalogEntry(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ error: "Entrada no encontrada" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/book-catalog/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteBookCatalogEntry(parseInt(req.params.id));
+      res.json({ message: "Eliminada" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ===== PROJECT BACK MATTER ROUTES =====
+
+  app.get("/api/back-matter/project/:projectId", async (req: Request, res: Response) => {
+    try {
+      const bm = await storage.getProjectBackMatter(parseInt(req.params.projectId));
+      res.json(bm || null);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/back-matter/reedit/:reeditProjectId", async (req: Request, res: Response) => {
+    try {
+      const bm = await storage.getProjectBackMatterByReedit(parseInt(req.params.reeditProjectId));
+      res.json(bm || null);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/back-matter", async (req: Request, res: Response) => {
+    try {
+      const bm = await storage.upsertProjectBackMatter(req.body);
+      res.json(bm);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/back-matter/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteProjectBackMatter(parseInt(req.params.id));
+      res.json({ message: "Eliminado" });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

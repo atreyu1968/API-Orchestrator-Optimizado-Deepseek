@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { BackMatterConfig } from "@/components/back-matter-config";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +49,7 @@ interface CompletedProject {
   id: number;
   title: string;
   genre: string | null;
+  pseudonymId: number | null;
   chapterCount: number;
   totalWords: number;
   finalScore: number | null;
@@ -748,6 +750,15 @@ export default function ExportPage() {
               )}
             </CardContent>
           </Card>
+
+          {selectedProject && (
+            <BackMatterConfig
+              projectId={selectedProject.source === "original" ? selectedProject.id : undefined}
+              reeditProjectId={selectedProject.source === "reedit" ? selectedProject.id : undefined}
+              pseudonymId={selectedProject.pseudonymId}
+              projectTitle={selectedProject.title}
+            />
+          )}
 
           <Card>
             <CardHeader>

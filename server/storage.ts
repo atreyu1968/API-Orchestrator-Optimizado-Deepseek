@@ -33,7 +33,9 @@ import {
   type AudiobookProject, type InsertAudiobookProject,
   type AudiobookChapter, type InsertAudiobookChapter,
   coverPrompts, type CoverPrompt, type InsertCoverPrompt,
-  kdpMetadata, type KdpMetadata, type InsertKdpMetadata
+  kdpMetadata, type KdpMetadata, type InsertKdpMetadata,
+  bookCatalog, type BookCatalogEntry, type InsertBookCatalogEntry,
+  projectBackMatter, type ProjectBackMatter, type InsertProjectBackMatter
 } from "@shared/schema";
 import { eq, desc, asc, and, lt, isNull, or, sql } from "drizzle-orm";
 
@@ -245,6 +247,18 @@ export interface IStorage {
   getKdpMetadataByReeditProject(reeditProjectId: number): Promise<KdpMetadata | undefined>;
   updateKdpMetadata(id: number, data: Partial<KdpMetadata>): Promise<KdpMetadata | undefined>;
   deleteKdpMetadata(id: number): Promise<void>;
+
+  createBookCatalogEntry(data: InsertBookCatalogEntry): Promise<BookCatalogEntry>;
+  getBookCatalogEntry(id: number): Promise<BookCatalogEntry | undefined>;
+  getAllBookCatalogEntries(): Promise<BookCatalogEntry[]>;
+  getBookCatalogEntriesByPseudonym(pseudonymId: number): Promise<BookCatalogEntry[]>;
+  updateBookCatalogEntry(id: number, data: Partial<BookCatalogEntry>): Promise<BookCatalogEntry | undefined>;
+  deleteBookCatalogEntry(id: number): Promise<void>;
+
+  getProjectBackMatter(projectId: number): Promise<ProjectBackMatter | undefined>;
+  getProjectBackMatterByReedit(reeditProjectId: number): Promise<ProjectBackMatter | undefined>;
+  upsertProjectBackMatter(data: InsertProjectBackMatter): Promise<ProjectBackMatter>;
+  deleteProjectBackMatter(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1316,6 +1330,66 @@ export class DatabaseStorage implements IStorage {
 
   async deleteKdpMetadata(id: number): Promise<void> {
     await db.delete(kdpMetadata).where(eq(kdpMetadata.id, id));
+  }
+
+  async createBookCatalogEntry(data: InsertBookCatalogEntry): Promise<BookCatalogEntry> {
+    const [entry] = await db.insert(bookCatalog).values(data).returning();
+    return entry;
+  }
+
+  async getBookCatalogEntry(id: number): Promise<BookCatalogEntry | undefined> {
+    const [entry] = await db.select().from(bookCatalog).where(eq(bookCatalog.id, id));
+    return entry;
+  }
+
+  async getAllBookCatalogEntries(): Promise<BookCatalogEntry[]> {
+    return db.select().from(bookCatalog).orderBy(asc(bookCatalog.displayOrder), desc(bookCatalog.createdAt));
+  }
+
+  async getBookCatalogEntriesByPseudonym(pseudonymId: number): Promise<BookCatalogEntry[]> {
+    return db.select().from(bookCatalog).where(eq(bookCatalog.pseudonymId, pseudonymId)).orderBy(asc(bookCatalog.displayOrder));
+  }
+
+  async updateBookCatalogEntry(id: number, data: Partial<BookCatalogEntry>): Promise<BookCatalogEntry | undefined> {
+    const [updated] = await db.update(bookCatalog).set(data).where(eq(bookCatalog.id, id)).returning();
+    return updated;
+  }
+
+  async deleteBookCatalogEntry(id: number): Promise<void> {
+    await db.delete(bookCatalog).where(eq(bookCatalog.id, id));
+  }
+
+  async getProjectBackMatter(projectId: number): Promise<ProjectBackMatter | undefined> {
+    const [bm] = await db.select().from(projectBackMatter).where(eq(projectBackMatter.projectId, projectId));
+    return bm;
+  }
+
+  async getProjectBackMatterByReedit(reeditProjectId: number): Promise<ProjectBackMatter | undefined> {
+    const [bm] = await db.select().from(projectBackMatter).where(eq(projectBackMatter.reeditProjectId, reeditProjectId));
+    return bm;
+  }
+
+  async upsertProjectBackMatter(data: InsertProjectBackMatter): Promise<ProjectBackMatter> {
+    if (data.projectId) {
+      const existing = await this.getProjectBackMatter(data.projectId);
+      if (existing) {
+        const [updated] = await db.update(projectBackMatter).set(data).where(eq(projectBackMatter.id, existing.id)).returning();
+        return updated;
+      }
+    }
+    if (data.reeditProjectId) {
+      const existing = await this.getProjectBackMatterByReedit(data.reeditProjectId);
+      if (existing) {
+        const [updated] = await db.update(projectBackMatter).set(data).where(eq(projectBackMatter.id, existing.id)).returning();
+        return updated;
+      }
+    }
+    const [created] = await db.insert(projectBackMatter).values(data).returning();
+    return created;
+  }
+
+  async deleteProjectBackMatter(id: number): Promise<void> {
+    await db.delete(projectBackMatter).where(eq(projectBackMatter.id, id));
   }
 }
 

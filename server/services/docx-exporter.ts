@@ -12,7 +12,8 @@ import {
   NumberFormat,
   convertInchesToTwip,
 } from "docx";
-import type { Project, Chapter, Pseudonym } from "@shared/schema";
+import type { Project, Chapter, Pseudonym, ProjectBackMatter, BookCatalogEntry } from "@shared/schema";
+import { generateBackMatterDocxParagraphs } from "./back-matter-generator";
 
 interface ManuscriptData {
   project: Project;
@@ -21,6 +22,8 @@ interface ManuscriptData {
   prologue?: Chapter | null;
   epilogue?: Chapter | null;
   authorNote?: Chapter | null;
+  backMatter?: ProjectBackMatter | null;
+  backMatterBooks?: BookCatalogEntry[];
 }
 
 interface GenericChapter {
@@ -36,10 +39,12 @@ interface GenericManuscriptData {
   tone?: string;
   language?: string;
   chapters: GenericChapter[];
+  backMatter?: ProjectBackMatter | null;
+  backMatterBooks?: BookCatalogEntry[];
 }
 
 export async function generateManuscriptDocx(data: ManuscriptData): Promise<Buffer> {
-  const { project, chapters, pseudonym, prologue, epilogue, authorNote } = data;
+  const { project, chapters, pseudonym, prologue, epilogue, authorNote, backMatter, backMatterBooks } = data;
 
   const authorName = pseudonym?.name || "Anónimo";
   const children: Paragraph[] = [];
@@ -149,6 +154,11 @@ export async function generateManuscriptDocx(data: ManuscriptData): Promise<Buff
       })
     );
     addContentParagraphs(children, authorNote.content);
+  }
+
+  if (backMatter && backMatterBooks) {
+    const bmParagraphs = generateBackMatterDocxParagraphs(backMatter, backMatterBooks, "es");
+    children.push(...bmParagraphs);
   }
 
   const doc = new Document({
@@ -410,7 +420,7 @@ function addContentParagraphs(children: Paragraph[], content: string): void {
 }
 
 export async function generateGenericManuscriptDocx(data: GenericManuscriptData): Promise<Buffer> {
-  const { title, authorName, genre, tone, language, chapters } = data;
+  const { title, authorName, genre, tone, language, chapters, backMatter, backMatterBooks } = data;
 
   const labels: Record<string, { prologue: string; epilogue: string; authorNote: string; chapter: string }> = {
     es: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota del Autor", chapter: "Capítulo" },
@@ -522,6 +532,11 @@ export async function generateGenericManuscriptDocx(data: GenericManuscriptData)
       })
     );
     addContentParagraphs(children, authorNoteChapter.content);
+  }
+
+  if (backMatter && backMatterBooks) {
+    const bmParagraphs = generateBackMatterDocxParagraphs(backMatter, backMatterBooks, language || "es");
+    children.push(...bmParagraphs);
   }
 
   const doc = new Document({

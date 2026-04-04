@@ -195,6 +195,15 @@ Preferred communication style: Simple, everyday language.
 - **Style guide generator** (`style-guide-generator.ts`): Accepts `seriesIdea` parameter. Includes volume planning section in the prompt when multiple books are planned.
 - **Series description auto-save**: If the series has no description and the user provides an idea, it's saved as the series description.
 
+### Back Matter System
+- **Book Catalog** (`book_catalog` table): Stores published book entries (title, author, Amazon URL, Goodreads URL, ASIN, synopsis, genre, KU status). Managed via `/book-catalog` page.
+- **Project Back Matter** (`project_back_matter` table): Per-project configuration for pages added after the manuscript in exports. Supports:
+  - **Review Request Page**: Amazon ToS-compliant review solicitation in 6 languages (ES, EN, FR, DE, IT, PT). No incentives, just honest request.
+  - **Also By Page**: Lists selected books from the catalog with links and synopses.
+- **Export Integration**: Back matter is automatically appended to DOCX and Markdown exports after the author note.
+- **Back Matter Generator**: `server/services/back-matter-generator.ts` — generates both Markdown and DOCX paragraph formats.
+- **Frontend**: Catalog page at `/book-catalog`, back matter config embedded in the Export page when a project is selected.
+
 ### Key NPM Packages
 - `@google/genai`: Google Gemini AI SDK.
 - `drizzle-orm` / `drizzle-zod`: ORM and schema validation.
