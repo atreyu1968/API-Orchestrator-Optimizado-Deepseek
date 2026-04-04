@@ -180,6 +180,13 @@ Ejemplo INCORRECTO: "Lucius entró en el Anfiteatro..." (sin transición desde u
 Ejemplo CORRECTO: "El sol del mediodía castigaba sus hombros mientras Lucius atravesaba la Via Sacra. Una hora de caminata lo separaba del Atrium, tiempo suficiente para que el sudor empapara su túnica. Cuando finalmente divisó las columnas del Anfiteatro..."
 
 ═══════════════════════════════════════════════════════════════════
+NOMBRES DE PERSONAJES - FIDELIDAD AL WORLD BIBLE
+═══════════════════════════════════════════════════════════════════
+- Usa EXACTAMENTE los nombres definidos en el World Bible. No los cambies, no los "mejores", no los sustituyas por nombres más comunes.
+- Si el Arquitecto eligió un nombre inusual, RESPÉTALO — fue elegido a propósito para ser original.
+- NUNCA inventes personajes nuevos que no existan en el World Bible o la escaleta.
+
+═══════════════════════════════════════════════════════════════════
 LÉXICO HISTÓRICO - VOZ DE ÉPOCA (CRÍTICO)
 ═══════════════════════════════════════════════════════════════════
 Consulta SIEMPRE la sección "lexico_historico" del World Bible:

@@ -1,5 +1,6 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
 import { repairJson } from "../utils/json-repair";
+import { storage } from "../storage";
 
 interface ArchitectInput {
   title: string;
@@ -13,6 +14,7 @@ interface ArchitectInput {
   guiaEstilo?: string;
   architectInstructions?: string;
   kindleUnlimitedOptimized?: boolean;
+  forbiddenNames?: string[];
 }
 
 const PHASE1_SYSTEM_PROMPT = `
@@ -35,6 +37,22 @@ Piensa como un guionista de Hollywood + un autor de thrillers #1 en ventas.
 FILOSOFÍA ANTI-REPETICIÓN
 ═══════════════════════════════════════════════════════════════════
 Cada capítulo debe revelar información NUEVA, escalar el conflicto de forma DIFERENTE, y avanzar al menos UN arco narrativo.
+
+═══════════════════════════════════════════════════════════════════
+⛔ ORIGINALIDAD DE NOMBRES DE PERSONAJES (REGLA INVIOLABLE) ⛔
+═══════════════════════════════════════════════════════════════════
+Tienes tendencia GRAVE a reutilizar los mismos nombres y apellidos en todas las novelas. Esto está TERMINANTEMENTE PROHIBIDO.
+
+REGLAS:
+1. NUNCA reutilices nombres o apellidos de personajes que ya existen en otras novelas del autor (se te proporcionará la lista como "NOMBRES YA USADOS EN OTRAS OBRAS").
+2. NUNCA uses nombres genéricos que la IA tiende a repetir. Lista negra ABSOLUTA de nombres/apellidos prohibidos (salvo que la obra sea continuación de una serie donde ya existen):
+   - Marco/Marcos, Elena, Lucía, Gabriel, Isabella/Isabel, Alejandro/Alexander, Sofía, Miguel, Valentina, Adrián, Daniela, Rafael, Carmen, Hugo, Clara, León, Victoria, Emilio, Aurora, Sebastián
+   - Apellidos: Vega, Torres, Mendoza, Rivera, Delgado, Vargas, Navarro, Herrera, Montoya, Castillo, Moreno, Reyes
+3. Investiga nombres REALES pero INUSUALES y MEMORABLES apropiados para la época, cultura y geografía de la novela.
+4. Cada personaje debe tener un nombre que SUENE DIFERENTE a los demás del mismo libro (evita nombres que empiecen igual o rimen).
+5. Los nombres deben reflejar la PROCEDENCIA CULTURAL del personaje (no pongas nombres españoles a personajes japoneses, ni nombres anglosajones a personajes de la Roma antigua, etc.).
+6. Prioriza nombres que el lector RECUERDE: distintivos, con personalidad, que evoquen algo del carácter del personaje.
+7. Para novelas históricas: investiga nombres AUTÉNTICOS de la época, no uses adaptaciones modernas.
 
 ═══════════════════════════════════════════════════════════════════
 PRINCIPIOS DE CONTINUIDAD FÍSICA
@@ -257,6 +275,17 @@ export class ArchitectAgent extends BaseAgent {
     4. Hook en página 1, incidente incitador antes del capítulo 3
     5. Empezar in media res, múltiples líneas de tensión
     ⚠️ En KU, cada página leída = ingresos. El lector NO PUEDE dejar el libro.
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.forbiddenNames && input.forbiddenNames.length > 0 ? `
+    ═══════════════════════════════════════════════════════════════════
+    ⛔ NOMBRES YA USADOS EN OTRAS OBRAS (PROHIBIDO REUTILIZAR) ⛔
+    ═══════════════════════════════════════════════════════════════════
+    Los siguientes nombres y apellidos ya fueron usados en otras novelas del autor.
+    ESTÁ PROHIBIDO reutilizar cualquiera de ellos (ni como nombre ni como apellido):
+    ${input.forbiddenNames.join(", ")}
+    
+    Inventa nombres COMPLETAMENTE NUEVOS, originales y memorables para TODOS los personajes.
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     `;

@@ -246,6 +246,45 @@ export class Orchestrator {
     this.callbacks = callbacks;
   }
   
+  private async extractForbiddenNames(currentSeriesId: number | null | undefined): Promise<string[]> {
+    try {
+      const allWorldBibles = await storage.getAllWorldBibles();
+      const allProjects = await storage.getAllProjects();
+      
+      const projectSeriesMap = new Map<number, number | null>();
+      for (const p of allProjects) {
+        projectSeriesMap.set(p.id, p.seriesId);
+      }
+
+      const names = new Set<string>();
+
+      for (const wb of allWorldBibles) {
+        const wbSeriesId = projectSeriesMap.get(wb.projectId);
+        if (currentSeriesId && wbSeriesId === currentSeriesId) continue;
+
+        const characters = wb.characters as any[];
+        if (!Array.isArray(characters)) continue;
+
+        for (const char of characters) {
+          const nombre = char?.nombre || char?.name;
+          if (!nombre || typeof nombre !== "string") continue;
+          const parts = nombre.trim().split(/\s+/);
+          for (const part of parts) {
+            const clean = part.replace(/[^a-záéíóúüñA-ZÁÉÍÓÚÜÑ]/gi, "");
+            if (clean.length >= 3) {
+              names.add(clean);
+            }
+          }
+        }
+      }
+
+      return [...names];
+    } catch (error) {
+      console.error("[Orchestrator] Error extracting forbidden names:", error);
+      return [];
+    }
+  }
+
   private async trackTokenUsage(
     projectId: number, 
     tokenUsage?: TokenUsage,
@@ -780,6 +819,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         }
       }
 
+      const forbiddenNames = await this.extractForbiddenNames(project.seriesId);
+      if (forbiddenNames.length > 0) {
+        console.log(`[Orchestrator] Nombres prohibidos (${forbiddenNames.length}): ${forbiddenNames.slice(0, 20).join(", ")}${forbiddenNames.length > 20 ? "..." : ""}`);
+      }
+
       const effectivePremise = extendedGuideContent || seriesContextContent
         ? `${project.premise || ""}${extendedGuideContent ? `\n\n--- GUÍA DE ESCRITURA EXTENDIDA ---\n${extendedGuideContent}` : ""}${seriesContextContent}`
         : (project.premise || "");
@@ -811,6 +855,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             hasAuthorNote: project.hasAuthorNote,
             architectInstructions: project.architectInstructions || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+            forbiddenNames,
           });
 
           await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "gemini-2.5-flash", undefined, "world_bible");
