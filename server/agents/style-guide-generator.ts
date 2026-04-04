@@ -17,6 +17,7 @@ interface GenerateGuideParams {
   seriesDescription?: string;
   seriesTotalBooks?: number;
   seriesWorkType?: string;
+  seriesIdea?: string;
   language?: string;
 }
 
@@ -263,6 +264,7 @@ Tu tarea es crear una GUÍA DE ESCRITURA PARA SERIE literaria.
 
 Información de la serie:
 - Título: ${params.seriesTitle}
+${params.seriesIdea ? `- Idea/Concepto: ${params.seriesIdea}` : ''}
 ${params.seriesDescription ? `- Descripción: ${params.seriesDescription}` : ''}
 ${params.seriesTotalBooks ? `- Libros planificados: ${params.seriesTotalBooks}` : ''}
 ${params.seriesWorkType ? `- Tipo: ${params.seriesWorkType}` : ''}
@@ -357,7 +359,7 @@ export async function generateStyleGuide(params: GenerateGuideParams): Promise<G
       userMessage = `Genera una guía de estilo profesional completa para el pseudónimo "${params.pseudonymName}". Define su identidad literaria, voz, y reglas de escritura de forma que cualquier texto generado bajo este pseudónimo sea coherente y reconocible.`;
       break;
     case "series_writing":
-      userMessage = `Genera una guía de escritura exhaustiva para la serie "${params.seriesTitle}"${params.seriesTotalBooks ? ` (${params.seriesTotalBooks} volúmenes planificados)` : ''}. La guía debe asegurar coherencia narrativa, estilística y argumental a lo largo de toda la serie.`;
+      userMessage = `Genera una guía de escritura exhaustiva para la serie "${params.seriesTitle}"${params.seriesTotalBooks ? ` (${params.seriesTotalBooks} volúmenes planificados)` : ''}.${params.seriesIdea ? ` Concepto de la serie: ${params.seriesIdea}` : ''} La guía debe asegurar coherencia narrativa, estilística y argumental a lo largo de toda la serie.${params.seriesTotalBooks && params.seriesTotalBooks > 1 ? ` Incluye al final una sección "PLANIFICACIÓN DE VOLÚMENES" con título sugerido y sinopsis breve para cada uno de los ${params.seriesTotalBooks} libros planificados.` : ''}`;
       break;
   }
 

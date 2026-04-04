@@ -466,6 +466,7 @@ function SeriesWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: an
   const { data: seriesList = [] } = useQuery<Series[]>({ queryKey: ["/api/series"] });
   const { data: styleGuides = [] } = useQuery<StyleGuide[]>({ queryKey: ["/api/style-guides"] });
   const [selectedSeries, setSelectedSeries] = useState<string>("");
+  const [seriesIdea, setSeriesIdea] = useState("");
   const [genre, setGenre] = useState("");
   const [tone, setTone] = useState("");
   const [assignMode, setAssignMode] = useState<"none" | "existing" | "new">("none");
@@ -480,6 +481,7 @@ function SeriesWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: an
   const [maxWordsPerChapter, setMaxWordsPerChapter] = useState(3500);
   const [kindleUnlimitedOptimized, setKindleUnlimitedOptimized] = useState(false);
   const [styleGuideId, setStyleGuideId] = useState<string>("");
+  const [createAllVolumes, setCreateAllVolumes] = useState(false);
 
   const s = seriesList.find((x) => x.id.toString() === selectedSeries);
 
@@ -514,6 +516,20 @@ function SeriesWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: an
           </CardContent>
         </Card>
       )}
+      <div>
+        <Label htmlFor="series-idea-text">Idea / Concepto de la Serie</Label>
+        <Textarea
+          id="series-idea-text"
+          data-testid="input-series-idea"
+          placeholder="Describe la premisa general, el arco narrativo de la serie, los temas principales, el mundo..."
+          value={seriesIdea}
+          onChange={(e) => setSeriesIdea(e.target.value)}
+          rows={4}
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          {s?.description ? "Complementa o reemplaza la descripción guardada en la serie." : "La IA usará esta idea para generar la guía y planificar los volúmenes."}
+        </p>
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label htmlFor="series-genre">Género</Label>
@@ -573,11 +589,13 @@ function SeriesWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: an
       )}
 
       <div>
-        <Label htmlFor="series-project-title">Título del nuevo libro</Label>
+        <Label htmlFor="series-project-title">
+          {createAllVolumes ? "Título del primer libro (los demás se generan automáticamente)" : "Título del nuevo libro"}
+        </Label>
         <Input
           id="series-project-title"
           data-testid="input-series-project-title"
-          placeholder="Título de la novela..."
+          placeholder={createAllVolumes ? "Opcional — la IA generará títulos para cada volumen" : "Título de la novela..."}
           value={projectTitle}
           onChange={(e) => setProjectTitle(e.target.value)}
         />
@@ -641,6 +659,20 @@ function SeriesWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: an
         </label>
       </div>
 
+      {s && s.totalPlannedBooks && s.totalPlannedBooks > 1 && (
+        <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
+          <label className="flex items-center gap-2 text-sm font-medium" data-testid="check-create-all-volumes">
+            <input type="checkbox" checked={createAllVolumes} onChange={(e) => setCreateAllVolumes(e.target.checked)} className="rounded" />
+            Crear proyectos para todos los volúmenes ({s.totalPlannedBooks} libros)
+          </label>
+          <p className="text-xs text-muted-foreground ml-6">
+            {createAllVolumes
+              ? "Se crearán proyectos para todos los volúmenes planificados. La IA generará títulos automáticamente para cada uno."
+              : "Solo se creará un proyecto para el siguiente libro de la serie."}
+          </p>
+        </div>
+      )}
+
       <Button
         data-testid="button-generate-series-guide"
         onClick={() => {
@@ -650,6 +682,7 @@ function SeriesWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: an
             seriesId: s.id,
             seriesTitle: s.title,
             seriesDescription: s.description,
+            seriesIdea: seriesIdea.trim() || undefined,
             seriesTotalBooks: s.totalPlannedBooks,
             seriesWorkType: s.workType,
             genre,
@@ -667,17 +700,21 @@ function SeriesWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: an
             maxWordsPerChapter,
             kindleUnlimitedOptimized,
             styleGuideId: styleGuideId && styleGuideId !== "none" ? parseInt(styleGuideId) : undefined,
+            createAllVolumes,
           });
         }}
         disabled={
-          !selectedSeries || !genre || !tone || !projectTitle.trim() || isGenerating ||
+          !selectedSeries || !genre || !tone || isGenerating ||
+          (!createAllVolumes && !projectTitle.trim()) ||
           (assignMode === "existing" && !assignPseudonymId) ||
           (assignMode === "new" && !newPseudonymName.trim())
         }
         className="w-full"
       >
         {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-        {isGenerating ? "Generando guía y creando proyecto..." : "Generar Guía Extendida y Crear Proyecto"}
+        {isGenerating
+          ? (createAllVolumes ? "Generando guía y creando todos los volúmenes..." : "Generando guía y creando proyecto...")
+          : (createAllVolumes ? `Generar Guía y Crear ${s?.totalPlannedBooks || ""} Proyectos` : "Generar Guía Extendida y Crear Proyecto")}
       </Button>
     </div>
   );
@@ -902,7 +939,9 @@ export default function GuidesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/extended-guides"] });
       queryClient.invalidateQueries({ queryKey: ["/api/series"] });
       let desc = data.title;
-      if (data.projectId) {
+      if (data.projectsCreated && data.projectsCreated > 1) {
+        desc = `${data.title} — ${data.projectsCreated} proyectos creados automáticamente`;
+      } else if (data.projectId) {
         desc = `${data.title} — proyecto creado automáticamente`;
       } else if (data.assignedPseudonymId) {
         desc = `${data.title} — asignada automáticamente al pseudónimo`;

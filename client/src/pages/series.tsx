@@ -42,6 +42,7 @@ export default function SeriesPage() {
   const { toast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState("");
   const [newWorkType, setNewWorkType] = useState<"trilogy" | "series">("trilogy");
   const [newTotalBooks, setNewTotalBooks] = useState(3);
   const [deleteSeriesId, setDeleteSeriesId] = useState<number | null>(null);
@@ -83,7 +84,7 @@ export default function SeriesPage() {
   });
 
   const createSeriesMutation = useMutation({
-    mutationFn: async (data: { title: string; workType: string; totalPlannedBooks: number }) => {
+    mutationFn: async (data: { title: string; workType: string; totalPlannedBooks: number; description?: string }) => {
       const response = await apiRequest("POST", "/api/series", data);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -96,6 +97,7 @@ export default function SeriesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/series"] });
       setIsCreating(false);
       setNewTitle("");
+      setNewDescription("");
       setNewWorkType("trilogy");
       setNewTotalBooks(3);
       toast({ title: "Serie creada", description: "La nueva serie ha sido añadida" });
@@ -428,6 +430,7 @@ export default function SeriesPage() {
       title: newTitle,
       workType: newWorkType,
       totalPlannedBooks: newTotalBooks,
+      ...(newDescription.trim() ? { description: newDescription.trim() } : {}),
     });
   };
 
@@ -608,6 +611,16 @@ export default function SeriesPage() {
                   data-testid="input-total-books"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Idea / Concepto de la Serie (opcional)</Label>
+              <Textarea
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="Describe la premisa general de la serie, el mundo, los temas principales..."
+                rows={3}
+                data-testid="input-series-description"
+              />
             </div>
             <div className="flex gap-2">
               <Button onClick={handleCreateSeries} disabled={createSeriesMutation.isPending}>

@@ -188,6 +188,13 @@ Preferred communication style: Simple, everyday language.
 - **API Routes**: `GET /api/kdp-metadata`, `GET /api/kdp-metadata/:id`, `POST /api/kdp-metadata/generate`, `PATCH /api/kdp-metadata/:id`, `DELETE /api/kdp-metadata/:id`.
 - **Frontend**: `client/src/pages/kdp-metadata.tsx` — project/reedit selector, language/marketplace picker, metadata generation, full detail viewer with HTML preview, edit all fields, copy individual fields or all metadata, character count warnings for description and keywords.
 
+#### Series Guide Generator Improvements
+- **Series creation** (`series.tsx`): Includes optional description/idea field when creating a new series.
+- **Series writing form** (`guides.tsx`): Added "Idea / Concepto de la Serie" textarea for the user to describe the series concept (used by the AI to generate the guide). Added "Crear proyectos para todos los volúmenes" checkbox that auto-creates remaining volume projects (not all planned, only the unfilled ones).
+- **Multi-volume creation** (`routes.ts`): When `createAllVolumes` is enabled, calculates how many volumes already exist and only creates the remaining ones. Extracts AI-suggested titles from the guide's "PLANIFICACIÓN DE VOLÚMENES" section. Falls back to "Serie — Vol. N" naming.
+- **Style guide generator** (`style-guide-generator.ts`): Accepts `seriesIdea` parameter. Includes volume planning section in the prompt when multiple books are planned.
+- **Series description auto-save**: If the series has no description and the user provides an idea, it's saved as the series description.
+
 ### Key NPM Packages
 - `@google/genai`: Google Gemini AI SDK.
 - `drizzle-orm` / `drizzle-zod`: ORM and schema validation.

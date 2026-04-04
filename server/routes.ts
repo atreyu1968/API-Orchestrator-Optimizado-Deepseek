@@ -8573,7 +8573,10 @@ CRITERIOS:
         }
 
         if (bookSummaries.length > 0) {
-          params.seriesDescription = `Serie compuesta por los siguientes libros ya escritos:\n\n${bookSummaries.join("\n\n")}`;
+          const ideaPrefix = params.seriesIdea ? `Concepto de la serie: ${params.seriesIdea}\n\n` : '';
+          params.seriesDescription = `${ideaPrefix}Serie compuesta por los siguientes libros ya escritos:\n\n${bookSummaries.join("\n\n")}`;
+        } else if (params.seriesIdea && !params.seriesDescription) {
+          params.seriesDescription = params.seriesIdea;
         }
 
         if (params.assignPseudonymId || params.pseudonymId) {
@@ -8683,36 +8686,111 @@ CRITERIOS:
           ];
           nextSeriesOrder = allOrders.length > 0 ? Math.max(...allOrders) + 1 : 1;
 
-          await storage.updateSeries(seriesId, {
+          const seriesUpdateData: any = {
             seriesGuide: result.content,
             seriesGuideFileName: "ai-generated-extended.md",
+          };
+          if (req.body.seriesIdea && (!seriesObj?.description || seriesObj.description.trim() === "")) {
+            seriesUpdateData.description = req.body.seriesIdea;
+          }
+          await storage.updateSeries(seriesId, seriesUpdateData);
+        }
+
+        const createAllVolumes = req.body.createAllVolumes === true && isSeriesGuide && seriesId;
+        const seriesObj2 = seriesId ? await storage.getSeries(seriesId) : null;
+        const totalPlanned = seriesObj2?.totalPlannedBooks || 1;
+
+        let existingVolumeCount = 0;
+        if (createAllVolumes && seriesId) {
+          const existingP = await storage.getProjectsBySeries(seriesId);
+          let existingR: any[] = [];
+          let existingI: any[] = [];
+          try {
+            const allR = await storage.getAllReeditProjects();
+            existingR = allR.filter((rp: any) => rp.seriesId === seriesId);
+          } catch (_e) { /* ignore */ }
+          try {
+            existingI = await storage.getImportedManuscriptsBySeries(seriesId);
+          } catch (_e) { /* ignore */ }
+          existingVolumeCount = existingP.length + existingR.length + existingI.length;
+        }
+
+        const remainingVolumes = createAllVolumes ? Math.max(0, totalPlanned - existingVolumeCount) : 1;
+
+        if (createAllVolumes && remainingVolumes === 0) {
+          return res.status(400).json({
+            error: `La serie ya tiene ${existingVolumeCount} volúmenes (${totalPlanned} planificados). No hay volúmenes pendientes por crear.`,
           });
         }
 
-        const projectTitle = req.body.projectTitle || result.title;
-        const project = await storage.createProject({
-          title: projectTitle,
-          premise: isSeriesGuide
-            ? `Continuación de la serie "${req.body.seriesTitle || ""}"`
-            : (req.body.idea || null),
-          genre: req.body.genre || "fantasy",
-          tone: req.body.tone || "dramatic",
-          chapterCount,
-          hasPrologue: req.body.hasPrologue || false,
-          hasEpilogue: req.body.hasEpilogue || false,
-          hasAuthorNote: req.body.hasAuthorNote || false,
-          pseudonymId: targetPseudonymId,
-          styleGuideId: validatedStyleGuideId,
-          extendedGuideId: extendedGuide.id,
-          workType: seriesId ? "series" : "standalone",
-          seriesId: seriesId,
-          seriesOrder: nextSeriesOrder,
-          minWordsPerChapter: minWords,
-          maxWordsPerChapter: maxWords,
-          kindleUnlimitedOptimized: req.body.kindleUnlimitedOptimized || false,
-        });
+        let volumeTitles: string[] = [];
+        if (createAllVolumes && remainingVolumes > 1) {
+          const titleMatch = result.content.match(/PLANIFICACI[OÓ]N DE VOL[UÚ]MENES/i);
+          if (titleMatch) {
+            const sectionStart = result.content.indexOf(titleMatch[0]);
+            const section = result.content.substring(sectionStart, sectionStart + 3000);
+            const titleRegex = /(?:vol(?:umen)?\.?\s*(?:\d+|[ivxlcdm]+)[\s:.\-—]+|libro\s*(?:\d+|[ivxlcdm]+)[\s:.\-—]+|#\s*\d+[\s:.\-—]+|\d+\.\s*)["«]?([^"»\n]+?)["»]?\s*(?:\n|$|—|\|)/gi;
+            let m;
+            const allExtracted: string[] = [];
+            while ((m = titleRegex.exec(section)) !== null) {
+              const t = m[1].trim().replace(/^[-:—\s]+/, '').replace(/[-:—\s]+$/, '');
+              if (t.length > 2 && t.length < 150) allExtracted.push(t);
+            }
+            volumeTitles = allExtracted.slice(existingVolumeCount, existingVolumeCount + remainingVolumes);
+          }
+          while (volumeTitles.length < remainingVolumes) {
+            const volNum = existingVolumeCount + volumeTitles.length + 1;
+            volumeTitles.push(`${req.body.seriesTitle || "Serie"} — Vol. ${volNum}`);
+          }
+        }
 
-        res.json({ ...guide, assignedPseudonymId: targetPseudonymId, extendedGuideId: extendedGuide.id, projectId: project.id, seriesId });
+        if (!createAllVolumes || remainingVolumes <= 1) {
+          volumeTitles = [req.body.projectTitle || result.title];
+        }
+
+        const createdProjectIds: number[] = [];
+        for (let i = 0; i < remainingVolumes; i++) {
+          const volTitle = createAllVolumes
+            ? (i === 0 && req.body.projectTitle ? req.body.projectTitle : volumeTitles[i])
+            : (req.body.projectTitle || result.title);
+          const volOrder = nextSeriesOrder !== null ? nextSeriesOrder + i : null;
+          const volPremise = isSeriesGuide
+            ? (createAllVolumes
+              ? `Volumen ${volOrder || existingVolumeCount + i + 1} de la serie "${req.body.seriesTitle || ""}"`
+              : `Continuación de la serie "${req.body.seriesTitle || ""}"`)
+            : (req.body.idea || null);
+
+          const project = await storage.createProject({
+            title: volTitle,
+            premise: volPremise,
+            genre: req.body.genre || "fantasy",
+            tone: req.body.tone || "dramatic",
+            chapterCount,
+            hasPrologue: req.body.hasPrologue || false,
+            hasEpilogue: req.body.hasEpilogue || false,
+            hasAuthorNote: req.body.hasAuthorNote || false,
+            pseudonymId: targetPseudonymId,
+            styleGuideId: validatedStyleGuideId,
+            extendedGuideId: extendedGuide.id,
+            workType: seriesId ? "series" : "standalone",
+            seriesId: seriesId,
+            seriesOrder: volOrder,
+            minWordsPerChapter: minWords,
+            maxWordsPerChapter: maxWords,
+            kindleUnlimitedOptimized: req.body.kindleUnlimitedOptimized || false,
+          });
+          createdProjectIds.push(project.id);
+        }
+
+        res.json({
+          ...guide,
+          assignedPseudonymId: targetPseudonymId,
+          extendedGuideId: extendedGuide.id,
+          projectId: createdProjectIds[0],
+          projectIds: createdProjectIds,
+          projectsCreated: createdProjectIds.length,
+          seriesId,
+        });
       } else {
         if (targetPseudonymId && (req.body.guideType === "author_style" || req.body.guideType === "pseudonym_style")) {
           await storage.createStyleGuide({
