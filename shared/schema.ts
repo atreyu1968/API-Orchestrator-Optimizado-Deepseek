@@ -873,4 +873,19 @@ export const insertProjectBackMatterSchema = createInsertSchema(projectBackMatte
 export type ProjectBackMatter = typeof projectBackMatter.$inferSelect;
 export type InsertProjectBackMatter = z.infer<typeof insertProjectBackMatterSchema>;
 
+export const nameBlacklist = pgTable("name_blacklist", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("nombre"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertNameBlacklistSchema = createInsertSchema(nameBlacklist).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type NameBlacklistEntry = typeof nameBlacklist.$inferSelect;
+export type InsertNameBlacklistEntry = z.infer<typeof insertNameBlacklistSchema>;
+
 export * from "./models/chat";

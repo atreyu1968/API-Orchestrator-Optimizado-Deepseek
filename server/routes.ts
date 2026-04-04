@@ -10213,6 +10213,46 @@ CRITERIOS:
     }
   });
 
+  // ===== NAME BLACKLIST ROUTES =====
+
+  app.get("/api/name-blacklist", async (_req: Request, res: Response) => {
+    try {
+      const entries = await storage.getAllNameBlacklistEntries();
+      res.json(entries);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/name-blacklist", async (req: Request, res: Response) => {
+    try {
+      const { name, type } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length < 2) {
+        return res.status(400).json({ error: "El nombre debe tener al menos 2 caracteres" });
+      }
+      if (type && !["nombre", "apellido"].includes(type)) {
+        return res.status(400).json({ error: "El tipo debe ser 'nombre' o 'apellido'" });
+      }
+      const entry = await storage.createNameBlacklistEntry({ name: name.trim(), type: type || "nombre" });
+      res.json(entry);
+    } catch (error: any) {
+      if (error.message?.includes("duplicate") || error.code === "23505") {
+        res.status(409).json({ error: "Este nombre ya existe en la lista negra" });
+      } else {
+        res.status(500).json({ error: error.message });
+      }
+    }
+  });
+
+  app.delete("/api/name-blacklist/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteNameBlacklistEntry(parseInt(req.params.id));
+      res.json({ message: "Eliminado" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }
 

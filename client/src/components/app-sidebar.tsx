@@ -29,7 +29,8 @@ import {
   Headphones,
   Image,
   Tag,
-  BookCopy
+  BookCopy,
+  ShieldBan
 } from "lucide-react";
 
 const mainNavItems = [
@@ -49,6 +50,7 @@ const translationsNavItems = [
   { title: "Portadas", url: "/covers", icon: Image },
   { title: "Metadatos KDP", url: "/kdp-metadata", icon: Tag },
   { title: "Catálogo de Libros", url: "/book-catalog", icon: BookCopy },
+  { title: "Lista Negra Nombres", url: "/name-blacklist", icon: ShieldBan },
 ];
 
 const settingsNavItems = [

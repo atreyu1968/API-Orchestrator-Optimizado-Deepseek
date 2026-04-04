@@ -35,6 +35,7 @@ import {
   coverPrompts, type CoverPrompt, type InsertCoverPrompt,
   kdpMetadata, type KdpMetadata, type InsertKdpMetadata,
   bookCatalog, type BookCatalogEntry, type InsertBookCatalogEntry,
+  nameBlacklist, type NameBlacklistEntry, type InsertNameBlacklistEntry,
   projectBackMatter, type ProjectBackMatter, type InsertProjectBackMatter
 } from "@shared/schema";
 import { eq, desc, asc, and, lt, isNull, or, sql } from "drizzle-orm";
@@ -259,6 +260,10 @@ export interface IStorage {
   getProjectBackMatterByReedit(reeditProjectId: number): Promise<ProjectBackMatter | undefined>;
   upsertProjectBackMatter(data: InsertProjectBackMatter): Promise<ProjectBackMatter>;
   deleteProjectBackMatter(id: number): Promise<void>;
+
+  createNameBlacklistEntry(data: InsertNameBlacklistEntry): Promise<NameBlacklistEntry>;
+  getAllNameBlacklistEntries(): Promise<NameBlacklistEntry[]>;
+  deleteNameBlacklistEntry(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1390,6 +1395,19 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProjectBackMatter(id: number): Promise<void> {
     await db.delete(projectBackMatter).where(eq(projectBackMatter.id, id));
+  }
+
+  async createNameBlacklistEntry(data: InsertNameBlacklistEntry): Promise<NameBlacklistEntry> {
+    const [entry] = await db.insert(nameBlacklist).values(data).returning();
+    return entry;
+  }
+
+  async getAllNameBlacklistEntries(): Promise<NameBlacklistEntry[]> {
+    return db.select().from(nameBlacklist).orderBy(asc(nameBlacklist.name));
+  }
+
+  async deleteNameBlacklistEntry(id: number): Promise<void> {
+    await db.delete(nameBlacklist).where(eq(nameBlacklist.id, id));
   }
 }
 

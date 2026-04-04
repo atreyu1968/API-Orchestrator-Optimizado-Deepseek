@@ -278,6 +278,14 @@ export class Orchestrator {
         }
       }
 
+      const blacklistEntries = await storage.getAllNameBlacklistEntries();
+      for (const entry of blacklistEntries) {
+        const clean = entry.name.trim();
+        if (clean.length >= 2) {
+          names.add(clean);
+        }
+      }
+
       return [...names];
     } catch (error) {
       console.error("[Orchestrator] Error extracting forbidden names:", error);
