@@ -2573,9 +2573,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       
       // Si el revisor aprobó pero la puntuación es < 9, decidir si seguir refinando
       if ((result?.veredicto === "APROBADO" || result?.veredicto === "APROBADO_CON_RESERVAS") && currentScore < this.minAcceptableScore) {
-        // After 3+ cycles, if score is 8+ and no major/critical issues, accept
         const hasSerious = result?.issues?.some(i => i.severidad === "critica" || i.severidad === "mayor");
-        if (revisionCycle >= 2 && currentScore >= 9 && !hasSerious) {
+        if (revisionCycle >= 3 && currentScore >= 8 && !hasSerious) {
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
             `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos de refinamiento. Puntuación: ${currentScore}/10. Sin defectos objetivos adicionales.`
           );
@@ -2639,9 +2638,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const issueCount = result?.issues?.length || 0;
       const chaptersToRewrite = result?.capitulos_para_reescribir || [];
       
-      this.callbacks.onAgentStatus("final-reviewer", "editing", 
-        `Manuscrito REQUIERE REVISIÓN. ${issueCount} problemas detectados en ${chaptersToRewrite.length || "varios"} capítulos.`
-      );
+      if (issueCount > 0) {
+        this.callbacks.onAgentStatus("final-reviewer", "editing", 
+          `Manuscrito REQUIERE REVISIÓN. ${issueCount} problemas detectados en ${chaptersToRewrite.length || "varios"} capítulos.`
+        );
+      } else {
+        this.callbacks.onAgentStatus("final-reviewer", "editing", 
+          `Puntuación ${currentScore}/10 insuficiente (objetivo: ${this.minAcceptableScore}+). Refinando sin problemas específicos...`
+        );
+      }
       
       if (chaptersToRewrite.length === 0) {
         if (result?.issues && result.issues.length > 0) {
@@ -2655,25 +2660,18 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           if (affectedChapters.size > 0) {
             chaptersToRewrite.push(...Array.from(affectedChapters));
           } else {
-            this.callbacks.onAgentStatus("final-reviewer", "error", 
-              `Revisión rechazada pero sin capítulos específicos. Marcando como fallo.`
+            this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
+              `Problemas detectados pero sin capítulos específicos. Reintentando evaluación...`
             );
             revisionCycle++;
             continue;
           }
         } else {
-          if (currentScore >= 8) {
-            this.callbacks.onAgentStatus("final-reviewer", "completed", 
-              `Revisión completada sin problemas específicos. Puntuación: ${currentScore}/10. APROBADO.`
-            );
-            return true;
-          } else {
-            this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
-              `Sin problemas específicos pero puntuación ${currentScore}/10 < 8. Continuando refinamiento...`
-            );
-            revisionCycle++;
-            continue;
-          }
+          this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
+            `Sin problemas específicos. Puntuación ${currentScore}/10 (objetivo: ${this.minAcceptableScore}+). Reintentando evaluación...`
+          );
+          revisionCycle++;
+          continue;
         }
       }
 
