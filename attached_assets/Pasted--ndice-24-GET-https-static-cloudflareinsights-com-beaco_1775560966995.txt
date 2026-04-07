@@ -1,0 +1,75 @@
+(índice):24  GET https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516 net::ERR_ABORTED 503 (Service Unavailable)
+(índice):1 <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes">
+VM348 vendor.js:159 Uncaught (in promise) Error: Uncaught Error: No Listener: tabs:outgoing.message.ready
+index-B8kkzmSB.js:8  GET https://escritorgemini.atreyu.net/api/pseudonyms 500 (Internal Server Error)
+(anónimo) @ index-B8kkzmSB.js:8
+o @ index-B8kkzmSB.js:8
+C @ index-B8kkzmSB.js:8
+start @ index-B8kkzmSB.js:8
+fetch @ index-B8kkzmSB.js:8
+#u @ index-B8kkzmSB.js:8
+onSubscribe @ index-B8kkzmSB.js:8
+subscribe @ index-B8kkzmSB.js:8
+(anónimo) @ index-B8kkzmSB.js:8
+Cg @ index-B8kkzmSB.js:6
+wc @ index-B8kkzmSB.js:8
+vi @ index-B8kkzmSB.js:8
+ok @ index-B8kkzmSB.js:8
+Pa @ index-B8kkzmSB.js:8
+wv @ index-B8kkzmSB.js:8
+$r @ index-B8kkzmSB.js:6
+(anónimo) @ index-B8kkzmSB.js:8
+setTimeout
+o @ index-B8kkzmSB.js:8
+d @ index-B8kkzmSB.js:8
+batch @ index-B8kkzmSB.js:8
+#r @ index-B8kkzmSB.js:8
+setData @ index-B8kkzmSB.js:8
+onSuccess @ index-B8kkzmSB.js:8
+j @ index-B8kkzmSB.js:8
+Promise.then
+C @ index-B8kkzmSB.js:8
+start @ index-B8kkzmSB.js:8
+fetch @ index-B8kkzmSB.js:8
+(anónimo) @ index-B8kkzmSB.js:8
+(anónimo) @ index-B8kkzmSB.js:8
+batch @ index-B8kkzmSB.js:8
+refetchQueries @ index-B8kkzmSB.js:8
+(anónimo) @ index-B8kkzmSB.js:8
+batch @ index-B8kkzmSB.js:8
+invalidateQueries @ index-B8kkzmSB.js:8
+onSuccess @ index-B8kkzmSB.js:52
+execute @ index-B8kkzmSB.js:8
+await in execute
+mutate @ index-B8kkzmSB.js:8
+d @ index-B8kkzmSB.js:52
+kS @ index-B8kkzmSB.js:5
+PS @ index-B8kkzmSB.js:5
+TS @ index-B8kkzmSB.js:5
+Zx @ index-B8kkzmSB.js:5
+Yx @ index-B8kkzmSB.js:5
+(anónimo) @ index-B8kkzmSB.js:5
+Fm @ index-B8kkzmSB.js:8
+nx @ index-B8kkzmSB.js:5
+Fu @ index-B8kkzmSB.js:5
+ju @ index-B8kkzmSB.js:5
+KS @ index-B8kkzmSB.js:5
+index-B8kkzmSB.js:8  GET https://escritorgemini.atreyu.net/api/pseudonyms 500 (Internal Server Error)
+(anónimo) @ index-B8kkzmSB.js:8
+o @ index-B8kkzmSB.js:8
+C @ index-B8kkzmSB.js:8
+start @ index-B8kkzmSB.js:8
+fetch @ index-B8kkzmSB.js:8
+#u @ index-B8kkzmSB.js:8
+onSubscribe @ index-B8kkzmSB.js:8
+subscribe @ index-B8kkzmSB.js:8
+(anónimo) @ index-B8kkzmSB.js:8
+Cg @ index-B8kkzmSB.js:6
+wc @ index-B8kkzmSB.js:8
+vi @ index-B8kkzmSB.js:8
+ok @ index-B8kkzmSB.js:8
+Pa @ index-B8kkzmSB.js:8
+wv @ index-B8kkzmSB.js:8
+$r @ index-B8kkzmSB.js:6
+(anónimo) @ index-B8kkzmSB.js:8
+VM348 vendor.js:159 Uncaught (in promise) Error: Uncaught Error: No Listener: tabs:outgoing.message.ready
