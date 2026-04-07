@@ -2272,6 +2272,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     let previousScores: number[] = [];
     const chapterRewriteTracker: Map<number, Map<string, number>> = new Map();
     const MAX_REWRITES_PER_ERROR_TYPE = 3;
+    const MAX_REWRITES_PER_CHAPTER = 3;
     
     let seriesUnresolvedThreadsQA: string[] = [];
     let seriesKeyEventsQA: string[] = [];
