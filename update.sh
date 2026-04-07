@@ -182,6 +182,10 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 
 
 
+ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS goodreads_url TEXT;
+ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS website_url TEXT;
+
 CREATE TABLE IF NOT EXISTS book_catalog (
     id SERIAL PRIMARY KEY,
     pseudonym_id INTEGER REFERENCES pseudonyms(id) ON DELETE SET NULL,
