@@ -1,0 +1,105 @@
+root@escritorasd:~# sudo /var/www/litagents/update.sh
+=== Actualizando LitAgents ===
+[OK] Fish Audio API key ya configurada
+1. Obteniendo ultimos cambios...
+remote: Enumerating objects: 8, done.
+remote: Counting objects: 100% (8/8), done.
+remote: Compressing objects: 100% (2/2), done.
+remote: Total 5 (delta 3), reused 5 (delta 3), pack-reused 0 (from 0)
+Unpacking objects: 100% (5/5), 2.92 KiB | 1.46 MiB/s, done.
+From https://github.com/atreyu1968/escritorasdgemini
+   d09d6db..9b7cad2  main       -> origin/main
+HEAD is now at 9b7cad2 Grant necessary database permissions for all tables and sequences
+   Reparando permisos...
+2. Instalando dependencias...
+
+83 packages are looking for funding
+  run `npm fund` for details
+
+12 vulnerabilities (1 low, 2 moderate, 9 high)
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+3. Sincronizando schema de base de datos...
+   Otorgando permisos de schema al usuario litagents...
+    at async Object.handler (/var/www/litagents/node_modules/drizzle-kit/bin.cjs:93871:9)
+    at async run (/var/www/litagents/node_modules/drizzle-kit/bin.cjs:93117:7) {
+  length: 95,
+  severity: 'ERROR',
+  code: '42501',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'aclchk.c',
+  line: '2981',
+  routine: 'aclcheck_error'
+}
+[OK] Schema sincronizado
+4. Aplicando migraciones SQL adicionales...
+   Aplicando 0000_jazzy_annihilus.sql...
+ALTER TABLE
+ALTER TABLE
+   Aplicando 0001_natural_bromley.sql...
+   Aplicando 0002_add_words_per_chapter.sql...
+ALTER TABLE
+ALTER TABLE
+   Aplicando 0002_remarkable_wilson_fisk.sql...
+   Aplicando 0003_add_bookbox_structure.sql...
+   Aplicando 0003_woozy_piledriver.sql...
+ALTER TABLE
+ALTER TABLE
+   Aplicando 0004_add_author_notes.sql...
+ALTER TABLE
+ALTER TABLE
+   Aplicando 0005_add_author_page.sql...
+5. Compilando aplicacion (frontend + backend)...
+
+A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+✓ 1795 modules transformed.
+rendering chunks...
+computing gzip size...
+../dist/public/index.html                               2.67 kB │ gzip:   1.02 kB
+../dist/public/assets/ASD_1766442257801-Djy0Uxxs.png  272.02 kB
+../dist/public/assets/index-Cr_K22XV.css              114.40 kB │ gzip:  17.13 kB
+../dist/public/assets/index-CjOjP6_E.js               941.85 kB │ gzip: 252.72 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 8.86s
+building server...
+
+  dist/index.cjs  2.0mb ⚠️
+
+⚡ Done in 403ms
+6. Reiniciando servicio...
+
+=== Verificando que la aplicacion responde ===
+Aplicacion respondiendo correctamente
+
+=== Actualizacion completada correctamente ===
+* litagents.service - LitAgents Application
+     Loaded: loaded (/etc/systemd/system/litagents.service; enabled; preset: enabled)
+     Active: active (running) since Tue 2026-04-07 21:11:19 UTC; 5s ago
+ Invocation: 6dba686a609141718097720949dc8227
+       Docs: https://github.com/atreyu1968/escritorasdgemini
+   Main PID: 70485 (node)
+      Tasks: 11 (limit: 18752)
+     Memory: 56.1M (max: 2G, available: 1.9G, peak: 56.4M)
+        CPU: 809ms
+     CGroup: /system.slice/litagents.service
+             `-70485 /usr/bin/node /var/www/litagents/dist/index.cjs
+
+Apr 07 21:11:19 escritorasd systemd[1]: Started litagents.service - LitAgents Application.
+root@escritorasd:~# 
