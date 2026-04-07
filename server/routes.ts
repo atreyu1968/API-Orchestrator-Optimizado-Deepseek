@@ -7973,9 +7973,9 @@ CRITERIOS:
       res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
       res.setHeader("Content-Type", "text/markdown; charset=utf-8");
       res.send(markdown);
-    } catch (error) {
-      console.error("Error exporting reedit manuscript as MD:", error);
-      res.status(500).json({ error: "Failed to export manuscript" });
+    } catch (error: any) {
+      console.error("Error exporting reedit manuscript as MD:", error?.message || error, error?.stack);
+      res.status(500).json({ error: "Failed to export manuscript", detail: error?.message || String(error) });
     }
   });
 
