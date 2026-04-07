@@ -38,9 +38,9 @@ async function buildAll() {
 
   console.log("pushing database schema...");
   try {
-    execSync("npm run db:push", { stdio: "inherit" });
+    execSync("npx drizzle-kit push --force", { stdio: "inherit", timeout: 120000 });
   } catch (e) {
-    console.warn("Database push warning (may be expected):", e);
+    console.warn("Database push warning (may be expected):", (e as Error).message || e);
   }
 
   console.log("building client...");

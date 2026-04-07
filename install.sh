@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # ============================================================
 # Autoinstalador para EscritorasdGemini (LitAgents)
@@ -38,6 +38,7 @@ APP_USER="litagents"
 DB_NAME="litagents_db"
 DB_USER="litagents"
 GITHUB_REPO="https://github.com/atreyu1968/escritorasdgemini.git"
+NODE_MAJOR=20
 
 UNATTENDED=false
 
@@ -67,7 +68,7 @@ while [[ $# -gt 0 ]]; do
             echo "Uso: sudo bash install.sh [opciones]"
             echo ""
             echo "Opciones:"
-            echo "  --unattended, -u              Instalación sin interacción"
+            echo "  --unattended, -u              Instalacion sin interaccion"
             echo "  --gemini-key=KEY              API key de Google Gemini (requerido)"
             echo "  --fish-key=KEY                API key de Fish Audio para audiolibros (opcional)"
             echo "  --password=PASS               Contrasena de acceso (opcional)"
@@ -83,7 +84,7 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         *)
-            print_error "Opción desconocida: $1"
+            print_error "Opcion desconocida: $1"
             echo "Usa --help para ver las opciones disponibles"
             exit 1
             ;;
@@ -102,7 +103,7 @@ PROVIDED_LITAGENTS_PASSWORD="${LITAGENTS_PASSWORD:-}"
 PROVIDED_CF_TUNNEL_TOKEN="${CF_TUNNEL_TOKEN:-}"
 
 print_header "INSTALADOR DE LITAGENTS (EscritorasdGemini)"
-echo "Este script instalará y configurará la aplicación completa."
+echo "Este script instalara y configurara la aplicacion completa."
 echo ""
 
 if [ "$UNATTENDED" = true ]; then
@@ -112,8 +113,8 @@ fi
 IS_UPDATE=false
 if [ -f "$CONFIG_DIR/env" ]; then
     IS_UPDATE=true
-    print_warning "Instalación existente detectada. Se realizará una ACTUALIZACIÓN."
-    print_status "Las credenciales y configuración se preservarán."
+    print_warning "Instalacion existente detectada. Se realizara una ACTUALIZACION."
+    print_status "Las credenciales y configuracion se preservaran."
     source "$CONFIG_DIR/env"
     
     [ -n "$PROVIDED_GEMINI_API_KEY" ] && GEMINI_API_KEY="$PROVIDED_GEMINI_API_KEY"
@@ -121,22 +122,22 @@ if [ -f "$CONFIG_DIR/env" ]; then
     [ -n "$PROVIDED_LITAGENTS_PASSWORD" ] && LITAGENTS_PASSWORD="$PROVIDED_LITAGENTS_PASSWORD"
     [ -n "$PROVIDED_CF_TUNNEL_TOKEN" ] && CF_TUNNEL_TOKEN="$PROVIDED_CF_TUNNEL_TOKEN"
 else
-    print_status "Instalación nueva detectada."
+    print_status "Instalacion nueva detectada."
 fi
 
 if [ "$UNATTENDED" = false ]; then
     echo ""
-    read -p "¿Continuar con la instalación? (s/N): " CONFIRM
+    read -p "Continuar con la instalacion? (s/N): " CONFIRM
     if [[ ! "$CONFIRM" =~ ^[Ss]$ ]]; then
-        echo "Instalación cancelada."
+        echo "Instalacion cancelada."
         exit 0
     fi
 fi
 
 # ============================================================
-# PASO 1: Solicitar API Keys (solo instalación nueva)
+# PASO 1: Solicitar API Keys (solo instalacion nueva)
 # ============================================================
-print_header "PASO 1: Configuración de API Keys"
+print_header "PASO 1: Configuracion de API Keys"
 
 if [ "$IS_UPDATE" = false ]; then
     if [ "$UNATTENDED" = true ]; then
@@ -214,7 +215,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 
 print_status "Instalando paquetes base..."
-apt-get install -y -qq curl git build-essential
+apt-get install -y -qq curl git build-essential python3
 
 print_status "Instalando Nginx..."
 apt-get install -y -qq nginx
@@ -229,29 +230,58 @@ systemctl start postgresql
 print_success "Dependencias del sistema instaladas"
 
 # ============================================================
-# PASO 3: Instalar Node.js 20.x
+# PASO 3: Instalar Node.js
 # ============================================================
-print_header "PASO 3: Instalando Node.js 20.x"
+print_header "PASO 3: Instalando Node.js $NODE_MAJOR"
 
+NEED_NODE_INSTALL=true
 if command -v node &> /dev/null; then
     NODE_VERSION=$(node -v)
-    if [[ "$NODE_VERSION" == v20* ]]; then
-        print_status "Node.js $NODE_VERSION ya está instalado"
+    if [[ "$NODE_VERSION" == v${NODE_MAJOR}* ]]; then
+        print_status "Node.js $NODE_VERSION ya esta instalado"
+        NEED_NODE_INSTALL=false
     else
-        print_status "Actualizando Node.js a v20..."
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1
-        apt-get install -y -qq nodejs
+        print_status "Version actual: $NODE_VERSION. Actualizando a v$NODE_MAJOR..."
     fi
-else
-    print_status "Instalando Node.js 20.x..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1
-    apt-get install -y -qq nodejs
+fi
+
+if [ "$NEED_NODE_INSTALL" = true ]; then
+    print_status "Instalando Node.js ${NODE_MAJOR}.x..."
+    
+    if curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" -o /tmp/nodesource_setup.sh 2>/dev/null; then
+        bash /tmp/nodesource_setup.sh > /dev/null 2>&1
+        apt-get install -y -qq nodejs
+        rm -f /tmp/nodesource_setup.sh
+    else
+        print_status "NodeSource no disponible, instalando via tarball oficial..."
+        ARCH=$(dpkg --print-architecture)
+        case "$ARCH" in
+            amd64) NODE_ARCH="x64" ;;
+            arm64) NODE_ARCH="arm64" ;;
+            armhf) NODE_ARCH="armv7l" ;;
+            *) NODE_ARCH="x64" ;;
+        esac
+        
+        NODE_LATEST=$(curl -fsSL "https://nodejs.org/dist/latest-v${NODE_MAJOR}.x/" | grep -oP "node-v${NODE_MAJOR}\.\d+\.\d+" | head -1)
+        if [ -z "$NODE_LATEST" ]; then
+            print_error "No se pudo determinar la version de Node.js. Instala Node.js $NODE_MAJOR manualmente."
+            exit 1
+        fi
+        
+        curl -fsSL "https://nodejs.org/dist/latest-v${NODE_MAJOR}.x/${NODE_LATEST}-linux-${NODE_ARCH}.tar.xz" -o /tmp/node.tar.xz
+        tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
+        rm -f /tmp/node.tar.xz
+    fi
 fi
 
 chmod 755 /usr/bin/node 2>/dev/null || true
 chmod 755 /usr/bin/npm 2>/dev/null || true
+chmod 755 /usr/local/bin/node 2>/dev/null || true
+chmod 755 /usr/local/bin/npm 2>/dev/null || true
 
-print_success "Node.js $(node -v) instalado"
+NODE_BIN=$(which node)
+NPM_BIN=$(which npm)
+print_success "Node.js $(node -v) instalado ($NODE_BIN)"
 
 # ============================================================
 # PASO 4: Configurar PostgreSQL
@@ -262,7 +292,7 @@ if [ "$IS_UPDATE" = false ]; then
     print_status "Creando usuario y base de datos..."
     
     if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
-        print_warning "Usuario $DB_USER ya existe, actualizando contraseña..."
+        print_warning "Usuario $DB_USER ya existe, actualizando contrasena..."
         sudo -u postgres psql -c "ALTER USER $DB_USER WITH PASSWORD '$DB_PASS';" > /dev/null 2>&1
     else
         sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';" > /dev/null 2>&1
@@ -288,11 +318,12 @@ if [ "$IS_UPDATE" = false ]; then
     
     print_success "Base de datos configurada"
 else
-    print_status "Base de datos existente, omitiendo creación"
+    print_status "Base de datos existente, omitiendo creacion"
     
     if [ -n "$DATABASE_URL" ]; then
-        DB_NAME_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^/]*/\(.*\)|\1|p')
-        DB_USER_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+        _CLEAN_URL=$(echo "$DATABASE_URL" | sed 's|^postgres://|postgresql://|')
+        DB_NAME_PARSED=$(echo "$_CLEAN_URL" | sed -n 's|postgresql://[^/]*/\([^?]*\).*|\1|p')
+        DB_USER_PARSED=$(echo "$_CLEAN_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
         sudo -u postgres psql -d "$DB_NAME_PARSED" -c "GRANT ALL ON SCHEMA public TO $DB_USER_PARSED;" > /dev/null 2>&1 || true
         sudo -u postgres psql -d "$DB_NAME_PARSED" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER_PARSED;" > /dev/null 2>&1 || true
         sudo -u postgres psql -d "$DB_NAME_PARSED" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER_PARSED;" > /dev/null 2>&1 || true
@@ -311,10 +342,14 @@ else
     print_success "Usuario $APP_USER creado"
 fi
 
+APP_USER_HOME=$(eval echo "~$APP_USER")
+mkdir -p "$APP_USER_HOME/.npm"
+chown -R "$APP_USER:$APP_USER" "$APP_USER_HOME/.npm"
+
 # ============================================================
-# PASO 6: Configuración persistente
+# PASO 6: Configuracion persistente
 # ============================================================
-print_header "PASO 6: Guardando configuración"
+print_header "PASO 6: Guardando configuracion"
 
 mkdir -p "$CONFIG_DIR"
 mkdir -p "$LOG_DIR"
@@ -330,7 +365,7 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR/exports"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/audiobooks"
 
 if [ "$IS_UPDATE" = true ]; then
-    print_status "Preservando configuración existente..."
+    print_status "Preservando configuracion existente..."
     
     if [ -n "$GEMINI_API_KEY" ] && [ "$GEMINI_API_KEY" != "$(grep -oP 'GEMINI_API_KEY=\K.*' "$CONFIG_DIR/env" 2>/dev/null)" ]; then
         sed -i "s|^GEMINI_API_KEY=.*|GEMINI_API_KEY=$GEMINI_API_KEY|" "$CONFIG_DIR/env"
@@ -355,7 +390,7 @@ if [ "$IS_UPDATE" = true ]; then
         echo "LITAGENTS_EXPORTS_DIR=$APP_DIR/exports" >> "$CONFIG_DIR/env"
     fi
     
-    print_success "Configuración preservada"
+    print_success "Configuracion preservada"
 else
     DATABASE_URL="postgresql://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME"
     
@@ -375,21 +410,21 @@ EOF
     chmod 600 "$CONFIG_DIR/env"
     chown root:root "$CONFIG_DIR/env"
     
-    print_success "Configuración guardada en $CONFIG_DIR/env"
+    print_success "Configuracion guardada en $CONFIG_DIR/env"
 fi
 
 # ============================================================
-# PASO 7: Clonar/Actualizar código
+# PASO 7: Clonar/Actualizar codigo
 # ============================================================
-print_header "PASO 7: Descargando código fuente"
+print_header "PASO 7: Descargando codigo fuente"
 
 git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
 
 if [ -d "$APP_DIR/.git" ]; then
     print_status "Actualizando repositorio existente..."
     cd "$APP_DIR"
-    sudo -u "$APP_USER" git fetch --all
-    sudo -u "$APP_USER" git reset --hard origin/main
+    git fetch --all 2>&1 || true
+    git reset --hard origin/main 2>&1 || true
 else
     print_status "Clonando repositorio..."
     rm -rf "$APP_DIR"
@@ -403,7 +438,7 @@ else
 fi
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
-print_success "Código descargado en $APP_DIR"
+print_success "Codigo descargado en $APP_DIR"
 
 # ============================================================
 # PASO 8: Instalar dependencias y compilar
@@ -417,41 +452,87 @@ source "$CONFIG_DIR/env"
 set +a
 
 print_status "Ejecutando npm install..."
-sudo -u "$APP_USER" npm install --legacy-peer-deps 2>&1 | tail -5
+NPM_LOG=$(mktemp)
+set +e
+sudo -u "$APP_USER" -H \
+    env "HOME=$APP_USER_HOME" "PATH=$PATH" \
+    npm install --legacy-peer-deps > "$NPM_LOG" 2>&1
+NPM_EXIT=$?
+set -e
+tail -10 "$NPM_LOG"
+if [ "$NPM_EXIT" -ne 0 ]; then
+    print_warning "npm install fallo (exit code $NPM_EXIT). Reintentando..."
+    set +e
+    sudo -u "$APP_USER" -H \
+        env "HOME=$APP_USER_HOME" "PATH=$PATH" \
+        npm install --legacy-peer-deps > "$NPM_LOG" 2>&1
+    NPM_EXIT=$?
+    set -e
+    tail -10 "$NPM_LOG"
+    if [ "$NPM_EXIT" -ne 0 ]; then
+        print_error "npm install fallo dos veces. Log completo:"
+        cat "$NPM_LOG"
+        rm -f "$NPM_LOG"
+        exit 1
+    fi
+fi
+rm -f "$NPM_LOG"
 
-print_status "Compilando aplicación..."
-sudo -u "$APP_USER" npm run build 2>&1 | tail -5
+print_status "Compilando aplicacion..."
+BUILD_LOG=$(mktemp)
+set +e
+sudo -u "$APP_USER" -H \
+    env "HOME=$APP_USER_HOME" "PATH=$PATH" \
+    "DATABASE_URL=$DATABASE_URL" \
+    "NODE_ENV=production" \
+    npm run build > "$BUILD_LOG" 2>&1
+BUILD_EXIT=$?
+set -e
 
-print_status "Ejecutando migraciones de schema..."
-timeout 120 bash -c 'yes | sudo -u "'$APP_USER'" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push 2>&1 | tail -5' || {
-    print_warning "drizzle-kit push se colgo. Reintentando..."
-    timeout 120 bash -c 'yes | sudo -u "'$APP_USER'" --preserve-env=DATABASE_URL,NODE_ENV npx drizzle-kit push 2>&1 | tail -5' || {
-        print_error "drizzle-kit push fallo dos veces. Revisa la conexion a la base de datos."
-    }
-}
+tail -20 "$BUILD_LOG"
+
+if [ "$BUILD_EXIT" -ne 0 ]; then
+    print_error "La compilacion fallo (exit code $BUILD_EXIT)"
+    echo ""
+    echo "=== Log completo de compilacion ==="
+    cat "$BUILD_LOG"
+    rm -f "$BUILD_LOG"
+    exit 1
+fi
+rm -f "$BUILD_LOG"
+print_success "Aplicacion compilada"
 
 print_status "Verificando que las tablas se crearon correctamente..."
-TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null || echo "0")
+DB_NAME_CHECK="${DB_NAME}"
+if [ "$IS_UPDATE" = true ] && [ -n "$DATABASE_URL" ]; then
+    DB_NAME_CHECK=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^/]*/\([^?]*\).*|\1|p')
+fi
+TABLE_COUNT=$(sudo -u postgres psql -d "$DB_NAME_CHECK" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null || echo "0")
 if [ "$TABLE_COUNT" -gt 0 ] 2>/dev/null; then
     print_success "Base de datos inicializada con $TABLE_COUNT tablas"
 else
-    print_error "Las tablas no se crearon. Revisa la conexion a la base de datos."
+    print_warning "Las tablas no se detectaron via postgres. Verificando con drizzle-kit..."
+    set +e
+    timeout 120 sudo -u "$APP_USER" -H \
+        env "HOME=$APP_USER_HOME" "PATH=$PATH" \
+        "DATABASE_URL=$DATABASE_URL" "NODE_ENV=production" \
+        npx drizzle-kit push --force 2>&1 | tail -10
+    set -e
 fi
 
 print_status "Aplicando migraciones SQL adicionales..."
-DB_USER_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
-DB_PASS_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
-DB_HOST_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|p')
-DB_PORT_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:[^@]*@[^:]*:\([^/]*\)/.*|\1|p')
-DB_NAME_PARSED=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^/]*/\(.*\)|\1|p')
+CLEAN_DB_URL=$(echo "$DATABASE_URL" | sed 's|^postgres://|postgresql://|')
+DB_USER_PARSED=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+DB_PASS_PARSED=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
+DB_HOST_PARSED=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|p')
+DB_PORT_PARSED=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://[^:]*:[^@]*@[^:]*:\([^/]*\)/.*|\1|p')
+DB_NAME_PARSED=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://[^/]*/\([^?]*\).*|\1|p')
 for migration in "$APP_DIR"/migrations/*.sql; do
     if [ -f "$migration" ]; then
         print_status "  $(basename "$migration")..."
-        sudo -u "$APP_USER" PGPASSWORD="$DB_PASS_PARSED" psql -U "$DB_USER_PARSED" -h "$DB_HOST_PARSED" -p "$DB_PORT_PARSED" "$DB_NAME_PARSED" -f "$migration" 2>/dev/null || true
+        PGPASSWORD="$DB_PASS_PARSED" psql -U "$DB_USER_PARSED" -h "$DB_HOST_PARSED" -p "$DB_PORT_PARSED" "$DB_NAME_PARSED" -f "$migration" 2>/dev/null || true
     fi
 done
-
-print_success "Aplicación compilada"
 
 # ============================================================
 # PASO 9: Configurar servicio systemd
@@ -475,7 +556,7 @@ User=$APP_USER
 Group=$APP_USER
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$CONFIG_DIR/env
-ExecStart=/usr/bin/npm start
+ExecStart=$NODE_BIN $APP_DIR/dist/index.cjs
 Restart=always
 RestartSec=10
 StandardOutput=append:$LOG_DIR/app.log
@@ -501,22 +582,22 @@ sleep 5
 if systemctl is-active --quiet "$APP_NAME"; then
     print_success "Servicio $APP_NAME iniciado correctamente"
     
-    print_status "Verificando que la aplicación responde..."
-    for i in 1 2 3 4 5; do
+    print_status "Verificando que la aplicacion responde..."
+    for i in 1 2 3 4 5 6; do
         HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$APP_PORT/api/auth/status" 2>/dev/null || echo "000")
         if [ "$HTTP_CODE" = "200" ]; then
-            print_success "Aplicación respondiendo correctamente en puerto $APP_PORT"
+            print_success "Aplicacion respondiendo correctamente en puerto $APP_PORT"
             break
         fi
-        if [ "$i" -eq 5 ]; then
-            print_warning "La aplicación está corriendo pero no responde aún. Revisa los logs: cat $LOG_DIR/app.log"
+        if [ "$i" -eq 6 ]; then
+            print_warning "La aplicacion esta corriendo pero no responde aun. Revisa los logs: cat $LOG_DIR/app.log"
         fi
-        sleep 2
+        sleep 3
     done
 else
     print_error "Error al iniciar el servicio"
     echo ""
-    echo "=== Últimos logs de la aplicación ==="
+    echo "=== Ultimos logs de la aplicacion ==="
     cat "$LOG_DIR/error.log" 2>/dev/null | tail -20 || journalctl -u "$APP_NAME" -n 20 --no-pager
 fi
 
@@ -588,14 +669,14 @@ if nginx -t > /dev/null 2>&1; then
     systemctl restart nginx
     print_success "Nginx configurado correctamente"
 else
-    print_error "Error en la configuración de Nginx"
+    print_error "Error en la configuracion de Nginx"
     nginx -t
 fi
 
 # ============================================================
 # PASO 11: Configurar logrotate
 # ============================================================
-print_header "PASO 11: Configurando rotación de logs"
+print_header "PASO 11: Configurando rotacion de logs"
 
 cat > "/etc/logrotate.d/$APP_NAME" << EOF
 $LOG_DIR/*.log {
@@ -613,7 +694,7 @@ $LOG_DIR/*.log {
 }
 EOF
 
-print_success "Logrotate configurado (retención: 14 días)"
+print_success "Logrotate configurado (retencion: 14 dias)"
 
 # ============================================================
 # PASO 12: Configurar firewall (UFW)
@@ -625,12 +706,12 @@ if command -v ufw &> /dev/null; then
     ufw allow 'Nginx Full' > /dev/null 2>&1
     
     if ! ufw status | grep -q "Status: active"; then
-        print_warning "UFW no está activo. Puedes activarlo con: sudo ufw enable"
+        print_warning "UFW no esta activo. Puedes activarlo con: sudo ufw enable"
     else
         print_success "Firewall configurado"
     fi
 else
-    print_warning "UFW no instalado. Instálalo con: apt install ufw"
+    print_warning "UFW no instalado. Instalalo con: apt install ufw"
 fi
 
 # ============================================================
@@ -644,12 +725,12 @@ if [ "$UNATTENDED" = true ]; then
     if [ -n "$CF_TOKEN" ]; then
         print_status "Configurando Cloudflare Tunnel desde variable de entorno..."
     else
-        print_status "Cloudflare Tunnel omitido (no se proporcionó CF_TUNNEL_TOKEN)"
+        print_status "Cloudflare Tunnel omitido (no se proporciono CF_TUNNEL_TOKEN)"
     fi
 else
     if [ -z "$CF_TOKEN" ]; then
         echo "Si tienes un Cloudflare Tunnel, puedes configurarlo ahora."
-        echo "Esto te permite acceder a la aplicación desde internet sin abrir puertos."
+        echo "Esto te permite acceder a la aplicacion desde internet sin abrir puertos."
         echo "Puedes obtener el token en: https://one.dash.cloudflare.com/"
         echo ""
         read -p "Token de Cloudflare Tunnel (Enter para omitir): " CF_TOKEN
@@ -659,8 +740,15 @@ fi
 if [ -n "$CF_TOKEN" ]; then
     print_status "Instalando cloudflared..."
     
+    ARCH=$(dpkg --print-architecture)
+    case "$ARCH" in
+        amd64) CF_ARCH="amd64" ;;
+        arm64) CF_ARCH="arm64" ;;
+        *) CF_ARCH="amd64" ;;
+    esac
+    
     curl -L -o /tmp/cloudflared.deb \
-        https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb 2>/dev/null
+        "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CF_ARCH}.deb" 2>/dev/null
     dpkg -i /tmp/cloudflared.deb > /dev/null 2>&1
     rm -f /tmp/cloudflared.deb
     
@@ -676,7 +764,7 @@ if [ -n "$CF_TOKEN" ]; then
     if systemctl is-active --quiet cloudflared; then
         print_success "Cloudflare Tunnel configurado"
     else
-        print_warning "Cloudflare Tunnel instalado pero puede requerir configuración adicional"
+        print_warning "Cloudflare Tunnel instalado pero puede requerir configuracion adicional"
     fi
 else
     print_status "Cloudflare Tunnel omitido"
@@ -706,7 +794,7 @@ DB_USER=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
 DB_PASS=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
 DB_HOST=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|p')
 DB_PORT=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:[^@]*@[^:]*:\([^/]*\)/.*|\1|p')
-DB_NAME=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^/]*/\(.*\)|\1|p')
+DB_NAME=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^/]*/\([^?]*\).*|\1|p')
 
 PGPASSWORD="$DB_PASS" pg_dump -U "$DB_USER" -h "$DB_HOST" -p "$DB_PORT" "$DB_NAME" > "$BACKUP_DIR/db_$DATE.sql"
 
@@ -722,12 +810,12 @@ chmod +x "$APP_DIR/backup.sh"
 
 cat > "$APP_DIR/logs.sh" << EOF
 #!/bin/bash
-echo "=== Últimos logs de la aplicación ==="
+echo "=== Ultimos logs de la aplicacion ==="
 echo ""
-echo "--- app.log (últimas 50 líneas) ---"
-tail -50 $LOG_DIR/app.log 2>/dev/null || echo "Sin logs de aplicación"
+echo "--- app.log (ultimas 50 lineas) ---"
+tail -50 $LOG_DIR/app.log 2>/dev/null || echo "Sin logs de aplicacion"
 echo ""
-echo "--- error.log (últimas 30 líneas) ---"
+echo "--- error.log (ultimas 30 lineas) ---"
 tail -30 $LOG_DIR/error.log 2>/dev/null || echo "Sin errores"
 echo ""
 echo "--- Estado del servicio ---"
@@ -741,13 +829,13 @@ print_success "Scripts de utilidad creados"
 # ============================================================
 # RESUMEN FINAL
 # ============================================================
-print_header "INSTALACIÓN COMPLETADA"
+print_header "INSTALACION COMPLETADA"
 
 SERVER_IP=$(hostname -I | awk '{print $1}')
 
-echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║              LitAgents instalado correctamente               ║${NC}"
-echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
+echo -e "${GREEN}+--------------------------------------------------------------+${NC}"
+echo -e "${GREEN}|              LitAgents instalado correctamente               |${NC}"
+echo -e "${GREEN}+--------------------------------------------------------------+${NC}"
 echo ""
 echo -e "${CYAN}Acceso:${NC}"
 echo "  URL Local:     http://$SERVER_IP"
@@ -759,7 +847,7 @@ echo -e "${CYAN}Directorios de archivos:${NC}"
 echo "  Entrada (inbox): $APP_DIR/inbox"
 echo "  Exportaciones:   $APP_DIR/exports"
 echo ""
-echo -e "${CYAN}Comandos útiles:${NC}"
+echo -e "${CYAN}Comandos utiles:${NC}"
 echo "  Estado:        sudo systemctl status $APP_NAME"
 echo "  Logs app:      sudo $APP_DIR/logs.sh"
 echo "  Logs tiempo real: tail -f $LOG_DIR/app.log"
@@ -771,8 +859,8 @@ echo -e "${CYAN}Subir manuscritos:${NC}"
 echo "  scp archivo.docx usuario@$SERVER_IP:$APP_DIR/inbox/"
 echo ""
 echo -e "${CYAN}Archivos importantes:${NC}"
-echo "  Configuración: $CONFIG_DIR/env"
-echo "  Aplicación:    $APP_DIR"
+echo "  Configuracion: $CONFIG_DIR/env"
+echo "  Aplicacion:    $APP_DIR"
 echo "  Logs:          $LOG_DIR"
 echo ""
 if [ -n "$LITAGENTS_PASSWORD" ]; then
