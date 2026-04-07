@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
 import { storage } from "./storage";
-import { Orchestrator } from "./orchestrator";
+import { Orchestrator, extractForbiddenNames } from "./orchestrator";
 import { queueManager } from "./queue-manager";
 import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema } from "@shared/schema";
 import multer from "multer";
@@ -2347,6 +2347,8 @@ export async function registerRoutes(
           const { generateStyleGuide: genGuide } = await import("./agents/style-guide-generator");
           const firstLang = resolvedBooks[0]?.detectedLanguage || "es";
 
+          const psForbiddenNames = await extractForbiddenNames(null);
+
           const pseudoGuideResult = await genGuide({
             guideType: "pseudonym_style",
             pseudonymName: createdPseudonym.name,
@@ -2354,6 +2356,7 @@ export async function registerRoutes(
             pseudonymGenre: newPseudonym.defaultGenre || undefined,
             pseudonymTone: newPseudonym.defaultTone || undefined,
             language: firstLang,
+            forbiddenNames: psForbiddenNames.length > 0 ? psForbiddenNames : undefined,
           });
 
           await storage.createStyleGuide({
@@ -2451,6 +2454,8 @@ export async function registerRoutes(
 
       const firstLang = resolvedBooks[0]?.detectedLanguage || "es";
 
+      const seriesForbiddenNames = await extractForbiddenNames(newSeries.id);
+
       const guideResult = await generateStyleGuide({
         guideType: "series_writing",
         seriesTitle: seriesTitle.trim(),
@@ -2459,6 +2464,7 @@ export async function registerRoutes(
         seriesWorkType: plannedCount === 3 ? "trilogy" : "series",
         pseudonymName,
         language: firstLang,
+        forbiddenNames: seriesForbiddenNames.length > 0 ? seriesForbiddenNames : undefined,
       });
 
       await storage.createGeneratedGuide({
@@ -8678,6 +8684,13 @@ CRITERIOS:
         } else if (params.createPseudonymName) {
           params.pseudonymName = params.createPseudonymName;
         }
+      }
+
+      const parsedSeriesId = params.seriesId ? parseInt(params.seriesId) : null;
+      const guideForbiddenNames = await extractForbiddenNames(Number.isFinite(parsedSeriesId) ? parsedSeriesId : null);
+      if (guideForbiddenNames.length > 0) {
+        params.forbiddenNames = guideForbiddenNames;
+        console.log(`[Guides] Nombres prohibidos para guía (${guideForbiddenNames.length}): ${guideForbiddenNames.slice(0, 15).join(", ")}${guideForbiddenNames.length > 15 ? "..." : ""}`);
       }
 
       const result = await generateStyleGuide(params);

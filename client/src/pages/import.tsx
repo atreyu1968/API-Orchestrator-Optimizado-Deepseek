@@ -28,8 +28,9 @@ import {
   HardDrive,
   Send,
   BookOpen,
+  User,
 } from "lucide-react";
-import type { ImportedManuscript, ImportedChapter } from "@shared/schema";
+import type { ImportedManuscript, ImportedChapter, Pseudonym } from "@shared/schema";
 
 const SUPPORTED_LANGUAGES = [
   { code: "en", name: "English" },
@@ -378,6 +379,24 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
     },
   });
 
+  const { data: pseudonyms = [] } = useQuery<Pseudonym[]>({
+    queryKey: ['/api/pseudonyms'],
+  });
+
+  const updatePseudonymMutation = useMutation({
+    mutationFn: async (pseudonymId: number | null) => {
+      await apiRequest("PATCH", `/api/imported-manuscripts/${manuscriptId}`, { pseudonymId });
+    },
+    onSuccess: () => {
+      refetchManuscript();
+      queryClient.invalidateQueries({ queryKey: ['/api/imported-manuscripts'] });
+      toast({ title: "Pseudonimo actualizado" });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const editChapterMutation = useMutation({
     mutationFn: async (chapterId: number) => {
       const res = await apiRequest("POST", `/api/imported-chapters/${chapterId}/edit`);
@@ -515,17 +534,17 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-4">
             <div className="text-2xl font-bold">{manuscript.totalChapters || 0}</div>
-            <p className="text-sm text-muted-foreground">Capítulos Totales</p>
+            <p className="text-sm text-muted-foreground">Capitulos Totales</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
             <div className="text-2xl font-bold">{manuscript.processedChapters || 0}</div>
-            <p className="text-sm text-muted-foreground">Capítulos Editados</p>
+            <p className="text-sm text-muted-foreground">Capitulos Editados</p>
           </CardContent>
         </Card>
         <Card>
@@ -538,6 +557,30 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
           <CardContent className="pt-4">
             <div className="text-2xl font-bold font-mono">${totalCost.toFixed(4)}</div>
             <p className="text-sm text-muted-foreground">Coste Total USD</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 space-y-1">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Pseudonimo</p>
+            </div>
+            <Select
+              value={manuscript.pseudonymId ? String(manuscript.pseudonymId) : "none"}
+              onValueChange={(value) => {
+                updatePseudonymMutation.mutate(value === "none" ? null : parseInt(value));
+              }}
+            >
+              <SelectTrigger className="h-8 text-sm" data-testid="select-manuscript-pseudonym">
+                <SelectValue placeholder="Sin asignar" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sin asignar</SelectItem>
+                {pseudonyms.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </CardContent>
         </Card>
       </div>

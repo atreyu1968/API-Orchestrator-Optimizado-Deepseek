@@ -19,6 +19,7 @@ interface GenerateGuideParams {
   seriesWorkType?: string;
   seriesIdea?: string;
   language?: string;
+  forbiddenNames?: string[];
 }
 
 interface GenerateGuideResult {
@@ -345,7 +346,15 @@ Sé exhaustivo y práctico. Esta guía será usada para mantener la coherencia d
 }
 
 export async function generateStyleGuide(params: GenerateGuideParams): Promise<GenerateGuideResult> {
-  const systemPrompt = buildSystemPrompt(params);
+  let systemPrompt = buildSystemPrompt(params);
+
+  if (params.forbiddenNames && params.forbiddenNames.length > 0) {
+    systemPrompt += `\n\n⛔ NOMBRES YA USADOS EN OTRAS OBRAS (PROHIBIDO REUTILIZAR) ⛔
+Los siguientes nombres y apellidos ya fueron usados en otras novelas del mismo autor. ESTÁ TERMINANTEMENTE PROHIBIDO reutilizar cualquiera de ellos en esta guía, ni como sugerencia de personaje, ni como ejemplo, ni como nombre ni como apellido:
+${params.forbiddenNames.join(", ")}
+
+Si necesitas sugerir nombres de personajes, inventa nombres COMPLETAMENTE NUEVOS y originales que NO aparezcan en esta lista.`;
+  }
 
   let userMessage = "";
   switch (params.guideType) {

@@ -184,6 +184,7 @@ export interface IStorage {
   // Reedit World Bibles
   createReeditWorldBible(data: InsertReeditWorldBible): Promise<ReeditWorldBible>;
   getReeditWorldBibleByProject(projectId: number): Promise<ReeditWorldBible | undefined>;
+  getAllReeditWorldBibles(): Promise<ReeditWorldBible[]>;
   updateReeditWorldBible(id: number, data: Partial<ReeditWorldBible>): Promise<ReeditWorldBible | undefined>;
   deleteReeditWorldBible(projectId: number): Promise<void>;
 
@@ -1084,6 +1085,10 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(reeditWorldBibles.id))
       .limit(1);
     return bible;
+  }
+
+  async getAllReeditWorldBibles(): Promise<ReeditWorldBible[]> {
+    return db.select().from(reeditWorldBibles);
   }
 
   async updateReeditWorldBible(id: number, data: Partial<ReeditWorldBible>): Promise<ReeditWorldBible | undefined> {

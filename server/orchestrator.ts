@@ -247,50 +247,7 @@ export class Orchestrator {
   }
   
   private async extractForbiddenNames(currentSeriesId: number | null | undefined): Promise<string[]> {
-    try {
-      const allWorldBibles = await storage.getAllWorldBibles();
-      const allProjects = await storage.getAllProjects();
-      
-      const projectSeriesMap = new Map<number, number | null>();
-      for (const p of allProjects) {
-        projectSeriesMap.set(p.id, p.seriesId);
-      }
-
-      const names = new Set<string>();
-
-      for (const wb of allWorldBibles) {
-        const wbSeriesId = projectSeriesMap.get(wb.projectId);
-        if (currentSeriesId && wbSeriesId === currentSeriesId) continue;
-
-        const characters = wb.characters as any[];
-        if (!Array.isArray(characters)) continue;
-
-        for (const char of characters) {
-          const nombre = char?.nombre || char?.name;
-          if (!nombre || typeof nombre !== "string") continue;
-          const parts = nombre.trim().split(/\s+/);
-          for (const part of parts) {
-            const clean = part.replace(/[^a-záéíóúüñA-ZÁÉÍÓÚÜÑ]/gi, "");
-            if (clean.length >= 3) {
-              names.add(clean);
-            }
-          }
-        }
-      }
-
-      const blacklistEntries = await storage.getAllNameBlacklistEntries();
-      for (const entry of blacklistEntries) {
-        const clean = entry.name.trim();
-        if (clean.length >= 2) {
-          names.add(clean);
-        }
-      }
-
-      return [...names];
-    } catch (error) {
-      console.error("[Orchestrator] Error extracting forbidden names:", error);
-      return [];
-    }
+    return extractForbiddenNames(currentSeriesId);
   }
 
   private async trackTokenUsage(
@@ -5201,5 +5158,68 @@ Responde SOLO con un JSON válido con la estructura:
         `Capítulo ${chapter.chapterNumber} pulido correctamente`
       );
     }
+  }
+}
+
+function extractCharacterNames(characters: any[], names: Set<string>): void {
+  if (!Array.isArray(characters)) return;
+  for (const char of characters) {
+    const nombre = char?.nombre || char?.name;
+    if (!nombre || typeof nombre !== "string") continue;
+    const parts = nombre.trim().split(/\s+/);
+    for (const part of parts) {
+      const clean = part.replace(/[^a-záéíóúüñA-ZÁÉÍÓÚÜÑ]/gi, "");
+      if (clean.length >= 3) {
+        names.add(clean);
+      }
+    }
+  }
+}
+
+export async function extractForbiddenNames(currentSeriesId: number | null | undefined): Promise<string[]> {
+  try {
+    const allWorldBibles = await storage.getAllWorldBibles();
+    const allProjects = await storage.getAllProjects();
+
+    const projectSeriesMap = new Map<number, number | null>();
+    for (const p of allProjects) {
+      projectSeriesMap.set(p.id, p.seriesId);
+    }
+
+    const names = new Set<string>();
+
+    for (const wb of allWorldBibles) {
+      const wbSeriesId = projectSeriesMap.get(wb.projectId);
+      if (currentSeriesId && wbSeriesId === currentSeriesId) continue;
+      extractCharacterNames(wb.characters as any[], names);
+    }
+
+    try {
+      const allReeditProjects = await storage.getAllReeditProjects();
+      const reeditSeriesMap = new Map<number, number | null>();
+      for (const rp of allReeditProjects) {
+        reeditSeriesMap.set(rp.id, (rp as any).seriesId ?? null);
+      }
+
+      const allReeditWorldBibles = await storage.getAllReeditWorldBibles();
+      for (const rwb of allReeditWorldBibles) {
+        const rwbSeriesId = reeditSeriesMap.get(rwb.projectId);
+        if (currentSeriesId && rwbSeriesId === currentSeriesId) continue;
+        extractCharacterNames(rwb.characters as any[], names);
+      }
+    } catch (_e) {}
+
+    const blacklistEntries = await storage.getAllNameBlacklistEntries();
+    for (const entry of blacklistEntries) {
+      const clean = entry.name.trim();
+      if (clean.length >= 2) {
+        names.add(clean);
+      }
+    }
+
+    return [...names];
+  } catch (error) {
+    console.error("[extractForbiddenNames] Error:", error);
+    return [];
   }
 }
