@@ -58,8 +58,11 @@ CATEGORÍAS DE ANÁLISIS:
 3. RITMO/PACING: Escenas demasiado rápidas o lentas, acción sin preparación, clímax planos
 4. ESTILO: Repeticiones léxicas, frases demasiado largas (>45 palabras), voz pasiva excesiva, muletillas
 5. DIÁLOGO: Diálogos artificiales, todos los personajes hablan igual, exposición forzada
-6. PERSONAJES: Comportamientos fuera de carácter, arcos rotos, personajes planos
+6. PERSONAJES: Comportamientos fuera de carácter, arcos rotos, personajes planos, secundarios arquetípicos sin subversión
 7. AMBIENTACIÓN: Descripciones genéricas, anacronismos, falta de coherencia sensorial
+8. EPÍTETOS REPETIDOS: Rasgos físicos mencionados múltiples veces (color de ojos, accesorios como gafas, cicatrices). Máximo 1 mención por rasgo por capítulo. Si "ojos verde esmeralda" o similar aparece 3+ veces: severidad CRITICA.
+9. MONÓLOGO EN ACCIÓN: Bloques de reflexión filosófica/moral (100+ palabras) que interrumpen escenas de tensión (persecuciones, peleas, descubrimientos, clímax). La regla de oro del thriller es MOSTRAR, no CONTAR. Máximo 1 frase interna breve durante acción.
+10. PERSONAJES CLICHÉ: Secundarios que son puro arquetipo sin subversión (hacker cínico, novata asustadiza, mentor sabio, jefe duro pero justo). Cada secundario importante debe tener un defecto que contradiga su rol y motivación propia.
 
 SISTEMA DE PUNTUACIÓN ESTRICTO:
 - 10: PERFECTO - cero problemas
@@ -72,7 +75,7 @@ RESPONDE SOLO EN JSON:
 {
   "score": 7,
   "issues": [
-    {"categoria": "continuidad|trama|ritmo|estilo|dialogo|personajes|ambientacion", "descripcion": "Descripción detallada", "severidad": "critica|mayor|menor", "ubicacion": "Párrafo o sección donde ocurre"}
+    {"categoria": "continuidad|trama|ritmo|estilo|dialogo|personajes|ambientacion|epitetos_repetidos|monologo_en_accion|personajes_cliche", "descripcion": "Descripción detallada", "severidad": "critica|mayor|menor", "ubicacion": "Párrafo o sección donde ocurre"}
   ],
   "strengths": ["Fortaleza 1"],
   "suggestions": ["Sugerencia específica y accionable"],
@@ -100,8 +103,9 @@ ${prevContext}
 CAPÍTULO COMPLETO:
 ${content}
 
-Evalúa CADA categoría (continuidad, trama, ritmo, estilo, diálogo, personajes, ambientación).
+Evalúa CADA categoría (continuidad, trama, ritmo, estilo, diálogo, personajes, ambientación, epitetos_repetidos, monologo_en_accion, personajes_cliche).
 Sé EXHAUSTIVO en la detección de problemas. Cada issue debe tener categoría, descripción, severidad y ubicación.
+PRESTA ESPECIAL ATENCIÓN a: epítetos/rasgos físicos repetidos (máx 1 mención por rasgo por capítulo), bloques reflexivos durante escenas de acción, y secundarios arquetípicos sin subversión.
 RESPONDE EN JSON.`;
     
     const response = await this.generateContent(prompt);
@@ -147,6 +151,17 @@ TU MISIÓN es transformar prosa aceptable en prosa EXCELENTE, manteniendo la voz
    - Eliminar clichés ("un escalofrío recorrió su espalda")
    - Mostrar vs contar (show don't tell) cuando sea más efectivo
    - Detalles específicos > descripciones genéricas
+
+3b. EPÍTETOS REPETIDOS (PRIORIDAD MÁXIMA):
+   - Busca rasgos físicos mencionados más de 1 vez en el capítulo (color de ojos, accesorios, cicatrices, tipo de cabello)
+   - ELIMINA todas las menciones excepto la primera. El lector recuerda.
+   - Sustituye las repeticiones por: nombre propio, cargo, acción o relación ("su compañero")
+   - Ejemplo: si "ojos verde esmeralda" aparece 4 veces, conserva solo la primera y reescribe las otras 3
+
+3c. MONÓLOGO EN ESCENAS DE ACCIÓN:
+   - En escenas de tensión (peleas, persecuciones, descubrimientos, clímax): elimina bloques reflexivos de más de 1-2 frases
+   - Máximo 1 frase interna breve entre acciones. Las reflexiones largas van en momentos de calma.
+   - Sustituye reflexiones innecesarias por ACCIONES que muestren la emoción
 
 4. TRANSICIONES:
    - Suavizar saltos entre escenas
@@ -1183,6 +1198,14 @@ REGLAS INVIOLABLES:
 - Prefiere AÑADIR contenido a ELIMINAR (preserva el trabajo del autor)
 - Las escenas nuevas deben tener propósito narrativo, no solo resolver el problema técnico
 
+=== PROBLEMAS DE EPÍTETOS Y RITMO (PRIORIDAD ALTA) ===
+
+20. EPÍTETOS REPETIDOS: Si un rasgo físico (color de ojos, accesorios, cicatrices) se menciona más de 1 vez en el capítulo, ELIMINA todas las menciones excepto la primera. El lector recuerda. Sustituye por nombre propio, cargo, acción o relación.
+
+21. MONÓLOGO EN ESCENAS DE ACCIÓN: Si detectas bloques reflexivos (100+ palabras de filosofía/moral) interrumpiendo escenas de tensión, ELIMÍNALOS o redúcelos a 1 frase interna breve. Sustituye por ACCIONES que muestren la emoción. Las reflexiones profundas solo van en momentos de calma.
+
+22. PERSONAJES CLICHÉ: Si un secundario es puro arquetipo (hacker cínico, novata asustadiza, mentor sabio), añade un momento donde muestre una faceta inesperada: vulnerabilidad, competencia sorprendente, duda, motivación egoísta coherente. Un detalle basta para romper el cliché.
+
 FORMATO DE RESPUESTA (JSON):
 {
   "fasePlanificacion": {
@@ -1194,7 +1217,7 @@ FORMATO DE RESPUESTA (JSON):
   "capituloReescrito": "TEXTO COMPLETO del capítulo con las correcciones integradas de forma invisible",
   "cambiosRealizados": [
     {
-      "tipoProblema": "hueco_argumental|subplot|arco_incompleto|contradiccion|antagonista|foreshadowing",
+      "tipoProblema": "hueco_argumental|subplot|arco_incompleto|contradiccion|antagonista|foreshadowing|epitetos_repetidos|monologo_en_accion|personajes_cliche",
       "descripcionProblema": "El problema específico que se corrigió",
       "solucionAplicada": "Descripción detallada de la corrección",
       "contenidoNuevo": "El texto nuevo añadido (primeras 200 palabras si es largo)",
