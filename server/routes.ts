@@ -7884,9 +7884,9 @@ CRITERIOS:
         totalWords,
         markdown,
       });
-    } catch (error) {
-      console.error("Error exporting reedit manuscript as markdown JSON:", error);
-      res.status(500).json({ error: "Failed to export manuscript" });
+    } catch (error: any) {
+      console.error("Error exporting reedit manuscript as markdown JSON:", error?.message || error, error?.stack);
+      res.status(500).json({ error: "Failed to export manuscript", detail: error?.message || String(error) });
     }
   });
 
