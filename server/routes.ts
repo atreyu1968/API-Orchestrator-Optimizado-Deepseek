@@ -2565,7 +2565,14 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
       if (plannedCount > resolvedBooks.length) {
         const remaining = plannedCount - resolvedBooks.length;
         const usedOrders = new Set(resolvedBooks.map((b: any) => b.seriesOrder));
+        const assignedOrders: number[] = [];
         let nextOrder = 1;
+        for (let i = 0; i < remaining; i++) {
+          while (usedOrders.has(nextOrder)) nextOrder++;
+          usedOrders.add(nextOrder);
+          assignedOrders.push(nextOrder);
+          nextOrder++;
+        }
 
         let activeStyleGuideId: number | null = null;
         if (targetPseudonymId) {
@@ -2574,27 +2581,52 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
           if (activeGuide) activeStyleGuideId = activeGuide.id;
         }
 
+        const existingTitles = resolvedBooks.map((b: any) => b.title);
+        const firstReedit = resolvedBooks.find((b: any) => b._type === "reedit");
+        const inferredGenre = firstReedit?.genre || "fiction";
+        const inferredTone = firstReedit?.tone || "dramatic";
+
+        let generatedTitles: string[] = [];
+        try {
+          const { GoogleGenAI } = await import("@google/genai");
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+          const titlePrompt = `Eres un experto en títulos de novelas. La serie se llama "${seriesTitle.trim()}" y ya tiene estos libros:\n${existingTitles.map((t: string, i: number) => `- Libro ${resolvedBooks[i].seriesOrder}: "${t}"`).join("\n")}\n\nGenera exactamente ${remaining} título(s) para los libros restantes de la serie (posiciones: ${assignedOrders.join(", ")}). Los títulos deben:\n- Ser coherentes con el estilo y temática de los títulos existentes\n- Sonar como títulos reales de novela, no genéricos\n- Estar en el mismo idioma que los títulos existentes\n\nResponde SOLO con un JSON array de strings, sin explicaciones. Ejemplo: ["Título 1", "Título 2"]`;
+
+          const titleResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [{ role: "user", parts: [{ text: titlePrompt }] }],
+            config: { temperature: 0.8, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 512 } },
+          });
+
+          const titleText = (titleResponse.text || "").replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+          const parsed = JSON.parse(titleText);
+          if (Array.isArray(parsed) && parsed.length >= remaining) {
+            generatedTitles = parsed.slice(0, remaining).map((t: any) => String(t).trim());
+          }
+        } catch (e: any) {
+          console.warn("Could not generate titles for remaining books, using fallback:", e.message);
+        }
+
         for (let i = 0; i < remaining; i++) {
-          while (usedOrders.has(nextOrder)) nextOrder++;
-          usedOrders.add(nextOrder);
+          const order = assignedOrders[i];
+          const title = generatedTitles[i] || `${seriesTitle.trim()} — Libro ${order}`;
 
           await storage.createProject({
-            title: `Volumen ${nextOrder}`,
-            genre: "fiction",
-            tone: "dramatic",
+            title,
+            genre: inferredGenre,
+            tone: inferredTone,
             chapterCount: 35,
             hasPrologue: true,
             hasEpilogue: true,
             hasAuthorNote: false,
             workType: "series",
             seriesId: newSeries.id,
-            seriesOrder: nextOrder,
+            seriesOrder: order,
             pseudonymId: targetPseudonymId,
             styleGuideId: activeStyleGuideId,
             kindleUnlimitedOptimized: false,
           });
           projectsCreated++;
-          nextOrder++;
         }
       }
 
