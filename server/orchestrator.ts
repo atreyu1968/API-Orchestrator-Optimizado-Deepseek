@@ -1275,10 +1275,17 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             this.callbacks.onAgentStatus("editor", "completed", `${sectionLabel} aprobado (${currentScore}/10)`);
           } else {
             refinementAttempts++;
+
+            if (refinementAttempts >= 2 && currentScore < bestVersion.score) {
+              console.log(`[Orchestrator] Anti-degradation: ${sectionLabel} scored ${currentScore}/10, worse than best ${bestVersion.score}/10 after ${refinementAttempts} attempts. Stopping rewrites.`);
+              this.callbacks.onAgentStatus("editor", "editing",
+                `${sectionLabel} degradándose (${currentScore}/10 < mejor ${bestVersion.score}/10). Usando mejor versión.`
+              );
+              break;
+            }
             
             refinementInstructions = this.buildRefinementInstructions(editorResult.result);
             
-            // LOG REJECTION PATTERN FOR POST-FIRST-REWRITE ANALYSIS
             if (refinementAttempts >= 2 && editorResult.result) {
               const diagnosis = editorResult.result.plan_quirurgico;
               console.log(`\n${'='.repeat(80)}`);
@@ -1895,6 +1902,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             this.callbacks.onAgentStatus("editor", "completed", `${sectionLabel} aprobado (${currentScore}/10)`);
           } else {
             refinementAttempts++;
+
+            if (refinementAttempts >= 2 && currentScore < bestVersion.score) {
+              console.log(`[Orchestrator Resume] Anti-degradation: ${sectionLabel} scored ${currentScore}/10, worse than best ${bestVersion.score}/10 after ${refinementAttempts} attempts. Stopping rewrites.`);
+              this.callbacks.onAgentStatus("editor", "editing",
+                `${sectionLabel} degradándose (${currentScore}/10 < mejor ${bestVersion.score}/10). Usando mejor versión.`
+              );
+              break;
+            }
+
             refinementInstructions = this.buildRefinementInstructions(editorResult.result);
             this.callbacks.onAgentStatus("editor", "editing", 
               `${sectionLabel} rechazado (${currentScore}/10). Mejor: ${bestVersion.score}/10. Intento ${refinementAttempts}/${this.maxRefinementLoops}.`
