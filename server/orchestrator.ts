@@ -2313,8 +2313,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     let issuesPreviosCorregidos: string[] = [];
     let consecutiveHighScores = 0;
     let previousScores: number[] = [];
-    const chapterRewriteTracker: Map<number, { count: number; errorTypes: Set<string> }> = new Map();
-    const MAX_REWRITES_PER_CHAPTER = 3;
+    const chapterRewriteTracker: Map<number, Map<string, number>> = new Map();
+    const MAX_REWRITES_PER_ERROR_TYPE = 3;
     
     let seriesUnresolvedThreadsQA: string[] = [];
     let seriesKeyEventsQA: string[] = [];
@@ -2577,7 +2577,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
       let currentScore = result?.puntuacion_global || 0;
       
-      if (currentScore === 0 && revisionCycle > 0) {
+      if (currentScore === 0 && previousScores.length > 0) {
         console.warn(`[Orchestrator] Anomalous 0/10 score detected in cycle ${revisionCycle + 1} — likely parsing error. Discarding and re-evaluating.`);
         await storage.createActivityLog({
           projectId: project.id,
@@ -2753,27 +2753,27 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           const issuesForCh = result.issues.filter(
             i => (i.capitulos_afectados || []).includes(chNum)
           );
-          const tracker = chapterRewriteTracker.get(chNum);
-          if (tracker) {
-            const newIssueTypes = issuesForCh.filter(i => !tracker.errorTypes.has(i.categoria));
-            const exhaustedTypes = issuesForCh.filter(i => tracker.errorTypes.has(i.categoria) && tracker.count >= MAX_REWRITES_PER_CHAPTER);
-            if (exhaustedTypes.length > 0 && newIssueTypes.length === 0) {
-              console.log(`[Orchestrator] Chapter ${chNum} skipped: all ${exhaustedTypes.length} issues are exhausted types (${exhaustedTypes.map(i => i.categoria).join(", ")}), ${tracker.count} rewrites done`);
+          const typeCounts = chapterRewriteTracker.get(chNum);
+          if (typeCounts) {
+            const exhaustedTypes = issuesForCh.filter(i => (typeCounts.get(i.categoria) || 0) >= MAX_REWRITES_PER_ERROR_TYPE);
+            const actionableTypes = issuesForCh.filter(i => (typeCounts.get(i.categoria) || 0) < MAX_REWRITES_PER_ERROR_TYPE);
+            if (exhaustedTypes.length > 0 && actionableTypes.length === 0) {
+              const exhaustedSummary = exhaustedTypes.map(i => `${i.categoria}(${typeCounts.get(i.categoria)}x)`).join(", ");
+              console.log(`[Orchestrator] Chapter ${chNum} skipped: all issues exhausted — ${exhaustedSummary}`);
               await storage.createActivityLog({
                 projectId: project.id,
                 level: "warning",
-                message: `Capítulo ${chNum} omitido: errores [${exhaustedTypes.map(i => i.categoria).join(", ")}] ya intentados ${tracker.count} veces sin mejora — limitación aceptada`,
+                message: `Capítulo ${chNum} omitido: errores [${exhaustedSummary}] agotados — limitación aceptada`,
                 agentRole: "final-reviewer",
               });
               continue;
             }
-            if (exhaustedTypes.length > 0 && newIssueTypes.length > 0) {
+            if (exhaustedTypes.length > 0 && actionableTypes.length > 0) {
               result.issues = result.issues.filter(i => {
                 if (!(i.capitulos_afectados || []).includes(chNum)) return true;
-                if (tracker.errorTypes.has(i.categoria) && tracker.count >= MAX_REWRITES_PER_CHAPTER) return false;
-                return true;
+                return (typeCounts.get(i.categoria) || 0) < MAX_REWRITES_PER_ERROR_TYPE;
               });
-              console.log(`[Orchestrator] Chapter ${chNum}: filtered ${exhaustedTypes.length} exhausted error types, keeping ${newIssueTypes.length} new types`);
+              console.log(`[Orchestrator] Chapter ${chNum}: filtered ${exhaustedTypes.length} exhausted types, keeping ${actionableTypes.length} actionable`);
             }
           }
           filteredChapters.push(chNum);
@@ -2829,15 +2829,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
         const issuesSummary = issuesForChapter.map(i => i.categoria).join(", ") || "correcciones generales";
 
-        const existing = chapterRewriteTracker.get(chapterNum);
-        if (existing) {
-          existing.count++;
-          issuesForChapter.forEach(i => existing.errorTypes.add(i.categoria));
-        } else {
-          chapterRewriteTracker.set(chapterNum, {
-            count: 1,
-            errorTypes: new Set(issuesForChapter.map(i => i.categoria)),
-          });
+        if (!chapterRewriteTracker.has(chapterNum)) {
+          chapterRewriteTracker.set(chapterNum, new Map());
+        }
+        const typeCounts = chapterRewriteTracker.get(chapterNum)!;
+        for (const issue of issuesForChapter) {
+          typeCounts.set(issue.categoria, (typeCounts.get(issue.categoria) || 0) + 1);
         }
 
         await storage.updateChapter(chapter.id, { 
@@ -3905,16 +3902,24 @@ Responde SOLO con un JSON válido con la estructura:
   }
 
   private buildLimitationsFromTracker(
-    tracker: Map<number, { count: number; errorTypes: Set<string> }>,
+    tracker: Map<number, Map<string, number>>,
     maxRewrites: number
   ): Array<{ capitulo: number; errorTypes: string[]; intentos: number }> {
     const limitations: Array<{ capitulo: number; errorTypes: string[]; intentos: number }> = [];
-    for (const [chapterNum, data] of tracker) {
-      if (data.count >= maxRewrites) {
+    for (const [chapterNum, typeCounts] of tracker) {
+      const exhaustedTypes: string[] = [];
+      let maxAttempts = 0;
+      for (const [errorType, count] of typeCounts) {
+        if (count >= maxRewrites) {
+          exhaustedTypes.push(errorType);
+          if (count > maxAttempts) maxAttempts = count;
+        }
+      }
+      if (exhaustedTypes.length > 0) {
         limitations.push({
           capitulo: chapterNum,
-          errorTypes: Array.from(data.errorTypes),
-          intentos: data.count,
+          errorTypes: exhaustedTypes,
+          intentos: maxAttempts,
         });
       }
     }

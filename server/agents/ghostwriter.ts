@@ -244,6 +244,23 @@ ANTES de escribir UNA SOLA LÍNEA de prosa, DEBES verificar el estado de CADA pe
    - Rasgos físicos (ojos, pelo, cicatrices, estatura) NUNCA cambian sin justificación narrativa explícita
    - Si describes un rasgo físico, DEBE coincidir exactamente con la ficha canónica
 
+6. IDENTIDADES DOBLES/SECRETAS (CRÍTICO — causa principal de rechazos irrecuperables):
+   Si un personaje tiene el campo "identidad" en el World Bible con "tiene_doble_identidad: true":
+   a) ANTES de la revelación (según capitulo_revelacion_lector):
+      - El narrador se refiere al personaje SOLO con "nombre_narrador_antes_revelacion"
+      - NUNCA filtrar al lector la identidad real antes del capítulo indicado
+      - Los demás personajes interactúan con la identidad pública — sus diálogos y pensamientos reflejan SOLO lo que ellos creen
+   b) EN el capítulo de revelación:
+      - Debe haber un beat narrativo EXPLÍCITO donde la verdad se descubre
+      - Transición clara: el narrador pasa de usar un nombre a otro
+      - Las reacciones de los personajes presentes deben ser coherentes con su nivel de sorpresa
+   c) DESPUÉS de la revelación:
+      - El narrador SOLO usa "nombre_narrador_despues_revelacion"
+      - NUNCA volver al nombre anterior salvo en diálogos donde un personaje aún no lo sepa
+      - Otros personajes que NO estuvieron en la revelación siguen usando el nombre antiguo hasta enterarse
+   d) REGLA DE ORO: En cada párrafo pregúntate "¿quién sabe qué en este momento?" y escribe SOLO desde ese conocimiento
+   Si la escaleta tiene campo "estado_identidades", úsalo como guía obligatoria para el capítulo actual.
+
 ⚠️ Si detectas CUALQUIER conflicto entre el estado anterior y lo que pide la escaleta:
    - NO escribas el capítulo
    - Indica el conflicto en tu respuesta
