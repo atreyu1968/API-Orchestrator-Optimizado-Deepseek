@@ -12,6 +12,7 @@ interface FinalReviewerInput {
   guiaEstilo: string;
   pasadaNumero?: number;
   issuesPreviosCorregidos?: string[];
+  capitulosConLimitaciones?: Array<{ capitulo: number; errorTypes: string[]; intentos: number }>;
   seriesContext?: {
     seriesTitle: string;
     volumeNumber: number;
@@ -478,7 +479,19 @@ REGLAS CRÍTICAS PARA ESTA PASADA:
 IMPORTANTE: Si un issue previo fue corregido satisfactoriamente, NO lo menciones.
 Si el mismo problema persiste EXACTAMENTE igual, puedes reportarlo, pero con nueva redacción.
 El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.
+${input.capitulosConLimitaciones && input.capitulosConLimitaciones.length > 0 ? `
+═══════════════════════════════════════════════════════════════════
+🚫 ERRORES AGOTADOS POR CAPÍTULO — NO REPORTAR NI PENALIZAR
+═══════════════════════════════════════════════════════════════════
+Los siguientes TIPOS DE ERROR en estos capítulos ya fueron intentados múltiples veces sin mejora.
+Son limitaciones estructurales del diseño narrativo. DEBES:
+1. NO reportar estos tipos de error ESPECÍFICOS para estos capítulos
+2. NO incluir estos capítulos en capitulos_para_reescribir por ESTOS motivos
+3. NO penalizar la puntuación global por estos problemas conocidos
+4. Si estos capítulos tienen OTROS tipos de error NUEVOS, SÍ repórtalos normalmente
 
+${input.capitulosConLimitaciones.map(c => `- Capítulo ${c.capitulo}: IGNORAR [${c.errorTypes.join(", ")}] (${c.intentos} intentos fallidos) — otros errores nuevos SÍ reportar`).join("\n")}
+` : ""}
 ═══════════════════════════════════════════════════════════════════
 ⚠️ REGLA DE RENDIMIENTOS DECRECIENTES (PASADA ${input.pasadaNumero})
 ═══════════════════════════════════════════════════════════════════

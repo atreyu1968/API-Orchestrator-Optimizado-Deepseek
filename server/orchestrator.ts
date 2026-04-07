@@ -2313,6 +2313,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     let issuesPreviosCorregidos: string[] = [];
     let consecutiveHighScores = 0;
     let previousScores: number[] = [];
+    const chapterRewriteTracker: Map<number, { count: number; errorTypes: Set<string> }> = new Map();
+    const MAX_REWRITES_PER_CHAPTER = 3;
     
     let seriesUnresolvedThreadsQA: string[] = [];
     let seriesKeyEventsQA: string[] = [];
@@ -2376,6 +2378,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         guiaEstilo,
         pasadaNumero: revisionCycle + 1,
         issuesPreviosCorregidos,
+        capitulosConLimitaciones: this.buildLimitationsFromTracker(chapterRewriteTracker, MAX_REWRITES_PER_CHAPTER),
         seriesContext: seriesContextForReview,
       });
 
@@ -2572,7 +2575,23 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       }
       // === FIN NUEVO ===
 
-      const currentScore = result?.puntuacion_global || 0;
+      let currentScore = result?.puntuacion_global || 0;
+      
+      if (currentScore === 0 && revisionCycle > 0) {
+        console.warn(`[Orchestrator] Anomalous 0/10 score detected in cycle ${revisionCycle + 1} — likely parsing error. Discarding and re-evaluating.`);
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `Puntuación anómala 0/10 descartada (probable error de parseo). Re-evaluando...`,
+          agentRole: "final-reviewer",
+        });
+        this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
+          `Puntuación 0/10 anómala descartada. Re-evaluando manuscrito...`
+        );
+        revisionCycle++;
+        continue;
+      }
+      
       previousScores.push(currentScore);
       
       if (previousScores.length >= 4) {
@@ -2728,6 +2747,57 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
       }
 
+      if (result?.issues) {
+        const filteredChapters: number[] = [];
+        for (const chNum of chaptersToRewrite) {
+          const issuesForCh = result.issues.filter(
+            i => (i.capitulos_afectados || []).includes(chNum)
+          );
+          const tracker = chapterRewriteTracker.get(chNum);
+          if (tracker) {
+            const newIssueTypes = issuesForCh.filter(i => !tracker.errorTypes.has(i.categoria));
+            const exhaustedTypes = issuesForCh.filter(i => tracker.errorTypes.has(i.categoria) && tracker.count >= MAX_REWRITES_PER_CHAPTER);
+            if (exhaustedTypes.length > 0 && newIssueTypes.length === 0) {
+              console.log(`[Orchestrator] Chapter ${chNum} skipped: all ${exhaustedTypes.length} issues are exhausted types (${exhaustedTypes.map(i => i.categoria).join(", ")}), ${tracker.count} rewrites done`);
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warning",
+                message: `Capítulo ${chNum} omitido: errores [${exhaustedTypes.map(i => i.categoria).join(", ")}] ya intentados ${tracker.count} veces sin mejora — limitación aceptada`,
+                agentRole: "final-reviewer",
+              });
+              continue;
+            }
+            if (exhaustedTypes.length > 0 && newIssueTypes.length > 0) {
+              result.issues = result.issues.filter(i => {
+                if (!(i.capitulos_afectados || []).includes(chNum)) return true;
+                if (tracker.errorTypes.has(i.categoria) && tracker.count >= MAX_REWRITES_PER_CHAPTER) return false;
+                return true;
+              });
+              console.log(`[Orchestrator] Chapter ${chNum}: filtered ${exhaustedTypes.length} exhausted error types, keeping ${newIssueTypes.length} new types`);
+            }
+          }
+          filteredChapters.push(chNum);
+        }
+        chaptersToRewrite.length = 0;
+        chaptersToRewrite.push(...filteredChapters);
+      }
+
+      if (chaptersToRewrite.length === 0) {
+        console.log(`[Orchestrator] All chapters in rewrite list were exhausted. Accepting current quality.`);
+        const bestScore = Math.max(...previousScores);
+        if (bestScore >= 8) {
+          this.callbacks.onAgentStatus("final-reviewer", "completed", 
+            `Todos los problemas restantes son limitaciones aceptadas. Puntuación: ${currentScore}/10. APROBADO.`
+          );
+          return true;
+        }
+        this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
+          `Todos los capítulos con problemas ya fueron corregidos al máximo. Re-evaluando...`
+        );
+        revisionCycle++;
+        continue;
+      }
+
       for (let rewriteIndex = 0; rewriteIndex < chaptersToRewrite.length; rewriteIndex++) {
         if (await isProjectCancelledFromDb(project.id)) {
           console.log(`[Orchestrator] Project ${project.id} cancelled during revision. Stopping.`);
@@ -2758,6 +2828,17 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }).join("\n\n");
 
         const issuesSummary = issuesForChapter.map(i => i.categoria).join(", ") || "correcciones generales";
+
+        const existing = chapterRewriteTracker.get(chapterNum);
+        if (existing) {
+          existing.count++;
+          issuesForChapter.forEach(i => existing.errorTypes.add(i.categoria));
+        } else {
+          chapterRewriteTracker.set(chapterNum, {
+            count: 1,
+            errorTypes: new Set(issuesForChapter.map(i => i.categoria)),
+          });
+        }
 
         await storage.updateChapter(chapter.id, { 
           status: "revision",
@@ -3821,6 +3902,23 @@ Responde SOLO con un JSON válido con la estructura:
       default:
         return `el Capítulo ${section.numero}`;
     }
+  }
+
+  private buildLimitationsFromTracker(
+    tracker: Map<number, { count: number; errorTypes: Set<string> }>,
+    maxRewrites: number
+  ): Array<{ capitulo: number; errorTypes: string[]; intentos: number }> {
+    const limitations: Array<{ capitulo: number; errorTypes: string[]; intentos: number }> = [];
+    for (const [chapterNum, data] of tracker) {
+      if (data.count >= maxRewrites) {
+        limitations.push({
+          capitulo: chapterNum,
+          errorTypes: Array.from(data.errorTypes),
+          intentos: data.count,
+        });
+      }
+    }
+    return limitations;
   }
 
   private buildRefinementInstructions(editorResult: EditorResult | undefined): string {

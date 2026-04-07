@@ -71,6 +71,29 @@ NUNCA planifiques:
 4. REGLA DE SETUP/PAYOFF - Todo payoff requiere un setup previo (mínimo 2 capítulos de anticipación)
 
 ═══════════════════════════════════════════════════════════════════
+⚠️ CLARIDAD DE IDENTIDADES — ANTI-CONFUSIÓN (REGLA CRÍTICA) ⚠️
+═══════════════════════════════════════════════════════════════════
+Los errores de "identidad confusa" son IMPOSIBLES de corregir con reescrituras — DEBEN prevenirse en el diseño.
+
+REGLAS OBLIGATORIAS:
+1. IDENTIDADES DOBLES/SECRETAS: Si un personaje tiene una identidad oculta (alias, disfraz, falsa identidad):
+   - Documéntalo EXPLÍCITAMENTE en la World Bible con campos "identidad_publica" e "identidad_real"
+   - Especifica EXACTAMENTE en qué capítulo se revela al lector y en qué capítulo se revela a otros personajes
+   - Define CÓMO el narrador se refiere al personaje ANTES y DESPUÉS de la revelación (nombre A vs nombre B)
+   - NUNCA dejes ambiguo quién sabe qué sobre la identidad en cada momento de la trama
+2. PERSONAJES SIMILARES: Si dos personajes comparten rasgos (gemelos, dobles, impostores):
+   - Dales MARCADORES ÚNICOS inconfundibles (cicatriz, tic verbal, objeto distintivo)
+   - Documenta las diferencias en cada escena donde coexistan
+3. POV Y CONOCIMIENTO: En cada capítulo de la escaleta, declara:
+   - Qué sabe el narrador/POV sobre cada identidad secreta en ese momento
+   - Si hay información que el lector sabe pero el personaje no (ironía dramática), o viceversa
+4. TRANSICIONES DE IDENTIDAD: Si un personaje cambia de nombre/rol/apariencia:
+   - Define el capítulo EXACTO del cambio
+   - El beat narrativo DEBE incluir la transición explícita
+   - Los capítulos posteriores SOLO usan la nueva forma de referirse al personaje
+5. PROHIBIDO: Tramas donde la identidad del personaje sea deliberadamente ambigua sin resolución clara planificada
+
+═══════════════════════════════════════════════════════════════════
 FASE 1: WORLD BIBLE + ESTRUCTURA GLOBAL
 ═══════════════════════════════════════════════════════════════════
 En esta fase, genera SOLO la base de la novela: personajes, mundo, arcos y estructura de actos.
@@ -88,6 +111,15 @@ Genera un JSON con estas claves:
       "catalizador_cambio": "",
       "punto_crisis": "",
       "estado_final": ""
+    },
+    "identidad": {
+      "tiene_doble_identidad": false,
+      "identidad_publica": "Nombre/rol que todos conocen (null si no aplica)",
+      "identidad_real": "Nombre/rol verdadero (null si no aplica)",
+      "capitulo_revelacion_lector": null,
+      "capitulo_revelacion_personajes": null,
+      "nombre_narrador_antes_revelacion": "Cómo lo llama el narrador antes de la revelación",
+      "nombre_narrador_despues_revelacion": "Cómo lo llama el narrador después"
     },
     "relaciones": [{"con": "nombre", "tipo": "alianza/conflicto/romance/mentoria", "evolucion": "cómo cambia"}],
     "vivo": true,
@@ -216,12 +248,14 @@ FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
       "continuidad_entrada": "Estado al iniciar",
       "continuidad_salida": "Estado al terminar",
       "hook_final": "Descripción del gancho para el siguiente capítulo",
-      "nivel_tension": 7
+      "nivel_tension": 7,
+      "estado_identidades": "Quién sabe qué sobre identidades secretas en este punto. Ej: 'El lector sabe que X es Y, pero los personajes no' o 'null si no hay identidades dobles activas'"
     }
   ]
 }
 
 IMPORTANTE: Cada beat es un STRING conciso (1-3 oraciones), NO un objeto complejo. Esto reduce el JSON total.
+IMPORTANTE: Si hay personajes con doble identidad, el campo "estado_identidades" es OBLIGATORIO en cada capítulo donde aparezcan.
 Responde ÚNICAMENTE con el JSON.
 `;
 
