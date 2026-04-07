@@ -2412,12 +2412,12 @@ export async function registerRoutes(
         }
 
         const totalWords = chapters.reduce((sum: number, ch: any) => {
-          const content = ch.editedContent || ch.originalContent || "";
+          const content = ch.editedContent || ch.originalContent || ch.content || "";
           return sum + content.split(/\s+/).length;
         }, 0);
 
         const firstChapters = chapters.slice(0, 3).map((ch: any) => {
-          const content = ch.editedContent || ch.originalContent || "";
+          const content = ch.editedContent || ch.originalContent || ch.content || "";
           return content.substring(0, 500);
         }).join("\n...\n");
 
@@ -2561,7 +2561,45 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
         }
       }
 
+      let projectsCreated = 0;
+      if (plannedCount > resolvedBooks.length) {
+        const remaining = plannedCount - resolvedBooks.length;
+        const usedOrders = new Set(resolvedBooks.map((b: any) => b.seriesOrder));
+        let nextOrder = 1;
+
+        let activeStyleGuideId: number | null = null;
+        if (targetPseudonymId) {
+          const pseudoStyleGuides = await storage.getStyleGuidesByPseudonym(targetPseudonymId);
+          const activeGuide = pseudoStyleGuides.find((g: any) => g.isActive);
+          if (activeGuide) activeStyleGuideId = activeGuide.id;
+        }
+
+        for (let i = 0; i < remaining; i++) {
+          while (usedOrders.has(nextOrder)) nextOrder++;
+          usedOrders.add(nextOrder);
+
+          await storage.createProject({
+            title: `Volumen ${nextOrder}`,
+            genre: "fiction",
+            tone: "dramatic",
+            chapterCount: 35,
+            hasPrologue: true,
+            hasEpilogue: true,
+            hasAuthorNote: false,
+            workType: "series",
+            seriesId: newSeries.id,
+            seriesOrder: nextOrder,
+            pseudonymId: targetPseudonymId,
+            styleGuideId: activeStyleGuideId,
+            kindleUnlimitedOptimized: false,
+          });
+          projectsCreated++;
+          nextOrder++;
+        }
+      }
+
       const parts = [`Serie "${newSeries.title}" creada con ${resolvedBooks.length} libro(s).`];
+      if (projectsCreated > 0) parts.push(`${projectsCreated} proyecto(s) creados para libros restantes.`);
       if (createdPseudonym) parts.push(`Seudónimo "${createdPseudonym.name}" creado.`);
       if (styleGuideGenerated) parts.push("Guía de estilo generada.");
       parts.push("Guía de serie generada.");
@@ -2570,6 +2608,7 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
       res.json({
         series: newSeries,
         booksLinked: resolvedBooks.length,
+        projectsCreated,
         guideGenerated: true,
         worldBibleGenerated: hasWorldBibleData,
         pseudonymCreated: !!createdPseudonym,
