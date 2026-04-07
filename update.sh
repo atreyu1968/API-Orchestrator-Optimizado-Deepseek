@@ -111,6 +111,27 @@ DB_PORT_M=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://[^:]*:[^@]*@[^:]*:\([^
 DB_NAME_M=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://[^/]*/\([^?]*\).*|\1|p')
 
 PGPASSWORD="$DB_PASS_M" psql -U "$DB_USER_M" -h "$DB_HOST_M" -p "$DB_PORT_M" "$DB_NAME_M" -c "
+CREATE TABLE IF NOT EXISTS pseudonyms (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    bio TEXT,
+    default_genre TEXT,
+    default_tone TEXT,
+    email TEXT,
+    goodreads_url TEXT,
+    website_url TEXT,
+    created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS style_guides (
+    id SERIAL PRIMARY KEY,
+    pseudonym_id INTEGER NOT NULL REFERENCES pseudonyms(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS cover_prompts (
     id SERIAL PRIMARY KEY,
     project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
@@ -159,9 +180,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     expires_at TIMESTAMP NOT NULL
 );
 
-ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS email TEXT;
-ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS goodreads_url TEXT;
-ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS website_url TEXT;
+
 
 CREATE TABLE IF NOT EXISTS book_catalog (
     id SERIAL PRIMARY KEY,
