@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { User, Plus, Trash2, FileText, Edit2, Check, X, Upload, Loader2, Download, Mail, ExternalLink, BookOpen, Library } from "lucide-react";
+import { User, Plus, Trash2, FileText, Edit2, Check, X, Upload, Loader2, Download, Mail, ExternalLink, BookOpen, Library, Globe } from "lucide-react";
 import { Link } from "wouter";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Pseudonym, StyleGuide, Project, Series } from "@shared/schema";
@@ -24,6 +24,7 @@ export default function PseudonymsPage() {
   const [newBio, setNewBio] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newGoodreadsUrl, setNewGoodreadsUrl] = useState("");
+  const [newWebsiteUrl, setNewWebsiteUrl] = useState("");
   const [newGuideTitle, setNewGuideTitle] = useState("");
   const [newGuideContent, setNewGuideContent] = useState("");
   const [isUploadingFile, setIsUploadingFile] = useState(false);
@@ -57,7 +58,7 @@ export default function PseudonymsPage() {
   const pseudonymProjects = allProjects.filter(p => p.pseudonymId === selectedPseudonym);
 
   const createPseudonymMutation = useMutation({
-    mutationFn: async (data: { name: string; bio?: string; email?: string; goodreadsUrl?: string }) => {
+    mutationFn: async (data: { name: string; bio?: string; email?: string; goodreadsUrl?: string; websiteUrl?: string }) => {
       const response = await apiRequest("POST", "/api/pseudonyms", data);
       return response.json();
     },
@@ -68,6 +69,7 @@ export default function PseudonymsPage() {
       setNewBio("");
       setNewEmail("");
       setNewGoodreadsUrl("");
+      setNewWebsiteUrl("");
       toast({ title: "Pseudónimo creado", description: "El nuevo pseudónimo ha sido añadido" });
     },
     onError: () => {
@@ -141,6 +143,7 @@ export default function PseudonymsPage() {
       bio: newBio || undefined,
       email: newEmail || undefined,
       goodreadsUrl: newGoodreadsUrl || undefined,
+      websiteUrl: newWebsiteUrl || undefined,
     });
   };
 
@@ -304,6 +307,12 @@ export default function PseudonymsPage() {
                   onChange={(e) => setNewGoodreadsUrl(e.target.value)}
                   data-testid="input-pseudonym-goodreads"
                 />
+                <Input
+                  placeholder="URL de página web del autor (opcional)"
+                  value={newWebsiteUrl}
+                  onChange={(e) => setNewWebsiteUrl(e.target.value)}
+                  data-testid="input-pseudonym-website"
+                />
                 <div className="flex gap-2">
                   <Button 
                     size="sm" 
@@ -317,7 +326,7 @@ export default function PseudonymsPage() {
                   <Button 
                     size="sm" 
                     variant="ghost" 
-                    onClick={() => { setIsCreating(false); setNewName(""); setNewBio(""); setNewEmail(""); setNewGoodreadsUrl(""); }}
+                    onClick={() => { setIsCreating(false); setNewName(""); setNewBio(""); setNewEmail(""); setNewGoodreadsUrl(""); setNewWebsiteUrl(""); }}
                     data-testid="button-cancel-pseudonym"
                   >
                     <X className="h-3 w-3" />
@@ -406,6 +415,7 @@ export default function PseudonymsPage() {
                   {[
                     { field: "email", icon: <Mail className="h-4 w-4" />, label: "Email", value: selectedPseudonymData.email },
                     { field: "goodreadsUrl", icon: <BookOpen className="h-4 w-4" />, label: "Goodreads", value: selectedPseudonymData.goodreadsUrl },
+                    { field: "websiteUrl", icon: <Globe className="h-4 w-4" />, label: "Web", value: selectedPseudonymData.websiteUrl },
                   ].map(({ field, icon, label, value }) => (
                     <div key={field} className="flex items-center gap-2 text-sm">
                       {icon}
@@ -426,7 +436,7 @@ export default function PseudonymsPage() {
                       ) : (
                         <div className="flex items-center gap-1 flex-1">
                           {value ? (
-                            field === "goodreadsUrl" && /^https?:\/\//i.test(value) ? (
+                            (field === "goodreadsUrl" || field === "websiteUrl") && /^https?:\/\//i.test(value) ? (
                               <a href={value} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate" data-testid={`link-${field}`}>
                                 {value} <ExternalLink className="h-3 w-3 inline ml-1" />
                               </a>

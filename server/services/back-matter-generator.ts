@@ -55,10 +55,20 @@ const ALSO_BY_TITLES: Record<string, (authorName: string) => string> = {
   pt: (name) => `Também de ${name}`,
 };
 
+const WEBSITE_CTA_TEXTS: Record<string, string> = {
+  es: "Descubre todos mis libros en mi web:",
+  en: "Discover all my books on my website:",
+  fr: "Découvrez tous mes livres sur mon site :",
+  de: "Entdecken Sie alle meine Bücher auf meiner Website:",
+  it: "Scopri tutti i miei libri sul mio sito:",
+  pt: "Descubra todos os meus livros no meu site:",
+};
+
 export function generateBackMatterMarkdown(
   config: ProjectBackMatter,
   selectedBooks: BookCatalogEntry[],
-  language: string = "es"
+  language: string = "es",
+  authorWebsiteUrl?: string | null
 ): string {
   const lines: string[] = [];
   const lang = language in REVIEW_TEXTS ? language : "es";
@@ -100,14 +110,19 @@ export function generateBackMatterMarkdown(
         lines.push(book.synopsis);
         lines.push("");
       }
-      const links: string[] = [];
-      if (book.amazonUrl) links.push(`[Amazon](${book.amazonUrl})`);
-      if (book.goodreadsUrl) links.push(`[Goodreads](${book.goodreadsUrl})`);
-      if (book.isKindleUnlimited) links.push("*Disponible en Kindle Unlimited*");
-      if (links.length > 0) {
-        lines.push(links.join(" | "));
+      if (book.isKindleUnlimited) {
+        const kuText = lang === "en" ? "*Available on Kindle Unlimited*" : "*Disponible en Kindle Unlimited*";
+        lines.push(kuText);
         lines.push("");
       }
+    }
+
+    if (authorWebsiteUrl) {
+      const ctaText = WEBSITE_CTA_TEXTS[lang] || WEBSITE_CTA_TEXTS.es;
+      lines.push("");
+      lines.push(`**${ctaText}**`);
+      lines.push(`**[${authorWebsiteUrl}](${authorWebsiteUrl})**`);
+      lines.push("");
     }
   }
 
@@ -117,7 +132,8 @@ export function generateBackMatterMarkdown(
 export function generateBackMatterDocxParagraphs(
   config: ProjectBackMatter,
   selectedBooks: BookCatalogEntry[],
-  language: string = "es"
+  language: string = "es",
+  authorWebsiteUrl?: string | null
 ): Paragraph[] {
   const paragraphs: Paragraph[] = [];
   const lang = language in REVIEW_TEXTS ? language : "es";
@@ -230,27 +246,6 @@ export function generateBackMatterDocxParagraphs(
         }
       }
 
-      const linkParts: TextRun[] = [];
-      if (book.amazonUrl) {
-        linkParts.push(new TextRun({ text: "Amazon: ", bold: true, font: "Georgia", size: 20 }));
-        linkParts.push(new TextRun({ text: book.amazonUrl, font: "Georgia", size: 20, color: "0066CC" }));
-      }
-      if (book.goodreadsUrl) {
-        if (linkParts.length > 0) linkParts.push(new TextRun({ text: "  |  ", font: "Georgia", size: 20 }));
-        linkParts.push(new TextRun({ text: "Goodreads: ", bold: true, font: "Georgia", size: 20 }));
-        linkParts.push(new TextRun({ text: book.goodreadsUrl, font: "Georgia", size: 20, color: "0066CC" }));
-      }
-
-      if (linkParts.length > 0) {
-        paragraphs.push(
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { before: 100, after: 100 },
-            children: linkParts,
-          })
-        );
-      }
-
       if (book.isKindleUnlimited) {
         paragraphs.push(
           new Paragraph({
@@ -270,6 +265,24 @@ export function generateBackMatterDocxParagraphs(
       }
 
       paragraphs.push(new Paragraph({ spacing: { after: 200 } }));
+    }
+
+    if (authorWebsiteUrl) {
+      const ctaText = WEBSITE_CTA_TEXTS[lang] || WEBSITE_CTA_TEXTS.es;
+      paragraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 200, after: 100 },
+          children: [new TextRun({ text: ctaText, bold: true, font: "Georgia", size: 24 })],
+        })
+      );
+      paragraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 300 },
+          children: [new TextRun({ text: authorWebsiteUrl, bold: true, font: "Georgia", size: 24, color: "0066CC" })],
+        })
+      );
     }
   }
 

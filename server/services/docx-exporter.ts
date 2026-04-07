@@ -41,6 +41,7 @@ interface GenericManuscriptData {
   chapters: GenericChapter[];
   backMatter?: ProjectBackMatter | null;
   backMatterBooks?: BookCatalogEntry[];
+  authorWebsiteUrl?: string | null;
 }
 
 export async function generateManuscriptDocx(data: ManuscriptData): Promise<Buffer> {
@@ -157,7 +158,7 @@ export async function generateManuscriptDocx(data: ManuscriptData): Promise<Buff
   }
 
   if (backMatter && backMatterBooks) {
-    const bmParagraphs = generateBackMatterDocxParagraphs(backMatter, backMatterBooks, "es");
+    const bmParagraphs = generateBackMatterDocxParagraphs(backMatter, backMatterBooks, "es", pseudonym?.websiteUrl);
     children.push(...bmParagraphs);
   }
 
@@ -420,7 +421,7 @@ function addContentParagraphs(children: Paragraph[], content: string): void {
 }
 
 export async function generateGenericManuscriptDocx(data: GenericManuscriptData): Promise<Buffer> {
-  const { title, authorName, genre, tone, language, chapters, backMatter, backMatterBooks } = data;
+  const { title, authorName, genre, tone, language, chapters, backMatter, backMatterBooks, authorWebsiteUrl } = data;
 
   const labels: Record<string, { prologue: string; epilogue: string; authorNote: string; chapter: string }> = {
     es: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota del Autor", chapter: "Capítulo" },
@@ -535,7 +536,7 @@ export async function generateGenericManuscriptDocx(data: GenericManuscriptData)
   }
 
   if (backMatter && backMatterBooks) {
-    const bmParagraphs = generateBackMatterDocxParagraphs(backMatter, backMatterBooks, language || "es");
+    const bmParagraphs = generateBackMatterDocxParagraphs(backMatter, backMatterBooks, language || "es", authorWebsiteUrl);
     children.push(...bmParagraphs);
   }
 

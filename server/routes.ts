@@ -2829,8 +2829,8 @@ ${series.seriesGuide.substring(0, 50000)}`;
   app.patch("/api/pseudonyms/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
-      const { name, bio, email, goodreadsUrl } = req.body;
-      const updateData: { name?: string; bio?: string; email?: string | null; goodreadsUrl?: string | null } = {};
+      const { name, bio, email, goodreadsUrl, websiteUrl } = req.body;
+      const updateData: { name?: string; bio?: string; email?: string | null; goodreadsUrl?: string | null; websiteUrl?: string | null } = {};
       if (name !== undefined) updateData.name = name;
       if (bio !== undefined) updateData.bio = bio;
       if (email !== undefined) {
@@ -2844,6 +2844,12 @@ ${series.seriesGuide.substring(0, 50000)}`;
           return res.status(400).json({ error: "Goodreads URL must start with http:// or https://" });
         }
         updateData.goodreadsUrl = goodreadsUrl || null;
+      }
+      if (websiteUrl !== undefined) {
+        if (websiteUrl && !/^https?:\/\//i.test(websiteUrl)) {
+          return res.status(400).json({ error: "Website URL must start with http:// or https://" });
+        }
+        updateData.websiteUrl = websiteUrl || null;
       }
       
       const updated = await storage.updatePseudonym(id, updateData);
@@ -5269,7 +5275,12 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           const ids = backMatter.selectedBookIds as number[];
           bmBooks = allBooks.filter(b => ids.includes(b.id));
         }
-        const bmMarkdown = generateBackMatterMarkdown(backMatter, bmBooks, "es");
+        let authorWebsiteUrl: string | null = null;
+        if (project.pseudonymId) {
+          const pseudonym = await storage.getPseudonym(project.pseudonymId);
+          if (pseudonym?.websiteUrl) authorWebsiteUrl = pseudonym.websiteUrl;
+        }
+        const bmMarkdown = generateBackMatterMarkdown(backMatter, bmBooks, "es", authorWebsiteUrl);
         if (bmMarkdown.trim()) {
           lines.push("");
           lines.push(bmMarkdown);
@@ -7778,7 +7789,12 @@ CRITERIOS:
           const ids = backMatter.selectedBookIds as number[];
           bmBooks = allBooks.filter(b => ids.includes(b.id));
         }
-        const bmMarkdown = generateBackMatterMarkdown(backMatter, bmBooks, project.detectedLanguage || "es");
+        let authorWebsiteUrl: string | null = null;
+        if (project.pseudonymId) {
+          const pseudonym = await storage.getPseudonym(project.pseudonymId);
+          if (pseudonym?.websiteUrl) authorWebsiteUrl = pseudonym.websiteUrl;
+        }
+        const bmMarkdown = generateBackMatterMarkdown(backMatter, bmBooks, project.detectedLanguage || "es", authorWebsiteUrl);
         if (bmMarkdown.trim()) {
           markdown += "\n" + bmMarkdown;
         }
@@ -7854,6 +7870,25 @@ CRITERIOS:
         markdown += `${chapterHeader}\n\n`;
         markdown += splitLongParagraphs(content.trim()) + "\n\n\n";
       }
+
+      const backMatter = await storage.getProjectBackMatterByReedit(projectId);
+      if (backMatter) {
+        let bmBooks: any[] = [];
+        if (backMatter.enableAlsoBy && backMatter.selectedBookIds) {
+          const allBooks = await storage.getAllBookCatalogEntries();
+          const ids = backMatter.selectedBookIds as number[];
+          bmBooks = allBooks.filter(b => ids.includes(b.id));
+        }
+        let authorWebsiteUrl: string | null = null;
+        if (project.pseudonymId) {
+          const pseudonym = await storage.getPseudonym(project.pseudonymId);
+          if (pseudonym?.websiteUrl) authorWebsiteUrl = pseudonym.websiteUrl;
+        }
+        const bmMarkdown = generateBackMatterMarkdown(backMatter, bmBooks, project.detectedLanguage || "es", authorWebsiteUrl);
+        if (bmMarkdown.trim()) {
+          markdown += "\n" + bmMarkdown;
+        }
+      }
       
       const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñüÁÉÍÓÚÑÜ\s-]/g, "").trim();
       const filename = `${safeTitle}_editado.md`;
@@ -7881,9 +7916,13 @@ CRITERIOS:
       }
 
       let authorName: string | undefined;
+      let authorWebsiteUrl: string | null = null;
       if (project.pseudonymId) {
         const pseudonym = await storage.getPseudonym(project.pseudonymId);
-        if (pseudonym) authorName = pseudonym.name;
+        if (pseudonym) {
+          authorName = pseudonym.name;
+          if (pseudonym.websiteUrl) authorWebsiteUrl = pseudonym.websiteUrl;
+        }
       }
 
       const backMatter = await storage.getProjectBackMatterByReedit(projectId);
@@ -7908,6 +7947,7 @@ CRITERIOS:
           })),
         backMatter,
         backMatterBooks,
+        authorWebsiteUrl,
       });
       
       const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñüÁÉÍÓÚÑÜ\s-]/g, "").trim();

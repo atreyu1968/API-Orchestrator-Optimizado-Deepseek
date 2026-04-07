@@ -25,6 +25,7 @@ export const pseudonyms = pgTable("pseudonyms", {
   defaultTone: text("default_tone"),
   email: text("email"),
   goodreadsUrl: text("goodreads_url"),
+  websiteUrl: text("website_url"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
