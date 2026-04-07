@@ -55,6 +55,23 @@ REGLAS:
 7. Para novelas históricas: investiga nombres AUTÉNTICOS de la época, no uses adaptaciones modernas.
 
 ═══════════════════════════════════════════════════════════════════
+PERSONAJES TRIDIMENSIONALES — ANTI-ARQUETIPOS (CRÍTICO)
+═══════════════════════════════════════════════════════════════════
+Tu SEGUNDO mayor defecto (después de los nombres repetidos) es crear SECUNDARIOS ARQUETÍPICOS.
+Cada secundario con más de 3 apariciones DEBE tener:
+1. UN DEFECTO QUE CONTRADIGA SU ROL: el hacker que tiene pánico a la tecnología médica, la novata que es más fría que su jefe, el mentor que duda de sí mismo
+2. UNA MOTIVACIÓN PROPIA que NO sea simplemente "ayudar al protagonista"
+3. AL MENOS UN MOMENTO donde actúa CONTRA los intereses del grupo por razones personales coherentes
+4. UN MODISMO DE HABLA ÚNICO: no solo acento, sino estructura mental distinta (uno habla con refranes, otro con preguntas retóricas, otro nunca termina las frases)
+
+PROHIBIDO crear estos arquetipos sin subversión:
+- El hacker cínico y brillante → Añade vulnerabilidad emocional o ineptitud social real
+- La novata entusiasta/asustadiza → Dale competencia inesperada o frialdad calculadora
+- El jefe duro pero justo → Dale un defecto moral real
+- El villano que monologa → Que actúe más que hable
+- El confidente sabio → Que tenga sus propios problemas sin resolver
+
+═══════════════════════════════════════════════════════════════════
 PRINCIPIOS DE CONTINUIDAD FÍSICA
 ═══════════════════════════════════════════════════════════════════
 1. RASGOS FÍSICOS INMUTABLES: Documenta con precisión exacta el color de ojos, cabello, cicatrices, altura de cada personaje.
@@ -105,13 +122,14 @@ Genera un JSON con estas claves:
   "personajes": [{ 
     "nombre": "",
     "rol": "protagonista/antagonista/aliado/mentor/etc",
-    "perfil_psicologico": "Descripción profunda de motivaciones, miedos, deseos",
+    "perfil_psicologico": "Descripción profunda de motivaciones, miedos, deseos, CONTRADICCIONES internas y defectos NO convencionales",
     "arco_transformacion": {
       "estado_inicial": "",
       "catalizador_cambio": "",
       "punto_crisis": "",
       "estado_final": ""
     },
+    "contra_cliche": "Qué hace a este personaje DIFERENTE de su arquetipo. El hacker que no es cínico. La novata que no es asustadiza. El mentor que no es sabio. OBLIGATORIO para secundarios.",
     "identidad": {
       "tiene_doble_identidad": false,
       "identidad_publica": "Nombre/rol que todos conocen (null si no aplica)",
@@ -213,7 +231,7 @@ REGLAS CRÍTICAS:
 2. Cada "informacion_nueva" debe ser GENUINAMENTE NUEVA — no repetir de capítulos anteriores.
 3. Los conflictos deben escalar progresivamente.
 4. Mínimo 2 subtramas activas por capítulo y 2-3 diálogos significativos.
-5. Al menos 1 momento de reflexión interna del protagonista por capítulo.
+5. Al menos 1 momento de reflexión interna del protagonista por capítulo, pero SOLO en beats de calma o transición — NUNCA durante beats de acción/tensión/clímax.
 
 TÍTULOS - OBLIGATORIOS:
 ⛔ TODOS los capítulos DEBEN tener un "titulo" EVOCADOR y LITERARIO (2-6 palabras). NUNCA vacío o genérico.
@@ -372,6 +390,8 @@ export class ArchitectAgent extends BaseAgent {
           rol: p.rol,
           perfil_psicologico: p.perfil_psicologico,
           arco_transformacion: p.arco_transformacion,
+          contra_cliche: p.contra_cliche,
+          modismos_habla: p.modismos_habla,
           relaciones: p.relaciones,
         })),
         lugares: phase1Json.world_bible?.lugares,

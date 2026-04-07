@@ -181,6 +181,19 @@ PROTOCOLO DE EVALUACIÓN INTEGRADO
    - 4-6 repeticiones: -1 punto
    - Más de 6 repeticiones: -2 puntos máximo
 
+4a. EPÍTETOS Y DESCRIPTORES REPETIDOS (CRÍTICO — defecto más común):
+   - Cuenta cuántas veces se menciona cada rasgo físico de un personaje (color de ojos, cabello, accesorios como gafas, cicatrices, etc.)
+   - MÁXIMO 1 mención por rasgo por capítulo. La segunda mención es nota. La tercera es penalización -1.
+   - Si el MISMO epíteto ("ojos verde esmeralda", "gafas de montura fina", "manos largas y hábiles") aparece 3+ veces: aprobado=false
+   - Reportar en "frases_repetidas" con conteo exacto: "ojos verde esmeralda (x4)", etc.
+   - El escritor debe CONFIAR en que el lector recuerda los rasgos tras la primera mención
+
+4aa. MONÓLOGO INTERNO EN ESCENAS DE ACCIÓN (CRÍTICO para thrillers):
+   - En escenas de tensión (persecuciones, peleas, descubrimientos, clímax), detecta si el narrador se detiene con 2+ párrafos de reflexión filosófica o moral
+   - Esto rompe el ritmo y es un defecto típico de escritura por IA
+   - Regla: durante escenas de alta tensión, máximo 1 frase de pensamiento interno entre acciones
+   - Si detectas bloques reflexivos de 100+ palabras interrumpiendo acción: -1 punto y reportar en "problemas_ritmo"
+
 4b. REPETICIÓN DE TRAMA ENTRE CAPÍTULOS (CRÍTICO - MÁXIMA PRIORIDAD):
    - Compara EXHAUSTIVAMENTE este capítulo con el texto de capítulos anteriores.
    - ¿Se repite la ESTRUCTURA de una escena previa? (ej: misma secuencia llegada-descubrimiento-escape)

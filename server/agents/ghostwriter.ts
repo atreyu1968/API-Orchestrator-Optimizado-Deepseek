@@ -82,6 +82,10 @@ REGLAS DE ORO INVIOLABLES
    - Emociones → sensaciones físicas (corazón acelerado, manos sudorosas, nudo en el estómago)
    - Estados mentales → acciones y pensamientos internos
    - Relaciones → interacciones y microgestos
+   - EN ESCENAS DE ACCIÓN/TENSIÓN: CERO monólogo interno reflexivo. El personaje ACTÚA, no filosofa.
+     Prohibido interrumpir una persecución, pelea o descubrimiento con 2+ párrafos de reflexión moral/filosófica.
+     Máximo 1 frase interna breve ("Esto no puede estar pasando") y volver a la ACCIÓN.
+     Las reflexiones profundas van en los momentos de calma ENTRE las escenas de tensión, nunca durante.
 
 4. FORMATO DE DIÁLOGO ESPAÑOL:
    - Guion largo (—) obligatorio
@@ -123,6 +127,17 @@ B) REGLA DE UNA VEZ:
    - Cada metáfora puede usarse UNA SOLA VEZ en todo el capítulo
    - Cada imagen sensorial debe ser ÚNICA
    - Si describes algo de cierta manera, no lo repitas igual después
+
+B2) ANTI-EPÍTETOS REPETIDOS (CRÍTICO — causa principal de rechazo editorial):
+   Los epítetos descriptivos (rasgos físicos, accesorios, gestos habituales) son tu PEOR muletilla.
+   REGLAS INVIOLABLES:
+   - Cada rasgo físico de un personaje puede mencionarse MÁXIMO 1 VEZ en todo el capítulo
+     Ejemplo PROHIBIDO: mencionar "ojos verde esmeralda" de Eira más de 1 vez por capítulo
+   - Si ya describiste los ojos de un personaje → en la siguiente aparición usa su NOMBRE, una ACCIÓN o un DIÁLOGO. NO repitas el rasgo
+   - Accesorios (gafas, anillos, cicatrices, tatuajes) → menciónalo UNA VEZ como identificación, después el lector ya lo sabe
+   - NUNCA uses el mismo epíteto para reintroducir a un personaje en cada escena. Varía: nombre propio, cargo, relación ("su compañero", "la detective"), acción ("la mujer que acababa de entrar")
+   - Si el World Bible dice "ojos azules" → puedes mencionarlo 1 vez en el capítulo. Después CONFÍA en que el lector lo recuerda
+   - AUTOTEST: al terminar el capítulo, busca mentalmente cuántas veces mencionaste cada rasgo físico. Si alguno aparece 2+ veces → reescribe
 
 C) VARIEDAD ESTRUCTURAL:
    - Alterna longitud de oraciones: cortas tensas / largas descriptivas
@@ -435,6 +450,12 @@ export class GhostwriterAgent extends BaseAgent {
         
         const arco = p.arco || p.arco_transformacion || p.arc || "";
         if (arco) parts.push(`    Arco: ${typeof arco === 'string' ? arco : JSON.stringify(arco)}`);
+
+        const contraCliche = p.contra_cliche || "";
+        if (contraCliche) parts.push(`    ⚡ Anti-arquetipo: ${contraCliche}`);
+
+        const modismos = p.modismos_habla || [];
+        if (Array.isArray(modismos) && modismos.length > 0) parts.push(`    🗣️ Modismos de habla: ${modismos.join(", ")}`);
         
         const relaciones = p.relaciones || p.relationships || [];
         if (relaciones.length > 0) parts.push(`    Relaciones: ${JSON.stringify(relaciones)}`);
@@ -644,7 +665,7 @@ export class GhostwriterAgent extends BaseAgent {
     ║   • Desarrolla CADA beat con 300-500 palabras mínimo             ║
     ║   • Incluye descripciones sensoriales detalladas                 ║
     ║   • Escribe diálogos extensos con acotaciones ricas              ║
-    ║   • Añade monólogo interno del protagonista                      ║
+    ║   • Añade monólogo interno en beats de CALMA (nunca en acción)   ║
     ║   • Describe el entorno, la atmósfera, los olores, sonidos      ║
     ║   • NO resumas - NARRA con detalle cada momento                  ║
     ║                                                                   ║
