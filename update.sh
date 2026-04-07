@@ -102,7 +102,27 @@ if [ "$NPM_EXIT" -ne 0 ]; then
 fi
 rm -f "$NPM_LOG"
 
-echo "3. Ejecutando migraciones de schema (pre-build)..."
+echo "3. Sincronizando schema de base de datos..."
+set +e
+sudo -u "$APP_USER" -H \
+    env "HOME=$APP_USER_HOME" "PATH=$PATH" \
+    "DATABASE_URL=$DATABASE_URL" "NODE_ENV=production" \
+    npx drizzle-kit push --force 2>&1 | tail -20
+PUSH_EXIT=$?
+set -e
+if [ "$PUSH_EXIT" -eq 0 ]; then
+    echo "[OK] Schema sincronizado"
+else
+    echo "[AVISO] drizzle-kit push fallo (exit $PUSH_EXIT). Reintentando..."
+    set +e
+    sudo -u "$APP_USER" -H \
+        env "HOME=$APP_USER_HOME" "PATH=$PATH" \
+        "DATABASE_URL=$DATABASE_URL" "NODE_ENV=production" \
+        npx drizzle-kit push --force 2>&1 | tail -20
+    set -e
+fi
+
+echo "4. Aplicando migraciones SQL adicionales..."
 CLEAN_DB_URL=$(echo "$DATABASE_URL" | sed 's|^postgres://|postgresql://|')
 DB_PASS_M=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
 DB_USER_M=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
@@ -110,123 +130,6 @@ DB_HOST_M=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://[^@]*@\([^:]*\):.*|\1|
 DB_PORT_M=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://[^:]*:[^@]*@[^:]*:\([^/]*\)/.*|\1|p')
 DB_NAME_M=$(echo "$CLEAN_DB_URL" | sed -n 's|postgresql://[^/]*/\([^?]*\).*|\1|p')
 
-PGPASSWORD="$DB_PASS_M" psql -U "$DB_USER_M" -h "$DB_HOST_M" -p "$DB_PORT_M" "$DB_NAME_M" -c "
-CREATE TABLE IF NOT EXISTS pseudonyms (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    bio TEXT,
-    default_genre TEXT,
-    default_tone TEXT,
-    email TEXT,
-    goodreads_url TEXT,
-    website_url TEXT,
-    created_at TIMESTAMP DEFAULT NOW() NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS style_guides (
-    id SERIAL PRIMARY KEY,
-    pseudonym_id INTEGER NOT NULL REFERENCES pseudonyms(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    content TEXT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMP DEFAULT NOW() NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS cover_prompts (
-    id SERIAL PRIMARY KEY,
-    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
-    series_id INTEGER REFERENCES series(id) ON DELETE SET NULL,
-    pseudonym_id INTEGER REFERENCES pseudonyms(id) ON DELETE SET NULL,
-    title TEXT NOT NULL,
-    prompt TEXT NOT NULL,
-    negative_prompt TEXT,
-    style TEXT NOT NULL DEFAULT 'realistic',
-    color_palette TEXT,
-    mood TEXT,
-    typography TEXT,
-    composition TEXT,
-    series_design_system JSONB,
-    cover_specs JSONB DEFAULT '{\"width\":1600,\"height\":2560,\"dpi\":300,\"format\":\"JPEG\",\"colorMode\":\"RGB\",\"ratio\":\"1.6:1\"}',
-    status TEXT NOT NULL DEFAULT 'draft',
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT NOW() NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS kdp_metadata (
-    id SERIAL PRIMARY KEY,
-    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-    reedit_project_id INTEGER REFERENCES reedit_projects(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    subtitle TEXT,
-    description TEXT,
-    keywords TEXT[],
-    bisac_categories TEXT[],
-    series_name TEXT,
-    series_number INTEGER,
-    series_description TEXT,
-    language TEXT NOT NULL DEFAULT 'es',
-    target_marketplace TEXT NOT NULL DEFAULT 'amazon.es',
-    ai_disclosure TEXT NOT NULL DEFAULT 'ai-assisted',
-    content_warnings TEXT,
-    status TEXT NOT NULL DEFAULT 'draft',
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT NOW() NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS user_sessions (
-    id SERIAL PRIMARY KEY,
-    session_token TEXT NOT NULL UNIQUE,
-    created_at TIMESTAMP DEFAULT NOW(),
-    expires_at TIMESTAMP NOT NULL
-);
-
-
-
-ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS email TEXT;
-ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS goodreads_url TEXT;
-ALTER TABLE pseudonyms ADD COLUMN IF NOT EXISTS website_url TEXT;
-
-CREATE TABLE IF NOT EXISTS book_catalog (
-    id SERIAL PRIMARY KEY,
-    pseudonym_id INTEGER REFERENCES pseudonyms(id) ON DELETE SET NULL,
-    title TEXT NOT NULL,
-    author_name TEXT NOT NULL,
-    amazon_url TEXT,
-    goodreads_url TEXT,
-    synopsis TEXT,
-    genre TEXT,
-    asin TEXT,
-    is_kindle_unlimited BOOLEAN NOT NULL DEFAULT false,
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    display_order INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT NOW() NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS project_back_matter (
-    id SERIAL PRIMARY KEY,
-    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-    reedit_project_id INTEGER REFERENCES reedit_projects(id) ON DELETE CASCADE,
-    enable_review_request BOOLEAN NOT NULL DEFAULT true,
-    review_request_language TEXT NOT NULL DEFAULT 'es',
-    review_author_name TEXT,
-    review_amazon_url TEXT,
-    review_goodreads_url TEXT,
-    enable_also_by BOOLEAN NOT NULL DEFAULT true,
-    also_by_title TEXT,
-    selected_book_ids JSONB DEFAULT '[]',
-    created_at TIMESTAMP DEFAULT NOW() NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS name_blacklist (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL DEFAULT 'nombre',
-    created_at TIMESTAMP DEFAULT NOW() NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_name_blacklist_unique ON name_blacklist(LOWER(name), type);
-" 2>/dev/null && echo "[OK] Tablas verificadas" || echo "[AVISO] Algunas tablas ya existian"
-
-echo "4. Aplicando migraciones SQL adicionales..."
 for migration in "$APP_DIR"/migrations/*.sql; do
     if [ -f "$migration" ]; then
         echo "   Aplicando $(basename "$migration")..."
