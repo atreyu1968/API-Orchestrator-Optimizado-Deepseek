@@ -10,9 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, Star, ShoppingCart, BookOpen, Check, MessageSquareQuote,
-  Library
+  Library, User
 } from "lucide-react";
 import type { BookCatalogEntry, ProjectBackMatter, Pseudonym } from "@shared/schema";
 
@@ -59,6 +60,8 @@ export function BackMatterConfig({ projectId, reeditProjectId, pseudonymId, proj
   const [enableAlsoBy, setEnableAlsoBy] = useState(true);
   const [alsoByTitle, setAlsoByTitle] = useState("");
   const [selectedBookIds, setSelectedBookIds] = useState<number[]>([]);
+  const [enableAuthorPage, setEnableAuthorPage] = useState(false);
+  const [authorPageBio, setAuthorPageBio] = useState("");
 
   useEffect(() => {
     if (existingBm) {
@@ -70,12 +73,18 @@ export function BackMatterConfig({ projectId, reeditProjectId, pseudonymId, proj
       setEnableAlsoBy(existingBm.enableAlsoBy);
       setAlsoByTitle(existingBm.alsoByTitle || "");
       setSelectedBookIds((existingBm.selectedBookIds as number[]) || []);
+      setEnableAuthorPage(existingBm.enableAuthorPage);
+      setAuthorPageBio(existingBm.authorPageBio || "");
     } else if (!bmLoading) {
       if (pseudonymId) {
         const p = pseudonyms.find((x) => x.id === pseudonymId);
         if (p) {
           setReviewAuthor(p.name);
           if (p.goodreadsUrl) setReviewGoodreadsUrl(p.goodreadsUrl);
+          if (p.bio) {
+            setEnableAuthorPage(true);
+            setAuthorPageBio(p.bio);
+          }
         }
       }
     }
@@ -94,6 +103,8 @@ export function BackMatterConfig({ projectId, reeditProjectId, pseudonymId, proj
         enableAlsoBy,
         alsoByTitle: alsoByTitle.trim() || null,
         selectedBookIds,
+        enableAuthorPage,
+        authorPageBio: authorPageBio.trim() || null,
       };
       const res = await apiRequest("POST", "/api/back-matter", data);
       return res.json();
@@ -336,6 +347,42 @@ export function BackMatterConfig({ projectId, reeditProjectId, pseudonymId, proj
                   )}
                 </>
               )}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4 p-4 rounded-lg border">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <User className="w-5 h-5 text-indigo-600" />
+              <Label className="text-base font-medium">Página del Autor</Label>
+            </div>
+            <Switch
+              checked={enableAuthorPage}
+              onCheckedChange={setEnableAuthorPage}
+              data-testid="switch-enable-author-page"
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Añade una sección "Sobre el Autor" al final del libro con tu biografía.
+          </p>
+
+          {enableAuthorPage && (
+            <div className="space-y-3 pl-2">
+              <div>
+                <Label className="text-sm">Biografía del autor</Label>
+                <Textarea
+                  value={authorPageBio}
+                  onChange={(e) => setAuthorPageBio(e.target.value)}
+                  placeholder="Escribe aquí la biografía que aparecerá en la página del autor..."
+                  rows={5}
+                  className="mt-1"
+                  data-testid="textarea-author-bio"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Se usará el nombre de autor configurado arriba en la sección de Reseña.
+                </p>
+              </div>
             </div>
           )}
         </div>

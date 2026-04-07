@@ -133,80 +133,25 @@ export default function ManuscriptPage() {
     enabled: !!currentProject?.id,
   });
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!currentProject || chapters.length === 0) return;
 
-    const removeStyleGuideContamination = (content: string): string => {
-      let cleaned = content;
-      
-      const styleGuidePatterns = [
-        /^#+ *Literary Style Guide[^\n]*\n[\s\S]*?(?=^#+ *(?:CHAPTER|Chapter|Prologue|Epilogue|Author['']?s? Note)\b|\n---\n|$)/gm,
-        /^#+ *Writing Guide[^\n]*\n[\s\S]*?(?=^#+ *(?:CHAPTER|Chapter|Prologue|Epilogue|Author['']?s? Note)\b|\n---\n|$)/gm,
-        /^#+ *The Master of[^\n]*\n[\s\S]*?(?=^#+ *(?:CHAPTER|Chapter|Prologue|Epilogue|Author['']?s? Note)\b|\n---\n|$)/gm,
-        /^#+ *Guía de Estilo[^\n]*\n[\s\S]*?(?=^#+ *(?:CAPÍTULO|Capítulo|Prólogo|Epílogo|Nota del Autor)\b|\n---\n|$)/gmi,
-        /^#+ *Guía de Escritura[^\n]*\n[\s\S]*?(?=^#+ *(?:CAPÍTULO|Capítulo|Prólogo|Epílogo|Nota del Autor)\b|\n---\n|$)/gmi,
-        /^###+ *Checklist[^\n]*\n[\s\S]*?(?=^#{1,2} *(?:CHAPTER|Chapter|CAPÍTULO|Capítulo|Prologue|Prólogo|Epilogue|Epílogo)\b|\n---\n|$)/gmi,
-        /\n---\n[\s\S]*?(?:Style Guide|Guía de Estilo|Writing Guide|Guía de Escritura)[\s\S]*?\n---\n/gi,
-      ];
-      
-      for (const pattern of styleGuidePatterns) {
-        cleaned = cleaned.replace(pattern, '');
-      }
-      
-      const metaSectionPatterns = [
-        /^#+ *\d+\. *(?:Narrative Architecture|Character Construction|Central Themes|Language and Stylistic|Tone and Atmosphere)[^\n]*\n[\s\S]*?(?=^#+ *(?:CHAPTER|Chapter|CAPÍTULO|Capítulo|Prologue|Prólogo)\b|$)/gmi,
-      ];
-      
-      for (const pattern of metaSectionPatterns) {
-        cleaned = cleaned.replace(pattern, '');
-      }
-      
-      return cleaned.trim();
-    };
-
-    const cleanContent = (rawContent: string): string => {
-      let content = rawContent.trim();
-      const continuityMarker = "---CONTINUITY_STATE---";
-      const markerIndex = content.indexOf(continuityMarker);
-      if (markerIndex !== -1) {
-        content = content.substring(0, markerIndex).trim();
-      }
-      content = removeStyleGuideContamination(content);
-      return content;
-    };
-
-    const content = sortChaptersForDisplay(chapters.filter(c => c.content))
-      .map(c => {
-        let chapterContent = cleanContent(c.content || "");
-        
-        const headingMatch = chapterContent.match(/^(#{1,2})\s*.+\n+/);
-        if (headingMatch) {
-          chapterContent = chapterContent.substring(headingMatch[0].length).trim();
-        }
-        
-        let header: string;
-        if (c.chapterNumber === 0) {
-          header = `# Prólogo${c.title ? `: ${c.title}` : ''}`;
-        } else if (c.chapterNumber === -1) {
-          header = `# Epílogo${c.title ? `: ${c.title}` : ''}`;
-        } else if (c.chapterNumber === -2) {
-          header = `# Nota del Autor`;
-        } else {
-          header = `# Capítulo ${c.chapterNumber}${c.title ? `: ${c.title}` : ''}`;
-        }
-        return `${header}\n\n${chapterContent}`;
-      })
-      .join('\n\n\n');
-
-    const blob = new Blob([content], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${currentProject.title.replace(/\s+/g, '_')}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      const res = await fetch(`/api/projects/${currentProject.id}/export-markdown`);
+      if (!res.ok) throw new Error("Error al exportar");
+      const data = await res.json();
+      const blob = new Blob([data.markdown], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${currentProject.title.replace(/\s+/g, '_')}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ title: "Error", description: "No se pudo descargar el manuscrito", variant: "destructive" });
+    }
   };
 
   const completedChapters = chapters.filter(c => c.status === "completed");

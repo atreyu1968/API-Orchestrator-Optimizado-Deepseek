@@ -64,6 +64,15 @@ const WEBSITE_CTA_TEXTS: Record<string, string> = {
   pt: "Descubra todos os meus livros no meu site:",
 };
 
+const ABOUT_AUTHOR_TITLES: Record<string, string> = {
+  es: "Sobre el Autor",
+  en: "About the Author",
+  fr: "À propos de l'auteur",
+  de: "Über den Autor",
+  it: "L'autore",
+  pt: "Sobre o Autor",
+};
+
 export function generateBackMatterMarkdown(
   config: ProjectBackMatter,
   selectedBooks: BookCatalogEntry[],
@@ -121,6 +130,20 @@ export function generateBackMatterMarkdown(
       const ctaText = WEBSITE_CTA_TEXTS[lang] || WEBSITE_CTA_TEXTS.es;
       lines.push("");
       lines.push(`**${ctaText}**`);
+      lines.push(`**[${authorWebsiteUrl}](${authorWebsiteUrl})**`);
+      lines.push("");
+    }
+  }
+
+  if (config.enableAuthorPage && config.authorPageBio) {
+    const aboutTitle = ABOUT_AUTHOR_TITLES[lang] || ABOUT_AUTHOR_TITLES.es;
+    lines.push("---");
+    lines.push("");
+    lines.push(`## ${aboutTitle}`);
+    lines.push("");
+    lines.push(config.authorPageBio);
+    lines.push("");
+    if (authorWebsiteUrl) {
       lines.push(`**[${authorWebsiteUrl}](${authorWebsiteUrl})**`);
       lines.push("");
     }
@@ -280,6 +303,41 @@ export function generateBackMatterDocxParagraphs(
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { after: 300 },
+          children: [new TextRun({ text: authorWebsiteUrl, bold: true, font: "Georgia", size: 24, color: "0066CC" })],
+        })
+      );
+    }
+  }
+
+  if (config.enableAuthorPage && config.authorPageBio) {
+    const aboutTitle = ABOUT_AUTHOR_TITLES[lang] || ABOUT_AUTHOR_TITLES.es;
+
+    paragraphs.push(new Paragraph({ children: [new PageBreak()] }));
+
+    paragraphs.push(
+      new Paragraph({
+        text: aboutTitle,
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 400, after: 400 },
+      })
+    );
+
+    const bioLines = config.authorPageBio.split("\n").filter(l => l.trim());
+    for (const line of bioLines) {
+      paragraphs.push(
+        new Paragraph({
+          spacing: { after: 200 },
+          children: [new TextRun({ text: line, font: "Georgia", size: 24 })],
+        })
+      );
+    }
+
+    if (authorWebsiteUrl) {
+      paragraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 200, after: 200 },
           children: [new TextRun({ text: authorWebsiteUrl, bold: true, font: "Georgia", size: 24, color: "0066CC" })],
         })
       );

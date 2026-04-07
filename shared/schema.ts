@@ -863,6 +863,8 @@ export const projectBackMatter = pgTable("project_back_matter", {
   enableAlsoBy: boolean("enable_also_by").notNull().default(true),
   alsoByTitle: text("also_by_title"),
   selectedBookIds: jsonb("selected_book_ids").$type<number[]>().default([]),
+  enableAuthorPage: boolean("enable_author_page").notNull().default(false),
+  authorPageBio: text("author_page_bio"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
