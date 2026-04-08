@@ -181,12 +181,21 @@ PROTOCOLO DE EVALUACIÓN INTEGRADO
    - 4-6 repeticiones: -1 punto
    - Más de 6 repeticiones: -2 puntos máximo
 
-4a. EPÍTETOS Y DESCRIPTORES REPETIDOS (CRÍTICO — defecto más común):
+4a. EPÍTETOS Y DESCRIPTORES REPETIDOS (CRÍTICO — defecto más común de IA):
    - Cuenta cuántas veces se menciona cada rasgo físico de un personaje (color de ojos, cabello, accesorios como gafas, cicatrices, etc.)
-   - MÁXIMO 1 mención por rasgo por capítulo. La segunda mención es nota. La tercera es penalización -1.
-   - Si el MISMO epíteto ("ojos verde esmeralda", "gafas de montura fina", "manos largas y hábiles") aparece 3+ veces: aprobado=false
+   - Un rasgo físico se describe UNA VEZ en la primera aparición del personaje EN TODA LA NOVELA. Después, NUNCA MÁS.
+   - Si el MISMO epíteto ("ojos verde esmeralda", "gafas de montura fina", "cicatriz sobre la ceja") aparece 2+ veces en el capítulo: aprobado=false, -1 punto
+   - Si el rasgo YA fue descrito en capítulos anteriores y este capítulo lo repite → aprobado=false, -1 punto. El lector ya lo sabe.
    - Reportar en "frases_repetidas" con conteo exacto: "ojos verde esmeralda (x4)", etc.
-   - El escritor debe CONFIAR en que el lector recuerda los rasgos tras la primera mención
+
+4b. MULETILLAS FISIOLÓGICAS (CRÍTICO — delata escritura por IA):
+   - Detecta fórmulas corporales recicladas entre capítulos:
+     "bilis en la garganta", "nudo en el estómago", "aire atascado en los pulmones",
+     "corazón martilleando", "manos temblando", "boca seca", "sangre zumbando en los oídos",
+     "vacío en el pecho", "estómago encogido", "escalofrío recorrió"
+   - Si el capítulo usa 2+ de estas fórmulas: -1 punto
+   - Si el capítulo repite una fórmula que ya apareció en capítulos anteriores: aprobado=false
+   - Cada reacción emocional/física debe ser ÚNICA e irrepetible en el manuscrito
 
 4aa. MONÓLOGO INTERNO EN ESCENAS DE ACCIÓN (CRÍTICO para thrillers):
    - En escenas de tensión (persecuciones, peleas, descubrimientos, clímax), detecta si el narrador se detiene con 2+ párrafos de reflexión filosófica o moral
@@ -194,7 +203,7 @@ PROTOCOLO DE EVALUACIÓN INTEGRADO
    - Regla: durante escenas de alta tensión, máximo 1 frase de pensamiento interno entre acciones
    - Si detectas bloques reflexivos de 100+ palabras interrumpiendo acción: -1 punto y reportar en "problemas_ritmo"
 
-4b. REPETICIÓN DE TRAMA ENTRE CAPÍTULOS (CRÍTICO - MÁXIMA PRIORIDAD):
+4c. REPETICIÓN DE TRAMA ENTRE CAPÍTULOS (CRÍTICO - MÁXIMA PRIORIDAD):
    - Compara EXHAUSTIVAMENTE este capítulo con el texto de capítulos anteriores.
    - ¿Se repite la ESTRUCTURA de una escena previa? (ej: misma secuencia llegada-descubrimiento-escape)
    - ¿Se reutiliza el mismo MECANISMO de revelación? (ej: "encuentra una carta" de nuevo, "escucha una conversación" de nuevo)
@@ -205,7 +214,7 @@ PROTOCOLO DE EVALUACIÓN INTEGRADO
    - ¿Se repite un PATRÓN de resolución? (ej: siempre resuelve problemas con la misma estrategia)
    - PENALIZACIÓN: Primera repetición de trama: -1 punto. Dos o más repeticiones: -2 puntos y aprobado=false
    
-4c. CONTRADICCIONES CON LO NARRADO (CRÍTICO):
+4d. CONTRADICCIONES CON LO NARRADO (CRÍTICO):
    - ¿El capítulo introduce hechos que CONTRADICEN lo establecido en capítulos anteriores?
    - ¿Un personaje cambia de opinión/actitud sin justificación narrativa?
    - ¿Un evento se narra de forma diferente a como ocurrió originalmente?

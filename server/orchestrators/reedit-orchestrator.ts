@@ -60,9 +60,10 @@ CATEGORÍAS DE ANÁLISIS:
 5. DIÁLOGO: Diálogos artificiales, todos los personajes hablan igual, exposición forzada
 6. PERSONAJES: Comportamientos fuera de carácter, arcos rotos, personajes planos, secundarios arquetípicos sin subversión
 7. AMBIENTACIÓN: Descripciones genéricas, anacronismos, falta de coherencia sensorial
-8. EPÍTETOS REPETIDOS: Rasgos físicos mencionados múltiples veces (color de ojos, accesorios como gafas, cicatrices). Máximo 1 mención por rasgo por capítulo. Si "ojos verde esmeralda" o similar aparece 3+ veces: severidad CRITICA.
-9. MONÓLOGO EN ACCIÓN: Bloques de reflexión filosófica/moral (100+ palabras) que interrumpen escenas de tensión (persecuciones, peleas, descubrimientos, clímax). La regla de oro del thriller es MOSTRAR, no CONTAR. Máximo 1 frase interna breve durante acción.
-10. PERSONAJES CLICHÉ: Secundarios que son puro arquetipo sin subversión (hacker cínico, novata asustadiza, mentor sabio, jefe duro pero justo). Cada secundario importante debe tener un defecto que contradiga su rol y motivación propia.
+8. EPÍTETOS REPETIDOS: Rasgos físicos mencionados múltiples veces (color de ojos, accesorios como gafas, cicatrices). Un rasgo se describe UNA VEZ en la primera aparición del personaje EN TODA LA NOVELA. Si aparece 2+ veces en el capítulo o si ya fue descrito en capítulos anteriores: severidad CRITICA.
+9. MULETILLAS FISIOLÓGICAS: Fórmulas corporales recicladas entre capítulos ("bilis en la garganta", "nudo en el estómago", "aire atascado en los pulmones", "corazón martilleando", "manos temblando", "boca seca"). Si aparecen 2+ en un capítulo o si repiten una de capítulos anteriores: severidad CRITICA.
+10. MONÓLOGO EN ACCIÓN: Bloques de reflexión filosófica/moral (100+ palabras) que interrumpen escenas de tensión (persecuciones, peleas, descubrimientos, clímax). La regla de oro del thriller es MOSTRAR, no CONTAR. Máximo 1 frase interna breve durante acción.
+11. PERSONAJES CLICHÉ: Secundarios que son puro arquetipo sin subversión (hacker cínico, novata asustadiza, mentor sabio, jefe duro pero justo). Cada secundario importante debe tener un defecto que contradiga su rol y motivación propia.
 
 SISTEMA DE PUNTUACIÓN ESTRICTO:
 - 10: PERFECTO - cero problemas
@@ -75,7 +76,7 @@ RESPONDE SOLO EN JSON:
 {
   "score": 7,
   "issues": [
-    {"categoria": "continuidad|trama|ritmo|estilo|dialogo|personajes|ambientacion|epitetos_repetidos|monologo_en_accion|personajes_cliche", "descripcion": "Descripción detallada", "severidad": "critica|mayor|menor", "ubicacion": "Párrafo o sección donde ocurre"}
+    {"categoria": "continuidad|trama|ritmo|estilo|dialogo|personajes|ambientacion|epitetos_repetidos|muletillas_fisiologicas|monologo_en_accion|personajes_cliche", "descripcion": "Descripción detallada", "severidad": "critica|mayor|menor", "ubicacion": "Párrafo o sección donde ocurre"}
   ],
   "strengths": ["Fortaleza 1"],
   "suggestions": ["Sugerencia específica y accionable"],
@@ -103,9 +104,13 @@ ${prevContext}
 CAPÍTULO COMPLETO:
 ${content}
 
-Evalúa CADA categoría (continuidad, trama, ritmo, estilo, diálogo, personajes, ambientación, epitetos_repetidos, monologo_en_accion, personajes_cliche).
+Evalúa CADA categoría (continuidad, trama, ritmo, estilo, diálogo, personajes, ambientación, epitetos_repetidos, muletillas_fisiologicas, monologo_en_accion, personajes_cliche).
 Sé EXHAUSTIVO en la detección de problemas. Cada issue debe tener categoría, descripción, severidad y ubicación.
-PRESTA ESPECIAL ATENCIÓN a: epítetos/rasgos físicos repetidos (máx 1 mención por rasgo por capítulo), bloques reflexivos durante escenas de acción, y secundarios arquetípicos sin subversión.
+PRESTA ESPECIAL ATENCIÓN a:
+- Epítetos/rasgos físicos repetidos (máx 1 mención por rasgo EN TODA LA NOVELA; si ya apareció en capítulos anteriores → CRÍTICO, eliminar)
+- Muletillas fisiológicas recicladas ("bilis", "nudo en el estómago", "aire en los pulmones", etc.) → CRÍTICO si 2+ por capítulo o si repiten de capítulos anteriores
+- Bloques reflexivos durante escenas de acción
+- Secundarios arquetípicos sin subversión.
 RESPONDE EN JSON.`;
     
     const response = await this.generateContent(prompt);
@@ -154,9 +159,14 @@ TU MISIÓN es transformar prosa aceptable en prosa EXCELENTE, manteniendo la voz
 
 3b. EPÍTETOS REPETIDOS (PRIORIDAD MÁXIMA):
    - Busca rasgos físicos mencionados más de 1 vez en el capítulo (color de ojos, accesorios, cicatrices, tipo de cabello)
-   - ELIMINA todas las menciones excepto la primera. El lector recuerda.
+   - ELIMINA TODAS las menciones excepto la primera del LIBRO (no del capítulo). Si capítulos anteriores ya describieron el rasgo → ELIMINA TODAS en este capítulo.
    - Sustituye las repeticiones por: nombre propio, cargo, acción o relación ("su compañero")
-   - Ejemplo: si "ojos verde esmeralda" aparece 4 veces, conserva solo la primera y reescribe las otras 3
+   - Ejemplo: si "ojos verde esmeralda" aparece en el capítulo 1, TODAS las menciones en capítulos 2+ deben ser eliminadas
+
+3bb. MULETILLAS FISIOLÓGICAS (PRIORIDAD MÁXIMA):
+   - Detecta fórmulas corporales recicladas: "bilis en la garganta", "nudo en el estómago", "aire en los pulmones", "corazón martilleando", "manos temblando", "boca seca", "sangre zumbando", "vacío en el pecho", "estómago encogido", "escalofrío recorrió"
+   - ELIMINA y sustituye por reacciones ÚNICAS: un gesto específico, una acción concreta, un pensamiento fragmentado
+   - Cada reacción emocional debe ser irrepetible en todo el manuscrito
 
 3c. MONÓLOGO EN ESCENAS DE ACCIÓN:
    - En escenas de tensión (peleas, persecuciones, descubrimientos, clímax): elimina bloques reflexivos de más de 1-2 frases
@@ -1198,9 +1208,11 @@ REGLAS INVIOLABLES:
 - Prefiere AÑADIR contenido a ELIMINAR (preserva el trabajo del autor)
 - Las escenas nuevas deben tener propósito narrativo, no solo resolver el problema técnico
 
-=== PROBLEMAS DE EPÍTETOS Y RITMO (PRIORIDAD ALTA) ===
+=== PROBLEMAS DE EPÍTETOS, MULETILLAS Y RITMO (PRIORIDAD ALTA) ===
 
-20. EPÍTETOS REPETIDOS: Si un rasgo físico (color de ojos, accesorios, cicatrices) se menciona más de 1 vez en el capítulo, ELIMINA todas las menciones excepto la primera. El lector recuerda. Sustituye por nombre propio, cargo, acción o relación.
+20. EPÍTETOS REPETIDOS: Si un rasgo físico (color de ojos, accesorios, cicatrices) se menciona más de 1 vez en el capítulo, ELIMINA TODAS excepto la primera. Si capítulos anteriores ya lo describieron → ELIMINA TODAS en este capítulo. El lector recuerda.
+
+20b. MULETILLAS FISIOLÓGICAS: Elimina fórmulas corporales recicladas ("bilis en la garganta", "nudo en el estómago", "aire en los pulmones", "corazón martilleando", "manos temblando", "boca seca", "sangre zumbando", "vacío en el pecho"). Sustituye por reacciones ÚNICAS: un gesto específico, una acción concreta, un pensamiento fragmentado.
 
 21. MONÓLOGO EN ESCENAS DE ACCIÓN: Si detectas bloques reflexivos (100+ palabras de filosofía/moral) interrumpiendo escenas de tensión, ELIMÍNALOS o redúcelos a 1 frase interna breve. Sustituye por ACCIONES que muestren la emoción. Las reflexiones profundas solo van en momentos de calma.
 
@@ -1217,7 +1229,7 @@ FORMATO DE RESPUESTA (JSON):
   "capituloReescrito": "TEXTO COMPLETO del capítulo con las correcciones integradas de forma invisible",
   "cambiosRealizados": [
     {
-      "tipoProblema": "hueco_argumental|subplot|arco_incompleto|contradiccion|antagonista|foreshadowing|epitetos_repetidos|monologo_en_accion|personajes_cliche",
+      "tipoProblema": "hueco_argumental|subplot|arco_incompleto|contradiccion|antagonista|foreshadowing|epitetos_repetidos|muletillas_fisiologicas|monologo_en_accion|personajes_cliche",
       "descripcionProblema": "El problema específico que se corrigió",
       "solucionAplicada": "Descripción detallada de la corrección",
       "contenidoNuevo": "El texto nuevo añadido (primeras 200 palabras si es largo)",

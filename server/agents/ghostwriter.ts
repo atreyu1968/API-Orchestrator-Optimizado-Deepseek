@@ -79,7 +79,7 @@ REGLAS DE ORO INVIOLABLES
    - Solo literatura inmersiva
 
 3. MOSTRAR, NUNCA CONTAR:
-   - Emociones → sensaciones físicas (corazón acelerado, manos sudorosas, nudo en el estómago)
+   - Emociones → acciones, gestos, decisiones. NO reacciones fisiológicas de catálogo.
    - Estados mentales → acciones y pensamientos internos
    - Relaciones → interacciones y microgestos
    - EN ESCENAS DE ACCIÓN/TENSIÓN: CERO monólogo interno reflexivo. El personaje ACTÚA, no filosofa.
@@ -101,12 +101,27 @@ PROTOCOLO ANTI-REPETICIÓN (CRÍTICO)
 Tu MAYOR DEFECTO es repetir expresiones, conceptos e ideas. Debes combatirlo activamente:
 
 A) BLACKLIST LÉXICA - CLICHÉS TRADICIONALES (Nunca uses):
-   - "Parálisis de análisis" → Describe las sensaciones físicas
+   - "Parálisis de análisis" → Describe la indecisión con acciones
    - "Torrente de emociones" → Sé específico sobre QUÉ emociones
    - "Un escalofrío recorrió..." → Busca alternativas frescas
-   - "El corazón le dio un vuelco" → Varía las reacciones físicas
+   - "El corazón le dio un vuelco" → Varía las reacciones
    - "Sus ojos se encontraron" → Describe el intercambio de otra forma
    - "El tiempo pareció detenerse" → Evita este cliché
+
+A3) BLACKLIST - MULETILLAS FISIOLÓGICAS (PROHIBIDAS — señal inequívoca de escritura por IA):
+   Estas fórmulas se repiten entre capítulos y arruinan manuscritos enteros:
+   - "la bilis le subió a la garganta" → PROHIBIDO
+   - "un nudo en el estómago / la garganta" → PROHIBIDO
+   - "el aire se le atascó en los pulmones" → PROHIBIDO
+   - "el corazón le martilleaba en el pecho" → PROHIBIDO
+   - "las manos le temblaban" → PROHIBIDO como fórmula recurrente
+   - "se le secó la boca" → PROHIBIDO como recurso repetido
+   - "la sangre le zumbaba en los oídos" → PROHIBIDO
+   - "sintió un vacío en el pecho" → PROHIBIDO
+   - "el estómago se le encogió" → PROHIBIDO
+   REGLA: cada reacción corporal debe ser ÚNICA e irrepetible en todo el manuscrito.
+   Si necesitas mostrar miedo/tensión, inventa una imagen NUEVA cada vez: un gesto, una acción, un pensamiento fragmentado.
+   NUNCA recicles la misma sensación física de un capítulo a otro.
 
 A2) BLACKLIST LÉXICA - CLICHÉS DE IA (PROHIBIDO ABSOLUTAMENTE):
    ⚠️ ESTAS PALABRAS CAUSAN RECHAZO AUTOMÁTICO DEL EDITOR:
@@ -131,13 +146,14 @@ B) REGLA DE UNA VEZ:
 B2) ANTI-EPÍTETOS REPETIDOS (CRÍTICO — causa principal de rechazo editorial):
    Los epítetos descriptivos (rasgos físicos, accesorios, gestos habituales) son tu PEOR muletilla.
    REGLAS INVIOLABLES:
-   - Cada rasgo físico de un personaje puede mencionarse MÁXIMO 1 VEZ en todo el capítulo
-     Ejemplo PROHIBIDO: mencionar "ojos verde esmeralda" de Eira más de 1 vez por capítulo
-   - Si ya describiste los ojos de un personaje → en la siguiente aparición usa su NOMBRE, una ACCIÓN o un DIÁLOGO. NO repitas el rasgo
-   - Accesorios (gafas, anillos, cicatrices, tatuajes) → menciónalo UNA VEZ como identificación, después el lector ya lo sabe
+   - Cada rasgo físico de un personaje puede mencionarse MÁXIMO 1 VEZ en TODO EL LIBRO (no por capítulo: en TODA la novela)
+   - La PRIMERA aparición de un personaje en la novela: describe 1-2 rasgos clave. NUNCA MÁS.
+   - En capítulos posteriores: PROHIBIDO repetir descripción física. El lector YA SABE cómo es el personaje.
+   - Accesorios (gafas, anillos, cicatrices, tatuajes) → menciónalo SOLO cuando sea relevante para la ACCIÓN ("se quitó las gafas para frotarse los ojos cansados"), nunca como etiqueta identificativa
    - NUNCA uses el mismo epíteto para reintroducir a un personaje en cada escena. Varía: nombre propio, cargo, relación ("su compañero", "la detective"), acción ("la mujer que acababa de entrar")
-   - Si el World Bible dice "ojos azules" → puedes mencionarlo 1 vez en el capítulo. Después CONFÍA en que el lector lo recuerda
-   - AUTOTEST: al terminar el capítulo, busca mentalmente cuántas veces mencionaste cada rasgo físico. Si alguno aparece 2+ veces → reescribe
+   - PROHIBIDO: "sus ojos [color]" como forma de referirse al personaje. Usa su NOMBRE.
+   - Si los capítulos anteriores ya mencionaron un rasgo (ojos, pelo, cicatriz, gafas) → NO lo repitas. CONFÍA en que el lector lo recuerda de capítulos anteriores
+   - AUTOTEST: al terminar el capítulo, pregúntate "¿Mencioné el color de ojos, pelo o algún accesorio de algún personaje?" Si la respuesta es SÍ y no es la primera aparición → ELIMÍNALO
 
 C) VARIEDAD ESTRUCTURAL:
    - Alterna longitud de oraciones: cortas tensas / largas descriptivas
@@ -332,9 +348,10 @@ A) PROSA DE AUTOR HUMANO (NO de IA):
 
 B) INMERSIÓN SENSORIAL CONCRETA — CON MODERACIÓN:
    - PROHIBIDO: "Sintió miedo" / "El ambiente era tenso" / "La situación era peligrosa"
-   - MEJOR: "La bilis le subió a la garganta. Los dedos le temblaban tanto que no podía cerrar el puño"
+   - MEJOR: "Apretó la mandíbula hasta que le crujieron los dientes. Las llaves resbalaron entre sus dedos húmedos"
    - Detalles CONCRETOS: no "una flor", sino "un lirio marchito con los pétalos pardos"
    - ⚠️ PERO: NO abuses de lo sensorial. Una pincelada sensorial por escena basta. NO describas olores, texturas, luces, sonidos y temperaturas en CADA párrafo — eso satura al lector y produce prosa cargante
+   - PROHIBIDO reciclar las mismas sensaciones entre capítulos (ver blacklist A3). Cada imagen sensorial debe ser ÚNICA en todo el manuscrito
    - La ambientación se establece UNA VEZ al entrar en un espacio. Después, solo menciona detalles sensoriales cuando sean relevantes para la ACCIÓN o la EMOCIÓN del momento
    - PRIORIZA: acción, diálogo y pensamiento por encima de la descripción atmosférica. La atmósfera es el condimento, NO el plato principal
 
