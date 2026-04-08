@@ -92,7 +92,7 @@ export class Orchestrator {
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 3;
   private maxFinalReviewCycles = 10;
-  private minAcceptableScore = 9; // Minimum score required for approval
+  private minAcceptableScore = 8; // Minimum score required for approval
   private requiredConsecutiveHighScores = 2; // Must achieve 9+ this many times in a row
   private continuityCheckpointInterval = 3;
   private currentProjectGenre = "";
@@ -126,12 +126,12 @@ export class Orchestrator {
       return;
     }
 
-    if (score >= 9 && !hasHardRejectCondition && !r.aprobado) {
+    if (score >= 8 && !hasHardRejectCondition && !r.aprobado) {
       console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=false with no critical issues. Forcing aprobado=true.`);
       r.aprobado = true;
     }
-    if (score < 9 && r.aprobado) {
-      console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=true. Forcing aprobado=false (threshold is 9).`);
+    if (score < 8 && r.aprobado) {
+      console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=true. Forcing aprobado=false (threshold is 8).`);
       r.aprobado = false;
     }
   }
@@ -2595,7 +2595,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       if (currentScore >= this.minAcceptableScore) {
         consecutiveHighScores++;
       } else {
-        consecutiveHighScores = 0; // Reset counter if score drops below 9
+        consecutiveHighScores = 0; // Reset counter if score drops below 8
       }
       
       // APROBADO: Puntuación >= 9 por N veces consecutivas
@@ -2611,7 +2611,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // Puntuación >= 9 pero aún no suficientes consecutivas
       if (currentScore >= this.minAcceptableScore && consecutiveHighScores < this.requiredConsecutiveHighScores) {
         this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
-          `Puntuación ${currentScore}/10. Necesita ${this.requiredConsecutiveHighScores - consecutiveHighScores} evaluación(es) más con 9+ para confirmar.`
+          `Puntuación ${currentScore}/10. Necesita ${this.requiredConsecutiveHighScores - consecutiveHighScores} evaluación(es) más con 8+ para confirmar.`
         );
         revisionCycle++;
         continue; // Re-evaluate without rewriting
@@ -2650,8 +2650,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
       }
       
-      // In cycles 3+, if score is 9+ and all remaining issues are "menor", approve
-      if (revisionCycle >= 2 && currentScore >= 9 && result?.issues?.length) {
+      // In cycles 3+, if score is 8+ and all remaining issues are "menor", approve
+      if (revisionCycle >= 2 && currentScore >= 8 && result?.issues?.length) {
         const hasSeriousIssues = result.issues.some(i => i.severidad === "critica" || i.severidad === "mayor");
         if (!hasSeriousIssues) {
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
@@ -2668,14 +2668,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           : currentScore;
         const bestOverall = Math.max(...previousScores);
         
-        if (currentScore >= 9) {
+        if (currentScore >= 8) {
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
             `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 (promedio: ${avgScore}). APROBADO.`
           );
           return true;
         } else {
           this.callbacks.onAgentStatus("final-reviewer", "error", 
-            `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 NO alcanza el mínimo de 9. Proyecto NO APROBADO.`
+            `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 NO alcanza el mínimo de 8. Proyecto NO APROBADO.`
           );
           return false;
         }
@@ -3293,7 +3293,7 @@ Responde SOLO con un JSON válido con la estructura:
               bestVersion = { content: currentContent, score, continuityState: currentContinuityState };
             }
 
-            if (score >= 9 || refinementAttempts >= this.maxRefinementLoops - 1) {
+            if (score >= 8 || refinementAttempts >= this.maxRefinementLoops - 1) {
               approved = true;
               chapterContent = bestVersion.content;
               extractedContinuityState = bestVersion.continuityState;
