@@ -189,13 +189,19 @@ PROTOCOLO DE EVALUACIÓN INTEGRADO
    - Reportar en "frases_repetidas" con conteo exacto: "ojos verde esmeralda (x4)", etc.
 
 4b. MULETILLAS FISIOLÓGICAS (CRÍTICO — delata escritura por IA):
-   - Detecta fórmulas corporales recicladas entre capítulos:
-     "bilis en la garganta", "nudo en el estómago", "aire atascado en los pulmones",
-     "corazón martilleando", "manos temblando", "boca seca", "sangre zumbando en los oídos",
-     "vacío en el pecho", "estómago encogido", "escalofrío recorrió"
-   - Si el capítulo usa 2+ de estas fórmulas: -1 punto
-   - Si el capítulo repite una fórmula que ya apareció en capítulos anteriores: aprobado=false
-   - Cada reacción emocional/física debe ser ÚNICA e irrepetible en el manuscrito
+   - Cuenta TODAS las reacciones corporales/fisiológicas del capítulo: escalofríos, nudos, temblores, sudores, corazones acelerados, vellos erizados, mandíbulas apretadas, bocas secas, puños cerrados, hormigueos, opresiones, fríos que suben/bajan, estómagos encogidos, bilis, pulmones que se niegan, etc.
+   - LÍMITE: máximo 2 reacciones corporales por capítulo ENTERO. La 3ª = aprobado=false, -2 puntos.
+   - Si CUALQUIERA de estas reacciones ya apareció en capítulos anteriores: aprobado=false, -1 punto adicional.
+   - Reportar con conteo exacto: "Reacciones fisiológicas encontradas: 7 (máx permitido: 2)"
+   - Lista concreta de la reacción y su ubicación en el texto.
+
+4bb. PROSA PÚRPURA / RECARGADA (CRÍTICO — segundo defecto más común de IA):
+   - Cuenta los adjetivos por párrafo. Si la media supera 3 adjetivos por frase → -1 punto.
+   - Detecta metáforas innecesarias para conceptos simples ("el silencio, un sudario" para decir "había silencio") → -1 punto si hay 5+ metáforas en el capítulo.
+   - Detecta "espirales descriptivas": Evento → reacción física → reflexión → descripción atmosférica → otra reacción → otra reflexión. Este patrón = -1 punto cada vez.
+   - Detecta párrafos de 3+ líneas puramente descriptivos/atmosféricos sin acción ni diálogo → -1 punto si hay 3+ de estos párrafos.
+   - RATIO: el capítulo debe tener al menos 70% de contenido activo (acción + diálogo). Si más del 30% es descripción/reflexión → nota máxima 7.
+   - Reportar en "prosa_purpura" con ejemplos concretos del texto.
 
 4aa. MONÓLOGO INTERNO EN ESCENAS DE ACCIÓN (CRÍTICO para thrillers):
    - En escenas de tensión (persecuciones, peleas, descubrimientos, clímax), detecta si el narrador se detiene con 2+ párrafos de reflexión filosófica o moral

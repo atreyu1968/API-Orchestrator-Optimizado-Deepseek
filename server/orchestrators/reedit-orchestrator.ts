@@ -61,9 +61,10 @@ CATEGORÍAS DE ANÁLISIS:
 6. PERSONAJES: Comportamientos fuera de carácter, arcos rotos, personajes planos, secundarios arquetípicos sin subversión
 7. AMBIENTACIÓN: Descripciones genéricas, anacronismos, falta de coherencia sensorial
 8. EPÍTETOS REPETIDOS: Rasgos físicos mencionados múltiples veces (color de ojos, accesorios como gafas, cicatrices). Un rasgo se describe UNA VEZ en la primera aparición del personaje EN TODA LA NOVELA. Si aparece 2+ veces en el capítulo o si ya fue descrito en capítulos anteriores: severidad CRITICA.
-9. MULETILLAS FISIOLÓGICAS: Fórmulas corporales recicladas entre capítulos ("bilis en la garganta", "nudo en el estómago", "aire atascado en los pulmones", "corazón martilleando", "manos temblando", "boca seca"). Si aparecen 2+ en un capítulo o si repiten una de capítulos anteriores: severidad CRITICA.
-10. MONÓLOGO EN ACCIÓN: Bloques de reflexión filosófica/moral (100+ palabras) que interrumpen escenas de tensión (persecuciones, peleas, descubrimientos, clímax). La regla de oro del thriller es MOSTRAR, no CONTAR. Máximo 1 frase interna breve durante acción.
-11. PERSONAJES CLICHÉ: Secundarios que son puro arquetipo sin subversión (hacker cínico, novata asustadiza, mentor sabio, jefe duro pero justo). Cada secundario importante debe tener un defecto que contradiga su rol y motivación propia.
+9. MULETILLAS FISIOLÓGICAS: MÁXIMO 2 reacciones corporales por capítulo ENTERO. Cuenta: escalofríos, nudos, temblores, sudores, corazones acelerados, vellos erizados, mandíbulas apretadas, bocas secas, opresiones, fríos que suben/bajan, estómagos encogidos, hormigueos, bilis. La 3ª reacción = severidad CRITICA. Si repiten de capítulos anteriores: CRITICA.
+10. PROSA PÚRPURA: Exceso de adjetivos (2+ por sustantivo), metáforas innecesarias para conceptos simples, párrafos enteros de ambientación sin acción, espirales descriptivas (evento→reacción→reflexión→descripción→otra reacción). Si más del 30% del capítulo es descripción/reflexión: severidad CRITICA.
+11. MONÓLOGO EN ACCIÓN: Bloques de reflexión filosófica/moral (100+ palabras) que interrumpen escenas de tensión. Máximo 1 frase interna breve durante acción.
+12. PERSONAJES CLICHÉ: Secundarios que son puro arquetipo sin subversión. Cada secundario importante debe tener una faceta que contradiga su rol.
 
 SISTEMA DE PUNTUACIÓN ESTRICTO:
 - 10: PERFECTO - cero problemas
@@ -76,7 +77,7 @@ RESPONDE SOLO EN JSON:
 {
   "score": 7,
   "issues": [
-    {"categoria": "continuidad|trama|ritmo|estilo|dialogo|personajes|ambientacion|epitetos_repetidos|muletillas_fisiologicas|monologo_en_accion|personajes_cliche", "descripcion": "Descripción detallada", "severidad": "critica|mayor|menor", "ubicacion": "Párrafo o sección donde ocurre"}
+    {"categoria": "continuidad|trama|ritmo|estilo|dialogo|personajes|ambientacion|epitetos_repetidos|muletillas_fisiologicas|prosa_purpura|monologo_en_accion|personajes_cliche", "descripcion": "Descripción detallada", "severidad": "critica|mayor|menor", "ubicacion": "Párrafo o sección donde ocurre"}
   ],
   "strengths": ["Fortaleza 1"],
   "suggestions": ["Sugerencia específica y accionable"],
@@ -104,13 +105,14 @@ ${prevContext}
 CAPÍTULO COMPLETO:
 ${content}
 
-Evalúa CADA categoría (continuidad, trama, ritmo, estilo, diálogo, personajes, ambientación, epitetos_repetidos, muletillas_fisiologicas, monologo_en_accion, personajes_cliche).
+Evalúa CADA categoría (continuidad, trama, ritmo, estilo, diálogo, personajes, ambientación, epitetos_repetidos, muletillas_fisiologicas, prosa_purpura, monologo_en_accion, personajes_cliche).
 Sé EXHAUSTIVO en la detección de problemas. Cada issue debe tener categoría, descripción, severidad y ubicación.
 PRESTA ESPECIAL ATENCIÓN a:
-- Epítetos/rasgos físicos repetidos (máx 1 mención por rasgo EN TODA LA NOVELA; si ya apareció en capítulos anteriores → CRÍTICO, eliminar)
-- Muletillas fisiológicas recicladas ("bilis", "nudo en el estómago", "aire en los pulmones", etc.) → CRÍTICO si 2+ por capítulo o si repiten de capítulos anteriores
+- Epítetos/rasgos físicos repetidos (máx 1 mención por rasgo EN TODA LA NOVELA; si ya apareció → CRÍTICO)
+- Reacciones corporales: MÁXIMO 2 por capítulo. La 3ª = CRÍTICO.
+- PROSA PÚRPURA: adjetivos apilados (2+ por sustantivo), metáforas innecesarias, párrafos de ambientación sin acción, espirales descriptivas → CRÍTICO
 - Bloques reflexivos durante escenas de acción
-- Secundarios arquetípicos sin subversión.
+- Ratio acción/diálogo vs descripción: debe ser al menos 70/30.
 RESPONDE EN JSON.`;
     
     const response = await this.generateContent(prompt);
@@ -164,9 +166,17 @@ TU MISIÓN es transformar prosa aceptable en prosa EXCELENTE, manteniendo la voz
    - Ejemplo: si "ojos verde esmeralda" aparece en el capítulo 1, TODAS las menciones en capítulos 2+ deben ser eliminadas
 
 3bb. MULETILLAS FISIOLÓGICAS (PRIORIDAD MÁXIMA):
-   - Detecta fórmulas corporales recicladas: "bilis en la garganta", "nudo en el estómago", "aire en los pulmones", "corazón martilleando", "manos temblando", "boca seca", "sangre zumbando", "vacío en el pecho", "estómago encogido", "escalofrío recorrió"
-   - ELIMINA y sustituye por reacciones ÚNICAS: un gesto específico, una acción concreta, un pensamiento fragmentado
-   - Cada reacción emocional debe ser irrepetible en todo el manuscrito
+   - Cuenta TODAS las reacciones corporales. MÁXIMO 2 por capítulo.
+   - ELIMINA todas las que excedan el límite de 2 y sustituye por ACCIONES: tropieza, deja caer algo, no puede abrir una cerradura, tartamudea, dice algo fuera de lugar.
+   - ELIMINA TODAS las que ya aparecieron en capítulos anteriores.
+   - Cada reacción emocional debe ser irrepetible en todo el manuscrito.
+
+3bc. PROSA PÚRPURA (PRIORIDAD MÁXIMA):
+   - ELIMINA adjetivos innecesarios. Si el sustantivo funciona sin el adjetivo, sobra.
+   - ELIMINA metáforas para conceptos simples ("el silencio, un sudario" → "el silencio")
+   - ROMPE las espirales descriptivas: Evento → reacción → reflexión → descripción → más reacción. Deja solo: Evento → UNA reacción breve → siguiente acción.
+   - ELIMINA párrafos enteros de ambientación que no aportan información nueva. Máximo 1-2 frases de contexto al entrar en un espacio.
+   - Ratio objetivo: 70% acción/diálogo, 20% pensamiento, 10% descripción.
 
 3c. MONÓLOGO EN ESCENAS DE ACCIÓN:
    - En escenas de tensión (peleas, persecuciones, descubrimientos, clímax): elimina bloques reflexivos de más de 1-2 frases
@@ -1212,7 +1222,9 @@ REGLAS INVIOLABLES:
 
 20. EPÍTETOS REPETIDOS: Si un rasgo físico (color de ojos, accesorios, cicatrices) se menciona más de 1 vez en el capítulo, ELIMINA TODAS excepto la primera. Si capítulos anteriores ya lo describieron → ELIMINA TODAS en este capítulo. El lector recuerda.
 
-20b. MULETILLAS FISIOLÓGICAS: Elimina fórmulas corporales recicladas ("bilis en la garganta", "nudo en el estómago", "aire en los pulmones", "corazón martilleando", "manos temblando", "boca seca", "sangre zumbando", "vacío en el pecho"). Sustituye por reacciones ÚNICAS: un gesto específico, una acción concreta, un pensamiento fragmentado.
+20b. MULETILLAS FISIOLÓGICAS: Cuenta TODAS las reacciones corporales. MÁXIMO 2 por capítulo. Elimina las que excedan y sustituye por ACCIONES (tropieza, deja caer algo, tartamudea). Elimina TODAS las que ya aparecieron en capítulos anteriores.
+
+20c. PROSA PÚRPURA: Elimina adjetivos innecesarios (si el sustantivo funciona solo, el adjetivo sobra). Elimina metáforas para conceptos simples. Rompe espirales descriptivas (evento→reacción→reflexión→descripción→otra reacción → solo: evento→reacción breve→acción). Elimina párrafos de ambientación sin acción. Ratio: 70% acción/diálogo, 20% pensamiento, 10% descripción.
 
 21. MONÓLOGO EN ESCENAS DE ACCIÓN: Si detectas bloques reflexivos (100+ palabras de filosofía/moral) interrumpiendo escenas de tensión, ELIMÍNALOS o redúcelos a 1 frase interna breve. Sustituye por ACCIONES que muestren la emoción. Las reflexiones profundas solo van en momentos de calma.
 
@@ -1229,7 +1241,7 @@ FORMATO DE RESPUESTA (JSON):
   "capituloReescrito": "TEXTO COMPLETO del capítulo con las correcciones integradas de forma invisible",
   "cambiosRealizados": [
     {
-      "tipoProblema": "hueco_argumental|subplot|arco_incompleto|contradiccion|antagonista|foreshadowing|epitetos_repetidos|muletillas_fisiologicas|monologo_en_accion|personajes_cliche",
+      "tipoProblema": "hueco_argumental|subplot|arco_incompleto|contradiccion|antagonista|foreshadowing|epitetos_repetidos|muletillas_fisiologicas|prosa_purpura|monologo_en_accion|personajes_cliche",
       "descripcionProblema": "El problema específico que se corrigió",
       "solucionAplicada": "Descripción detallada de la corrección",
       "contenidoNuevo": "El texto nuevo añadido (primeras 200 palabras si es largo)",
