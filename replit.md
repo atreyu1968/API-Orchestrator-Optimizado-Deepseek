@@ -208,6 +208,10 @@ Preferred communication style: Simple, everyday language.
 - **Back Matter Generator**: `server/services/back-matter-generator.ts` — generates both Markdown and DOCX paragraph formats. Accepts `authorWebsiteUrl` parameter.
 - **Frontend**: Catalog page at `/book-catalog`, back matter config embedded in the Export page when a project is selected.
 
+### Series Project Editing
+- **Series page** (`client/src/pages/series.tsx`): Each project volume has a settings icon (Settings2) that opens the full ConfigPanel dialog for editing chapterCount, minWordsPerChapter, maxWordsPerChapter, and all other project fields. Changes are saved via PATCH `/api/projects/:id`.
+- **Config page** (`client/src/pages/config.tsx`): Edit dialog now passes `minWordsPerChapter`, `maxWordsPerChapter`, and `kindleUnlimitedOptimized` in defaultValues so they don't reset to defaults on save.
+
 ### Key NPM Packages
 - `@google/genai`: Google Gemini AI SDK.
 - `drizzle-orm` / `drizzle-zod`: ORM and schema validation.

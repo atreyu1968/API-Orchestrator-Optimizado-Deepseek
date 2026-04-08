@@ -12,9 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2, Pencil, X, Upload, Target, Sparkles, ChevronDown, Link2, Download } from "lucide-react";
+import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2, Pencil, X, Upload, Target, Sparkles, ChevronDown, Link2, Download, Settings2 } from "lucide-react";
 import { SERIES_WRITING_GUIDE_TEMPLATE, downloadTemplate } from "@/lib/writing-templates";
 import { ArcVerificationPanel } from "@/components/arc-verification-panel";
+import { ConfigPanel } from "@/components/config-panel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Pseudonym, Project, Series, ImportedManuscript, ReeditProject } from "@shared/schema";
 
@@ -66,6 +67,8 @@ export default function SeriesPage() {
   const [uploadingVolumeSeriesId, setUploadingVolumeSeriesId] = useState<number | null>(null);
   const uploadingVolumeSeriesIdRef = useRef<number | null>(null);
   const volumeInputRef = useRef<HTMLInputElement>(null);
+
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
 
   const { data: registry = [], isLoading } = useQuery<SeriesWithDetails[]>({
     queryKey: ["/api/series/registry"],
@@ -382,6 +385,30 @@ export default function SeriesPage() {
     },
     onError: () => {
       toast({ title: "Error", description: "No se pudo cancelar el análisis", variant: "destructive" });
+    },
+  });
+
+  const updateProjectMutation = useMutation({
+    mutationFn: async ({ id, ...data }: { id: number } & Record<string, any>) => {
+      const response = await apiRequest("PATCH", `/api/projects/${id}`, data);
+      return response.json();
+    },
+    onSuccess: (project: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/series"] });
+      setEditingProject(null);
+      toast({
+        title: "Proyecto actualizado",
+        description: `"${project.title}" ha sido actualizado correctamente`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el proyecto",
+        variant: "destructive",
+      });
     },
   });
 
@@ -975,6 +1002,20 @@ export default function SeriesPage() {
                                 {vol.wordCount.toLocaleString()} palabras
                               </Badge>
                             )}
+                            {vol.type === "project" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground hover:text-blue-500"
+                                onClick={() => {
+                                  const project = s.projects.find(p => p.id === vol.id);
+                                  if (project) setEditingProject(project);
+                                }}
+                                data-testid={`button-edit-project-${vol.id}`}
+                              >
+                                <Settings2 className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
@@ -1125,6 +1166,45 @@ export default function SeriesPage() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editingProject} onOpenChange={(open) => !open && setEditingProject(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar proyecto de serie</DialogTitle>
+          </DialogHeader>
+          {editingProject && (
+            <ConfigPanel
+              key={editingProject.id}
+              onSubmit={(data) => {
+                updateProjectMutation.mutate({ id: editingProject.id, ...data });
+              }}
+              onReset={() => setEditingProject(null)}
+              isLoading={updateProjectMutation.isPending}
+              defaultValues={{
+                title: editingProject.title,
+                premise: editingProject.premise || "",
+                genre: editingProject.genre,
+                tone: editingProject.tone,
+                chapterCount: editingProject.chapterCount,
+                hasPrologue: editingProject.hasPrologue,
+                hasEpilogue: editingProject.hasEpilogue,
+                hasAuthorNote: editingProject.hasAuthorNote,
+                pseudonymId: editingProject.pseudonymId,
+                styleGuideId: editingProject.styleGuideId,
+                extendedGuideId: editingProject.extendedGuideId,
+                workType: editingProject.workType || "standalone",
+                seriesId: editingProject.seriesId,
+                seriesOrder: editingProject.seriesOrder,
+                minWordCount: editingProject.minWordCount,
+                minWordsPerChapter: editingProject.minWordsPerChapter ?? 1500,
+                maxWordsPerChapter: editingProject.maxWordsPerChapter ?? 3500,
+                kindleUnlimitedOptimized: editingProject.kindleUnlimitedOptimized ?? false,
+              }}
+              isEditing
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

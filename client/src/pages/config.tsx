@@ -606,6 +606,9 @@ export default function ConfigPage() {
                 seriesId: editingProject.seriesId,
                 seriesOrder: editingProject.seriesOrder,
                 minWordCount: editingProject.minWordCount,
+                minWordsPerChapter: editingProject.minWordsPerChapter ?? 1500,
+                maxWordsPerChapter: editingProject.maxWordsPerChapter ?? 3500,
+                kindleUnlimitedOptimized: editingProject.kindleUnlimitedOptimized ?? false,
               }}
               isEditing
             />
