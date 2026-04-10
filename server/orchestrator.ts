@@ -92,7 +92,7 @@ export class Orchestrator {
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 3;
   private maxFinalReviewCycles = 10;
-  private minAcceptableScore = 8; // Minimum score required for approval
+  private minAcceptableScore = 9; // Minimum score required for final manuscript approval
   private requiredConsecutiveHighScores = 2; // Must achieve 9+ this many times in a row
   private continuityCheckpointInterval = 3;
   private currentProjectGenre = "";
@@ -2595,7 +2595,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       if (currentScore >= this.minAcceptableScore) {
         consecutiveHighScores++;
       } else {
-        consecutiveHighScores = 0; // Reset counter if score drops below 8
+        consecutiveHighScores = 0; // Reset counter if score drops below 9
       }
       
       // APROBADO: Puntuación >= 9 por N veces consecutivas
@@ -2611,7 +2611,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // Puntuación >= 9 pero aún no suficientes consecutivas
       if (currentScore >= this.minAcceptableScore && consecutiveHighScores < this.requiredConsecutiveHighScores) {
         this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
-          `Puntuación ${currentScore}/10. Necesita ${this.requiredConsecutiveHighScores - consecutiveHighScores} evaluación(es) más con 8+ para confirmar.`
+          `Puntuación ${currentScore}/10. Necesita ${this.requiredConsecutiveHighScores - consecutiveHighScores} evaluación(es) más con 9+ para confirmar.`
         );
         revisionCycle++;
         continue; // Re-evaluate without rewriting
@@ -2650,8 +2650,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
       }
       
-      // In cycles 3+, if score is 8+ and all remaining issues are "menor", approve
-      if (revisionCycle >= 2 && currentScore >= 8 && result?.issues?.length) {
+      // In cycles 3+, if score is 9+ and all remaining issues are "menor", approve
+      if (revisionCycle >= 2 && currentScore >= 9 && result?.issues?.length) {
         const hasSeriousIssues = result.issues.some(i => i.severidad === "critica" || i.severidad === "mayor");
         if (!hasSeriousIssues) {
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
@@ -2668,14 +2668,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           : currentScore;
         const bestOverall = Math.max(...previousScores);
         
-        if (currentScore >= 8) {
+        if (currentScore >= 9) {
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
             `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 (promedio: ${avgScore}). APROBADO.`
           );
           return true;
         } else {
           this.callbacks.onAgentStatus("final-reviewer", "error", 
-            `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 NO alcanza el mínimo de 8. Proyecto NO APROBADO.`
+            `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 NO alcanza el mínimo de 9. Proyecto NO APROBADO.`
           );
           return false;
         }
