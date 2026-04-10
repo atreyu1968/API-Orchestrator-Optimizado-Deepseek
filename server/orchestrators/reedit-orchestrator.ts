@@ -175,6 +175,13 @@ TU MISIÓN es transformar prosa aceptable en prosa EXCELENTE, manteniendo la voz
    - ROMPE las espirales descriptivas: Evento → reacción → reflexión → descripción → más reacción. Simplifica a: Evento → reacción breve → siguiente acción.
    - REDUCE párrafos largos de ambientación pura. Máximo 1-2 frases de contexto al entrar en un espacio.
 
+3bd. MODULACIÓN RÍTMICA (evitar fatiga del lector):
+   - NO dejes todo el capítulo con frases cortas tipo telégrafo. Eso agota al lector.
+   - MODULA el ritmo según la escena:
+     * Tensión/peligro: frases cortas, párrafos breves.
+     * Transiciones/calma: frases más largas y fluidas, subordinadas, párrafos de 3-5 líneas. Aquí SÍ puedes mantener o añadir alguna descripción sensorial.
+   - El contraste rítmico entre secciones rápidas y pausadas es lo que crea impacto narrativo.
+
 3c. MONÓLOGO EN ESCENAS DE ACCIÓN:
    - En escenas de tensión (peleas, persecuciones, descubrimientos, clímax): elimina bloques reflexivos de más de 1-2 frases
    - Máximo 1 frase interna breve entre acciones. Las reflexiones largas van en momentos de calma.

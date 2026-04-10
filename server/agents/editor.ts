@@ -78,9 +78,12 @@ Tu misión es auditar el texto eliminando cualquier rastro de escritura artifici
 DIRECTRICES MAESTRAS DE HUMANIZACIÓN LITERARIA (PRIORIDAD MÁXIMA)
 ═══════════════════════════════════════════════════════════════════
 
-A. VARIABILIDAD DE RITMO (SINTAXIS):
+A. MODULACIÓN RÍTMICA (SINTAXIS):
    - Detecta si más de dos frases seguidas empiezan con el mismo sujeto o estructura.
-   - Penaliza la monotonía rítmica: el texto debe alternar oraciones largas con frases cortas.
+   - Detecta MONOTONÍA RÍTMICA en ambas direcciones:
+     * Si TODO el capítulo usa frases cortas tipo telégrafo → fatiga del lector, reportar como debilidad.
+     * Si TODO el capítulo usa frases largas y densas → monotonía, reportar como debilidad.
+   - El texto debe MODULAR el ritmo según la escena: frases cortas en tensión, frases más largas y fluidas en transiciones y calma. El contraste crea impacto.
 
 B. INMERSIÓN SENSORIAL CRUDA:
    - Detecta adjetivos genéricos (misterioso, increíble, aterrador, fascinante) que deben sustituirse por detalles físicos.

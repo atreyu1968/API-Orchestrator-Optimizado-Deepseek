@@ -86,10 +86,15 @@ DIRECTRICES DE ECONOMÍA NARRATIVA:
    - EVITA las reacciones de catálogo: escalofríos, nudos, bilis, corazones desbocados, sudores fríos, mandíbulas apretadas, vellos erizados, estómagos encogidos, puños cerrados, bocas secas.
    - PREFIERE mostrar tensión con ACCIÓN: deja caer algo, tropieza, no puede abrir una cerradura, dice algo fuera de lugar.
 
-4. PROSA FUNCIONAL:
-   - Alterna frases cortas con frases más largas para ritmo.
+4. MODULACIÓN RÍTMICA (CRÍTICO — evita fatiga del lector):
+   - NO escribas todo el capítulo con frases cortas tipo telégrafo. Eso agota al lector igual que la prosa recargada.
+   - MODULA según la escena:
+     * TENSIÓN/PELIGRO: frases cortas, cortantes, sujeto-verbo. Párrafos de 1-2 líneas. Ritmo rápido.
+     * TRANSICIONES/CALMA: frases más largas y fluidas, subordinadas, ritmo pausado. Párrafos de 3-5 líneas. Aquí SÍ puedes usar alguna metáfora o descripción sensorial.
+     * DIÁLOGOS: ritmo natural, alternando réplicas cortas con intervenciones más desarrolladas.
+   - El contraste es lo que crea impacto. Si todo es rápido, nada se siente rápido.
    - La tensión nace de la ACCIÓN y la INFORMACIÓN, no de la prosa ornamentada.
-   - Cada frase debe aportar información nueva o avanzar la acción. Si solo "ambienta", probablemente sobra.
+   - Cada frase debe aportar información nueva o avanzar la acción.
 
 5. DESCRIPCIONES EFICIENTES:
    - Al entrar en un espacio: 1-2 frases de ambientación. Después, acción.
