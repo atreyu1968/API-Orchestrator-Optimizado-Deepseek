@@ -589,6 +589,7 @@ export const reeditProjects = pgTable("reedit_projects", {
   pauseReason: text("pause_reason"), // Why the process was paused
   pendingUserInstructions: text("pending_user_instructions"), // User guidance for next cycle
   architectInstructions: text("architect_instructions"), // Initial user instructions from import
+  editorialCritique: text("editorial_critique"), // External editorial critique to drive corrections
   seriesId: integer("series_id").references(() => series.id, { onDelete: "set null" }),
   seriesOrder: integer("series_order"),
   // Tracking de issues resueltos - evita que el revisor re-reporte problemas ya corregidos

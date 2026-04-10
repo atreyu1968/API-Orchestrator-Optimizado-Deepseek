@@ -3198,7 +3198,13 @@ export class ReeditOrchestrator {
       const rewrittenChapters = new Set<number>();
       
       // Get user instructions for rewriting (architectInstructions from project creation)
-      const userRewriteInstructions = project.architectInstructions || "";
+      let userRewriteInstructions = project.architectInstructions || "";
+      
+      // Append editorial critique as high-priority corrections if present
+      if (project.editorialCritique) {
+        const critiqueSection = `\n\n═══════════════════════════════════════════════════════════════\nCRÍTICA EDITORIAL EXTERNA (PRIORIDAD ALTA — corregir estos problemas):\n═══════════════════════════════════════════════════════════════\n${project.editorialCritique}\n\nIMPORTANTE: Los puntos de esta crítica editorial son problemas reales identificados por un lector/editor profesional. Deben abordarse y corregirse en cada capítulo donde apliquen.`;
+        userRewriteInstructions = userRewriteInstructions ? userRewriteInstructions + critiqueSection : critiqueSection;
+      }
       
       if (consolidatedProblems.size > 0 && !narrativeRewriteCompleted) {
         const totalProblemsCount = Array.from(consolidatedProblems.values()).reduce((sum, p) => sum + p.length, 0);
@@ -3436,7 +3442,12 @@ export class ReeditOrchestrator {
       let consecutiveHighScores = savedProject?.consecutiveHighScores || 0;
       const previousScores: number[] = (savedProject?.previousScores as number[]) || [];
       let nonPerfectCount = savedProject?.nonPerfectFinalReviews || 0;
-      const userInstructions = savedProject?.pendingUserInstructions || "";
+      let userInstructions = savedProject?.pendingUserInstructions || "";
+      // Append editorial critique to user instructions for the rewriter
+      if (savedProject?.editorialCritique) {
+        const critiqueBlock = `\n\nCRÍTICA EDITORIAL EXTERNA (PRIORIDAD ALTA):\n${savedProject.editorialCritique}\nIMPORTANTE: Estos problemas fueron identificados por un editor profesional. Corrígelos en cada capítulo donde apliquen.`;
+        userInstructions = userInstructions ? userInstructions + critiqueBlock : critiqueBlock;
+      }
       let finalResult: FinalReviewerResult | null = null;
       let bestsellerScore = 0;
       const correctedIssueDescriptions: string[] = [];
@@ -3459,6 +3470,12 @@ export class ReeditOrchestrator {
           pendingUserInstructions: null,
           pauseReason: null,
         });
+      }
+      
+      // Add editorial critique to correction context if present
+      if (savedProject?.editorialCritique) {
+        console.log(`[ReeditOrchestrator] Editorial critique found: "${savedProject.editorialCritique.substring(0, 100)}..."`);
+        correctedIssueDescriptions.push(`CRÍTICA EDITORIAL EXTERNA (verificar que estos problemas hayan sido corregidos): ${savedProject.editorialCritique}`);
       }
 
       // Get World Bible and style guide for full final review
@@ -3541,6 +3558,7 @@ export class ReeditOrchestrator {
           guiaEstilo: guiaEstilo,
           pasadaNumero: revisionCycle + 1,
           issuesPreviosCorregidos: correctedIssueDescriptions,
+          editorialCritique: savedProject?.editorialCritique || undefined,
         });
         this.trackTokens(fullReviewResult);
         await this.updateHeartbeat(projectId);
@@ -3983,11 +4001,22 @@ export class ReeditOrchestrator {
     let totalCyclesExecuted = project.totalReviewCycles || 0;
     
     // Check for user instructions and add them to context
-    const userInstructions = project.pendingUserInstructions || "";
+    let userInstructions = project.pendingUserInstructions || "";
+    // Append editorial critique for the rewriter
+    if (project.editorialCritique) {
+      const critiqueBlock = `\n\nCRÍTICA EDITORIAL EXTERNA (PRIORIDAD ALTA):\n${project.editorialCritique}\nIMPORTANTE: Estos problemas fueron identificados por un editor profesional. Corrígelos en cada capítulo donde apliquen.`;
+      userInstructions = userInstructions ? userInstructions + critiqueBlock : critiqueBlock;
+    }
     if (userInstructions) {
       console.log(`[ReeditOrchestrator] User instructions found: "${userInstructions.substring(0, 100)}..."`);
       correctedIssueDescriptions.push(`INSTRUCCIONES DEL USUARIO: ${userInstructions}`);
       // NOTE: Instructions are cleared AFTER corrections are applied successfully (see below)
+    }
+    
+    // Add editorial critique to correction context if present
+    if (project.editorialCritique) {
+      console.log(`[ReeditOrchestrator] Editorial critique found for FRO: "${project.editorialCritique.substring(0, 100)}..."`);
+      correctedIssueDescriptions.push(`CRÍTICA EDITORIAL EXTERNA (verificar que estos problemas hayan sido corregidos): ${project.editorialCritique}`);
     }
     
     // If we have an existing finalReviewResult with issues, apply those corrections FIRST before running review
@@ -4182,6 +4211,7 @@ export class ReeditOrchestrator {
         guiaEstilo: guiaEstilo,
         pasadaNumero: revisionCycle + 1,
         issuesPreviosCorregidos: correctedIssueDescriptions,
+        editorialCritique: project.editorialCritique || undefined,
       });
       this.trackTokens(fullReviewResult);
       await this.updateHeartbeat(projectId);
@@ -4632,7 +4662,11 @@ export class ReeditOrchestrator {
     ];
 
     const worldBible = await storage.getReeditWorldBibleByProject(projectId);
-    const userInstructions = project.pendingUserInstructions || project.architectInstructions || "";
+    let userInstructions = project.pendingUserInstructions || project.architectInstructions || "";
+    if (project.editorialCritique) {
+      const critiqueBlock = `\n\nCRÍTICA EDITORIAL EXTERNA (PRIORIDAD ALTA):\n${project.editorialCritique}\nIMPORTANTE: Estos problemas fueron identificados por un editor profesional. Corrígelos en cada capítulo donde apliquen.`;
+      userInstructions = userInstructions ? userInstructions + critiqueBlock : critiqueBlock;
+    }
 
     const allChapters = await storage.getReeditChaptersByProject(projectId);
     const editableChapters = allChapters.filter(c => c.editedContent);

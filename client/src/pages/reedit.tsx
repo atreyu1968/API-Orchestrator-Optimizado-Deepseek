@@ -709,12 +709,14 @@ export default function ReeditPage() {
   const [insertNewChapters, setInsertNewChapters] = useState(false);
   const [targetMinWords, setTargetMinWords] = useState(2000);
   const [uploadInstructions, setUploadInstructions] = useState("");
+  const [uploadEditorialCritique, setUploadEditorialCritique] = useState("");
   
   // Restart dialog state
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const [restartExpandChapters, setRestartExpandChapters] = useState(false);
   const [restartInsertNewChapters, setRestartInsertNewChapters] = useState(false);
   const [restartTargetMinWords, setRestartTargetMinWords] = useState(2000);
+  const [restartEditorialCritique, setRestartEditorialCritique] = useState("");
   
   // User instructions for awaiting_instructions state
   const [userInstructions, setUserInstructions] = useState("");
@@ -893,11 +895,12 @@ export default function ReeditPage() {
   });
 
   const restartMutation = useMutation({
-    mutationFn: async (params: { projectId: number; expandChapters: boolean; insertNewChapters: boolean; targetMinWordsPerChapter: number }) => {
+    mutationFn: async (params: { projectId: number; expandChapters: boolean; insertNewChapters: boolean; targetMinWordsPerChapter: number; editorialCritique?: string }) => {
       return apiRequest("POST", `/api/reedit-projects/${params.projectId}/restart`, {
         expandChapters: params.expandChapters,
         insertNewChapters: params.insertNewChapters,
         targetMinWordsPerChapter: params.targetMinWordsPerChapter,
+        editorialCritique: params.editorialCritique || null,
       });
     },
     onSuccess: () => {
@@ -917,15 +920,16 @@ export default function ReeditPage() {
       expandChapters: restartExpandChapters,
       insertNewChapters: restartInsertNewChapters,
       targetMinWordsPerChapter: restartTargetMinWords,
+      editorialCritique: restartEditorialCritique.trim() || undefined,
     });
-  }, [selectedProjectData, restartExpandChapters, restartInsertNewChapters, restartTargetMinWords, restartMutation]);
+  }, [selectedProjectData, restartExpandChapters, restartInsertNewChapters, restartTargetMinWords, restartEditorialCritique, restartMutation]);
 
   const openRestartDialog = useCallback(() => {
     if (selectedProjectData) {
-      // Initialize with current project settings
       setRestartExpandChapters(selectedProjectData.expandChapters || false);
       setRestartInsertNewChapters(selectedProjectData.insertNewChapters || false);
       setRestartTargetMinWords(selectedProjectData.targetMinWordsPerChapter || 2000);
+      setRestartEditorialCritique((selectedProjectData as any).editorialCritique || "");
       setShowRestartDialog(true);
     }
   }, [selectedProjectData]);
@@ -956,13 +960,17 @@ export default function ReeditPage() {
     if (uploadInstructions.trim()) {
       formData.append("instructions", uploadInstructions.trim());
     }
+    if (uploadEditorialCritique.trim()) {
+      formData.append("editorialCritique", uploadEditorialCritique.trim());
+    }
     try {
       await uploadMutation.mutateAsync(formData);
       setUploadInstructions("");
+      setUploadEditorialCritique("");
     } finally {
       setIsUploading(false);
     }
-  }, [uploadFile, uploadTitle, uploadLanguage, expandChapters, insertNewChapters, targetMinWords, uploadInstructions, uploadMutation, toast]);
+  }, [uploadFile, uploadTitle, uploadLanguage, expandChapters, insertNewChapters, targetMinWords, uploadInstructions, uploadEditorialCritique, uploadMutation, toast]);
 
   useEffect(() => {
     if (!selectedProject && projects.length > 0) {
@@ -1079,6 +1087,24 @@ export default function ReeditPage() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Estas instrucciones guiarán a los agentes de IA durante todo el proceso de reedición.
+                </p>
+              </div>
+              <div className="space-y-2 pt-2 border-t">
+                <Label htmlFor="upload-editorial-critique" className="text-sm font-medium flex items-center gap-2">
+                  Crítica editorial (opcional)
+                  <Badge variant="outline" className="text-xs">Nuevo</Badge>
+                </Label>
+                <textarea
+                  id="upload-editorial-critique"
+                  data-testid="textarea-upload-editorial-critique"
+                  value={uploadEditorialCritique}
+                  onChange={(e) => setUploadEditorialCritique(e.target.value)}
+                  placeholder="Pega aquí la crítica de tu editor o lector beta. Ejemplo: 'Las frases son demasiado cortas en todo el libro, falta modulación rítmica. El personaje de María es plano en los capítulos 3-7. El clímax del capítulo 12 se siente apresurado...'"
+                  className="w-full min-h-[100px] p-2 text-sm border rounded-md bg-background resize-y"
+                  rows={4}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Los agentes usarán esta crítica como correcciones prioritarias: el reescritor aplicará los cambios y el revisor final verificará que cada punto haya sido abordado.
                 </p>
               </div>
               <div>
@@ -1443,6 +1469,21 @@ export default function ReeditPage() {
                   </TabsList>
 
                   <TabsContent value="progress" className="space-y-4">
+                    {(selectedProjectData as any).editorialCritique && (
+                      <Card className="mt-4 border-blue-500/30 bg-blue-50/50 dark:bg-blue-950/20">
+                        <CardContent className="pt-4 pb-3">
+                          <div className="flex items-start gap-2">
+                            <FileText className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                            <div className="space-y-1 flex-1">
+                              <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Crítica Editorial Activa</p>
+                              <p className="text-xs text-blue-700 dark:text-blue-300 whitespace-pre-wrap line-clamp-4">
+                                {(selectedProjectData as any).editorialCritique}
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
                     <div className="grid grid-cols-2 gap-4 mt-4">
                       <Card>
                         <CardContent className="pt-6">
@@ -1810,6 +1851,20 @@ export default function ReeditPage() {
                 />
               </div>
             )}
+            <div className="space-y-2 pt-2 border-t">
+              <Label className="text-sm font-medium">Crítica editorial (opcional)</Label>
+              <textarea
+                data-testid="textarea-restart-editorial-critique"
+                value={restartEditorialCritique}
+                onChange={(e) => setRestartEditorialCritique(e.target.value)}
+                placeholder="Pega aquí la crítica de tu editor para guiar las correcciones..."
+                className="w-full min-h-[80px] p-2 text-sm border rounded-md bg-background resize-y"
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                Los agentes aplicarán estas correcciones como prioridad alta.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRestartDialog(false)}>

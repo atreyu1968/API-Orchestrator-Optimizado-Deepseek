@@ -66,6 +66,7 @@ Preferred communication style: Simple, everyday language.
 - Proper ID collision handling with `source` + `reeditProjectId` tracking across frontend and backend.
 - Resume support for interrupted reedit translations (branching by source type in resume endpoint).
 - "Re-editado" badge in translation repository.
+- **Editorial Critique-Driven Reedit**: `editorialCritique` column on `reedit_projects` accepts external editor/beta-reader feedback. Injected into NarrativeRewriter (as high-priority corrections) and FinalReviewer (as verification checklist). Available on upload, resume, and restart. UI shows critique in progress tab and restart dialog.
 - Anti-AI filter with per-language crutch word lists.
 - Extensive cleanup of AI-generated contamination (style guides, checklists, JSON artifacts).
 - Shared `sanitizeContentForTranslation()` function cleans source content before translation (all 3 paths).

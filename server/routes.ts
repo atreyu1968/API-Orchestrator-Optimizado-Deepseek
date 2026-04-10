@@ -3558,7 +3558,7 @@ ${series.seriesGuide.substring(0, 50000)}`;
   app.post("/api/imported-manuscripts/:id/send-to-reedit", async (req: Request, res: Response) => {
     try {
       const manuscriptId = parseInt(req.params.id);
-      const { instructions, expandChapters, insertNewChapters, targetMinWordsPerChapter } = req.body;
+      const { instructions, editorialCritique, expandChapters, insertNewChapters, targetMinWordsPerChapter } = req.body;
 
       const manuscript = await storage.getImportedManuscript(manuscriptId);
       if (!manuscript) {
@@ -3581,6 +3581,7 @@ ${series.seriesGuide.substring(0, 50000)}`;
         insertNewChapters: insertNewChapters === true,
         targetMinWordsPerChapter: targetMinWordsPerChapter || 2000,
         architectInstructions: instructions?.trim() || null,
+        editorialCritique: editorialCritique?.trim() || null,
       });
 
       const sortedChapters = [...chapters].sort((a, b) => {
@@ -6886,7 +6887,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const { title, language = "es", expandChapters, insertNewChapters, targetMinWordsPerChapter, instructions } = req.body;
+      const { title, language = "es", expandChapters, insertNewChapters, targetMinWordsPerChapter, instructions, editorialCritique } = req.body;
       if (!title) {
         return res.status(400).json({ error: "Title is required" });
       }
@@ -6908,6 +6909,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         insertNewChapters: insertNewChapters === "true",
         targetMinWordsPerChapter: parseInt(targetMinWordsPerChapter) || 2000,
         architectInstructions: instructions?.trim() || null,
+        editorialCritique: editorialCritique?.trim() || null,
       });
 
       const chapterPattern = /^(Prólogo|Prologue|Prolog|Prologo|Epílogo|Epilogue|Epilog|Epilogo|Nota\s+de(?:l)?\s+Autor(?:a)?|Author'?s?\s+Note|Note\s+de\s+l'Auteur|Nachwort|Nota\s+dell'Autore|Nota\s+de\s+l'Autor|Capítulo\s+\d+|Chapter\s+\d+|Chapitre\s+\d+|Kapitel\s+\d+|Capitolo\s+\d+|Capítol\s+\d+)(?:\s*[:\-–—.]?\s*(.*))?$/gim;
@@ -7486,7 +7488,7 @@ CRITERIOS:
   app.post("/api/reedit-projects/:id/resume", async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
-      const { instructions } = req.body || {};
+      const { instructions, editorialCritique } = req.body || {};
       const project = await storage.getReeditProject(projectId);
       
       if (!project) {
@@ -7512,6 +7514,11 @@ CRITERIOS:
       if (instructions && typeof instructions === 'string' && instructions.trim()) {
         updateData.pendingUserInstructions = instructions.trim();
         console.log(`[ReeditResume] User provided instructions: "${instructions.substring(0, 100)}..."`);
+      }
+      
+      if (editorialCritique && typeof editorialCritique === 'string' && editorialCritique.trim()) {
+        updateData.editorialCritique = editorialCritique.trim();
+        console.log(`[ReeditResume] Editorial critique provided: "${editorialCritique.substring(0, 100)}..."`);
       }
       
       // If resuming from awaiting_instructions, reset the non-perfect counter
@@ -7867,7 +7874,7 @@ CRITERIOS:
       }
 
       // Get expansion options from request body
-      const { expandChapters, insertNewChapters, targetMinWordsPerChapter } = req.body;
+      const { expandChapters, insertNewChapters, targetMinWordsPerChapter, editorialCritique } = req.body;
 
       // Reset project state with new expansion options if provided
       await storage.updateReeditProject(projectId, {
@@ -7887,6 +7894,7 @@ CRITERIOS:
         ...(expandChapters !== undefined && { expandChapters }),
         ...(insertNewChapters !== undefined && { insertNewChapters }),
         ...(targetMinWordsPerChapter !== undefined && { targetMinWordsPerChapter }),
+        ...(editorialCritique !== undefined && { editorialCritique: editorialCritique?.trim() || null }),
       });
       
       // Delete world bible for this project

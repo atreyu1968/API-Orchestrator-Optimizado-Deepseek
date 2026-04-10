@@ -12,6 +12,7 @@ interface FinalReviewerInput {
   guiaEstilo: string;
   pasadaNumero?: number;
   issuesPreviosCorregidos?: string[];
+  editorialCritique?: string;
   capitulosConLimitaciones?: Array<{ capitulo: number; errorTypes: string[]; intentos: number }>;
   seriesContext?: {
     seriesTitle: string;
@@ -545,6 +546,19 @@ la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad sufici
     ═══════════════════════════════════════════════════════════════════`;
     }
 
+    const editorialCritiqueSection = input.editorialCritique ? `
+    ═══════════════════════════════════════════════════════════════════
+    🔴 CRÍTICA EDITORIAL EXTERNA (VERIFICACIÓN OBLIGATORIA)
+    ═══════════════════════════════════════════════════════════════════
+    Un editor/lector profesional ha proporcionado la siguiente crítica:
+    
+    ${input.editorialCritique}
+    
+    INSTRUCCIONES: Debes verificar EXPLÍCITAMENTE si cada punto de esta crítica editorial
+    ha sido corregido en el manuscrito. Si algún punto sigue sin resolverse, repórtalo como
+    issue con categoría apropiada y severidad "alta" o "critica".
+    ═══════════════════════════════════════════════════════════════════` : "";
+
     const prompt = `
     TÍTULO DE LA NOVELA: ${input.projectTitle}
     
@@ -554,6 +568,7 @@ la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad sufici
     GUÍA DE ESTILO:
     ${input.guiaEstilo}
     ${seriesSection}
+    ${editorialCritiqueSection}
     ${pasadaInfo}
     ===============================================
     MANUSCRITO COMPLETO PARA ANÁLISIS:
@@ -567,8 +582,9 @@ la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad sufici
     3. Verifica la coherencia temporal entre capítulos.
     4. Identifica repeticiones léxicas cross-chapter (solo si aparecen 3+ veces).
     5. Evalúa si todos los arcos narrativos están cerrados.
-    ${input.seriesContext ? "6. Verifica el cumplimiento de hitos de serie y la progresión de hilos argumentales cross-volumen." : ""}
-    ${input.seriesContext?.isLastVolume ? "7. ⛔ ÚLTIMO VOLUMEN: Confirma que TODOS los hilos de la serie están cerrados satisfactoriamente." : ""}
+    ${input.editorialCritique ? "6. Verifica que CADA punto de la crítica editorial externa haya sido abordado." : ""}
+    ${input.seriesContext ? `${input.editorialCritique ? "7" : "6"}. Verifica el cumplimiento de hitos de serie y la progresión de hilos argumentales cross-volumen.` : ""}
+    ${input.seriesContext?.isLastVolume ? `${input.editorialCritique ? "8" : "7"}. ⛔ ÚLTIMO VOLUMEN: Confirma que TODOS los hilos de la serie están cerrados satisfactoriamente.` : ""}
     
     Sé PRECISO y OBJETIVO. Solo reporta errores con EVIDENCIA TEXTUAL verificable.
     Si el manuscrito está bien, apruébalo. No busques problemas donde no los hay.
