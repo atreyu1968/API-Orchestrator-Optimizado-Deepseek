@@ -1,4 +1,4 @@
-# LitAgents v5.0 — Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v6.0 — Sistema de Orquestacion de Agentes Literarios IA
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando Google Gemini.
 
@@ -16,9 +16,13 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 - **Anti-Repeticion entre Capitulos**: Ventana deslizante con texto real de capitulos anteriores y deteccion de patrones narrativos repetidos
 - **Seguimiento de Costos**: Tracking granular de uso de tokens por proyecto, agente y modelo con precios actualizados
 - **Gestion de Series**: Continuidad inter-libros con snapshots automaticos y verificacion de arcos narrativos
+- **Spin-offs**: Creacion de series derivadas con protagonista de la serie original y guia auto-generada
+- **Critica Editorial**: Inyeccion de feedback externo (editores, beta-readers) como guia prioritaria en re-ediciones
 - **Autenticacion**: Proteccion con contrasena para instalaciones en servidor propio
 - **Audiolibros**: Conversion de novelas a audiolibro con voces TTS de Fish Audio (modelo speech-1.6), portadas personalizadas y descarga en ZIP
-- **Catalogo de Libros y Back Matter**: Gestion centralizada de obras publicadas con generacion automatica de paginas finales (solicitud de resena + "Otras obras del autor") en exportaciones
+- **Metadatos KDP**: Generacion automatica de metadata para Amazon KDP (descripcion HTML, keywords, categorias BISAC)
+- **Portadas IA**: Generacion de prompts optimizados para crear portadas con Midjourney, DALL-E, Stable Diffusion, etc.
+- **Catalogo de Libros y Back Matter**: Gestion centralizada de obras publicadas con generacion automatica de paginas finales
 - **Originalidad de Nombres**: Sistema dinamico que prohibe al Arquitecto reutilizar nombres de personajes entre novelas diferentes (permitidos dentro de la misma serie)
 - **PWA**: Aplicacion web progresiva instalable con soporte offline
 
@@ -72,13 +76,19 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 |--------|--------|------------|---------|
 | Generador de Guias | Gemini 2.5 Flash | 32768 | Generacion de guias de estilo y escritura (con thinking) |
 
+### Herramientas de Publicacion
+| Agente | Modelo | Tokens Max | Funcion |
+|--------|--------|------------|---------|
+| Generador de Metadatos KDP | Gemini 2.5 Flash | 16384 | Metadata Amazon KDP (descripcion, keywords, BISAC) |
+| Disenador de Portadas | Gemini 2.5 Flash | 16384 | Prompts optimizados para generacion de portadas IA |
+
 ## Distribucion de Modelos y Costos
 
 Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando costos sin sacrificar calidad.
 
 | Modelo | Uso | Input/M | Output/M | Thinking/M |
 |--------|-----|---------|----------|------------|
-| Gemini 2.5 Flash | Todos los agentes | $0.15 | $0.60 | $3.50 |
+| Gemini 2.5 Flash | Todos los agentes | $0.30 | $2.50 | $3.50 |
 | Gemini 2.0 Flash | Analizador de manuscritos | $0.10 | $0.40 | — |
 
 ### Optimizacion de Tokens
@@ -117,22 +127,35 @@ Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando c
 - **Deteccion por el Editor**: Nuevo campo `repeticiones_trama` que compara el capitulo actual contra el texto de 3 capitulos anteriores (4000 chars cada uno)
 - **Retroalimentacion en ciclos de correccion**: Si se detectan repeticiones, el Ghostwriter recibe instrucciones especificas para reestructurar usando mecanismos narrativos diferentes
 
+### Modulacion Ritmica
+- **Ghostwriter**: Modula longitud de oraciones segun tipo de escena (cortas en tension, largas en transiciones)
+- **Editor**: Detecta monotonia ritmica en ambas direcciones (exceso de oraciones cortas o largas)
+- **Re-editor**: Aplica las mismas reglas ritmicas durante la reescritura narrativa
+
 ### Sistema de Calidad
-- Pausa automatica tras 5 evaluaciones no perfectas (antes 15)
+- Pausa automatica tras 5 evaluaciones no perfectas
 - Aprobacion requiere puntuacion 9/10 sin problemas criticos
 - Auto-aprobacion tras 3+ ciclos si puntuacion >= 9 y sin issues criticos
 - **Deteccion de regresion de puntuacion**: Si las correcciones empeoran la puntuacion (caida de 2+ puntos), el sistema revierte automaticamente los capitulos a la version anterior y pausa para instrucciones del usuario
 - **Snapshots pre-correccion**: Antes de aplicar cambios, se guarda una copia de cada capitulo que se va a modificar para poder revertir si la calidad baja
-- **Extraccion inteligente de capitulos**: Cuando el revisor no especifica `capitulos_afectados`, el sistema los extrae automaticamente del texto de la descripcion (detecta "Capitulo 29", "Cap. 13", etc.)
+- **Extraccion inteligente de capitulos**: Cuando el revisor no especifica `capitulos_afectados`, el sistema los extrae automaticamente del texto de la descripcion
 - **Panel de issues detallado**: Al pausar, la interfaz muestra historial de puntuaciones por ciclo, lista de issues con severidad/categoria/capitulos afectados e instrucciones de correccion
-- **Forzar completado**: Boton para finalizar manualmente proyectos de reedicion en cualquier momento, marcando como completado con la puntuacion actual
+- **Forzar completado**: Boton para finalizar manualmente proyectos de reedicion en cualquier momento
+- **Blacklist de formulas fisiologicas**: 23 expresiones prohibidas en el Ghostwriter (nudos en garganta, escalofrios, mandibulas apretadas, etc.)
+- **Limites de reacciones y metaforas**: Maximo 3 reacciones fisicas y 3-5 metaforas por capitulo
 - Tracking de hashes de issues para evitar re-reportar problemas resueltos
 - QA re-ejecuta auditores si hay capitulos modificados en el ciclo
+
+### Critica Editorial
+- Acepta feedback externo de editores, beta-readers o criticos profesionales
+- Se inyecta en el Reescritor Narrativo como correcciones de alta prioridad
+- El Revisor Final lo usa como checklist de verificacion obligatoria
+- Disponible al subir manuscritos, al re-editar proyectos del sistema, al reanudar y al reiniciar
 
 ### Taller de Guias
 - **4 tipos de guia**: Estilo de autor, escritura por idea, identidad de pseudonimo, escritura de serie
 - **Guia por Idea**: Genera guia extendida + crea proyecto automaticamente con todos los parametros (capitulos, palabras, pseudonimo, estilo)
-- **Guia de Serie Extendida**: Selecciona una serie existente y un pseudonimo, configura el siguiente libro (titulo, capitulos, genero, tono, palabras por capitulo). El sistema analiza todos los libros de la serie (proyectos, re-ediciones, manuscritos importados) para generar una guia contextualizada. Crea automaticamente la guia extendida, el proyecto vinculado a la serie con el orden correcto, y actualiza la guia de serie
+- **Guia de Serie Extendida**: Selecciona una serie existente y un pseudonimo, configura el siguiente libro (titulo, capitulos, genero, tono, palabras por capitulo). El sistema analiza todos los libros de la serie para generar una guia contextualizada. Crea automaticamente la guia extendida, el proyecto vinculado a la serie con el orden correcto, y actualiza la guia de serie
 - **Estilo de Autor**: Emula el estilo de un autor conocido y lo vincula a un pseudonimo
 - **Estilo de Pseudonimo**: Define la identidad literaria unica de un pseudonimo existente
 - **Biblioteca**: Visualiza, descarga en Markdown, aplica a pseudonimos o elimina guias generadas
@@ -142,16 +165,28 @@ Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando c
 - **Verificacion de arcos narrativos**: ArcValidatorAgent valida hitos y progreso de hilos entre volumenes
 - **Contexto de serie para el Ghostwriter**: Hilos pendientes de volumenes anteriores inyectados en la World Bible enriquecida
 - **Filtrado temporal**: Solo carga contexto de volumenes anteriores, previniendo filtraciones de futuros libros
+- **Convertir re-ediciones a serie**: Agrupa multiples manuscritos importados/re-editados en una serie unificada con World Bible fusionada
+
+### Spin-offs
+- **Creacion directa**: Boton "Spin-off" en cada tarjeta de serie para crear derivaciones rapidamente
+- **Seleccion de protagonista**: Carga automatica de personajes de la serie original para elegir protagonista
+- **Guia auto-generada**: Analiza las novelas de la serie original para generar guia de escritura completa del spin-off
+- **Contexto heredado**: Perfil del protagonista, reglas del mundo, personajes recurrentes, hilos narrativos heredados
+- **Badge visual**: Las series spin-off se identifican con badge y nombre del protagonista
 
 ### Adaptacion Literaria Profesional
 - **No es traduccion, es recreacion**: El sistema no traduce literalmente — recrea cada capitulo como si un autor nativo lo hubiera escrito desde cero en el idioma destino
-- **Adaptacion de expresiones**: Modismos, refranes y expresiones se adaptan a equivalentes naturales del idioma destino (no se traducen literalmente)
+- **Adaptacion de expresiones**: Modismos, refranes y expresiones se adaptan a equivalentes naturales del idioma destino
 - **Voces de personajes diferenciadas**: Cada personaje mantiene su voz propia adaptada a los recursos del idioma destino
 - **Reglas editoriales por idioma**: Tipografia, puntuacion, dialogos y convenciones especificas para cada uno de los 7 idiomas soportados (es, en, fr, de, it, pt, ca)
 - **Filtro anti-IA**: Lista de palabras muleta por idioma que la IA tiene prohibido usar, forzando vocabulario literario mas rico y humano
-- **Resultado listo para publicacion**: El texto resultante no necesita revision editorial adicional — sale listo para imprimir
-- **Contenido editado como fuente**: Siempre usa la version editada y pulida del capitulo, no el borrador original
-- **Reanudacion robusta**: Si una adaptacion se interrumpe, se retoma exactamente donde se quedo sin duplicar ni perder capitulos
+- **Resultado listo para publicacion**: El texto resultante no necesita revision editorial adicional
+- **Reanudacion robusta**: Si una adaptacion se interrumpe, se retoma exactamente donde se quedo
+
+### Re-edicion Optimizada de Proyectos del Sistema
+- Al re-editar un libro generado por el sistema, se copian automaticamente la World Bible y los capitulos
+- El orquestador salta las etapas 1-3 (analisis estructural, revision editorial, extraccion de World Bible) porque ya existen
+- Ahorra tiempo y costos de API significativos, yendo directamente al analisis arquitectonico, QA y reescritura narrativa
 
 ### Conteo de Palabras y Expansion
 - Tolerancia flexible del 10%: `FLEXIBLE_MIN = TARGET_MIN x 0.90`, `FLEXIBLE_MAX = TARGET_MAX x 1.10`
@@ -162,25 +197,40 @@ Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando c
 ### Audiolibros (Text-to-Speech)
 - **Conversion TTS**: Genera audiolibros capitulo a capitulo usando Fish Audio (modelo speech-1.6)
 - **Voces personalizables**: Seleccion de voces predefinidas o cualquier voz de Fish Audio por ID
-- **Velocidad ajustable**: Control de velocidad de narración (0.5x a 2.0x)
+- **Velocidad ajustable**: Control de velocidad de narracion (0.5x a 2.0x)
+- **Generacion paralela**: Hasta 3 capitulos simultaneos para mayor velocidad
+- **Pausa y reanudacion**: Control total sobre el proceso de generacion
 - **Portadas**: Subida de imagen de portada para el proyecto de audiolibro
-- **Descarga en ZIP**: Descarga todos los capitulos generados en un archivo ZIP
+- **Descarga en ZIP**: Descarga todos los capitulos generados en un archivo ZIP con metadata
 - **Streaming de audio**: Reproduccion directa desde la interfaz web
-- **Chunking inteligente**: Capitulos largos (>9500 caracteres) se dividen automaticamente en fragmentos por oraciones
+- **Chunking inteligente**: Capitulos largos (>9500 caracteres) se dividen automaticamente en fragmentos
+
+### Metadatos KDP (Amazon)
+- **Generacion automatica**: Subtitulo, descripcion HTML (max 4000 chars), 7 keywords (50 chars c/u), 2 categorias BISAC, info de serie
+- **Cumplimiento KDP**: Solo tags HTML permitidos, sin informacion prohibida, keywords sin marcas registradas
+- **Declaracion de IA**: Configurada como "ai-assisted" segun politica Amazon 2025
+- **Edicion completa**: Todos los campos editables con avisos de limite de caracteres
+
+### Portadas IA
+- **Prompts optimizados**: Compatible con Midjourney, DALL-E, Stable Diffusion, Ideogram, Leonardo AI
+- **4 alcances**: Proyecto individual, serie (identidad visual coherente), pseudonimo (branding), independiente
+- **Especificaciones KDP**: 2560x1600px, 300 DPI, RGB, JPEG/TIFF
+- **Sistema de diseno de serie**: Elementos comunes, paleta de colores, tipografia y patron de layout compartidos
 
 ### Catalogo de Libros y Back Matter
 - **Catalogo centralizado**: Registro de obras publicadas por pseudonimo con titulo, idioma, genero y enlace Amazon/ASIN
 - **Generacion automatica de Back Matter**: Al exportar, el sistema genera paginas finales profesionales:
-  - **Solicitud de resena**: Mensaje cordial y compatible con las normas de Amazon (sin incentivos)
+  - **Solicitud de resena**: Mensaje compatible con las normas de Amazon
   - **"Otras obras del autor"**: Lista automatica de libros del mismo pseudonimo extraida del catalogo
 - **6 idiomas soportados**: Back matter generado en es, en, fr, de, it, pt segun el idioma del proyecto
 - **Integrado en exportaciones**: Incluido automaticamente en exportaciones Markdown y DOCX
 
 ### Originalidad de Nombres de Personajes
 - **Lista negra estatica**: El Arquitecto tiene prohibido usar nombres comunes de IA (Marco, Elena, Vega, Montoya, etc.)
+- **Lista negra gestionable**: Tabla `name_blacklist` editable desde la interfaz para agregar nombres prohibidos
 - **Nombres dinamicos prohibidos**: El Orquestador extrae todos los nombres de personajes de World Bibles existentes y los pasa como `forbiddenNames` al Arquitecto
 - **Excepcion por serie**: Los nombres dentro de la misma serie SI pueden repetirse (personajes recurrentes)
-- **Fidelidad del Ghostwriter**: El Ghostwriter usa exclusivamente los nombres definidos en el World Bible, sin sustituir ni inventar
+- **Fidelidad del Ghostwriter**: El Ghostwriter usa exclusivamente los nombres definidos en el World Bible
 
 ### Exportacion
 - Markdown limpio sin artefactos de codigo
@@ -310,7 +360,7 @@ sudo /var/www/litagents/update.sh
 ```
 
 El script de actualizacion:
-1. Verifica y solicita nuevas API keys si es necesario (Fish Audio para audiolibros)
+1. Verifica y solicita nuevas API keys si es necesario
 2. Descarga los ultimos cambios del repositorio
 3. Instala nuevas dependencias
 4. Ejecuta migraciones de base de datos
