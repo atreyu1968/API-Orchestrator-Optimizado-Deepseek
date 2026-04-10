@@ -1,4 +1,4 @@
-# LitAgents v5.0 - Autonomous Literary Agent Orchestration System
+# LitAgents v6.0 - Autonomous Literary Agent Orchestration System
 
 ## Overview
 
@@ -43,13 +43,13 @@ Preferred communication style: Simple, everyday language.
 
 ### Feature Specifications
 
-#### Manuscript Import Pipeline (v5.0)
+#### Manuscript Import Pipeline (v6.0)
 - Imported manuscripts can be sent directly to the **Re-editor** (creates reedit project with all chapters in pending state) or to the **Translator** (creates completed reedit project visible in export page).
 - Both routes filter empty chapters, use `editedContent || originalContent` fallback, and sort properly (prologue first, epilogue/author note last).
 - Supports `.docx`, `.doc`, `.txt`, and `.md` file formats with intelligent chapter detection (multilingual regex patterns).
 - Server-side file picker for processing files already on the server.
 
-#### Optimized Re-edit Pipeline (v5.0)
+#### Optimized Re-edit Pipeline (v6.0)
 - Publication-quality manuscript re-editing with 12 specialized agents.
 - Fixed critical bug where final review corrections were silently dropped (`capituloReescrito` vs `rewrittenContent` mismatch) — now all 5 code paths use dual-key fallback.
 - All agents use detected language instead of hardcoded Spanish.
@@ -60,7 +60,7 @@ Preferred communication style: Simple, everyday language.
 - **Architect Analyzer**: 3000 chars per chapter context (was 500).
 - **QA Context Windows**: Continuity 15K, Voice 10K, WorldBible 12K per chapter.
 
-#### Translation & Literary Adaptation (v5.0)
+#### Translation & Literary Adaptation (v6.0)
 - Literary adaptation into 7 languages (ES, EN, FR, DE, IT, PT, CA) focusing on publication-ready prose.
 - Full support for translating re-edited books via `/api/reedit-projects/:id/translate-stream`.
 - Proper ID collision handling with `source` + `reeditProjectId` tracking across frontend and backend.
@@ -73,7 +73,7 @@ Preferred communication style: Simple, everyday language.
 - Shared `sanitizeContentForTranslation()` function cleans source content before translation (all 3 paths).
 - `splitLongParagraphs()` function applied across all output paths (format-ebook, export-markdown, DOCX, chapter viewer) — splits narrative blocks >600 chars at sentence boundaries (~3-4 sentences per paragraph), separates dialogue lines (—, «, ") into their own paragraphs.
 
-#### Taller de Guías (Guide Workshop) (v5.0)
+#### Taller de Guías (Guide Workshop) (v6.0)
 - AI-powered style and writing guide generation module at `/guides`.
 - 4 guide types: author_style (emulate known authors), idea_writing (develop story premises + auto-create project), pseudonym_style (define pseudonym identity), series_writing (maintain series coherence).
 - `generated_guides` table with fields: id, title, content, guideType, sourceAuthor, sourceIdea, sourceGenre, pseudonymId, seriesId, inputTokens, outputTokens, createdAt.
@@ -84,7 +84,7 @@ Preferred communication style: Simple, everyday language.
 - **series_writing flow**: Extended to also create an `extendedGuide` + project (like idea_writing). Selects a series, pseudonym (existing or new), genre, tone, and full project config. Backend enriches the guide with real chapter content from all books in the series (projects, reedit projects, imported manuscripts). Auto-calculates `seriesOrder` from existing books and links the new project to the series with `workType: "series"`. Updates the series' `seriesGuide` field.
 - **apply-to-pseudonym**: Only available for `author_style` and `pseudonym_style` guides. Creates a styleGuide linked to the selected pseudonym. Server validates guide type before allowing application.
 
-#### Convert Reedit Projects to Series (v5.0)
+#### Convert Reedit Projects to Series (v6.0)
 - Converts multiple imported/re-edited books into a unified series.
 - `reeditProjects` table has `seriesId` and `seriesOrder` columns for series linkage.
 - API: `POST /api/reedit-projects/convert-to-series` — accepts `{ books: [{projectId, order}], seriesTitle, totalPlannedBooks, pseudonymId }`.
@@ -95,7 +95,7 @@ Preferred communication style: Simple, everyday language.
 - Series registry (`GET /api/series/registry`) includes reedit projects as volumes alongside regular projects and imported manuscripts.
 - Frontend: "Crear Serie" button in the reedit page projects card opens a dialog to select books, reorder them, name the series, and trigger conversion.
 
-#### Spin-off Series Creation (v5.0)
+#### Spin-off Series Creation (v6.0)
 - Create new series derived from existing ones with a character from the original as protagonist.
 - Schema: `series` table has `parentSeriesId`, `spinoffProtagonist`, `spinoffContext` columns.
 - API: `GET /api/series/:id/characters` extracts unique characters from all world bibles and continuity snapshots in a series. `POST /api/series/:id/generate-spinoff-guide` analyzes parent series novels with Gemini 2.5 Flash to auto-generate a complete series guide.
@@ -169,7 +169,7 @@ Preferred communication style: Simple, everyday language.
 ### TTS / Audiobook Services
 - **Fish Audio API**: `FISH_AUDIO_API_KEY` — TTS model `speech-1.6` for audiobook generation. Supports MP3/WAV/Opus output, voice cloning via `reference_id`, prosody control (speed/volume), and expressiveness params (`top_p: 0.7`, `temperature: 0.9`, `repetition_penalty: 1.0`).
 
-#### Audiobook Generation (v5.0)
+#### Audiobook Generation (v6.0)
 - Converts completed books (projects, reedit projects, imported manuscripts, translations) into audiobooks chapter by chapter using Fish Audio TTS API.
 - **Schema**: `audiobook_projects` (title, sourceType, sourceId, voiceId, voiceName, coverImage, format, bitrate, speed, status) + `audiobook_chapters` (chapterNumber, textContent, audioFileName, audioSizeBytes, status). Status values: `pending | processing | completed | error | paused`.
 - **Pause/Cancel**: Uses `AbortController` map (`activeAudiobookGenerations`) to track active generation processes. Pause route (`POST /api/audiobooks/:id/pause`) aborts the controller and sets status to "paused", immediately stopping Fish Audio API calls. Resume via standard generate route (skips already-completed chapters). Delete route aborts any active generation before cleanup. All three actions (pause, delete, complete) stop consuming Fish Audio credits.
@@ -180,7 +180,7 @@ Preferred communication style: Simple, everyday language.
 - **Frontend**: `client/src/pages/audiobooks.tsx` — list/create/detail views. Create form includes source selection, Fish Audio voice picker, format/bitrate/speed sliders, cover upload. Detail view shows per-chapter progress, inline audio players, pause/resume controls, generate-all or per-chapter generation, delete (works even during active generation), and ZIP download.
 - Audio files stored in `./audiobooks/project_{id}/` directory.
 
-#### Cover Prompt Generator (v5.0)
+#### Cover Prompt Generator (v6.0)
 - Generates optimized AI prompts for book cover creation, compatible with Midjourney, DALL-E, Stable Diffusion, Ideogram, Leonardo AI.
 - **Scopes**: Project (individual book), Series (coherent visual identity), Pseudonym (author branding), Independent (custom).
 - **KDP Specs**: 2560x1600px, 300 DPI, RGB, JPEG/TIFF, portrait orientation.
@@ -190,7 +190,7 @@ Preferred communication style: Simple, everyday language.
 - **API Routes**: `GET /api/cover-prompts`, `GET /api/cover-prompts/:id`, `POST /api/cover-prompts/generate`, `PATCH /api/cover-prompts/:id`, `DELETE /api/cover-prompts/:id`.
 - **Frontend**: `client/src/pages/covers.tsx` — scope selector (tabs), prompt generation, full prompt viewer dialog, copy to clipboard, edit prompt, delete.
 
-#### KDP Metadata Generator (v5.0)
+#### KDP Metadata Generator (v6.0)
 - Generates Amazon KDP publishing metadata: subtitle, HTML description (max 4000 chars), 7 search keywords (50 chars each), 2 BISAC categories, series info, AI disclosure.
 - **Sources**: Regular projects and reedit projects.
 - **KDP Compliance**: HTML description uses only allowed tags (b, i, em, strong, br, p, h4-h6, ul, ol, li). No contact info, reviews, time-sensitive info, or quality claims in description. Keywords avoid trademark terms, "kindle", "ebook". Series name without volume numbers.
