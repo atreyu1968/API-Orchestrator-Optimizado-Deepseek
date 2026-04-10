@@ -32,6 +32,9 @@ const createSeriesSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   workType: z.enum(["series", "trilogy"]).default("trilogy"),
   totalPlannedBooks: z.number().min(1).max(100).default(3),
+  parentSeriesId: z.number().nullable().optional(),
+  spinoffProtagonist: z.string().max(500).nullable().optional(),
+  spinoffContext: z.string().max(5000).nullable().optional(),
 });
 
 const updateSeriesSchema = z.object({
@@ -1680,6 +1683,202 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/series/:id/characters", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const projects = await storage.getProjectsBySeries(id);
+      const characters: Array<{ name: string; role: string; description: string; projectTitle: string }> = [];
+      const seenNames = new Set<string>();
+      
+      for (const project of projects) {
+        const wb = await storage.getWorldBibleByProject(project.id);
+        if (wb?.characters && Array.isArray(wb.characters)) {
+          for (const char of wb.characters as any[]) {
+            const name = char.nombre || char.name || "";
+            if (name && !seenNames.has(name.toLowerCase())) {
+              seenNames.add(name.toLowerCase());
+              characters.push({
+                name,
+                role: char.rol || char.role || "secundario",
+                description: char.descripcion_breve || char.descripcion || char.description || "",
+                projectTitle: project.title,
+              });
+            }
+          }
+        }
+      }
+      
+      const allManuscripts = await storage.getAllImportedManuscripts();
+      const seriesManuscripts = allManuscripts.filter(m => m.seriesId === id);
+      for (const ms of seriesManuscripts) {
+        if (ms.continuitySnapshot && typeof ms.continuitySnapshot === "object") {
+          const snapshot = ms.continuitySnapshot as any;
+          const chars = snapshot.characters || snapshot.personajes || [];
+          for (const char of chars) {
+            const name = char.nombre || char.name || "";
+            if (name && !seenNames.has(name.toLowerCase())) {
+              seenNames.add(name.toLowerCase());
+              characters.push({
+                name,
+                role: char.rol || char.role || "secundario",
+                description: char.descripcion || char.description || "",
+                projectTitle: ms.title,
+              });
+            }
+          }
+        }
+      }
+      
+      characters.sort((a, b) => {
+        const roleOrder: Record<string, number> = { protagonista: 0, antagonista: 1, secundario: 2 };
+        return (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3);
+      });
+      
+      res.json(characters);
+    } catch (error) {
+      console.error("Error fetching series characters:", error);
+      res.status(500).json({ error: "Failed to fetch characters" });
+    }
+  });
+
+  app.post("/api/series/:id/generate-spinoff-guide", async (req: Request, res: Response) => {
+    try {
+      const parentSeriesId = parseInt(req.params.id);
+      const { protagonist, targetSeriesId, concept } = req.body;
+      
+      if (!protagonist || !targetSeriesId) {
+        return res.status(400).json({ error: "protagonist and targetSeriesId are required" });
+      }
+      
+      const parentSeries = await storage.getSeries(parentSeriesId);
+      if (!parentSeries) {
+        return res.status(404).json({ error: "Parent series not found" });
+      }
+      
+      const targetSeries = await storage.getSeries(targetSeriesId);
+      if (!targetSeries) {
+        return res.status(404).json({ error: "Target series not found" });
+      }
+      
+      const projects = await storage.getProjectsBySeries(parentSeriesId);
+      const allManuscripts = await storage.getAllImportedManuscripts();
+      const seriesManuscripts = allManuscripts.filter(m => m.seriesId === parentSeriesId);
+      
+      let worldContext = "";
+      let characterProfiles = "";
+      let plotSummaries = "";
+      
+      for (const project of projects) {
+        const wb = await storage.getWorldBibleByProject(project.id);
+        if (wb) {
+          if (wb.characters && Array.isArray(wb.characters)) {
+            characterProfiles += `\n--- Personajes de "${project.title}" ---\n`;
+            for (const char of wb.characters as any[]) {
+              characterProfiles += `- ${char.nombre || char.name}: ${char.descripcion_breve || char.descripcion || char.description || ""} (Rol: ${char.rol || char.role || "?"})\n`;
+            }
+          }
+          if (wb.worldRules && Array.isArray(wb.worldRules)) {
+            worldContext += `\n--- Reglas del mundo en "${project.title}" ---\n`;
+            for (const rule of wb.worldRules as any[]) {
+              worldContext += `- ${typeof rule === "string" ? rule : rule.regla || rule.rule || JSON.stringify(rule)}\n`;
+            }
+          }
+        }
+        
+        const chapters = await storage.getChaptersByProject(project.id);
+        const completedChapters = chapters.filter(c => c.content);
+        if (completedChapters.length > 0) {
+          plotSummaries += `\n--- Resumen de "${project.title}" (Vol. ${project.seriesOrder || "?"}) ---\n`;
+          plotSummaries += `Capítulos completados: ${completedChapters.length}\n`;
+          const firstChapter = completedChapters[0];
+          const lastChapter = completedChapters[completedChapters.length - 1];
+          if (firstChapter?.continuityState) {
+            plotSummaries += `Estado inicial: ${JSON.stringify(firstChapter.continuityState).substring(0, 500)}\n`;
+          }
+          if (lastChapter?.continuityState) {
+            plotSummaries += `Estado final: ${JSON.stringify(lastChapter.continuityState).substring(0, 1000)}\n`;
+          }
+        }
+      }
+      
+      for (const ms of seriesManuscripts) {
+        if (ms.continuitySnapshot) {
+          plotSummaries += `\n--- Snapshot de "${ms.title}" (Vol. ${ms.seriesOrder || "?"}) ---\n`;
+          plotSummaries += JSON.stringify(ms.continuitySnapshot).substring(0, 2000) + "\n";
+        }
+      }
+      
+      if (parentSeries.seriesGuide) {
+        worldContext += `\n--- Guía de la serie original ---\n${parentSeries.seriesGuide.substring(0, 3000)}\n`;
+      }
+      
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      
+      const prompt = `Eres un editor literario experto en planificación de series. Analiza los datos de la serie "${parentSeries.title}" y genera una GUÍA DE ESCRITURA completa para una nueva serie spin-off.
+
+PROTAGONISTA DEL SPIN-OFF: ${protagonist}
+CONCEPTO/PREMISA DEL SPIN-OFF: ${concept || "Spin-off centrado en " + protagonist}
+TÍTULO DE LA NUEVA SERIE: ${targetSeries.title}
+LIBROS PLANIFICADOS: ${targetSeries.totalPlannedBooks}
+
+=== DATOS DE LA SERIE ORIGINAL ===
+
+PERSONAJES:
+${characterProfiles || "No hay datos de personajes disponibles."}
+
+MUNDO Y REGLAS:
+${worldContext || "No hay datos del mundo disponibles."}
+
+RESÚMENES Y ESTADO DE LA TRAMA:
+${plotSummaries || "No hay datos de trama disponibles."}
+
+=== INSTRUCCIONES ===
+
+Genera una GUÍA DE ESCRITURA en español para la nueva serie spin-off que incluya:
+
+1. **PERFIL DEL PROTAGONISTA**: Descripción completa del personaje elegido como protagonista basada en lo que sabemos de la serie original. Su personalidad, motivaciones, conflictos internos, habilidades, defectos, relaciones clave. Incluye dónde quedó al final de la serie original.
+
+2. **MUNDO HEREDADO**: Reglas del mundo, ubicaciones, organizaciones, tecnología, magia, etc. que se mantienen de la serie original. Qué cambió entre el final de la serie original y el inicio del spin-off.
+
+3. **PERSONAJES RECURRENTES**: Lista de personajes de la serie original que pueden aparecer en el spin-off, con su estado actual y posible rol.
+
+4. **TONO Y ESTILO**: Basado en el tono de la serie original, qué tono debe mantener el spin-off y qué puede evolucionar.
+
+5. **LÍNEAS ARGUMENTALES HEREDADAS**: Hilos no resueltos de la serie original que pueden explorarse en el spin-off. Misterios pendientes, conflictos latentes, amenazas no resueltas.
+
+6. **LÍNEAS ARGUMENTALES NUEVAS**: Sugerencias de nuevos conflictos y arcos narrativos específicos para el protagonista del spin-off.
+
+7. **BIBLIA DE CONTINUIDAD**: Lista de hechos canónicos de la serie original que NO pueden contradecirse en el spin-off.
+
+Escribe en formato Markdown claro y organizado. Sé específico con datos concretos de la serie original — no inventes datos que no aparezcan en el contexto proporcionado.`;
+      
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 8192 },
+      });
+      
+      const guideText = result.response.text();
+      
+      await storage.updateSeries(targetSeriesId, {
+        seriesGuide: guideText,
+        parentSeriesId: parentSeriesId,
+        spinoffProtagonist: protagonist,
+        spinoffContext: concept || null,
+      });
+      
+      res.json({ 
+        success: true, 
+        guide: guideText,
+        message: "Guía de spin-off generada y guardada exitosamente" 
+      });
+    } catch (error: any) {
+      console.error("Error generating spinoff guide:", error);
+      res.status(500).json({ error: "Failed to generate spinoff guide", details: error?.message });
+    }
+  });
+
   app.get("/api/series/:id/projects", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
@@ -2193,6 +2392,9 @@ export async function registerRoutes(
         description: parsed.data.description || null,
         workType: parsed.data.workType,
         totalPlannedBooks: parsed.data.totalPlannedBooks,
+        parentSeriesId: parsed.data.parentSeriesId || null,
+        spinoffProtagonist: parsed.data.spinoffProtagonist || null,
+        spinoffContext: parsed.data.spinoffContext || null,
       });
       console.log("[Series] Series created successfully:", newSeries.id);
       res.status(201).json(newSeries);

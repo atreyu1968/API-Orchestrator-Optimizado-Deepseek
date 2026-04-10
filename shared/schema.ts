@@ -57,6 +57,9 @@ export const series = pgTable("series", {
   pseudonymId: integer("pseudonym_id").references(() => pseudonyms.id, { onDelete: "set null" }),
   seriesGuide: text("series_guide"),
   seriesGuideFileName: text("series_guide_file_name"),
+  parentSeriesId: integer("parent_series_id").references((): any => series.id, { onDelete: "set null" }),
+  spinoffProtagonist: text("spinoff_protagonist"),
+  spinoffContext: text("spinoff_context"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

@@ -93,6 +93,15 @@ Preferred communication style: Simple, everyday language.
 - Series registry (`GET /api/series/registry`) includes reedit projects as volumes alongside regular projects and imported manuscripts.
 - Frontend: "Crear Serie" button in the reedit page projects card opens a dialog to select books, reorder them, name the series, and trigger conversion.
 
+#### Spin-off Series Creation (v5.0)
+- Create new series derived from existing ones with a character from the original as protagonist.
+- Schema: `series` table has `parentSeriesId`, `spinoffProtagonist`, `spinoffContext` columns.
+- API: `GET /api/series/:id/characters` extracts unique characters from all world bibles and continuity snapshots in a series. `POST /api/series/:id/generate-spinoff-guide` analyzes parent series novels with Gemini 2.5 Flash to auto-generate a complete series guide.
+- Generated guide includes: protagonist profile, inherited world rules, recurring characters, inherited/new plot threads, continuity bible, tone/style directives.
+- Orchestrator injects spin-off context (parent series name, protagonist, concept) into chapter generation pipeline alongside the generated guide.
+- Frontend: Series creation form has "Serie Origen" selector. When selected, loads characters from parent series for protagonist selection. On creation, auto-generates the writing guide by analyzing all novels.
+- Spin-off badge shown in series listing with protagonist name.
+
 #### Word Count Validation & Expansion
 - 10% flexible tolerance: `FLEXIBLE_MIN = TARGET_MIN × 0.90`, `FLEXIBLE_MAX = TARGET_MAX × 1.10`.
 - `MAX_WORD_COUNT_RETRIES = 5` dedicated retries using separate `wordCountRetries` counter (independent from editor's `refinementAttempts`). After 5 retries, continues forward. Empty responses (0 words) get special handling: longer wait (20s vs 10s), cleared refinement instructions (fresh retry), and detailed error logging including API error reason.

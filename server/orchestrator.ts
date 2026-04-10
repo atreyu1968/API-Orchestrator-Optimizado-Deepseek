@@ -686,6 +686,21 @@ ${contextParts.join("\n")}
       if (project.seriesId) {
         const seriesData = await storage.getSeries(project.seriesId);
         if (seriesData) {
+          if (seriesData.parentSeriesId) {
+            const parentSeries = await storage.getSeries(seriesData.parentSeriesId);
+            if (parentSeries) {
+              seriesContextContent += `\n\n═══════════════════════════════════════════════════════════════════
+SPIN-OFF DE: "${parentSeries.title}"
+PROTAGONISTA: ${seriesData.spinoffProtagonist || "No especificado"}
+═══════════════════════════════════════════════════════════════════
+Esta serie es un spin-off. El protagonista proviene de la serie "${parentSeries.title}".
+${seriesData.spinoffContext ? `CONCEPTO: ${seriesData.spinoffContext}` : ""}
+Los eventos de la serie original son canónicos y no pueden contradecirse.
+═══════════════════════════════════════════════════════════════════\n`;
+              console.log(`[Orchestrator] Spin-off of "${parentSeries.title}", protagonist: ${seriesData.spinoffProtagonist}`);
+            }
+          }
+          
           if (seriesData.seriesGuide) {
             seriesContextContent += `\n\n═══════════════════════════════════════════════════════════════════
 GUÍA DE LA SERIE: "${seriesData.title}"

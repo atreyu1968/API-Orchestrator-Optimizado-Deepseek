@@ -46,6 +46,13 @@ export default function SeriesPage() {
   const [newDescription, setNewDescription] = useState("");
   const [newWorkType, setNewWorkType] = useState<"trilogy" | "series">("trilogy");
   const [newTotalBooks, setNewTotalBooks] = useState(3);
+  const [isSpinoff, setIsSpinoff] = useState(false);
+  const [parentSeriesId, setParentSeriesId] = useState<number | null>(null);
+  const [spinoffProtagonist, setSpinoffProtagonist] = useState("");
+  const [spinoffConcept, setSpinoffConcept] = useState("");
+  const [parentCharacters, setParentCharacters] = useState<Array<{ name: string; role: string; description: string; projectTitle: string }>>([]);
+  const [loadingCharacters, setLoadingCharacters] = useState(false);
+  const [generatingGuide, setGeneratingGuide] = useState(false);
   const [deleteSeriesId, setDeleteSeriesId] = useState<number | null>(null);
   
   const [editingSeriesId, setEditingSeriesId] = useState<number | null>(null);
@@ -87,7 +94,7 @@ export default function SeriesPage() {
   });
 
   const createSeriesMutation = useMutation({
-    mutationFn: async (data: { title: string; workType: string; totalPlannedBooks: number; description?: string }) => {
+    mutationFn: async (data: { title: string; workType: string; totalPlannedBooks: number; description?: string; parentSeriesId?: number | null; spinoffProtagonist?: string | null; spinoffContext?: string | null }) => {
       const response = await apiRequest("POST", "/api/series", data);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -95,7 +102,26 @@ export default function SeriesPage() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: async (newSeries: any) => {
+      if (isSpinoff && parentSeriesId && spinoffProtagonist) {
+        setGeneratingGuide(true);
+        try {
+          const guideResponse = await apiRequest("POST", `/api/series/${parentSeriesId}/generate-spinoff-guide`, {
+            protagonist: spinoffProtagonist,
+            targetSeriesId: newSeries.id,
+            concept: spinoffConcept || newDescription || "",
+          });
+          if (guideResponse.ok) {
+            toast({ title: "Guía generada", description: "La guía de escritura del spin-off ha sido generada automáticamente" });
+          } else {
+            toast({ title: "Serie creada", description: "La serie se creó pero hubo un error generando la guía. Puedes regenerarla después.", variant: "destructive" });
+          }
+        } catch {
+          toast({ title: "Serie creada", description: "La serie se creó pero hubo un error generando la guía.", variant: "destructive" });
+        } finally {
+          setGeneratingGuide(false);
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
       queryClient.invalidateQueries({ queryKey: ["/api/series"] });
       setIsCreating(false);
@@ -103,7 +129,14 @@ export default function SeriesPage() {
       setNewDescription("");
       setNewWorkType("trilogy");
       setNewTotalBooks(3);
-      toast({ title: "Serie creada", description: "La nueva serie ha sido añadida" });
+      setIsSpinoff(false);
+      setParentSeriesId(null);
+      setSpinoffProtagonist("");
+      setSpinoffConcept("");
+      setParentCharacters([]);
+      if (!isSpinoff) {
+        toast({ title: "Serie creada", description: "La nueva serie ha sido añadida" });
+      }
     },
     onError: (error: any) => {
       console.error("[Series] Create error:", error);
@@ -451,13 +484,47 @@ export default function SeriesPage() {
   const availableReeditsForLinking = allReeditProjects.filter(rp => !rp.seriesId);
   const hasAvailableVolumes = availableManuscriptsForLinking.length > 0 || availableReeditsForLinking.length > 0;
 
+  const fetchParentCharacters = async (seriesId: number) => {
+    setLoadingCharacters(true);
+    try {
+      const response = await fetch(`/api/series/${seriesId}/characters`);
+      if (response.ok) {
+        const chars = await response.json();
+        setParentCharacters(chars);
+      }
+    } catch {
+      setParentCharacters([]);
+    } finally {
+      setLoadingCharacters(false);
+    }
+  };
+
+  const handleParentSeriesChange = (value: string) => {
+    if (value === "none") {
+      setParentSeriesId(null);
+      setParentCharacters([]);
+      setSpinoffProtagonist("");
+      setIsSpinoff(false);
+    } else {
+      const id = parseInt(value);
+      setParentSeriesId(id);
+      setIsSpinoff(true);
+      fetchParentCharacters(id);
+    }
+  };
+
   const handleCreateSeries = () => {
     if (!newTitle.trim()) return;
+    if (isSpinoff && !spinoffProtagonist) {
+      toast({ title: "Falta protagonista", description: "Selecciona el protagonista del spin-off", variant: "destructive" });
+      return;
+    }
     createSeriesMutation.mutate({
       title: newTitle,
       workType: newWorkType,
       totalPlannedBooks: newTotalBooks,
       ...(newDescription.trim() ? { description: newDescription.trim() } : {}),
+      ...(isSpinoff && parentSeriesId ? { parentSeriesId, spinoffProtagonist, spinoffContext: spinoffConcept || null } : {}),
     });
   };
 
@@ -602,7 +669,12 @@ export default function SeriesPage() {
       {isCreating && (
         <Card>
           <CardHeader>
-            <CardTitle>Crear Nueva Serie</CardTitle>
+            <CardTitle>{isSpinoff ? "Crear Spin-off" : "Crear Nueva Serie"}</CardTitle>
+            {isSpinoff && parentSeriesId && (
+              <CardDescription>
+                Basada en: {registry.find(s => s.id === parentSeriesId)?.title || "Serie origen"}
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -639,6 +711,80 @@ export default function SeriesPage() {
                 />
               </div>
             </div>
+
+            <div className="space-y-2">
+              <Label>Serie Origen (spin-off)</Label>
+              <Select value={parentSeriesId?.toString() || "none"} onValueChange={handleParentSeriesChange}>
+                <SelectTrigger data-testid="select-parent-series">
+                  <SelectValue placeholder="Ninguna — serie independiente" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Ninguna — serie independiente</SelectItem>
+                  {registry.map(s => (
+                    <SelectItem key={s.id} value={s.id.toString()}>
+                      {s.title} ({s.completedVolumes}/{s.totalPlannedBooks} vol.)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {isSpinoff && parentSeriesId && (
+              <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
+                <div className="space-y-2">
+                  <Label>Protagonista del Spin-off</Label>
+                  {loadingCharacters ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Cargando personajes...
+                    </div>
+                  ) : parentCharacters.length > 0 ? (
+                    <Select value={spinoffProtagonist} onValueChange={setSpinoffProtagonist}>
+                      <SelectTrigger data-testid="select-spinoff-protagonist">
+                        <SelectValue placeholder="Selecciona el protagonista..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {parentCharacters.map((char, idx) => (
+                          <SelectItem key={idx} value={char.name}>
+                            <span className="flex items-center gap-2">
+                              <Badge variant={char.role === "protagonista" ? "default" : char.role === "antagonista" ? "destructive" : "secondary"} className="text-xs">
+                                {char.role}
+                              </Badge>
+                              {char.name}
+                              {char.description && <span className="text-muted-foreground ml-1">— {char.description.substring(0, 60)}{char.description.length > 60 ? "..." : ""}</span>}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">No se encontraron personajes en la serie origen. Escribe el nombre manualmente:</p>
+                      <Input
+                        value={spinoffProtagonist}
+                        onChange={(e) => setSpinoffProtagonist(e.target.value)}
+                        placeholder="Nombre del protagonista..."
+                        data-testid="input-spinoff-protagonist"
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>Concepto del Spin-off (opcional)</Label>
+                  <Textarea
+                    value={spinoffConcept}
+                    onChange={(e) => setSpinoffConcept(e.target.value)}
+                    placeholder="¿Qué le pasa a este personaje en la nueva serie? ¿Qué conflicto central enfrenta?"
+                    rows={2}
+                    data-testid="input-spinoff-concept"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Al crear, se analizarán las novelas de la serie origen para generar automáticamente la guía de escritura del spin-off.
+                </p>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Idea / Concepto de la Serie (opcional)</Label>
               <Textarea
@@ -650,11 +796,11 @@ export default function SeriesPage() {
               />
             </div>
             <div className="flex gap-2">
-              <Button onClick={handleCreateSeries} disabled={createSeriesMutation.isPending}>
-                {createSeriesMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
-                Crear
+              <Button onClick={handleCreateSeries} disabled={createSeriesMutation.isPending || generatingGuide}>
+                {(createSeriesMutation.isPending || generatingGuide) ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+                {generatingGuide ? "Generando guía..." : isSpinoff ? "Crear Spin-off" : "Crear"}
               </Button>
-              <Button variant="outline" onClick={() => setIsCreating(false)}>
+              <Button variant="outline" onClick={() => { setIsCreating(false); setIsSpinoff(false); setParentSeriesId(null); setParentCharacters([]); setSpinoffProtagonist(""); setSpinoffConcept(""); }}>
                 Cancelar
               </Button>
             </div>
@@ -685,6 +831,11 @@ export default function SeriesPage() {
                   <Badge variant="secondary">
                     {s.completedVolumes}/{s.totalPlannedBooks} vol.
                   </Badge>
+                  {s.parentSeriesId && (
+                    <Badge variant="outline" className="text-blue-600 dark:text-blue-400">
+                      Spin-off{s.spinoffProtagonist ? `: ${s.spinoffProtagonist}` : ""}
+                    </Badge>
+                  )}
                   {s.seriesGuide && (
                     <Badge variant="outline" className="text-green-600 dark:text-green-400">
                       <FileText className="h-3 w-3 mr-1" />
