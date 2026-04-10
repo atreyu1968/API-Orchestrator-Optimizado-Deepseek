@@ -33,6 +33,7 @@ export default function ManuscriptPage() {
   const [agentType, setAgentType] = useState<"architect" | "reeditor">("architect");
   const [showAutoEditDialog, setShowAutoEditDialog] = useState(false);
   const [autoEditInstructions, setAutoEditInstructions] = useState("");
+  const [autoEditCritique, setAutoEditCritique] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [reeditAssessment, setReeditAssessment] = useState<any>(null);
@@ -69,9 +70,10 @@ export default function ManuscriptPage() {
   });
 
   const cloneToReeditMutation = useMutation({
-    mutationFn: async (params: { projectId: number; instructions: string }) => {
+    mutationFn: async (params: { projectId: number; instructions: string; editorialCritique?: string }) => {
       const res = await apiRequest("POST", `/api/projects/${params.projectId}/clone-to-reedit`, {
         instructions: params.instructions,
+        ...(params.editorialCritique?.trim() ? { editorialCritique: params.editorialCritique.trim() } : {}),
       });
       return res.json();
     },
@@ -82,6 +84,7 @@ export default function ManuscriptPage() {
       });
       setShowAutoEditDialog(false);
       setAutoEditInstructions("");
+      setAutoEditCritique("");
       // Start the reedit process
       await apiRequest("POST", `/api/reedit-projects/${data.reeditProjectId}/start`);
       // Navigate to the reedit page
@@ -333,6 +336,8 @@ export default function ManuscriptPage() {
       <Dialog open={showAutoEditDialog} onOpenChange={(open) => {
         setShowAutoEditDialog(open);
         if (!open) {
+          setAutoEditInstructions("");
+          setAutoEditCritique("");
           setReeditAssessment(null);
           setRewriteWarningAcknowledged(false);
         }
@@ -430,6 +435,20 @@ export default function ManuscriptPage() {
                 data-testid="input-auto-edit-instructions"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="editorial-critique">Crítica editorial (opcional)</Label>
+              <Textarea
+                id="editorial-critique"
+                placeholder="Pega aquí el feedback de un editor, beta-reader o crítico externo. Ejemplos:&#10;&#10;- Los diálogos del capítulo 5 suenan artificiales&#10;- El ritmo decae en la segunda mitad&#10;- El personaje secundario María necesita más desarrollo&#10;- Las descripciones de paisajes son excesivas"
+                value={autoEditCritique}
+                onChange={(e) => setAutoEditCritique(e.target.value)}
+                className="min-h-[100px]"
+                data-testid="input-auto-edit-critique"
+              />
+              <p className="text-xs text-muted-foreground">
+                Si tienes feedback de un editor o beta-reader, pégalo aquí. Se usará como guía prioritaria durante la re-edición.
+              </p>
+            </div>
             <div className="text-sm text-muted-foreground">
               <p><strong>Consejo:</strong> Sé específico. Indica qué capítulos afectar, porcentajes de recorte, elementos a preservar, y qué tipo de mejoras aplicar.</p>
             </div>
@@ -482,6 +501,7 @@ export default function ManuscriptPage() {
                     cloneToReeditMutation.mutate({
                       projectId: currentProject.id,
                       instructions: autoEditInstructions,
+                      editorialCritique: autoEditCritique,
                     });
                   }
                 }}

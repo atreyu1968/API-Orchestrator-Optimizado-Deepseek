@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2, Pencil, X, Upload, Target, Sparkles, ChevronDown, Link2, Download, Settings2 } from "lucide-react";
+import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2, Pencil, X, Upload, Target, Sparkles, ChevronDown, Link2, Download, Settings2, GitBranch } from "lucide-react";
 import { SERIES_WRITING_GUIDE_TEMPLATE, downloadTemplate } from "@/lib/writing-templates";
 import { ArcVerificationPanel } from "@/components/arc-verification-panel";
 import { ConfigPanel } from "@/components/config-panel";
@@ -919,6 +919,28 @@ export default function SeriesPage() {
                   </div>
                   {editingSeriesId !== s.id && (
                     <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setIsCreating(true);
+                          setParentSeriesId(s.id);
+                          setIsSpinoff(true);
+                          setNewTitle("");
+                          setNewDescription("");
+                          setNewWorkType("series");
+                          setNewTotalBooks(3);
+                          setSpinoffProtagonist("");
+                          setSpinoffConcept("");
+                          fetchParentCharacters(s.id);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        data-testid={`button-spinoff-series-${s.id}`}
+                        title="Crear spin-off de esta serie"
+                      >
+                        <GitBranch className="h-4 w-4 mr-1" />
+                        <span className="text-xs">Spin-off</span>
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
