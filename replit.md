@@ -67,6 +67,7 @@ Preferred communication style: Simple, everyday language.
 - Resume support for interrupted reedit translations (branching by source type in resume endpoint).
 - "Re-editado" badge in translation repository.
 - **Editorial Critique-Driven Reedit**: `editorialCritique` column on `reedit_projects` accepts external editor/beta-reader feedback. Injected into NarrativeRewriter (as high-priority corrections) and FinalReviewer (as verification checklist). Available on upload, resume, and restart. UI shows critique in progress tab and restart dialog.
+- **System Project Reedit Optimization**: When cloning a system project to reedit (`sourceProjectId` set), the clone route copies the World Bible, maps `worldRules`→`loreRules`, `plotDecisions`+`persistentInjuries`→loreRules, and sets `editedContent` = chapter content. The orchestrator detects system projects and skips Stages 1-3 (structure analysis, editor review, World Bible extraction) — jumping directly to architect analysis, QA, and narrative rewriting. Saves significant time and API costs.
 - Anti-AI filter with per-language crutch word lists.
 - Extensive cleanup of AI-generated contamination (style guides, checklists, JSON artifacts).
 - Shared `sanitizeContentForTranslation()` function cleans source content before translation (all 3 paths).

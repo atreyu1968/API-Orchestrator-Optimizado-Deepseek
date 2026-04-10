@@ -2661,9 +2661,23 @@ export class ReeditOrchestrator {
 
       const chapters = await storage.getReeditChaptersByProject(projectId);
       
+      // OPTIMIZATION: If this is a project cloned from the system (not an imported manuscript),
+      // it already has structured chapters, World Bible, and edited content.
+      // Skip structure analysis, editor review, and World Bible extraction.
+      const isSystemProject = !!project.sourceProjectId;
+      const existingWorldBiblePreCheck = await storage.getReeditWorldBibleByProject(projectId);
+      const hasPreloadedWorldBible = existingWorldBiblePreCheck && 
+        ((existingWorldBiblePreCheck.characters as any[])?.length > 0 || 
+         (existingWorldBiblePreCheck.timeline as any[])?.length > 0);
+      const canSkipEarlyStages = isSystemProject && hasPreloadedWorldBible && resumeStageIndex <= stageOrder.indexOf("world_bible");
+      
+      if (canSkipEarlyStages) {
+        console.log(`[ReeditOrchestrator] SYSTEM PROJECT OPTIMIZATION: Skipping stages 1-3 (structure, editor review, world bible) — already available from source project #${project.sourceProjectId}`);
+      }
+      
       // === STAGE 1: STRUCTURE ANALYSIS ===
-      // Skip if already past this stage
-      const skipAnalyzing = resumeStageIndex > stageOrder.indexOf("analyzing");
+      // Skip if already past this stage OR if it's a system project with preloaded data
+      const skipAnalyzing = resumeStageIndex > stageOrder.indexOf("analyzing") || canSkipEarlyStages;
       let structureAnalysis: any = project.structureAnalysis || { duplicateChapters: [], outOfOrderChapters: [], missingChapters: [] };
       
       if (!skipAnalyzing) {
@@ -2712,6 +2726,20 @@ export class ReeditOrchestrator {
       const editorFeedbacks: any[] = [];
 
       // === STAGE 2: EDITOR REVIEW (all chapters first) ===
+      // Skip editor review for system projects — the content was already reviewed during generation
+      if (canSkipEarlyStages) {
+        console.log(`[ReeditOrchestrator] Skipping STAGE 2 (editor review) — system project, chapters already reviewed during generation`);
+        for (const chapter of validChapters) {
+          editorFeedbacks.push({ issues: [], suggestions: [], strengths: ["Capítulo de proyecto del sistema"] });
+          chapterSummaries.push(`Capítulo ${chapter.chapterNumber}: importado del proyecto original`);
+          // Mark chapters as ready for rewriting
+          await storage.updateReeditChapter(chapter.id, {
+            processingStage: "world_bible",
+            status: "analyzing",
+          });
+        }
+        await storage.updateReeditProject(projectId, { currentStage: "world_bible" });
+      } else {
       await storage.updateReeditProject(projectId, { currentStage: "editing" });
       await this.updateHeartbeat(projectId);
 
@@ -2786,6 +2814,7 @@ export class ReeditOrchestrator {
         // Update heartbeat and last completed chapter after each chapter
         await this.updateHeartbeat(projectId, chapter.chapterNumber);
       }
+      } // end of else (non-system project editor review)
 
       // Check cancellation before World Bible extraction
       if (await this.checkCancellation(projectId)) {

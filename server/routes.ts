@@ -7205,24 +7205,69 @@ CRITERIOS:
         pseudonymId: pseudonymId || project.pseudonymId,
       });
 
-      // Clone all chapters to reedit chapters
+      // Clone all chapters to reedit chapters - use edited content as original since the book is already written
       for (const chapter of chapters) {
+        const content = chapter.content || "";
         await storage.createReeditChapter({
           projectId: reeditProject.id,
           chapterNumber: chapter.chapterNumber,
           originalChapterNumber: chapter.chapterNumber,
           title: chapter.title,
-          originalContent: chapter.content || "",
+          originalContent: content,
+          editedContent: content,
           status: "pending",
           wordCount: chapter.wordCount || 0,
         });
       }
 
-      // Store the instructions if provided (for restructuring)
-      if (instructions) {
-        await storage.updateReeditProject(reeditProject.id, {
-          pendingUserInstructions: instructions,
+      // Copy World Bible from source project to reedit project
+      const sourceWorldBible = await storage.getWorldBibleByProject(projectId);
+      if (sourceWorldBible) {
+        // Map original WB fields to reedit WB fields:
+        // characters → characters (same concept)
+        // worldRules → loreRules (world rules / lore)
+        // timeline → timeline (same concept)
+        // plotOutline + plotDecisions → not directly mapped, but useful context
+        // persistentInjuries → include as part of loreRules
+        const loreRules = [
+          ...((sourceWorldBible.worldRules as any[]) || []),
+          ...((sourceWorldBible.plotDecisions as any[]) || []).map((d: any) => ({
+            rule: typeof d === 'string' ? d : d.decision || d.description || JSON.stringify(d),
+            source: "plot_decisions",
+            category: "decisiones_narrativas",
+          })),
+          ...((sourceWorldBible.persistentInjuries as any[]) || []).map((inj: any) => ({
+            rule: typeof inj === 'string' ? inj : inj.description || JSON.stringify(inj),
+            source: "persistent_injuries",
+            category: "lesiones_persistentes",
+          })),
+        ];
+        
+        await storage.createReeditWorldBible({
+          projectId: reeditProject.id,
+          characters: (sourceWorldBible.characters as any[]) || [],
+          locations: [],
+          timeline: (sourceWorldBible.timeline as any[]) || [],
+          loreRules: loreRules,
+          extractedFromChapters: chapters.length,
+          confidence: 9,
+          authorNotes: (sourceWorldBible.authorNotes as any[]) || [],
         });
+        console.log(`[Reedit] Copied World Bible from project ${projectId} to reedit project ${reeditProject.id}`);
+      }
+
+      const { editorialCritique: critiqueBody } = req.body;
+
+      // Store the instructions and editorial critique if provided
+      const updateFields: any = {};
+      if (instructions) {
+        updateFields.pendingUserInstructions = instructions;
+      }
+      if (critiqueBody && typeof critiqueBody === 'string' && critiqueBody.trim()) {
+        updateFields.editorialCritique = critiqueBody.trim();
+      }
+      if (Object.keys(updateFields).length > 0) {
+        await storage.updateReeditProject(reeditProject.id, updateFields);
       }
 
       console.log(`[Reedit] Cloned project ${projectId} -> reedit project ${reeditProject.id} with ${chapters.length} chapters`);
