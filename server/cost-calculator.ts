@@ -23,6 +23,11 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
     outputPerMillion: 10.00,
     thinkingPerMillion: 10.00,
   },
+  "gemini-3-flash-preview": {
+    inputPerMillion: 0.50,
+    outputPerMillion: 3.00,
+    thinkingPerMillion: 3.50,
+  },
   "default": {
     inputPerMillion: 0.15,
     outputPerMillion: 0.60,
@@ -58,7 +63,7 @@ export function formatCostForStorage(cost: number): string {
 // Agent to model mapping for reference
 export const AGENT_MODEL_MAPPING: Record<string, string> = {
   "architect": "gemini-2.5-flash",
-  "ghostwriter": "gemini-2.5-pro",
+  "ghostwriter": "gemini-3-flash-preview",
   "editor": "gemini-2.5-flash",
   "copyeditor": "gemini-2.5-flash",
   "final-reviewer": "gemini-2.5-flash",

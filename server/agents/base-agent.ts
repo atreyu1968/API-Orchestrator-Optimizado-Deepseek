@@ -20,7 +20,7 @@ export interface AgentResponse {
   error?: string;
 }
 
-export type GeminiModel = "gemini-2.5-flash" | "gemini-2.0-flash" | "gemini-2.5-pro";
+export type GeminiModel = "gemini-2.5-flash" | "gemini-2.0-flash" | "gemini-2.5-pro" | "gemini-3-flash-preview";
 
 export interface AgentConfig {
   name: string;
@@ -174,11 +174,16 @@ export abstract class BaseAgent {
         const modelToUse = this.config.model || "gemini-2.5-flash";
         const useThinking = this.config.useThinking === true;
         
-        const defaultMaxOutput = modelToUse === "gemini-2.5-pro" ? 65536 : 32768;
+        const defaultMaxOutput = (modelToUse === "gemini-2.5-pro" || modelToUse === "gemini-3-flash-preview") ? 65536 : 32768;
         const maxOutput = this.config.maxOutputTokens || defaultMaxOutput;
         
         const startTime = Date.now();
         console.log(`[${this.config.name}] Starting API call (attempt ${attempt + 1}, model=${modelToUse}, maxOut=${maxOutput}, thinking=${useThinking})...`);
+        
+        const modelsWithThinking = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash-preview"];
+        const defaultThinkingBudget = modelToUse === "gemini-2.5-pro" ? 8192 
+          : modelToUse === "gemini-3-flash-preview" ? 16384 
+          : 4096;
         
         const generatePromise = this.ai.models.generateContent({
           model: modelToUse,
@@ -190,9 +195,9 @@ export abstract class BaseAgent {
             temperature,
             topP: 0.95,
             maxOutputTokens: maxOutput,
-            ...(useThinking && (modelToUse === "gemini-2.5-pro" || modelToUse === "gemini-2.5-flash") ? {
+            ...(useThinking && modelsWithThinking.includes(modelToUse) ? {
               thinkingConfig: {
-                thinkingBudget: this.config.thinkingBudget || (modelToUse === "gemini-2.5-pro" ? 8192 : 4096),
+                thinkingBudget: this.config.thinkingBudget || defaultThinkingBudget,
                 includeThoughts: true,
               },
             } : {}),
