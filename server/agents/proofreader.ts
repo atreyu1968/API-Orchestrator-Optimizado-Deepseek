@@ -53,24 +53,38 @@ DIRECTRICES ESTRICTAS DE CORRECCIÓN
    - NO añadas contenido nuevo ni "mejores" la prosa según tu gusto
    - Eres el pulidor final, NO el escritor
 
-FORMATO DE RESPUESTA
-Responde ÚNICAMENTE con un JSON estructurado:
+FORMATO DE RESPUESTA (MUY IMPORTANTE)
+Tu respuesta debe tener EXACTAMENTE este formato con dos secciones separadas por el marcador ---METADATA_CORRECCION---:
+
+1. PRIMERO: El texto completo del capítulo corregido (texto plano, sin JSON, sin marcadores)
+2. DESPUÉS: El marcador ---METADATA_CORRECCION--- en una línea sola
+3. FINALMENTE: Un bloque JSON con los metadatos de la corrección
+
+Ejemplo de formato:
+
+[Aquí va el texto completo del capítulo corregido, tal cual, sin envolver en JSON ni comillas]
+
+---METADATA_CORRECCION---
 {
-  "textoCorregido": "El texto del capítulo completo corregido, limpio y listo para maquetar",
   "cambiosRealizados": [
     {
-      "tipo": "ortografia|tipografia|puntuacion|estilo|glitch_ia|concordancia|dialogo",
+      "tipo": "ortografia",
       "original": "texto original con error",
       "corregido": "texto corregido",
-      "motivo": "explicación breve del cambio"
+      "motivo": "explicación breve"
     }
   ],
-  "totalCambios": 15,
+  "totalCambios": 5,
   "resumen": "Resumen breve de los tipos de correcciones realizadas",
   "nivelCalidad": "excelente|bueno|aceptable|necesita_revision"
 }
 
-IMPORTANTE: El campo "textoCorregido" debe contener el capítulo COMPLETO, no solo fragmentos. No truncar ni resumir.`;
+REGLAS CRÍTICAS:
+- El texto corregido va ANTES del separador, como texto plano narrativo (NO dentro de JSON)
+- El JSON va DESPUÉS del separador y NO incluye el texto corregido
+- El texto corregido debe ser el capítulo COMPLETO, no solo fragmentos
+- Lista máximo 50 cambios más relevantes en "cambiosRealizados"
+- No truncar ni resumir el texto del capítulo`;
 
 export interface ProofreaderInput {
   chapterContent: string;
@@ -96,6 +110,8 @@ export interface ProofreaderResult {
   nivelCalidad: string;
 }
 
+const SEPARATOR = "---METADATA_CORRECCION---";
+
 export class ProofreaderAgent extends BaseAgent {
   constructor() {
     super({
@@ -120,10 +136,9 @@ ${genreContext}${authorContext}${langContext}
 ${input.chapterContent}
 --- FIN DEL TEXTO ---
 
-Realiza la corrección ortotipográfica completa de este capítulo. Recuerda:
+Realiza la corrección ortotipográfica completa de este capítulo.
+Recuerda el formato: texto corregido completo PRIMERO, luego ${SEPARATOR}, luego JSON con cambiosRealizados/totalCambios/resumen/nivelCalidad.
 - Adapta tu corrección al género y estilo del autor
-- Devuelve el texto COMPLETO corregido en "textoCorregido"
-- Lista TODOS los cambios realizados en "cambiosRealizados" (máximo 50 cambios más relevantes)
 - No alteres la trama ni el estilo deliberado del autor`;
 
     const response = await this.generateContent(prompt, input.projectId);
@@ -133,14 +148,70 @@ Realiza la corrección ortotipográfica completa de este capítulo. Recuerda:
     }
 
     try {
-      const result = repairJson(response.content) as ProofreaderResult;
-      if (!result.textoCorregido) {
+      const content = response.content;
+      const sepIdx = content.lastIndexOf(SEPARATOR);
+
+      if (sepIdx === -1) {
+        try {
+          const jsonResult = repairJson(content) as any;
+          if (jsonResult.textoCorregido) {
+            return {
+              ...response,
+              result: {
+                textoCorregido: jsonResult.textoCorregido,
+                cambiosRealizados: jsonResult.cambiosRealizados || [],
+                totalCambios: jsonResult.totalCambios || 0,
+                resumen: jsonResult.resumen || "",
+                nivelCalidad: jsonResult.nivelCalidad || "bueno",
+              },
+            };
+          }
+        } catch (_) {}
+
+        console.warn("[Proofreader] No separator found, using full content as corrected text");
         return {
           ...response,
-          error: "El corrector no devolvió texto corregido",
+          result: {
+            textoCorregido: content.trim(),
+            cambiosRealizados: [],
+            totalCambios: 0,
+            resumen: "Corrección aplicada (metadatos no disponibles)",
+            nivelCalidad: "bueno",
+          },
         };
       }
-      return { ...response, result };
+
+      let correctedText = content.substring(0, sepIdx).trim();
+      const metadataRaw = content.substring(sepIdx + SEPARATOR.length).trim();
+
+      if (correctedText.startsWith("```")) {
+        correctedText = correctedText.replace(/^```\w*\n?/, "").replace(/\n?```$/, "").trim();
+      }
+
+      let metadata: any = { cambiosRealizados: [], totalCambios: 0, resumen: "", nivelCalidad: "bueno" };
+      try {
+        metadata = repairJson(metadataRaw);
+      } catch (e) {
+        console.warn(`[Proofreader] Could not parse metadata JSON, using defaults: ${e}`);
+      }
+
+      if (!correctedText || correctedText.length < 100) {
+        return {
+          ...response,
+          error: "El corrector devolvió texto corregido vacío o demasiado corto",
+        };
+      }
+
+      return {
+        ...response,
+        result: {
+          textoCorregido: correctedText,
+          cambiosRealizados: metadata.cambiosRealizados || [],
+          totalCambios: metadata.totalCambios || metadata.cambiosRealizados?.length || 0,
+          resumen: metadata.resumen || "",
+          nivelCalidad: metadata.nivelCalidad || "bueno",
+        },
+      };
     } catch (e) {
       return {
         ...response,
