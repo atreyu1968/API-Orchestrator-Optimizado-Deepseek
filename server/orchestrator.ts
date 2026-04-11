@@ -1431,14 +1431,16 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             if (!checkpointResult.passed && checkpointResult.chaptersToRevise.length > 0) {
               accumulatedContinuityIssues = [...accumulatedContinuityIssues, ...checkpointResult.issues];
               
-              const hasCriticalIssues = checkpointResult.issues.some(issue => 
+              const hasActionableIssues = checkpointResult.issues.some(issue => 
                 issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]") ||
-                issue.toLowerCase().includes("critica") || issue.toLowerCase().includes("crítica")
+                issue.includes("[MAYOR]") ||
+                issue.toLowerCase().includes("critica") || issue.toLowerCase().includes("crítica") ||
+                issue.toLowerCase().includes("mayor")
               );
               
-              if (hasCriticalIssues) {
+              if (hasActionableIssues) {
                 this.callbacks.onAgentStatus("continuity-sentinel", "editing", 
-                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores CRÍTICOS detectados`
+                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores de continuidad detectados`
                 );
                 
                 for (const chapterNum of checkpointResult.chaptersToRevise) {
@@ -1463,7 +1465,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                 }
               } else {
                 this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
-                  `Issues MAYORES/MENORES detectados (no críticos). Se anotarán para la revisión final sin reescribir capítulos.`
+                  `Issues menores detectados. Se anotarán para la auditoría final.`
                 );
               }
             }
@@ -2028,14 +2030,16 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             );
             
             if (!checkpointResult.passed && checkpointResult.chaptersToRevise.length > 0) {
-              const hasCriticalIssues = checkpointResult.issues.some(issue => 
+              const hasActionableIssues = checkpointResult.issues.some(issue => 
                 issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]") ||
-                issue.toLowerCase().includes("critica") || issue.toLowerCase().includes("crítica")
+                issue.includes("[MAYOR]") ||
+                issue.toLowerCase().includes("critica") || issue.toLowerCase().includes("crítica") ||
+                issue.toLowerCase().includes("mayor")
               );
               
-              if (hasCriticalIssues) {
+              if (hasActionableIssues) {
                 this.callbacks.onAgentStatus("continuity-sentinel", "editing", 
-                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores CRÍTICOS detectados`
+                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores de continuidad detectados`
                 );
                 
                 for (const chapterNum of checkpointResult.chaptersToRevise) {
@@ -2065,7 +2069,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                 }
               } else {
                 this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
-                  `Issues MAYORES/MENORES detectados (no críticos). Se anotarán para la revisión final sin reescribir capítulos.`
+                  `Issues menores detectados. Se anotarán para la auditoría final.`
                 );
               }
             }
@@ -3438,12 +3442,14 @@ Responde SOLO con un JSON válido con la estructura:
         return;
       }
 
-      const hasCriticalIssues = result.issues.some(issue => 
+      const hasActionableIssues = result.issues.some(issue => 
         issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]") ||
-        issue.toLowerCase().includes("critica") || issue.toLowerCase().includes("crítica")
+        issue.includes("[MAYOR]") ||
+        issue.toLowerCase().includes("critica") || issue.toLowerCase().includes("crítica") ||
+        issue.toLowerCase().includes("mayor")
       );
 
-      if (hasCriticalIssues && result.chaptersToRevise.length > 0) {
+      if (hasActionableIssues && result.chaptersToRevise.length > 0) {
         this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
           `${result.issues.length} issues detectados. Forzando reescritura de capítulos: ${result.chaptersToRevise.join(", ")}`
         );
@@ -4563,10 +4569,158 @@ Responde SOLO con un JSON válido con la estructura:
   }
 
   private async finalizeCompletedProject(project: Project): Promise<void> {
+    await this.runFinalContinuityAudit(project);
     await storage.updateProject(project.id, { status: "completed" });
     await this.generateSeriesContinuitySnapshot(project);
     await this.runSeriesArcVerification(project);
     this.callbacks.onProjectComplete();
+  }
+
+  private async runFinalContinuityAudit(project: Project): Promise<void> {
+    try {
+      const chapters = await storage.getChaptersByProject(project.id);
+      const completedChapters = chapters
+        .filter(c => c.status === "completed" && c.content)
+        .sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+      if (completedChapters.length < 4) return;
+
+      this.callbacks.onAgentStatus("continuity-sentinel", "analyzing",
+        `Auditoría final de continuidad: verificando ${completedChapters.length} capítulos completos...`
+      );
+
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (!worldBible) return;
+
+      const worldBibleData: ParsedWorldBible = {
+        world_bible: {
+          personajes: worldBible.characters as any[] || [],
+          lugares: [],
+          reglas_lore: worldBible.worldRules as any[] || [],
+        },
+        escaleta_capitulos: worldBible.plotOutline as any[] || [],
+      };
+
+      let styleGuideContent = "";
+      if (project.styleGuideId) {
+        const sg = await storage.getStyleGuide(project.styleGuideId);
+        if (sg) styleGuideContent = sg.content;
+      }
+      const guiaEstilo = `Género: ${project.genre}, Tono: ${project.tone}. ${styleGuideContent}`;
+      const allSections = this.buildSectionsListFromChapters(chapters, worldBibleData);
+
+      const BATCH_SIZE = 6;
+      const OVERLAP = 2;
+      const allIssues: string[] = [];
+      const allChaptersToRevise: number[] = [];
+      let batchNumber = 0;
+      let failedBatches = 0;
+
+      for (let start = 0; start < completedChapters.length; start += BATCH_SIZE - OVERLAP) {
+        const batch = completedChapters.slice(start, start + BATCH_SIZE);
+        if (batch.length < 2) break;
+        batchNumber++;
+
+        const chapterNums = batch.map(c => c.chapterNumber === 0 ? "Pról" : c.chapterNumber === -1 ? "Epíl" : `${c.chapterNumber}`);
+        this.callbacks.onAgentStatus("continuity-sentinel", "analyzing",
+          `Auditoría final lote ${batchNumber}: caps ${chapterNums.join(", ")}...`
+        );
+
+        const result = await this.runContinuityCheckpoint(
+          project,
+          900 + batchNumber,
+          batch,
+          worldBibleData,
+          allIssues
+        );
+
+        if (!result.passed) {
+          allIssues.push(...result.issues);
+          for (const cn of result.chaptersToRevise) {
+            if (!allChaptersToRevise.includes(cn)) allChaptersToRevise.push(cn);
+          }
+          if (result.chaptersToRevise.length === 0 && result.issues.length > 0) {
+            failedBatches++;
+          }
+        }
+      }
+
+      if (allChaptersToRevise.length === 0 && failedBatches === 0 && allIssues.length === 0) {
+        this.callbacks.onAgentStatus("continuity-sentinel", "completed",
+          `Auditoría final APROBADA. No se encontraron errores de continuidad en el manuscrito completo.`
+        );
+        return;
+      }
+
+      if (failedBatches > 0 && allChaptersToRevise.length === 0) {
+        this.callbacks.onAgentStatus("continuity-sentinel", "warning",
+          `Auditoría final: ${failedBatches} lotes fallaron/timeout. ${allIssues.length} issues no verificados. Proyecto continuará pero requiere revisión.`
+        );
+        return;
+      }
+
+      const hasActionable = allIssues.some(issue =>
+        issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]") ||
+        issue.includes("[MAYOR]") ||
+        issue.toLowerCase().includes("critica") || issue.toLowerCase().includes("crítica") ||
+        issue.toLowerCase().includes("mayor")
+      );
+
+      if (hasActionable) {
+        this.callbacks.onAgentStatus("continuity-sentinel", "editing",
+          `Auditoría final: ${allIssues.length} errores detectados. Corrigiendo ${allChaptersToRevise.length} capítulos...`
+        );
+
+        const correctionInstructions = allIssues.join("\n");
+
+        for (const chapterNum of allChaptersToRevise) {
+          const chapter = completedChapters.find(c => c.chapterNumber === chapterNum);
+          const sectionData = allSections.find(s => s.numero === chapterNum);
+
+          if (chapter && sectionData) {
+            this.callbacks.onChapterRewrite(
+              chapterNum,
+              chapter.title || `Capítulo ${chapterNum}`,
+              allChaptersToRevise.indexOf(chapterNum) + 1,
+              allChaptersToRevise.length,
+              "Corrección por auditoría final"
+            );
+
+            await this.rewriteChapterForQA(
+              project,
+              chapter,
+              sectionData,
+              worldBibleData,
+              guiaEstilo,
+              "continuity",
+              correctionInstructions
+            );
+          }
+        }
+
+        const postRewriteChapters = await storage.getChaptersByProject(project.id);
+        const stuckInRevision = postRewriteChapters.filter(c => 
+          allChaptersToRevise.includes(c.chapterNumber) && c.status === "revision"
+        );
+        for (const stuck of stuckInRevision) {
+          await storage.updateChapter(stuck.id, { status: "completed" });
+          console.warn(`[FinalAudit] Cap ${stuck.chapterNumber} quedó en revision post-rewrite. Restaurado a completed.`);
+        }
+
+        this.callbacks.onAgentStatus("continuity-sentinel", "completed",
+          `Auditoría final completada. ${allChaptersToRevise.length} capítulos corregidos.`
+        );
+      } else {
+        this.callbacks.onAgentStatus("continuity-sentinel", "warning",
+          `Auditoría final: ${allIssues.length} errores MENORES detectados (no críticos). Anotados pero no reescritos.`
+        );
+      }
+    } catch (error) {
+      console.error("[Orchestrator] Final continuity audit error:", error);
+      this.callbacks.onAgentStatus("continuity-sentinel", "warning",
+        `Error en auditoría final: ${error instanceof Error ? error.message : "Error desconocido"}. Continuando...`
+      );
+    }
   }
 
   private async loadSeriesThreadsAndEvents(project: Project): Promise<{ threads: string[]; events: string[] }> {
