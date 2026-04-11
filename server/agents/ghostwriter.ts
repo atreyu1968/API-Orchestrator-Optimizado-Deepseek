@@ -471,7 +471,7 @@ export class GhostwriterAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
       useThinking: true,
-      thinkingBudget: 10240,
+      thinkingBudget: 16384,
       maxOutputTokens: 65536,
     });
   }
@@ -1058,7 +1058,7 @@ export class GhostwriterAgent extends BaseAgent {
     Este estado es CRÍTICO para mantener la continuidad entre capítulos.
     `;
 
-    const temperature = input.isRewrite ? 0.7 : 1.0;
+    const temperature = input.isRewrite ? 0.7 : 0.85;
     return this.generateContent(prompt, undefined, { temperature });
   }
   

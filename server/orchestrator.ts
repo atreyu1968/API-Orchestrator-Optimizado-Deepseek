@@ -108,30 +108,30 @@ export class Orchestrator {
     if (!editorResult?.result) return;
     const r = editorResult.result;
     const score = r.puntuacion || 0;
-    const hasCriticalContinuityError = 
-      (Array.isArray(r.errores_continuidad) && r.errores_continuidad.length > 0) ||
-      (Array.isArray(r.filtracion_conocimiento) && r.filtracion_conocimiento.length > 0);
+    const continuityErrors = Array.isArray(r.errores_continuidad) ? r.errores_continuidad.length : 0;
+    const knowledgeLeaks = Array.isArray(r.filtracion_conocimiento) ? r.filtracion_conocimiento.length : 0;
+    const hasCriticalContinuityError = continuityErrors >= 2 || knowledgeLeaks >= 2;
     
-    const hasPlotRepetition = Array.isArray(r.repeticiones_trama) && r.repeticiones_trama.length >= 2;
-    const hasObjectInconsistency = Array.isArray(r.inconsistencias_objetos) && r.inconsistencias_objetos.length > 0;
+    const hasPlotRepetition = Array.isArray(r.repeticiones_trama) && r.repeticiones_trama.length >= 3;
+    const hasObjectInconsistency = Array.isArray(r.inconsistencias_objetos) && r.inconsistencias_objetos.length >= 2;
     const hasHardRejectCondition = hasCriticalContinuityError || hasPlotRepetition || hasObjectInconsistency;
 
     if (hasHardRejectCondition && r.aprobado) {
       const reasons: string[] = [];
-      if (hasCriticalContinuityError) reasons.push("errores de continuidad");
+      if (hasCriticalContinuityError) reasons.push(`${continuityErrors} errores de continuidad, ${knowledgeLeaks} filtraciones`);
       if (hasPlotRepetition) reasons.push(`${r.repeticiones_trama.length} repeticiones de trama`);
-      if (hasObjectInconsistency) reasons.push("inconsistencias de objetos");
+      if (hasObjectInconsistency) reasons.push(`${r.inconsistencias_objetos.length} inconsistencias de objetos`);
       console.log(`[Orchestrator] OVERRIDE: Forcing aprobado=false despite score ${score}/10 due to: ${reasons.join(", ")}`);
       r.aprobado = false;
       return;
     }
 
-    if (score >= 8 && !hasHardRejectCondition && !r.aprobado) {
+    if (score >= 7 && !hasHardRejectCondition && !r.aprobado) {
       console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=false with no critical issues. Forcing aprobado=true.`);
       r.aprobado = true;
     }
-    if (score < 8 && r.aprobado) {
-      console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=true. Forcing aprobado=false (threshold is 8).`);
+    if (score < 7 && r.aprobado) {
+      console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=true. Forcing aprobado=false (threshold is 7).`);
       r.aprobado = false;
     }
   }
