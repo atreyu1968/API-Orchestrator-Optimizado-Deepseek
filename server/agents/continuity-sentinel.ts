@@ -195,18 +195,19 @@ Responde ÚNICAMENTE con el JSON estructurado.
       const result = repairJson(response.content) as ContinuitySentinelResult;
       return { ...response, result };
     } catch (e) {
-      console.error("[ContinuitySentinel] Failed to parse JSON response");
+      console.error("[ContinuitySentinel] Failed to parse JSON response — marking as NOT approved for safety");
     }
 
+    const chapterNumbers = input.chaptersInScope.map(c => c.numero);
     return { 
       ...response, 
       result: { 
-      checkpoint_aprobado: true,
-      puntuacion: 8,
-      resumen: "Checkpoint aprobado automáticamente",
-      issues: [],
+      checkpoint_aprobado: false,
+      puntuacion: 0,
+      resumen: "Checkpoint NO aprobado — error de parseo JSON. Requiere re-verificación.",
+      issues: [`[MAYOR] Error de parseo en checkpoint #${input.checkpointNumber}. Capítulos ${chapterNumbers.join(", ")} no verificados.`],
       capitulos_para_revision: [],
-      continuity_fix_plan: ""
+      continuity_fix_plan: "Re-ejecutar verificación de continuidad"
       } 
     };
   }

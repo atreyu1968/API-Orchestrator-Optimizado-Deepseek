@@ -1280,7 +1280,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             chapterContent: currentContent,
             chapterData: sectionData,
             worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
-            guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
+            guiaEstilo: styleGuideContent
+              ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+              : `Género: ${project.genre}, Tono: ${project.tone}`,
             previousContinuityState: previousContinuityStateForEditor,
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
           });
@@ -1909,7 +1911,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             chapterContent: currentContent,
             chapterData: sectionData,
             worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
-            guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
+            guiaEstilo: styleGuideContent
+              ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+              : `Género: ${project.genre}, Tono: ${project.tone}`,
             previousContinuityState: previousContinuityStateForEditor,
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
           });
@@ -2910,12 +2914,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
 
         const qaEditorChaptersCtx = await storage.getChaptersByProject(project.id);
+        const qaEditorGuia = styleGuideContent
+          ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+          : `Género: ${project.genre}, Tono: ${project.tone}`;
         const editorResult = await this.editor.execute({
           chapterNumber: sectionData.numero,
           chapterContent,
           chapterData: sectionData,
           worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
-          guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
+          guiaEstilo: qaEditorGuia,
           previousChaptersContext: this.buildPreviousChaptersContextForEditor(qaEditorChaptersCtx, sectionData.numero),
         });
 
@@ -5326,10 +5333,39 @@ Responde SOLO con un JSON válido con la estructura:
     await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite");
 
     if (writerResult.content) {
-      const wordCount = writerResult.content.split(/\s+/).filter(w => w.length > 0).length;
+      let finalContent = writerResult.content;
+
+      try {
+        this.callbacks.onAgentStatus("copyeditor", "polishing",
+          `Puliendo ${sectionLabel} tras corrección de ${qaLabels[qaSource]}...`
+        );
+
+        let styleGuideContent = "";
+        if (project.styleGuideId) {
+          const sg = await storage.getStyleGuide(project.styleGuideId);
+          if (sg) styleGuideContent = sg.content;
+        }
+
+        const polishResult = await this.copyeditor.execute({
+          chapterContent: finalContent,
+          chapterNumber: sectionData.numero,
+          chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
+          guiaEstilo: styleGuideContent || undefined,
+        });
+
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "qa_polish");
+
+        if (polishResult.result?.texto_final) {
+          finalContent = polishResult.result.texto_final;
+        }
+      } catch (polishError) {
+        console.warn(`[Orchestrator] CopyEditor failed for QA rewrite of ${sectionLabel}, using raw Ghostwriter output:`, polishError);
+      }
+
+      const wordCount = finalContent.split(/\s+/).filter(w => w.length > 0).length;
       
       await storage.updateChapter(chapter.id, {
-        content: writerResult.content,
+        content: finalContent,
         status: "completed",
         wordCount,
         needsRevision: false,
@@ -5338,8 +5374,8 @@ Responde SOLO con un JSON válido con la estructura:
 
       this.chaptersRewrittenInCurrentCycle++;
       this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
-      this.callbacks.onAgentStatus("ghostwriter", "completed", 
-        `${sectionLabel} reescrito correctamente`
+      this.callbacks.onAgentStatus("copyeditor", "completed", 
+        `${sectionLabel} reescrito y pulido correctamente`
       );
     }
   }
