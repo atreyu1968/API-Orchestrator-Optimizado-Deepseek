@@ -10619,6 +10619,7 @@ CRITERIOS:
       if (composition) fullPrompt += `COMPOSITION: ${composition}\n`;
 
       fullPrompt += `\nTEXT ON THE COVER (render these words directly on the image as part of the design):\n`;
+      fullPrompt += `IMPORTANT: The text below is in its ORIGINAL LANGUAGE. Do NOT translate it. Write it EXACTLY as provided, preserving accents, tildes, ñ, and all special characters.\n`;
       fullPrompt += `- TITLE: "${bookTitle}" — large, bold, prominent text, highly legible, positioned at the top third of the cover. Font style: ${typoStyle}.\n`;
       if (authorName) {
         fullPrompt += `- AUTHOR: "${authorName}" — smaller elegant text at the bottom of the cover.\n`;
@@ -10627,7 +10628,7 @@ CRITERIOS:
         fullPrompt += `- SERIES: "${seriesName}${seriesNumber > 0 ? ` · Book ${seriesNumber}` : ""}" — small text above or below the title.\n`;
       }
       fullPrompt += `- All text MUST have strong contrast against the background.\n`;
-      fullPrompt += `- Spell each word EXACTLY as shown — no changes, no extra words.\n`;
+      fullPrompt += `- Spell each word EXACTLY as shown in the ORIGINAL LANGUAGE — no translations, no changes, no extra words. Preserve all diacritics (á, é, í, ó, ú, ñ, ü, etc.).\n`;
 
       fullPrompt += `\nFORMAT REQUIREMENTS:\n`;
       fullPrompt += `- PORTRAIT orientation (2:3 ratio), like a real book cover\n`;
