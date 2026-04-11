@@ -126,12 +126,12 @@ export class Orchestrator {
       return;
     }
 
-    if (score >= 7 && !hasHardRejectCondition && !r.aprobado) {
+    if (score >= 8 && !hasHardRejectCondition && !r.aprobado) {
       console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=false with no critical issues. Forcing aprobado=true.`);
       r.aprobado = true;
     }
-    if (score < 7 && r.aprobado) {
-      console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=true. Forcing aprobado=false (threshold is 7).`);
+    if (score < 8 && r.aprobado) {
+      console.log(`[Orchestrator] OVERRIDE: Editor gave ${score}/10 but aprobado=true. Forcing aprobado=false (threshold is 8).`);
       r.aprobado = false;
     }
   }

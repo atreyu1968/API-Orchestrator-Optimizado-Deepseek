@@ -96,9 +96,9 @@ C. SUBTEXTO Y PSICOLOGÍA:
 
 D. ELIMINACIÓN DE CLICHÉS DE IA:
    - Palabras que indican escritura artificial: "crucial", "enigmático", "fascinante", "un torbellino de emociones", "el destino de...", "desenterrar secretos", "repentinamente", "de repente", "sintió una oleada de", "palpable", "tangible".
-   - Si detectas 1-3 de estas palabras: nota menor, NO penaliza puntuación
-   - Si detectas 4-7: penaliza -1 punto total
-   - Si detectas más de 7: penaliza -2 puntos total (el texto suena muy artificial)
+   - Si detectas 1-2 de estas palabras: nota menor, NO penaliza puntuación
+   - Si detectas 3-5: penaliza -1 punto total
+   - Si detectas más de 5: penaliza -2 puntos total (el texto suena muy artificial)
 
 E. SHOW, DON'T TELL:
    - ¿La narración filtra eventos a través de la percepción subjetiva del personaje?

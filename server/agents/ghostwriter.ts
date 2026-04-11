@@ -469,7 +469,7 @@ export class GhostwriterAgent extends BaseAgent {
       name: "El Narrador",
       role: "ghostwriter",
       systemPrompt: SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "gemini-2.5-pro",
       useThinking: true,
       thinkingBudget: 16384,
       maxOutputTokens: 65536,
