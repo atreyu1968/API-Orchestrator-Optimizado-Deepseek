@@ -62,12 +62,14 @@ CONOCIMIENTOS CLAVE:
 
 REGLAS PARA PROMPTS:
 1. Genera prompts en INGLÉS (los modelos de IA funcionan mejor en inglés)
-2. Incluye siempre: estilo artístico, composición, iluminación, paleta de colores, atmósfera
-3. Especifica "book cover design", "portrait orientation", "high contrast"
-4. Indica CLARAMENTE en el prompt dónde debe ir el texto (título arriba/centro, autor abajo) - di "clear space for prominent title text at top" y "space for author name at bottom"
-5. Piensa en el GÉNERO: thriller=oscuro/misterioso, romance=cálido/suave, fantasía=épico/detallado, ciencia ficción=futurista/tecnológico
-6. Para SERIES: mantén coherencia visual (misma paleta, misma composición general, mismo estilo)
-7. Incluye "negative prompt" para evitar elementos no deseados
+2. El prompt se usará para generar una imagen real con IA (Gemini). Debe ser CONCRETO y VISUAL, no abstracto.
+3. Describe ESCENAS CONCRETAS: objetos, paisajes, personajes silueteados, elementos tangibles. NUNCA uses "abstract representation" ni "symbolic depiction".
+4. Especifica "book cover design", "portrait orientation 2:3 aspect ratio", "high contrast"
+5. Indica CLARAMENTE dónde debe ir el texto (título arriba/centro, autor abajo) - di "clear space for prominent title text at top" y "space for author name at bottom"
+6. Piensa en el GÉNERO: thriller=oscuro/misterioso, romance=cálido/suave, fantasía=épico/detallado, ciencia ficción=futurista/tecnológico
+7. Para SERIES: mantén coherencia visual (misma paleta, misma composición general, mismo estilo)
+8. Incluye "negative prompt" para evitar elementos no deseados
+9. IMPORTANTE: El prompt debe describir algo que se pueda DIBUJAR literalmente. Por ejemplo: "A dark lake at night with a silhouetted figure standing on a pier" NO "An abstract symbolic representation of darkness and mystery"
 
 PARA SEUDÓNIMOS - BRANDING DE AUTOR:
 Cuando generes para un seudónimo (scope="pseudonym"), define un "branding de autor" que incluya:

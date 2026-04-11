@@ -10604,20 +10604,38 @@ CRITERIOS:
       const seriesTypo = (coverPrompt.seriesDesignSystem as any)?.typographyStyle || "";
       const typoStyle = typographyHint || seriesTypo || brandingTypo || "elegant, high-contrast, legible";
 
-      let textOverlayInstructions = `\n\nCRITICAL TEXT OVERLAY REQUIREMENTS — the cover MUST include the following text rendered directly on the image:\n`;
-      textOverlayInstructions += `- TITLE: "${bookTitle}" — large, prominent, highly legible, positioned at the top or center of the cover. Typography style: ${typoStyle}.\n`;
+      const colorPalette = coverPrompt.colorPalette || "";
+      const mood = coverPrompt.mood || "";
+      const style = coverPrompt.style || "";
+      const composition = coverPrompt.composition || "";
+
+      let fullPrompt = `Generate a professional BOOK COVER image with EXACT 2:3 portrait aspect ratio (like a real paperback book, taller than wide — e.g. 1600x2400 pixels). This is CRITICAL: the image MUST be significantly taller than it is wide.\n\n`;
+
+      fullPrompt += `VISUAL SCENE:\n${coverPrompt.prompt}\n\n`;
+
+      if (style) fullPrompt += `ART STYLE: ${style}\n`;
+      if (colorPalette) fullPrompt += `COLOR PALETTE: ${colorPalette}\n`;
+      if (mood) fullPrompt += `MOOD/ATMOSPHERE: ${mood}\n`;
+      if (composition) fullPrompt += `COMPOSITION: ${composition}\n`;
+
+      fullPrompt += `\nTEXT ON THE COVER (render these words directly on the image as part of the design):\n`;
+      fullPrompt += `- TITLE: "${bookTitle}" — large, bold, prominent text, highly legible, positioned at the top third of the cover. Font style: ${typoStyle}.\n`;
       if (authorName) {
-        textOverlayInstructions += `- AUTHOR NAME: "${authorName}" — smaller than the title, positioned at the bottom of the cover.\n`;
+        fullPrompt += `- AUTHOR: "${authorName}" — smaller elegant text at the bottom of the cover.\n`;
       }
       if (seriesName) {
-        textOverlayInstructions += `- SERIES: "${seriesName}${seriesNumber > 0 ? ` — Book ${seriesNumber}` : ""}" — subtle, positioned near the top or below the title.\n`;
+        fullPrompt += `- SERIES: "${seriesName}${seriesNumber > 0 ? ` · Book ${seriesNumber}` : ""}" — small text above or below the title.\n`;
       }
-      textOverlayInstructions += `- All text must have HIGH CONTRAST against the background for readability at thumbnail size (~150px).\n`;
-      textOverlayInstructions += `- Text must be SPELLED EXACTLY as specified above — no variations, no extra words.\n`;
+      fullPrompt += `- All text MUST have strong contrast against the background.\n`;
+      fullPrompt += `- Spell each word EXACTLY as shown — no changes, no extra words.\n`;
 
-      let fullPrompt = coverPrompt.prompt + textOverlayInstructions;
+      fullPrompt += `\nFORMAT REQUIREMENTS:\n`;
+      fullPrompt += `- PORTRAIT orientation (2:3 ratio), like a real book cover\n`;
+      fullPrompt += `- Professional book cover quality, suitable for Amazon KDP\n`;
+      fullPrompt += `- High contrast, readable at thumbnail size\n`;
+
       if (coverPrompt.negativePrompt) {
-        fullPrompt += `\n\nAvoid: ${coverPrompt.negativePrompt}`;
+        fullPrompt += `\nDO NOT include: ${coverPrompt.negativePrompt}`;
       }
 
       console.log(`[CoverPrompts] Generando imagen para prompt #${id}: "${bookTitle}" by "${authorName}"${seriesName ? ` (${seriesName} #${seriesNumber})` : ""}...`);
