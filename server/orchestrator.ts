@@ -110,7 +110,7 @@ export class Orchestrator {
     const score = r.puntuacion || 0;
     const continuityErrors = Array.isArray(r.errores_continuidad) ? r.errores_continuidad.length : 0;
     const knowledgeLeaks = Array.isArray(r.filtracion_conocimiento) ? r.filtracion_conocimiento.length : 0;
-    const hasCriticalContinuityError = continuityErrors >= 2 || knowledgeLeaks >= 2;
+    const hasCriticalContinuityError = continuityErrors > 0 || knowledgeLeaks > 0;
     
     const hasPlotRepetition = Array.isArray(r.repeticiones_trama) && r.repeticiones_trama.length >= 3;
     const hasObjectInconsistency = Array.isArray(r.inconsistencias_objetos) && r.inconsistencias_objetos.length >= 2;
