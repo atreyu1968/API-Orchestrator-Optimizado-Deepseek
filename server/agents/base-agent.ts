@@ -326,6 +326,17 @@ export abstract class BaseAgent {
         
         console.error(`[${this.config.name}] Attempt ${attempt + 1} failed:`, errorMessage);
         
+        if (errorMessage.includes("not found") || errorMessage.includes("not supported") || 
+            errorMessage.includes("does not exist") || errorMessage.includes("invalid model") ||
+            errorMessage.includes("is not available") || errorMessage.includes("INVALID_ARGUMENT")) {
+          console.error(`[${this.config.name}] ❌ MODEL ERROR: Model "${this.config.model}" may not be available. Error: ${errorMessage}`);
+          return {
+            content: "",
+            error: `MODEL_ERROR: ${errorMessage}`,
+            timedOut: false,
+          };
+        }
+        
         if (errorMessage.startsWith("TIMEOUT:")) {
           if (attempt < MAX_RETRIES) {
             console.log(`[${this.config.name}] Retrying after timeout...`);
