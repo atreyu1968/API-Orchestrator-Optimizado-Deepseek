@@ -27,6 +27,7 @@ export default function ConfigPage() {
   const [convertProject, setConvertProject] = useState<Project | null>(null);
   const [seriesTitle, setSeriesTitle] = useState("");
   const [totalPlannedBooks, setTotalPlannedBooks] = useState(3);
+  const [generateSeriesGuide, setGenerateSeriesGuide] = useState(true);
   const [pseudonymFilter, setPseudonymFilter] = useState<string>("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -135,8 +136,8 @@ export default function ConfigPage() {
   });
 
   const convertToSeriesMutation = useMutation({
-    mutationFn: async ({ projectId, seriesTitle, totalPlannedBooks }: { projectId: number; seriesTitle: string; totalPlannedBooks: number }) => {
-      const res = await apiRequest("POST", `/api/projects/${projectId}/convert-to-series`, { seriesTitle, totalPlannedBooks });
+    mutationFn: async ({ projectId, seriesTitle, totalPlannedBooks, generateGuide }: { projectId: number; seriesTitle: string; totalPlannedBooks: number; generateGuide: boolean }) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/convert-to-series`, { seriesTitle, totalPlannedBooks, generateGuide });
       return res.json();
     },
     onSuccess: (data: any) => {
@@ -390,7 +391,7 @@ export default function ConfigPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        {project.workType === "standalone" && !project.seriesId && (
+                        {!project.seriesId && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -684,6 +685,22 @@ export default function ConfigPage() {
                   {totalPlannedBooks === 3 ? "Se creará como trilogía" : "Se creará como serie"}
                 </p>
               </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="generate-guide"
+                  checked={generateSeriesGuide}
+                  onChange={(e) => setGenerateSeriesGuide(e.target.checked)}
+                  className="rounded"
+                  data-testid="checkbox-generate-guide"
+                />
+                <Label htmlFor="generate-guide" className="text-sm cursor-pointer">
+                  Generar guía de serie con IA
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                La guía se generará usando el World Bible, los personajes y la trama del libro. Útil para mantener coherencia en los siguientes volúmenes.
+              </p>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setConvertProject(null)} data-testid="button-cancel-convert">
                   Cancelar
@@ -695,13 +712,14 @@ export default function ConfigPage() {
                         projectId: convertProject.id,
                         seriesTitle: seriesTitle.trim(),
                         totalPlannedBooks,
+                        generateGuide: generateSeriesGuide,
                       });
                     }
                   }}
                   disabled={!seriesTitle.trim() || convertToSeriesMutation.isPending}
                   data-testid="button-confirm-convert"
                 >
-                  {convertToSeriesMutation.isPending ? "Convirtiendo..." : "Convertir en Serie"}
+                  {convertToSeriesMutation.isPending ? (generateSeriesGuide ? "Generando guía..." : "Convirtiendo...") : "Convertir en Serie"}
                 </Button>
               </div>
             </div>

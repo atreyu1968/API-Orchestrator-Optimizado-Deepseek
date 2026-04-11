@@ -69,7 +69,7 @@ export default function SeriesPage() {
   const [linkingSeriesId, setLinkingSeriesId] = useState<number | null>(null);
   const [linkManuscriptId, setLinkManuscriptId] = useState<string>("");
   const [linkSeriesOrder, setLinkSeriesOrder] = useState<number>(1);
-  const [linkType, setLinkType] = useState<"manuscript" | "reedit">("manuscript");
+  const [linkType, setLinkType] = useState<"manuscript" | "reedit" | "project">("manuscript");
   const [unlinkingVolume, setUnlinkingVolume] = useState<{ seriesId: number; volumeId: number; volumeType: string; title: string } | null>(null);
   
   const [uploadingVolumeSeriesId, setUploadingVolumeSeriesId] = useState<number | null>(null);
@@ -99,6 +99,10 @@ export default function SeriesPage() {
 
   const { data: allReeditProjects = [] } = useQuery<ReeditProject[]>({
     queryKey: ["/api/reedit-projects"],
+  });
+
+  const { data: allProjects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
   });
 
   const createSeriesMutation = useMutation({
@@ -314,6 +318,31 @@ export default function SeriesPage() {
     },
   });
 
+  const linkProjectMutation = useMutation({
+    mutationFn: async ({ seriesId, projectId, seriesOrder }: { seriesId: number; projectId: number; seriesOrder: number }) => {
+      const response = await apiRequest("POST", `/api/series/${seriesId}/link-project`, { projectId, seriesOrder });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setLinkingSeriesId(null);
+      setLinkManuscriptId("");
+      setLinkSeriesOrder(1);
+      toast({ title: "Volumen vinculado", description: "El proyecto ha sido añadido a la serie" });
+    },
+    onError: async (error: any) => {
+      let details = "No se pudo vincular el proyecto";
+      try {
+        if (error?.response) {
+          const data = await error.response.json();
+          details = data.error || details;
+        }
+      } catch { /* ignore */ }
+      toast({ title: "Error", description: details, variant: "destructive" });
+    },
+  });
+
   const unlinkVolumeMutation = useMutation({
     mutationFn: async ({ seriesId, volumeId, volumeType }: { seriesId: number; volumeId: number; volumeType: string }) => {
       const response = await apiRequest("POST", `/api/series/${seriesId}/unlink-volume`, { volumeId, volumeType });
@@ -483,7 +512,13 @@ export default function SeriesPage() {
 
   const handleLinkVolume = () => {
     if (!linkingSeriesId || !linkManuscriptId) return;
-    if (linkType === "reedit") {
+    if (linkType === "project") {
+      linkProjectMutation.mutate({
+        seriesId: linkingSeriesId,
+        projectId: parseInt(linkManuscriptId),
+        seriesOrder: linkSeriesOrder,
+      });
+    } else if (linkType === "reedit") {
       linkReeditMutation.mutate({
         seriesId: linkingSeriesId,
         reeditProjectId: parseInt(linkManuscriptId),
@@ -518,7 +553,8 @@ export default function SeriesPage() {
 
   const availableManuscriptsForLinking = allManuscripts.filter(m => !m.seriesId);
   const availableReeditsForLinking = allReeditProjects.filter(rp => !rp.seriesId);
-  const hasAvailableVolumes = availableManuscriptsForLinking.length > 0 || availableReeditsForLinking.length > 0;
+  const availableProjectsForLinking = allProjects.filter(p => !p.seriesId);
+  const hasAvailableVolumes = availableManuscriptsForLinking.length > 0 || availableReeditsForLinking.length > 0 || availableProjectsForLinking.length > 0;
 
   const fetchParentCharacters = async (seriesId: number) => {
     setLoadingCharacters(true);
@@ -1324,24 +1360,31 @@ export default function SeriesPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Tipo de Libro</Label>
-              <Select value={linkType} onValueChange={(v) => { setLinkType(v as "manuscript" | "reedit"); setLinkManuscriptId(""); }}>
+              <Select value={linkType} onValueChange={(v) => { setLinkType(v as "manuscript" | "reedit" | "project"); setLinkManuscriptId(""); }}>
                 <SelectTrigger data-testid="select-link-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="project">Proyecto Generado</SelectItem>
                   <SelectItem value="manuscript">Manuscrito Importado</SelectItem>
                   <SelectItem value="reedit">Libro Re-editado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>{linkType === "reedit" ? "Libro Re-editado" : "Manuscrito Importado"}</Label>
+              <Label>{linkType === "project" ? "Proyecto" : linkType === "reedit" ? "Libro Re-editado" : "Manuscrito Importado"}</Label>
               <Select value={linkManuscriptId} onValueChange={setLinkManuscriptId}>
                 <SelectTrigger data-testid="select-link-manuscript">
-                  <SelectValue placeholder={linkType === "reedit" ? "Seleccionar libro reeditado..." : "Seleccionar manuscrito..."} />
+                  <SelectValue placeholder={linkType === "project" ? "Seleccionar proyecto..." : linkType === "reedit" ? "Seleccionar libro reeditado..." : "Seleccionar manuscrito..."} />
                 </SelectTrigger>
                 <SelectContent>
-                  {linkType === "reedit" ? (
+                  {linkType === "project" ? (
+                    availableProjectsForLinking.map((p) => (
+                      <SelectItem key={p.id} value={p.id.toString()}>
+                        {p.title} ({p.chapterCount} caps.) — {p.status}
+                      </SelectItem>
+                    ))
+                  ) : linkType === "reedit" ? (
                     availableReeditsForLinking.map((rp) => (
                       <SelectItem key={rp.id} value={rp.id.toString()}>
                         {rp.title} ({rp.totalChapters} caps.)
@@ -1356,6 +1399,11 @@ export default function SeriesPage() {
                   )}
                 </SelectContent>
               </Select>
+              {linkType === "project" && availableProjectsForLinking.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No hay proyectos disponibles sin serie asignada.
+                </p>
+              )}
               {linkType === "manuscript" && availableManuscriptsForLinking.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                   No hay manuscritos disponibles. Importa un manuscrito primero desde la seccion "Edicion".
@@ -1384,10 +1432,10 @@ export default function SeriesPage() {
             <div className="flex gap-2 pt-2">
               <Button
                 onClick={handleLinkVolume}
-                disabled={!linkManuscriptId || linkManuscriptMutation.isPending || linkReeditMutation.isPending}
+                disabled={!linkManuscriptId || linkManuscriptMutation.isPending || linkReeditMutation.isPending || linkProjectMutation.isPending}
                 data-testid="button-confirm-link"
               >
-                {(linkManuscriptMutation.isPending || linkReeditMutation.isPending) ? (
+                {(linkManuscriptMutation.isPending || linkReeditMutation.isPending || linkProjectMutation.isPending) ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 ) : (
                   <Link2 className="h-4 w-4 mr-2" />

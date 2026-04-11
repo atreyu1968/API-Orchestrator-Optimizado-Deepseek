@@ -1991,6 +1991,52 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
     }
   });
 
+  app.post("/api/series/:id/link-project", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const { projectId, seriesOrder } = req.body;
+
+      if (!projectId || !seriesOrder) {
+        return res.status(400).json({ error: "projectId and seriesOrder are required" });
+      }
+
+      const foundSeries = await storage.getSeries(seriesId);
+      if (!foundSeries) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const existingProjects = await storage.getProjectsBySeries(seriesId);
+      const existingManuscripts = await storage.getImportedManuscriptsBySeries(seriesId);
+      const existingReedits = (await storage.getAllReeditProjects()).filter(rp => rp.seriesId === seriesId);
+
+      const orderConflict = [
+        ...existingProjects.filter(p => p.id !== projectId).map(p => p.seriesOrder),
+        ...existingManuscripts.map(m => m.seriesOrder),
+        ...existingReedits.map(rp => rp.seriesOrder),
+      ].includes(seriesOrder);
+
+      if (orderConflict) {
+        return res.status(400).json({ error: `El numero de volumen ${seriesOrder} ya esta en uso en esta serie` });
+      }
+
+      const updated = await storage.updateProject(projectId, {
+        seriesId,
+        seriesOrder,
+        pseudonymId: foundSeries.pseudonymId || project.pseudonymId,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error linking project to series:", error);
+      res.status(500).json({ error: "Failed to link project to series" });
+    }
+  });
+
   app.post("/api/series/:id/link-reedit", async (req: Request, res: Response) => {
     try {
       const seriesId = parseInt(req.params.id);
@@ -2444,15 +2490,13 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
       if (!project) {
         return res.status(404).json({ error: "Proyecto no encontrado" });
       }
-      if (project.workType !== "standalone") {
-        return res.status(400).json({ error: "Solo los proyectos independientes pueden convertirse en serie" });
-      }
       if (project.seriesId) {
         return res.status(400).json({ error: "Este proyecto ya pertenece a una serie" });
       }
 
       const seriesTitle = req.body.seriesTitle || `Serie de ${project.title}`;
       const totalPlannedBooks = req.body.totalPlannedBooks || 3;
+      const generateGuide = req.body.generateGuide ?? false;
 
       const newSeries = await storage.createSeries({
         title: seriesTitle,
@@ -2468,10 +2512,67 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
         seriesOrder: 1,
       });
 
+      let guideGenerated = false;
+
+      if (generateGuide) {
+        try {
+          const worldBible = await storage.getWorldBibleByProject(projectId);
+          const chapters = await storage.getChaptersByProject(projectId);
+
+          let bookSummary = `Título: "${project.title}"\nGénero: ${project.genre}\nTono: ${project.tone}\nCapítulos: ${project.chapterCount}\n`;
+          if (project.premise) bookSummary += `Premisa: ${project.premise}\n`;
+
+          if (worldBible) {
+            const chars = worldBible.characters as any[];
+            const timeline = worldBible.timeline as any[];
+            const worldRules = worldBible.worldRules as any[];
+            if (chars?.length) bookSummary += `\nPersonajes principales: ${chars.slice(0, 10).map((c: any) => c.name || c.nombre || JSON.stringify(c)).join(", ")}\n`;
+            if (timeline?.length) bookSummary += `Eventos clave: ${timeline.length} eventos en la línea temporal\n`;
+            if (worldRules?.length) bookSummary += `Reglas del mundo: ${worldRules.length} reglas definidas\n`;
+          }
+
+          const completedChapters = chapters.filter(c => c.content && c.content.length > 100);
+          if (completedChapters.length > 0) {
+            const firstChapter = completedChapters[0];
+            const lastChapter = completedChapters[completedChapters.length - 1];
+            bookSummary += `\nInicio del libro (extracto): ${(firstChapter.content || "").substring(0, 1000)}\n`;
+            bookSummary += `\nFinal del libro (extracto): ${(lastChapter.content || "").substring(0, 1000)}\n`;
+          }
+
+          const { generateStyleGuide } = await import("./agents/style-guide-generator");
+
+          let pseudonymName: string | undefined;
+          if (project.pseudonymId) {
+            const pseud = await storage.getPseudonym(project.pseudonymId);
+            if (pseud) pseudonymName = pseud.name;
+          }
+
+          const guideResult = await generateStyleGuide({
+            guideType: "series_writing",
+            seriesTitle: seriesTitle.trim(),
+            seriesDescription: `Serie basada en el libro ya escrito "${project.title}".\n\n${bookSummary}`,
+            seriesTotalBooks: totalPlannedBooks || 3,
+            seriesWorkType: totalPlannedBooks === 3 ? "trilogy" : "series",
+            pseudonymName,
+            language: "es",
+          });
+
+          await storage.updateSeries(newSeries.id, {
+            seriesGuide: guideResult.content,
+            seriesGuideFileName: "ai-generated-from-project.md",
+          });
+
+          guideGenerated = true;
+          console.log(`[API] Series guide generated for series #${newSeries.id} from project #${projectId}`);
+        } catch (guideError: any) {
+          console.error("[API] Error generating series guide:", guideError);
+        }
+      }
+
       res.json({
         project: updated,
         series: newSeries,
-        message: `Proyecto convertido en libro #1 de la serie "${newSeries.title}"`,
+        message: `Proyecto convertido en libro #1 de la serie "${newSeries.title}"${guideGenerated ? ". Guía de serie generada." : ""}`,
       });
     } catch (error: any) {
       console.error("Error converting project to series:", error);
