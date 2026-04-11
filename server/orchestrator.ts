@@ -1261,7 +1261,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
           });
 
-          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "chapter_edit");
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-flash-preview", sectionData.numero, "chapter_edit");
 
           if (editorResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -1888,7 +1888,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
           });
 
-          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "chapter_edit");
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-flash-preview", sectionData.numero, "chapter_edit");
 
           if (editorResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -2891,7 +2891,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           previousChaptersContext: this.buildPreviousChaptersContextForEditor(qaEditorChaptersCtx, sectionData.numero),
         });
 
-        await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "qa_edit");
+        await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-flash-preview", sectionData.numero, "qa_edit");
 
         this.enforceApprovalLogic(editorResult);
         if (!editorResult.result?.aprobado) {
@@ -3301,7 +3301,7 @@ Responde SOLO con un JSON válido con la estructura:
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(extEditorChaptersCtx, sectionData.numero),
           });
 
-          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "extend_edit");
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-flash-preview", sectionData.numero, "extend_edit");
 
           if (editorResult.result) {
             const score = editorResult.result.puntuacion || 0;
