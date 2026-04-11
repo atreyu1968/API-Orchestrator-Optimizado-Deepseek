@@ -10550,6 +10550,76 @@ CRITERIOS:
     }
   });
 
+  app.post("/api/cover-prompts/:id/generate-image", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+
+      const coverPrompt = await storage.getCoverPrompt(id);
+      if (!coverPrompt) return res.status(404).json({ error: "Cover prompt not found" });
+
+      const { generateImage } = await import("./replit_integrations/image/client");
+      const fs = await import("fs");
+
+      const coversDir = path.join(".", "covers");
+      if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true });
+
+      let fullPrompt = coverPrompt.prompt;
+      if (coverPrompt.negativePrompt) {
+        fullPrompt += `\n\nAvoid: ${coverPrompt.negativePrompt}`;
+      }
+
+      console.log(`[CoverPrompts] Generando imagen para prompt #${id}: "${coverPrompt.title}"...`);
+      const dataUrl = await generateImage(fullPrompt);
+
+      const matches = dataUrl.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/);
+      if (!matches) throw new Error("Invalid image data URL format");
+
+      const ext = matches[1] === "jpeg" || matches[1] === "jpg" ? "jpg" : "png";
+      const imageBuffer = Buffer.from(matches[2], "base64");
+      const filename = `cover_${id}_${Date.now()}.${ext}`;
+      const filePath = path.join(coversDir, filename);
+      fs.writeFileSync(filePath, imageBuffer);
+
+      const imageUrl = `/api/cover-images/${filename}`;
+      const updated = await storage.updateCoverPrompt(id, {
+        generatedImageUrl: imageUrl,
+        status: "generated",
+      });
+
+      console.log(`[CoverPrompts] Imagen generada: ${filePath}`);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[CoverPrompts] Error generating image:", error);
+      res.status(500).json({ error: error.message || "Failed to generate cover image" });
+    }
+  });
+
+  app.get("/api/cover-images/:filename", async (req: Request, res: Response) => {
+    try {
+      const fs = await import("fs");
+      const filename = req.params.filename;
+      if (!/^cover_\d+_\d+\.(png|jpg)$/.test(filename)) {
+        return res.status(400).json({ error: "Invalid filename" });
+      }
+      const filePath = path.join(".", "covers", filename);
+      const resolvedPath = path.resolve(filePath);
+      const resolvedDir = path.resolve(".", "covers");
+      if (!resolvedPath.startsWith(resolvedDir)) {
+        return res.status(400).json({ error: "Invalid path" });
+      }
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "Image not found" });
+      }
+      const ext = path.extname(filename).slice(1);
+      res.setHeader("Content-Type", ext === "jpg" ? "image/jpeg" : "image/png");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.sendFile(resolvedPath);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ===================== KDP METADATA =====================
 
   app.get("/api/kdp-metadata", async (_req: Request, res: Response) => {

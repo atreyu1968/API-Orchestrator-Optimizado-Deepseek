@@ -15,7 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { 
   Image, Loader2, Sparkles, Copy, Trash2, Edit3, Palette, 
-  BookOpen, Library, User, Wand2, Check, Eye
+  BookOpen, Library, User, Wand2, Check, Eye, ImagePlus, Download, RefreshCw
 } from "lucide-react";
 import type { CoverPrompt } from "@shared/schema";
 
@@ -33,6 +33,7 @@ export default function CoversPage() {
   const [editingPrompt, setEditingPrompt] = useState<CoverPrompt | null>(null);
   const [editedPromptText, setEditedPromptText] = useState("");
   const [viewingPrompt, setViewingPrompt] = useState<CoverPrompt | null>(null);
+  const [generatingImageId, setGeneratingImageId] = useState<number | null>(null);
 
   const { data: prompts = [], isLoading: loadingPrompts } = useQuery<CoverPrompt[]>({
     queryKey: ["/api/cover-prompts"],
@@ -93,6 +94,23 @@ export default function CoversPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/cover-prompts"] });
       setEditingPrompt(null);
       toast({ title: "Actualizado" });
+    },
+  });
+
+  const generateImageMutation = useMutation({
+    mutationFn: async (promptId: number) => {
+      setGeneratingImageId(promptId);
+      const res = await apiRequest("POST", `/api/cover-prompts/${promptId}/generate-image`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cover-prompts"] });
+      setGeneratingImageId(null);
+      toast({ title: "Portada generada", description: "La imagen de portada se ha creado correctamente." });
+    },
+    onError: (err: any) => {
+      setGeneratingImageId(null);
+      toast({ title: "Error", description: err.message || "No se pudo generar la imagen", variant: "destructive" });
     },
   });
 
@@ -368,6 +386,29 @@ export default function CoversPage() {
                         </DialogHeader>
                         <ScrollArea className="max-h-[60vh]">
                           <div className="space-y-4 pr-4">
+                            {(prompt as any).generatedImageUrl && (
+                              <div className="flex flex-col items-center gap-2">
+                                <img
+                                  src={(prompt as any).generatedImageUrl}
+                                  alt={prompt.title}
+                                  className="max-h-[300px] rounded-md border object-contain"
+                                />
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      const a = document.createElement("a");
+                                      a.href = (prompt as any).generatedImageUrl;
+                                      a.download = `${prompt.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`;
+                                      a.click();
+                                    }}
+                                  >
+                                    <Download className="h-3 w-3 mr-1" /> Descargar imagen
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
                             <div>
                               <Label className="text-xs text-muted-foreground">Prompt Principal</Label>
                               <p className="text-sm mt-1 whitespace-pre-wrap bg-muted p-3 rounded-md">{prompt.prompt}</p>
@@ -480,10 +521,58 @@ export default function CoversPage() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
+                {(prompt as any).generatedImageUrl ? (
+                  <div className="relative group">
+                    <img
+                      src={(prompt as any).generatedImageUrl}
+                      alt={prompt.title}
+                      className="w-full rounded-md border object-cover max-h-[300px]"
+                      data-testid={`img-cover-${prompt.id}`}
+                    />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          const a = document.createElement("a");
+                          a.href = (prompt as any).generatedImageUrl;
+                          a.download = `${prompt.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`;
+                          a.click();
+                        }}
+                        data-testid={`button-download-image-${prompt.id}`}
+                      >
+                        <Download className="h-3.5 w-3.5 mr-1" /> Descargar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => generateImageMutation.mutate(prompt.id)}
+                        disabled={generatingImageId === prompt.id}
+                        data-testid={`button-regenerate-image-${prompt.id}`}
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 mr-1 ${generatingImageId === prompt.id ? "animate-spin" : ""}`} /> Regenerar
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => generateImageMutation.mutate(prompt.id)}
+                    disabled={generatingImageId === prompt.id}
+                    data-testid={`button-generate-image-${prompt.id}`}
+                  >
+                    {generatingImageId === prompt.id ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generando imagen...</>
+                    ) : (
+                      <><ImagePlus className="h-4 w-4 mr-2" /> Generar Imagen de Portada</>
+                    )}
+                  </Button>
+                )}
                 <p className="text-xs text-muted-foreground line-clamp-3">{prompt.prompt}</p>
                 {prompt.colorPalette && (
-                  <div className="flex items-center gap-1 mt-2">
+                  <div className="flex items-center gap-1">
                     <Palette className="h-3 w-3 text-muted-foreground" />
                     <span className="text-xs text-muted-foreground">{prompt.colorPalette}</span>
                   </div>
