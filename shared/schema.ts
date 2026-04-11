@@ -782,6 +782,7 @@ export const coverPrompts = pgTable("cover_prompts", {
   typography: text("typography"),
   composition: text("composition"),
   seriesDesignSystem: jsonb("series_design_system"),
+  authorBranding: jsonb("author_branding"),
   coverSpecs: jsonb("cover_specs").default({
     width: 1600,
     height: 2560,

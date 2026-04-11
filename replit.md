@@ -185,15 +185,18 @@ Preferred communication style: Simple, everyday language.
 - **Frontend**: `client/src/pages/audiobooks.tsx` — list/create/detail views. Create form includes source selection, Fish Audio voice picker, format/bitrate/speed sliders, cover upload. Detail view shows per-chapter progress, inline audio players, pause/resume controls, generate-all or per-chapter generation, delete (works even during active generation), and ZIP download.
 - Audio files stored in `./audiobooks/project_{id}/` directory.
 
-#### Cover Prompt Generator (v6.0)
+#### Cover Prompt Generator (v6.2)
 - Generates optimized AI prompts for book cover creation, compatible with Midjourney, DALL-E, Stable Diffusion, Ideogram, Leonardo AI.
 - **Scopes**: Project (individual book), Series (coherent visual identity), Pseudonym (author branding), Independent (custom).
 - **KDP Specs**: 2560x1600px, 300 DPI, RGB, JPEG/TIFF, portrait orientation.
-- **Series Design System**: When generating for a series, creates a shared design system (common elements, color scheme, typography, layout pattern, branding notes) that subsequent covers in the series will follow.
-- **Agent**: `server/agents/cover-prompt-designer.ts` — extends BaseAgent, uses Gemini 2.5 Flash with thinking. Generates prompts in English (better AI image gen results), includes negative prompts, style, color palette, mood, typography suggestions, composition details.
-- **Schema**: `cover_prompts` table (projectId?, seriesId?, pseudonymId?, title, prompt, negativePrompt, style, colorPalette, mood, typography, composition, seriesDesignSystem, coverSpecs, status, notes).
-- **API Routes**: `GET /api/cover-prompts`, `GET /api/cover-prompts/:id`, `POST /api/cover-prompts/generate`, `PATCH /api/cover-prompts/:id`, `DELETE /api/cover-prompts/:id`.
-- **Frontend**: `client/src/pages/covers.tsx` — scope selector (tabs), prompt generation, full prompt viewer dialog, copy to clipboard, edit prompt, delete.
+- **Chain Generation (v6.2)**: When generating a project cover, the system automatically checks if the pseudonym has existing author branding and if the series has an existing design system. If either is missing, it generates them first in chain order: Author Branding → Series Design → Project Cover. This ensures visual coherence across all covers. Same logic applies when generating a series cover — if the pseudonym branding is missing, it's created first. The frontend shows an amber warning when chain generation will occur.
+- **Author Branding**: Pseudonym-level visual identity stored in `authorBranding` jsonb field. Defines: visualIdentity, colorScheme, typographyStyle, moodAndTone, brandingNotes. All covers for the same pseudonym inherit this branding.
+- **Series Design System**: When generating for a series, creates a shared design system (common elements, color scheme, typography, layout pattern, branding notes) that subsequent covers in the series will follow. Inherits from author branding when available.
+- **Agent**: `server/agents/cover-prompt-designer.ts` — extends BaseAgent, uses Gemini 2.5 Flash with thinking. Generates prompts in English (better AI image gen results), includes negative prompts, style, color palette, mood, typography suggestions, composition details. Supports hierarchical context: authorBranding → seriesDesignSystem → project-specific.
+- **Schema**: `cover_prompts` table (projectId?, seriesId?, pseudonymId?, title, prompt, negativePrompt, style, colorPalette, mood, typography, composition, seriesDesignSystem, authorBranding, coverSpecs, status, notes).
+- **API Routes**: `GET /api/cover-prompts`, `GET /api/cover-prompts/:id`, `POST /api/cover-prompts/generate` (supports chain generation, returns `chainGenerated` array when multiple prompts created), `PATCH /api/cover-prompts/:id`, `DELETE /api/cover-prompts/:id`.
+- **Frontend**: `client/src/pages/covers.tsx` — scope selector (tabs), prompt generation with chain warnings, full prompt viewer dialog with author branding and series design display, copy to clipboard, edit prompt, delete. Badges show "Branding" (purple) and "Diseño Serie" (blue) on prompt cards.
+- **Migration**: `migrations/add_author_branding.sql` — adds `author_branding` jsonb column to `cover_prompts`.
 
 #### KDP Metadata Generator (v6.0)
 - Generates Amazon KDP publishing metadata: subtitle, HTML description (max 4000 chars), 7 search keywords (50 chars each), 2 BISAC categories, series info, AI disclosure.

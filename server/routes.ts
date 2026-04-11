@@ -10226,6 +10226,148 @@ CRITERIOS:
 
       const { coverPromptDesigner } = await import("./agents/cover-prompt-designer");
 
+      const chainResults: any[] = [];
+
+      const getWorldBibleSummary = async (pid: number): Promise<string | undefined> => {
+        const snapshot = await storage.getContinuitySnapshotByProject(pid);
+        if (snapshot) {
+          const parts: string[] = [];
+          if (snapshot.synopsis) parts.push(`SINOPSIS REAL: ${snapshot.synopsis.substring(0, 1500)}`);
+          if (snapshot.characterStates && Array.isArray(snapshot.characterStates)) {
+            const chars = (snapshot.characterStates as any[]).map((c: any) => {
+              const name = c.nombre || c.name || "";
+              const desc = c.descripcion_fisica || c.apariencia || "";
+              return desc ? `${name} (${desc})` : name;
+            }).filter(Boolean).join("; ");
+            if (chars) parts.push(`PERSONAJES REALES: ${chars.substring(0, 800)}`);
+          }
+          if (parts.length > 0) return parts.join("\n");
+        }
+        const wb = await storage.getWorldBibleByProject(pid);
+        if (wb?.content) {
+          try {
+            const wbData = typeof wb.content === "string" ? JSON.parse(wb.content) : wb.content;
+            const parts: string[] = [];
+            if (wbData.ambientacion) {
+              const amb = wbData.ambientacion;
+              const ambStr = typeof amb === "string" ? amb : (amb.epoca || amb.lugar || JSON.stringify(amb));
+              parts.push(`Ambientación: ${String(ambStr).substring(0, 500)}`);
+            }
+            if (wbData.personajes_principales) {
+              const chars = wbData.personajes_principales.map((p: any) => {
+                const name = p.nombre || "";
+                const desc = p.descripcion_fisica || p.apariencia || p.rol || "";
+                return desc ? `${name} (${desc})` : name;
+              }).join("; ");
+              parts.push(`PERSONAJES REALES: ${chars.substring(0, 800)}`);
+            }
+            if (wbData.temas_principales) parts.push(`Temas: ${JSON.stringify(wbData.temas_principales).substring(0, 300)}`);
+            if (parts.length > 0) return parts.join("\n");
+          } catch {}
+        }
+        return undefined;
+      };
+
+      const findAuthorBranding = async (pId: number): Promise<any | null> => {
+        const covers = await storage.getCoverPromptsByPseudonym(pId);
+        const withBranding = covers.find(c => c.authorBranding);
+        return withBranding?.authorBranding || null;
+      };
+
+      const findSeriesDesign = async (sId: number): Promise<any | null> => {
+        const covers = await storage.getCoverPromptsBySeries(sId);
+        const withDesign = covers.find(c => c.seriesDesignSystem);
+        return withDesign?.seriesDesignSystem || null;
+      };
+
+      const generateAndSaveAuthorBranding = async (pseudo: any): Promise<any> => {
+        console.log(`[CoverPrompts] Generando branding de autor para "${pseudo.name}"...`);
+        const ctx: any = {
+          title: `Identidad Visual: ${pseudo.name}`,
+          genre: pseudo.defaultGenre || genre || "fiction",
+          tone: pseudo.defaultTone || tone || "dramatic",
+          scope: "pseudonym" as const,
+          pseudonymName: pseudo.name,
+          pseudonymGenre: pseudo.defaultGenre,
+          pseudonymTone: pseudo.defaultTone,
+          pseudonymBio: pseudo.bio,
+        };
+        const result = await coverPromptDesigner.generateCoverPrompt(ctx);
+        if (!result.authorBranding) {
+          console.warn(`[CoverPrompts] El modelo no generó authorBranding para "${pseudo.name}". Se usará un branding genérico.`);
+          result.authorBranding = {
+            visualIdentity: `Identidad visual de ${pseudo.name} — ${pseudo.defaultGenre || "ficción"}`,
+            colorScheme: result.colorPalette || "Paleta por definir",
+            typographyStyle: result.typography || "Tipografía por definir",
+            moodAndTone: result.mood || pseudo.defaultTone || "dramatic",
+            brandingNotes: `Branding base generado automáticamente para ${pseudo.name}`,
+          };
+        }
+        const saved = await storage.createCoverPrompt({
+          projectId: null,
+          seriesId: null,
+          pseudonymId: pseudo.id,
+          title: ctx.title,
+          prompt: result.prompt,
+          negativePrompt: result.negativePrompt,
+          style: result.style,
+          colorPalette: result.colorPalette,
+          mood: result.mood,
+          typography: result.typography,
+          composition: result.composition,
+          seriesDesignSystem: result.seriesDesignSystem,
+          authorBranding: result.authorBranding,
+          status: "draft",
+        });
+        chainResults.push({ scope: "pseudonym", id: saved.id, title: saved.title });
+        return result.authorBranding;
+      };
+
+      const generateAndSaveSeriesDesign = async (s: any, authorBranding: any, effectivePseudonym: any): Promise<any> => {
+        console.log(`[CoverPrompts] Generando diseño de serie para "${s.title}"...`);
+        const ctx: any = {
+          title: s.title,
+          genre: genre || effectivePseudonym?.defaultGenre || "fiction",
+          tone: tone || effectivePseudonym?.defaultTone || "dramatic",
+          scope: "series" as const,
+          seriesTitle: s.title,
+          seriesDescription: s.description,
+          pseudonymName: effectivePseudonym?.name,
+          pseudonymGenre: effectivePseudonym?.defaultGenre,
+          pseudonymTone: effectivePseudonym?.defaultTone,
+          authorBranding,
+        };
+        const result = await coverPromptDesigner.generateCoverPrompt(ctx);
+        if (!result.seriesDesignSystem) {
+          console.warn(`[CoverPrompts] El modelo no generó seriesDesignSystem para "${s.title}". Se usará un sistema de diseño genérico.`);
+          result.seriesDesignSystem = {
+            commonElements: `Elementos comunes de la serie "${s.title}"`,
+            colorScheme: result.colorPalette || "Paleta por definir",
+            typographyStyle: result.typography || "Tipografía por definir",
+            layoutPattern: result.composition || "Composición por definir",
+            brandingNotes: `Sistema de diseño base generado automáticamente para la serie "${s.title}"`,
+          };
+        }
+        const saved = await storage.createCoverPrompt({
+          projectId: null,
+          seriesId: s.id,
+          pseudonymId: effectivePseudonym?.id || null,
+          title: ctx.title,
+          prompt: result.prompt,
+          negativePrompt: result.negativePrompt,
+          style: result.style,
+          colorPalette: result.colorPalette,
+          mood: result.mood,
+          typography: result.typography,
+          composition: result.composition,
+          seriesDesignSystem: result.seriesDesignSystem,
+          authorBranding: result.authorBranding || authorBranding,
+          status: "draft",
+        });
+        chainResults.push({ scope: "series", id: saved.id, title: saved.title });
+        return result.seriesDesignSystem;
+      };
+
       let context: any = {
         title: title || "Sin título",
         genre: genre || "fiction",
@@ -10235,122 +10377,138 @@ CRITERIOS:
 
       if (scope === "project" && projectId) {
         const project = await storage.getProject(projectId);
-        if (project) {
-          context.title = project.title;
-          context.genre = project.genre;
-          context.tone = project.tone;
-          context.premise = project.premise;
+        if (!project) return res.status(404).json({ error: "Project not found" });
 
-          const snapshot = await storage.getContinuitySnapshotByProject(projectId);
-          if (snapshot) {
-            const summaryParts: string[] = [];
-            if (snapshot.synopsis) {
-              summaryParts.push(`SINOPSIS REAL: ${snapshot.synopsis.substring(0, 1500)}`);
-            }
-            if (snapshot.characterStates && Array.isArray(snapshot.characterStates)) {
-              const chars = (snapshot.characterStates as any[]).map((c: any) => {
-                const name = c.nombre || c.name || "";
-                const desc = c.descripcion_fisica || c.apariencia || "";
-                return desc ? `${name} (${desc})` : name;
-              }).filter(Boolean).join("; ");
-              if (chars) summaryParts.push(`PERSONAJES REALES: ${chars.substring(0, 800)}`);
-            }
-            if (summaryParts.length > 0) {
-              context.worldBibleSummary = summaryParts.join("\n");
-            }
-          }
+        context.title = project.title;
+        context.genre = project.genre;
+        context.tone = project.tone;
+        context.premise = project.premise;
+        context.worldBibleSummary = await getWorldBibleSummary(projectId);
 
-          if (!context.worldBibleSummary) {
-            const wb = await storage.getWorldBibleByProject(projectId);
-            if (wb?.content) {
-              try {
-                const wbData = typeof wb.content === "string" ? JSON.parse(wb.content) : wb.content;
-                const summaryParts: string[] = [];
-                if (wbData.ambientacion) {
-                  const amb = wbData.ambientacion;
-                  const ambStr = typeof amb === "string" ? amb : (amb.epoca || amb.lugar || JSON.stringify(amb));
-                  summaryParts.push(`Ambientación: ${String(ambStr).substring(0, 500)}`);
-                }
-                if (wbData.personajes_principales) {
-                  const chars = wbData.personajes_principales.map((p: any) => {
-                    const name = p.nombre || "";
-                    const desc = p.descripcion_fisica || p.apariencia || p.rol || "";
-                    return desc ? `${name} (${desc})` : name;
-                  }).join("; ");
-                  summaryParts.push(`PERSONAJES REALES: ${chars.substring(0, 800)}`);
-                }
-                if (wbData.temas_principales) summaryParts.push(`Temas: ${JSON.stringify(wbData.temas_principales).substring(0, 300)}`);
-                context.worldBibleSummary = summaryParts.join("\n");
-              } catch {}
-            }
-          }
+        let effectivePseudonymId = project.pseudonymId;
+        let effectivePseudonym: any = null;
+        let effectiveSeriesId = project.seriesId;
+        let effectiveSeries: any = null;
 
-          if (project.pseudonymId) {
-            const pseudo = await storage.getPseudonym(project.pseudonymId);
-            if (pseudo) {
-              context.pseudonymName = pseudo.name;
-              context.pseudonymGenre = pseudo.defaultGenre;
-            }
-          }
-
-          if (project.seriesId) {
-            const s = await storage.getSeries(project.seriesId);
-            if (s) {
-              context.seriesTitle = s.title;
-              context.seriesDescription = s.description;
-              const existingCovers = await storage.getCoverPromptsBySeries(project.seriesId);
-              if (existingCovers.length > 0) {
-                context.existingCovers = existingCovers.map(c => ({
-                  title: c.title, style: c.style, colorPalette: c.colorPalette || "", mood: c.mood || ""
-                }));
-                const withDesign = existingCovers.find(c => c.seriesDesignSystem);
-                if (withDesign) context.seriesDesignSystem = withDesign.seriesDesignSystem;
-              }
-            }
+        if (effectivePseudonymId) {
+          effectivePseudonym = await storage.getPseudonym(effectivePseudonymId);
+        } else if (effectiveSeriesId) {
+          const s = await storage.getSeries(effectiveSeriesId);
+          if (s?.pseudonymId) {
+            effectivePseudonymId = s.pseudonymId;
+            effectivePseudonym = await storage.getPseudonym(s.pseudonymId);
           }
         }
+
+        if (effectiveSeriesId) {
+          effectiveSeries = await storage.getSeries(effectiveSeriesId);
+        }
+
+        let authorBranding: any = null;
+        if (effectivePseudonymId) {
+          authorBranding = await findAuthorBranding(effectivePseudonymId);
+          if (!authorBranding && effectivePseudonym) {
+            authorBranding = await generateAndSaveAuthorBranding(effectivePseudonym);
+          }
+          if (effectivePseudonym) {
+            context.pseudonymName = effectivePseudonym.name;
+            context.pseudonymGenre = effectivePseudonym.defaultGenre;
+            context.pseudonymTone = effectivePseudonym.defaultTone;
+          }
+        }
+
+        let seriesDesign: any = null;
+        if (effectiveSeries) {
+          seriesDesign = await findSeriesDesign(effectiveSeriesId!);
+          if (!seriesDesign) {
+            seriesDesign = await generateAndSaveSeriesDesign(effectiveSeries, authorBranding, effectivePseudonym);
+          }
+          context.seriesTitle = effectiveSeries.title;
+          context.seriesDescription = effectiveSeries.description;
+          const existingCovers = await storage.getCoverPromptsBySeries(effectiveSeriesId!);
+          if (existingCovers.length > 0) {
+            context.existingCovers = existingCovers.filter(c => c.projectId !== projectId).map(c => ({
+              title: c.title, style: c.style, colorPalette: c.colorPalette || "", mood: c.mood || ""
+            }));
+          }
+        }
+
+        if (authorBranding) context.authorBranding = authorBranding;
+        if (seriesDesign) context.seriesDesignSystem = seriesDesign;
       }
 
       if (scope === "series" && seriesId) {
         const s = await storage.getSeries(seriesId);
-        if (s) {
-          context.seriesTitle = s.title;
-          context.seriesDescription = s.description;
-          context.title = title || s.title;
-          if (s.pseudonymId) {
-            const pseudo = await storage.getPseudonym(s.pseudonymId);
-            if (pseudo) {
-              context.pseudonymName = pseudo.name;
-              context.genre = genre || pseudo.defaultGenre || "fiction";
+        if (!s) return res.status(404).json({ error: "Series not found" });
+
+        context.seriesTitle = s.title;
+        context.seriesDescription = s.description;
+        context.title = title || s.title;
+
+        let effectivePseudonym: any = null;
+        if (s.pseudonymId) {
+          effectivePseudonym = await storage.getPseudonym(s.pseudonymId);
+          if (effectivePseudonym) {
+            context.pseudonymName = effectivePseudonym.name;
+            context.pseudonymGenre = effectivePseudonym.defaultGenre;
+            context.pseudonymTone = effectivePseudonym.defaultTone;
+            context.genre = genre || effectivePseudonym.defaultGenre || "fiction";
+
+            let authorBranding = await findAuthorBranding(s.pseudonymId);
+            if (!authorBranding) {
+              authorBranding = await generateAndSaveAuthorBranding(effectivePseudonym);
             }
+            if (authorBranding) context.authorBranding = authorBranding;
           }
-          const existingCovers = await storage.getCoverPromptsBySeries(seriesId);
-          if (existingCovers.length > 0) {
-            context.existingCovers = existingCovers.map(c => ({
-              title: c.title, style: c.style, colorPalette: c.colorPalette || "", mood: c.mood || ""
-            }));
-            const withDesign = existingCovers.find(c => c.seriesDesignSystem);
-            if (withDesign) context.seriesDesignSystem = withDesign.seriesDesignSystem;
-          }
+        }
+
+        const existingCovers = await storage.getCoverPromptsBySeries(seriesId);
+        if (existingCovers.length > 0) {
+          context.existingCovers = existingCovers.map(c => ({
+            title: c.title, style: c.style, colorPalette: c.colorPalette || "", mood: c.mood || ""
+          }));
+          const withDesign = existingCovers.find(c => c.seriesDesignSystem);
+          if (withDesign) context.seriesDesignSystem = withDesign.seriesDesignSystem;
         }
       }
 
       if (scope === "pseudonym" && pseudonymId) {
         const pseudo = await storage.getPseudonym(pseudonymId);
-        if (pseudo) {
-          context.pseudonymName = pseudo.name;
-          context.pseudonymGenre = pseudo.defaultGenre;
-          context.genre = genre || pseudo.defaultGenre || "fiction";
-          context.title = title || `Portada para ${pseudo.name}`;
-        }
+        if (!pseudo) return res.status(404).json({ error: "Pseudonym not found" });
+
+        context.pseudonymName = pseudo.name;
+        context.pseudonymGenre = pseudo.defaultGenre;
+        context.pseudonymTone = pseudo.defaultTone;
+        context.pseudonymBio = pseudo.bio;
+        context.genre = genre || pseudo.defaultGenre || "fiction";
+        context.title = title || `Identidad Visual: ${pseudo.name}`;
+
+        const existingBranding = await findAuthorBranding(pseudonymId);
+        if (existingBranding) context.authorBranding = existingBranding;
       }
 
       const result = await coverPromptDesigner.generateCoverPrompt(context);
 
+      let finalSeriesId = seriesId || null;
+      let finalPseudonymId = pseudonymId || null;
+      if (scope === "project" && projectId) {
+        const proj = await storage.getProject(projectId);
+        if (proj) {
+          finalSeriesId = finalSeriesId || proj.seriesId || null;
+          if (!finalPseudonymId) {
+            finalPseudonymId = proj.pseudonymId || null;
+            if (!finalPseudonymId && proj.seriesId) {
+              const s = await storage.getSeries(proj.seriesId);
+              finalPseudonymId = s?.pseudonymId || null;
+            }
+          }
+        }
+      }
+
       const saved = await storage.createCoverPrompt({
         projectId: projectId || null,
-        seriesId: seriesId || null,
-        pseudonymId: pseudonymId || null,
+        seriesId: finalSeriesId,
+        pseudonymId: finalPseudonymId,
         title: context.title,
         prompt: result.prompt,
         negativePrompt: result.negativePrompt,
@@ -10360,10 +10518,13 @@ CRITERIOS:
         typography: result.typography,
         composition: result.composition,
         seriesDesignSystem: result.seriesDesignSystem,
+        authorBranding: result.authorBranding,
         status: "draft",
       });
 
-      res.json(saved);
+      chainResults.push({ scope, id: saved.id, title: saved.title });
+
+      res.json({ ...saved, chainGenerated: chainResults.length > 1 ? chainResults : undefined });
     } catch (error: any) {
       console.error("[CoverPrompts] Error generating:", error);
       res.status(500).json({ error: error.message });

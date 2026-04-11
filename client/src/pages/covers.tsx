@@ -56,9 +56,18 @@ export default function CoversPage() {
       const res = await apiRequest("POST", "/api/cover-prompts/generate", body);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/cover-prompts"] });
-      toast({ title: "Prompt generado", description: "El prompt de portada se ha creado correctamente." });
+      if (data.chainGenerated && data.chainGenerated.length > 1) {
+        const chainLabels = data.chainGenerated.map((c: any) => {
+          if (c.scope === "pseudonym") return `Branding de autor`;
+          if (c.scope === "series") return `Diseño de serie`;
+          return `Portada del proyecto`;
+        }).join(" → ");
+        toast({ title: "Cadena generada", description: `Se crearon ${data.chainGenerated.length} prompts en cadena: ${chainLabels}` });
+      } else {
+        toast({ title: "Prompt generado", description: "El prompt de portada se ha creado correctamente." });
+      }
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -253,6 +262,43 @@ export default function CoversPage() {
             </Tabs>
           </div>
 
+          {scope === "project" && selectedProjectId && (() => {
+            const proj = projects.find((p: any) => p.id === selectedProjectId);
+            if (!proj) return null;
+            const projSeries = proj.seriesId ? seriesList.find((s: any) => s.id === proj.seriesId) : null;
+            const effectivePseudonymId = proj.pseudonymId || projSeries?.pseudonymId || null;
+            const hasPseudonym = !!effectivePseudonymId;
+            const hasSeries = !!proj.seriesId;
+            if (!hasPseudonym && !hasSeries) return null;
+            const pseudoCovers = hasPseudonym ? prompts.filter(p => p.pseudonymId === effectivePseudonymId && (p as any).authorBranding) : [];
+            const seriesCovers = hasSeries ? prompts.filter(p => p.seriesId === proj.seriesId && (p as any).seriesDesignSystem) : [];
+            const missingPseudo = hasPseudonym && pseudoCovers.length === 0;
+            const missingSeries = hasSeries && seriesCovers.length === 0;
+            if (!missingPseudo && !missingSeries) return null;
+            return (
+              <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/20 text-sm space-y-1" data-testid="chain-warning">
+                <p className="font-medium text-amber-600 dark:text-amber-400">Se generarán diseños previos automáticamente:</p>
+                {missingPseudo && <p className="text-muted-foreground">• Branding del autor (no existe aún)</p>}
+                {missingSeries && <p className="text-muted-foreground">• Diseño de la serie (no existe aún)</p>}
+                <p className="text-muted-foreground">• Portada del proyecto</p>
+              </div>
+            );
+          })()}
+
+          {scope === "series" && selectedSeriesId && (() => {
+            const ser = seriesList.find((s: any) => s.id === selectedSeriesId);
+            if (!ser?.pseudonymId) return null;
+            const pseudoCovers = prompts.filter(p => p.pseudonymId === ser.pseudonymId && (p as any).authorBranding);
+            if (pseudoCovers.length > 0) return null;
+            return (
+              <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/20 text-sm space-y-1" data-testid="chain-warning-series">
+                <p className="font-medium text-amber-600 dark:text-amber-400">Se generará el branding del autor primero:</p>
+                <p className="text-muted-foreground">• Branding del autor (no existe aún)</p>
+                <p className="text-muted-foreground">• Diseño de la serie</p>
+              </div>
+            );
+          })()}
+
           <Button
             onClick={() => generateMutation.mutate()}
             disabled={!canGenerate() || generateMutation.isPending}
@@ -262,7 +308,7 @@ export default function CoversPage() {
             {generateMutation.isPending ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Generando prompt...
+                Generando{scope === "project" || scope === "series" ? " cadena de diseño..." : " prompt..."}
               </>
             ) : (
               <>
@@ -299,6 +345,8 @@ export default function CoversPage() {
                       {prompt.mood && <Badge variant="outline" className="text-xs">{prompt.mood}</Badge>}
                       {prompt.seriesId && <Badge variant="default" className="text-xs">Serie</Badge>}
                       {prompt.pseudonymId && <Badge variant="default" className="text-xs">Autor</Badge>}
+                      {(prompt as any).authorBranding && <Badge className="text-xs bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/30">Branding</Badge>}
+                      {prompt.seriesDesignSystem && <Badge className="text-xs bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30">Diseño Serie</Badge>}
                     </div>
                   </div>
                   <div className="flex gap-1 shrink-0">
@@ -371,12 +419,28 @@ export default function CoversPage() {
                                 <p className="text-sm">{prompt.composition}</p>
                               </div>
                             )}
+                            {(prompt as any).authorBranding && (
+                              <div>
+                                <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <User className="h-3 w-3" /> Branding de Autor
+                                </Label>
+                                <div className="text-sm mt-1 bg-purple-500/5 border border-purple-500/20 p-3 rounded-md space-y-1">
+                                  {Object.entries((prompt as any).authorBranding).map(([key, val]) => (
+                                    <div key={key}><span className="font-medium">{key}:</span> {String(val)}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             {prompt.seriesDesignSystem && (
                               <div>
-                                <Label className="text-xs text-muted-foreground">Sistema de Diseño de Serie</Label>
-                                <pre className="text-xs mt-1 bg-muted p-3 rounded-md overflow-auto">
-                                  {JSON.stringify(prompt.seriesDesignSystem, null, 2)}
-                                </pre>
+                                <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Library className="h-3 w-3" /> Sistema de Diseño de Serie
+                                </Label>
+                                <div className="text-sm mt-1 bg-blue-500/5 border border-blue-500/20 p-3 rounded-md space-y-1">
+                                  {Object.entries(prompt.seriesDesignSystem as Record<string, any>).map(([key, val]) => (
+                                    <div key={key}><span className="font-medium">{key}:</span> {String(val)}</div>
+                                  ))}
+                                </div>
                               </div>
                             )}
                           </div>

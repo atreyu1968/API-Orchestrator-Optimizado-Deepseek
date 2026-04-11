@@ -10,8 +10,11 @@ interface CoverContext {
   seriesTitle?: string;
   seriesDescription?: string;
   seriesDesignSystem?: any;
+  authorBranding?: any;
   pseudonymName?: string;
   pseudonymGenre?: string;
+  pseudonymTone?: string;
+  pseudonymBio?: string;
   existingCovers?: Array<{ title: string; style: string; colorPalette: string; mood: string }>;
   scope: "project" | "series" | "pseudonym" | "independent";
 }
@@ -29,6 +32,13 @@ interface CoverPromptResult {
     colorScheme: string;
     typographyStyle: string;
     layoutPattern: string;
+    brandingNotes: string;
+  };
+  authorBranding?: {
+    visualIdentity: string;
+    colorScheme: string;
+    typographyStyle: string;
+    moodAndTone: string;
     brandingNotes: string;
   };
 }
@@ -59,13 +69,27 @@ REGLAS PARA PROMPTS:
 6. Para SERIES: mantén coherencia visual (misma paleta, misma composición general, mismo estilo)
 7. Incluye "negative prompt" para evitar elementos no deseados
 
+PARA SEUDÓNIMOS - BRANDING DE AUTOR:
+Cuando generes para un seudónimo (scope="pseudonym"), define un "branding de autor" que incluya:
+- Identidad visual (estética general del autor, qué lo distingue visualmente)
+- Esquema de colores característico del autor
+- Estilo tipográfico preferido
+- Mood/tono visual general
+- Notas de branding (qué hace reconocible a este autor visualmente)
+
 PARA SERIES - SISTEMA DE DISEÑO:
-Cuando generes para una serie, primero define un "sistema de diseño" que incluya:
+Cuando generes para una serie, define un "sistema de diseño" que incluya:
 - Elementos comunes (marco, borde, motivo recurrente)
 - Esquema de colores compartido
 - Estilo tipográfico sugerido (sans-serif moderna, serif elegante, etc.)
 - Patrón de composición (dónde va el título, dónde la imagen principal)
 - Notas de branding (qué hace reconocible esta serie)
+
+COHERENCIA EN CADENA:
+- Si recibes un "authorBranding" existente, DEBES respetarlo y construir sobre él
+- Si recibes un "seriesDesignSystem" existente, DEBES mantener coherencia con él
+- La jerarquía es: Author Branding → Series Design → Project Cover
+- Cada nivel hereda del anterior y añade especificidad
 
 RESPONDE SIEMPRE EN JSON con este formato:
 {
@@ -76,7 +100,8 @@ RESPONDE SIEMPRE EN JSON con este formato:
   "mood": "atmósfera/estado de ánimo",
   "typography": "sugerencia de estilo tipográfico para el título",
   "composition": "descripción de la composición visual",
-  "seriesDesignSystem": null o { "commonElements": "...", "colorScheme": "...", "typographyStyle": "...", "layoutPattern": "...", "brandingNotes": "..." }
+  "seriesDesignSystem": null o { "commonElements": "...", "colorScheme": "...", "typographyStyle": "...", "layoutPattern": "...", "brandingNotes": "..." },
+  "authorBranding": null o { "visualIdentity": "...", "colorScheme": "...", "typographyStyle": "...", "moodAndTone": "...", "brandingNotes": "..." }
 }`
     });
   }
@@ -101,6 +126,13 @@ RESPONDE SIEMPRE EN JSON con este formato:
     if (context.worldBibleSummary) {
       userPrompt += `\nDATOS REALES DEL LIBRO (usa SOLO esta información, NO inventes nada más):\n${context.worldBibleSummary.substring(0, 3000)}\n`;
     }
+
+    if (context.authorBranding) {
+      userPrompt += `\n═══ BRANDING DE AUTOR EXISTENTE (OBLIGATORIO respetar) ═══\n`;
+      userPrompt += JSON.stringify(context.authorBranding, null, 2);
+      userPrompt += `\n\nDEBES mantener coherencia con el branding de autor existente. Todas las portadas de este autor comparten esta identidad visual.\n`;
+      userPrompt += `Incluye "authorBranding" en tu respuesta con los mismos valores (puedes refinar pero no contradecir).\n`;
+    }
     
     if (context.seriesTitle) {
       if (context.scope === "series") {
@@ -113,7 +145,7 @@ RESPONDE SIEMPRE EN JSON con este formato:
         userPrompt += `Descripción de la serie: ${context.seriesDescription.substring(0, 1500)}\n`;
       }
       if (context.seriesDesignSystem) {
-        userPrompt += `\nSISTEMA DE DISEÑO EXISTENTE DE LA SERIE (mantener coherencia OBLIGATORIA):\n${JSON.stringify(context.seriesDesignSystem, null, 2)}\n`;
+        userPrompt += `\n═══ SISTEMA DE DISEÑO DE SERIE EXISTENTE (OBLIGATORIO mantener coherencia) ═══\n${JSON.stringify(context.seriesDesignSystem, null, 2)}\n`;
         userPrompt += `\nDEBES mantener coherencia visual con el sistema de diseño existente de la serie.\n`;
       }
       if (context.scope === "series") {
@@ -126,12 +158,20 @@ RESPONDE SIEMPRE EN JSON con este formato:
     if (context.pseudonymName) {
       if (context.scope === "pseudonym") {
         userPrompt += `\nÁMBITO: MARCA DE AUTOR\n`;
+        userPrompt += `Estás creando la IDENTIDAD VISUAL del autor "${context.pseudonymName}".\n`;
+        if (context.pseudonymBio) {
+          userPrompt += `Biografía del autor: ${context.pseudonymBio.substring(0, 500)}\n`;
+        }
+        userPrompt += `DEBES incluir un "authorBranding" completo en tu respuesta.\n`;
       } else {
         userPrompt += `\nAUTOR: `;
       }
       userPrompt += `Seudónimo: "${context.pseudonymName}"\n`;
       if (context.pseudonymGenre) {
         userPrompt += `Género habitual del autor: ${context.pseudonymGenre}\n`;
+      }
+      if (context.pseudonymTone) {
+        userPrompt += `Tono habitual del autor: ${context.pseudonymTone}\n`;
       }
       userPrompt += `La portada debe reflejar la identidad visual del autor "${context.pseudonymName}".\n`;
     }
@@ -172,6 +212,7 @@ RESPONDE SIEMPRE EN JSON con este formato:
       typography: String(parsed.typography || "").substring(0, 500),
       composition: String(parsed.composition || "").substring(0, 500),
       seriesDesignSystem: parsed.seriesDesignSystem || null,
+      authorBranding: parsed.authorBranding || null,
     };
   }
 
