@@ -4617,7 +4617,13 @@ Responde SOLO con un JSON válido con la estructura:
       let failedBatches = 0;
 
       for (let start = 0; start < completedChapters.length; start += BATCH_SIZE - OVERLAP) {
-        const batch = completedChapters.slice(start, start + BATCH_SIZE);
+        const freshChapters = await storage.getChaptersByProject(project.id);
+        const freshCompleted = freshChapters
+          .filter(c => (c.status === "completed" || c.status === "revision") && c.content)
+          .sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+        const batchChapterNums = completedChapters.slice(start, start + BATCH_SIZE).map(c => c.chapterNumber);
+        const batch = freshCompleted.filter(c => batchChapterNums.includes(c.chapterNumber));
         if (batch.length < 2) break;
         batchNumber++;
 
