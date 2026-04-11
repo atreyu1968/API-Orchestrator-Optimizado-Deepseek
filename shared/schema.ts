@@ -82,6 +82,7 @@ export const projects = pgTable("projects", {
   bookboxStructure: jsonb("bookbox_structure"),
   seriesId: integer("series_id").references(() => series.id, { onDelete: "set null" }),
   seriesOrder: integer("series_order"),
+  projectSubtype: text("project_subtype").notNull().default("standard"),
   status: text("status").notNull().default("idle"),
   currentChapter: integer("current_chapter").default(0),
   revisionCycle: integer("revision_cycle").default(0),

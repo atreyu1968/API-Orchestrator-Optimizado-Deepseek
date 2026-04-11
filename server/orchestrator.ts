@@ -713,15 +713,20 @@ ${seriesData.seriesGuide}
           }
 
           const currentOrder = project.seriesOrder || 1;
+          const isPrequel = (project as any).projectSubtype === "prequel";
           const fullContinuity = await storage.getSeriesFullContinuity(project.seriesId);
           const seriesProjectsForCtx = await storage.getProjectsBySeries(project.seriesId);
           const previousVolumes = fullContinuity.projectSnapshots.filter(s => {
             if (s.projectId === project.id) return false;
             const matchingProject = seriesProjectsForCtx.find(p => p.id === s.projectId);
+            if (isPrequel) return true;
             return (matchingProject?.seriesOrder || 999) < currentOrder;
           });
           const manuscriptSnapshots = fullContinuity.manuscriptSnapshots.filter(
-            ms => (ms.seriesOrder || 999) < currentOrder
+            ms => {
+              if (isPrequel) return true;
+              return (ms.seriesOrder || 999) < currentOrder;
+            }
           );
           
           const allSeriesManuscripts = await storage.getImportedManuscriptsBySeries(project.seriesId);
@@ -731,11 +736,30 @@ ${seriesData.seriesGuide}
             console.log(`[Orchestrator] WARNING: ${manuscriptsWithoutAnalysis.length} imported manuscript(s) in series without continuity analysis: ${manuscriptsWithoutAnalysis.map(m => `"${m.title}"`).join(", ")}`);
           }
 
+          if (isPrequel) {
+            seriesContextContent += `\n═══════════════════════════════════════════════════════════════════
+⚠️ ESTE PROYECTO ES UNA PRECUELA DE LA SERIE
+═══════════════════════════════════════════════════════════════════
+Esta novela ocurre ANTES cronológicamente de todos los volúmenes existentes.
+
+REGLAS PARA LA PRECUELA:
+1. CONOCES EL FUTURO: Los volúmenes siguientes ya existen. Debes plantar semillas y orígenes de los eventos futuros.
+2. NO CONTRADIGAS: Nada de lo que escribas puede contradecir los hechos establecidos en los volúmenes posteriores.
+3. SIEMBRA: Introduce elementos, relaciones y conflictos que el lector reconocerá cuando lea los volúmenes siguientes.
+4. AUTONOMÍA: La precuela debe funcionar como novela independiente — el lector no necesita haber leído los otros libros para disfrutarla.
+5. PERSONAJES: Los personajes que aparecen en volúmenes posteriores deben ser más jóvenes/inexpertos. Respeta su evolución futura.
+6. REVELACIONES: NO reveles secretos que se descubren en volúmenes posteriores. Puedes insinuarlos pero no exponerlos.
+7. CONSISTENCIA: Lugares, reglas del mundo, tecnología, magia — todo debe ser coherente con lo establecido después.
+═══════════════════════════════════════════════════════════════════\n`;
+            console.log(`[Orchestrator] PREQUEL MODE: Loading ALL volumes as future context`);
+          }
+
           const totalPreviousVolumes = previousVolumes.length + manuscriptSnapshots.length + manuscriptsWithoutAnalysis.length;
           
           if (totalPreviousVolumes > 0) {
+            const volumeLabel = isPrequel ? "VOLÚMENES POSTERIORES (FUTURO)" : "VOLÚMENES ANTERIORES";
             seriesContextContent += `\n═══════════════════════════════════════════════════════════════════
-VOLÚMENES ANTERIORES DE LA SERIE (${totalPreviousVolumes} libros)
+${volumeLabel} DE LA SERIE (${totalPreviousVolumes} libros)
 ═══════════════════════════════════════════════════════════════════\n`;
             
             const allVolumes: Array<{ order: number | null; content: string }> = [];
@@ -4552,17 +4576,22 @@ Responde SOLO con un JSON válido con la estructura:
 
     try {
       const currentOrder = project.seriesOrder || 1;
+      const isPrequel = (project as any).projectSubtype === "prequel";
       const fullContinuity = await storage.getSeriesFullContinuity(project.seriesId);
       const seriesProjects = await storage.getProjectsBySeries(project.seriesId);
 
       const prevSnapshots = fullContinuity.projectSnapshots.filter(s => {
         if (s.projectId === project.id) return false;
         const matchingProject = seriesProjects.find(p => p.id === s.projectId);
+        if (isPrequel) return true;
         return (matchingProject?.seriesOrder || 999) < currentOrder;
       });
 
       const prevManuscripts = fullContinuity.manuscriptSnapshots.filter(
-        ms => (ms.seriesOrder || 999) < currentOrder
+        ms => {
+          if (isPrequel) return true;
+          return (ms.seriesOrder || 999) < currentOrder;
+        }
       );
 
       for (const snap of prevSnapshots) {

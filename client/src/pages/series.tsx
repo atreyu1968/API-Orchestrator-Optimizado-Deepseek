@@ -24,6 +24,7 @@ interface SeriesVolume {
   id: number;
   title: string;
   seriesOrder: number | null;
+  projectSubtype?: string;
   status: string;
   wordCount: number;
   continuityAnalysisStatus?: string | null;
@@ -76,6 +77,13 @@ export default function SeriesPage() {
   const volumeInputRef = useRef<HTMLInputElement>(null);
 
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  
+  const [prequelSeriesId, setPrequelSeriesId] = useState<number | null>(null);
+  const [prequelTitle, setPrequelTitle] = useState("");
+  const [prequelPremise, setPrequelPremise] = useState("");
+  const [prequelChapterCount, setPrequelChapterCount] = useState(15);
+  const [prequelHasPrologue, setPrequelHasPrologue] = useState(false);
+  const [prequelHasEpilogue, setPrequelHasEpilogue] = useState(false);
 
   const { data: registry = [], isLoading } = useQuery<SeriesWithDetails[]>({
     queryKey: ["/api/series/registry"],
@@ -321,6 +329,34 @@ export default function SeriesPage() {
     },
     onError: () => {
       toast({ title: "Error", description: "No se pudo desvincular el volumen", variant: "destructive" });
+    },
+  });
+
+  const createPrequelMutation = useMutation({
+    mutationFn: async ({ seriesId, data }: { seriesId: number; data: any }) => {
+      const response = await apiRequest("POST", `/api/series/${seriesId}/create-prequel`, data);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Error al crear la precuela");
+      }
+      return response.json();
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({
+        title: "Precuela creada",
+        description: result.message || `Precuela creada como Vol. 0`,
+      });
+      setPrequelSeriesId(null);
+      setPrequelTitle("");
+      setPrequelPremise("");
+      setPrequelChapterCount(15);
+      setPrequelHasPrologue(false);
+      setPrequelHasEpilogue(false);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "No se pudo crear la precuela", variant: "destructive" });
     },
   });
 
@@ -943,6 +979,24 @@ export default function SeriesPage() {
                       </Button>
                       <Button
                         variant="ghost"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => {
+                          setPrequelSeriesId(s.id);
+                          setPrequelTitle("");
+                          setPrequelPremise("");
+                          setPrequelChapterCount(15);
+                          setPrequelHasPrologue(false);
+                          setPrequelHasEpilogue(false);
+                        }}
+                        data-testid={`button-prequel-series-${s.id}`}
+                        title="Crear precuela de esta serie"
+                      >
+                        <BookOpen className="h-4 w-4 mr-1" />
+                        <span className="text-xs">Precuela</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
                         size="icon"
                         onClick={() => startEditing(s)}
                         data-testid={`button-edit-series-${s.id}`}
@@ -1113,6 +1167,12 @@ export default function SeriesPage() {
                               Vol. {vol.seriesOrder || "?"}
                             </Badge>
                             <span className="font-medium truncate">{vol.title}</span>
+                            {vol.projectSubtype === "prequel" && (
+                              <Badge variant="secondary" className="shrink-0 text-amber-600 dark:text-amber-400">
+                                <BookOpen className="h-3 w-3 mr-1" />
+                                Precuela
+                              </Badge>
+                            )}
                             {vol.type === "imported" && (
                               <Badge variant="secondary" className="shrink-0">
                                 <FileText className="h-3 w-3 mr-1" />
@@ -1336,6 +1396,100 @@ export default function SeriesPage() {
               </Button>
               <Button variant="outline" onClick={() => setLinkingSeriesId(null)}>
                 Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!prequelSeriesId} onOpenChange={(open) => !open && setPrequelSeriesId(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Crear Precuela</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              La precuela se creara como Vol. 0 de la serie. Hereda automaticamente la guia de estilo del autor y tendra acceso a toda la informacion de los volumenes existentes como contexto futuro.
+            </p>
+            <div className="space-y-2">
+              <Label>Titulo</Label>
+              <Input
+                value={prequelTitle}
+                onChange={(e) => setPrequelTitle(e.target.value)}
+                placeholder="Titulo de la precuela..."
+                data-testid="input-prequel-title"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Premisa</Label>
+              <Textarea
+                value={prequelPremise}
+                onChange={(e) => setPrequelPremise(e.target.value)}
+                placeholder="Describe la trama de la precuela..."
+                rows={4}
+                data-testid="input-prequel-premise"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <Label>Capitulos</Label>
+                <Input
+                  type="number"
+                  min={3}
+                  max={40}
+                  value={prequelChapterCount}
+                  onChange={(e) => setPrequelChapterCount(parseInt(e.target.value) || 15)}
+                  data-testid="input-prequel-chapters"
+                />
+              </div>
+              <div className="flex items-end gap-2">
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer" data-testid="label-prequel-prologue">
+                  <input
+                    type="checkbox"
+                    checked={prequelHasPrologue}
+                    onChange={(e) => setPrequelHasPrologue(e.target.checked)}
+                  />
+                  Prologo
+                </label>
+              </div>
+              <div className="flex items-end gap-2">
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer" data-testid="label-prequel-epilogue">
+                  <input
+                    type="checkbox"
+                    checked={prequelHasEpilogue}
+                    onChange={(e) => setPrequelHasEpilogue(e.target.checked)}
+                  />
+                  Epilogo
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setPrequelSeriesId(null)} data-testid="button-prequel-cancel">
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!prequelSeriesId || !prequelTitle.trim()) return;
+                  createPrequelMutation.mutate({
+                    seriesId: prequelSeriesId,
+                    data: {
+                      title: prequelTitle.trim(),
+                      premise: prequelPremise.trim() || undefined,
+                      chapterCount: prequelChapterCount,
+                      hasPrologue: prequelHasPrologue,
+                      hasEpilogue: prequelHasEpilogue,
+                    },
+                  });
+                }}
+                disabled={!prequelTitle.trim() || createPrequelMutation.isPending}
+                data-testid="button-prequel-create"
+              >
+                {createPrequelMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Plus className="h-4 w-4 mr-2" />
+                )}
+                Crear Precuela
               </Button>
             </div>
           </div>

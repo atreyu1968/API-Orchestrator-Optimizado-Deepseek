@@ -19,7 +19,7 @@ const workTypeEnum = z.enum(["standalone", "series", "trilogy"]);
 const projectSeriesUpdateSchema = z.object({
   workType: workTypeEnum.optional(),
   seriesId: z.number().nullable().optional(),
-  seriesOrder: z.number().min(1).nullable().optional(),
+  seriesOrder: z.number().min(0).nullable().optional(),
 }).refine((data) => {
   if (data.workType === "standalone") {
     return data.seriesId === null || data.seriesId === undefined;
@@ -407,7 +407,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Cannot edit a project while it's generating" });
       }
 
-      const allowedFields = ["title", "premise", "genre", "tone", "chapterCount", "hasPrologue", "hasEpilogue", "hasAuthorNote", "pseudonymId", "styleGuideId", "extendedGuideId", "workType", "seriesId", "seriesOrder", "minWordCount", "minWordsPerChapter", "maxWordsPerChapter", "kindleUnlimitedOptimized", "architectInstructions"];
+      const allowedFields = ["title", "premise", "genre", "tone", "chapterCount", "hasPrologue", "hasEpilogue", "hasAuthorNote", "pseudonymId", "styleGuideId", "extendedGuideId", "workType", "seriesId", "seriesOrder", "projectSubtype", "minWordCount", "minWordsPerChapter", "maxWordsPerChapter", "kindleUnlimitedOptimized", "architectInstructions"];
       const updateData: Record<string, any> = {};
       
       for (const field of allowedFields) {
@@ -1624,6 +1624,7 @@ export async function registerRoutes(
             id: p.id,
             title: p.title,
             seriesOrder: p.seriesOrder,
+            projectSubtype: (p as any).projectSubtype || "standard",
             status: p.status,
             wordCount: 0,
             continuityAnalysisStatus: null,
@@ -1909,6 +1910,7 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
           id: p.id,
           title: p.title,
           seriesOrder: p.seriesOrder,
+          projectSubtype: (p as any).projectSubtype || "standard",
           status: p.status,
           wordCount: 0,
           createdAt: p.createdAt,
@@ -2474,6 +2476,75 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
     } catch (error: any) {
       console.error("Error converting project to series:", error);
       res.status(500).json({ error: error.message || "Error al convertir en serie" });
+    }
+  });
+
+  app.post("/api/series/:id/create-prequel", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const seriesData = await storage.getSeries(seriesId);
+      if (!seriesData) {
+        return res.status(404).json({ error: "Serie no encontrada" });
+      }
+
+      const { title, premise, genre, tone, chapterCount, hasPrologue, hasEpilogue, hasAuthorNote,
+              styleGuideId, extendedGuideId, pseudonymId, minWordsPerChapter, maxWordsPerChapter,
+              minWordCount, architectInstructions } = req.body;
+
+      if (!title || !title.trim()) {
+        return res.status(400).json({ error: "El titulo de la precuela es obligatorio" });
+      }
+
+      const existingProjects = await storage.getProjectsBySeries(seriesId);
+      const existingPrequel = existingProjects.find(p => (p as any).projectSubtype === "prequel");
+      if (existingPrequel) {
+        return res.status(400).json({ error: `Ya existe una precuela en esta serie: "${existingPrequel.title}"` });
+      }
+
+      const effectivePseudonymId = pseudonymId || seriesData.pseudonymId;
+
+      let effectiveStyleGuideId = styleGuideId;
+      if (!effectiveStyleGuideId && effectivePseudonymId) {
+        const pseudonym = await storage.getPseudonym(effectivePseudonymId);
+        if (pseudonym) {
+          const styleGuides = await storage.getStyleGuidesByPseudonym(effectivePseudonymId);
+          if (styleGuides.length > 0) {
+            effectiveStyleGuideId = styleGuides[0].id;
+          }
+        }
+      }
+
+      const project = await storage.createProject({
+        title: title.trim(),
+        premise: premise || `Precuela de la serie "${seriesData.title}"`,
+        genre: genre || "thriller",
+        tone: tone || "dramatic",
+        chapterCount: chapterCount || 15,
+        hasPrologue: hasPrologue ?? false,
+        hasEpilogue: hasEpilogue ?? false,
+        hasAuthorNote: hasAuthorNote ?? false,
+        pseudonymId: effectivePseudonymId,
+        styleGuideId: effectiveStyleGuideId || null,
+        extendedGuideId: extendedGuideId || null,
+        workType: "series",
+        seriesId: seriesId,
+        seriesOrder: 0,
+        projectSubtype: "prequel",
+        minWordsPerChapter: minWordsPerChapter || 1500,
+        maxWordsPerChapter: maxWordsPerChapter || 3500,
+        minWordCount: minWordCount || null,
+        architectInstructions: architectInstructions || null,
+      });
+
+      console.log(`[API] Created prequel project #${project.id} "${title}" for series #${seriesId} "${seriesData.title}"`);
+
+      res.json({
+        project,
+        message: `Precuela "${title}" creada como Vol. 0 de la serie "${seriesData.title}"`,
+      });
+    } catch (error: any) {
+      console.error("Error creating prequel:", error);
+      res.status(500).json({ error: error.message || "Error al crear la precuela" });
     }
   });
 
