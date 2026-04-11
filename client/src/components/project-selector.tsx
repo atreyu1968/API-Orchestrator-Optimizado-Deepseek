@@ -1,10 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronDown, Search, X, Filter } from "lucide-react";
 import type { Project, Pseudonym, Series } from "@shared/schema";
@@ -52,6 +51,9 @@ export function ProjectSelector({
   const [filterSeries, setFilterSeries] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(-1);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const { data: pseudonyms = [] } = useQuery<Pseudonym[]>({
     queryKey: ["/api/pseudonyms"],
@@ -61,15 +63,15 @@ export function ProjectSelector({
     queryKey: ["/api/series"],
   });
 
-  const getPseudonymName = (id: number | null) => {
+  const getPseudonymName = useCallback((id: number | null) => {
     if (!id) return null;
     return pseudonyms.find(p => p.id === id)?.name || null;
-  };
+  }, [pseudonyms]);
 
-  const getSeriesName = (id: number | null) => {
+  const getSeriesName = useCallback((id: number | null) => {
     if (!id) return null;
     return allSeries.find(s => s.id === id)?.title || null;
-  };
+  }, [allSeries]);
 
   const usedStatuses = useMemo(() => {
     const statuses = new Set(projects.map(p => p.status));
@@ -108,7 +110,7 @@ export function ProjectSelector({
       if (filterStatus !== "all" && p.status !== filterStatus) return false;
       return true;
     });
-  }, [projects, search, filterAuthor, filterSeries, filterStatus, pseudonyms, allSeries]);
+  }, [projects, search, filterAuthor, filterSeries, filterStatus, getPseudonymName, getSeriesName]);
 
   const hasActiveFilters = filterAuthor !== "all" || filterSeries !== "all" || filterStatus !== "all" || search.length > 0;
 
@@ -119,6 +121,42 @@ export function ProjectSelector({
     setSearch("");
   };
 
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+      setHighlightIndex(-1);
+    } else {
+      setSearch("");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    setHighlightIndex(-1);
+  }, [search, filterAuthor, filterSeries, filterStatus]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightIndex(prev => Math.min(prev + 1, filteredProjects.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter" && highlightIndex >= 0 && highlightIndex < filteredProjects.length) {
+      e.preventDefault();
+      onSelectProject(filteredProjects[highlightIndex].id);
+      setOpen(false);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    if (highlightIndex >= 0 && listRef.current) {
+      const items = listRef.current.querySelectorAll("[data-project-item]");
+      items[highlightIndex]?.scrollIntoView({ block: "nearest" });
+    }
+  }, [highlightIndex]);
+
   const selectedProject = projects.find(p => p.id === selectedProjectId);
 
   if (projects.length === 0) {
@@ -126,16 +164,13 @@ export function ProjectSelector({
   }
 
   return (
-    <Popover open={open} onOpenChange={(isOpen) => {
-        setOpen(isOpen);
-        if (!isOpen) setSearch("");
-      }}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-[300px] justify-between"
+          className="w-[360px] justify-between"
           data-testid="select-project"
         >
           {selectedProject ? (
@@ -151,13 +186,14 @@ export function ProjectSelector({
           <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[360px] p-0" align="start">
+      <PopoverContent className="w-[460px] p-0" align="start" onKeyDown={handleKeyDown}>
         <div className="p-2 border-b space-y-2">
           <div className="flex items-center gap-1">
             <div className="relative flex-1">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar proyecto..."
+                ref={searchInputRef}
+                placeholder="Buscar por título, autor o serie..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 h-9"
@@ -236,56 +272,60 @@ export function ProjectSelector({
             </p>
           )}
         </div>
-        <ScrollArea className="max-h-[300px]">
-          <div className="p-1">
-            {filteredProjects.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No se encontraron proyectos
-              </p>
-            ) : (
-              filteredProjects.map((project) => {
-                const authorName = getPseudonymName(project.pseudonymId);
-                const seriesName = getSeriesName(project.seriesId);
-                const isSelected = project.id === selectedProjectId;
-                return (
-                  <button
-                    key={project.id}
-                    onClick={() => {
-                      onSelectProject(project.id);
-                      setOpen(false);
-                    }}
-                    className={`w-full text-left px-2 py-1.5 rounded-sm text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors ${
-                      isSelected ? "bg-accent" : ""
-                    }`}
-                    data-testid={`select-project-${project.id}`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="truncate font-medium">{project.title}</span>
-                      <Badge variant="secondary" className={`text-xs shrink-0 ${statusColors[project.status] || ""}`}>
-                        {statusLabels[project.status] || project.status}
-                      </Badge>
+        <div
+          ref={listRef}
+          className="overflow-y-auto p-1"
+          style={{ maxHeight: "min(400px, 60vh)" }}
+        >
+          {filteredProjects.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No se encontraron proyectos
+            </p>
+          ) : (
+            filteredProjects.map((project, idx) => {
+              const authorName = getPseudonymName(project.pseudonymId);
+              const seriesName = getSeriesName(project.seriesId);
+              const isSelected = project.id === selectedProjectId;
+              const isHighlighted = idx === highlightIndex;
+              return (
+                <button
+                  key={project.id}
+                  data-project-item
+                  onClick={() => {
+                    onSelectProject(project.id);
+                    setOpen(false);
+                  }}
+                  className={`w-full text-left px-2 py-1.5 rounded-sm text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors ${
+                    isSelected ? "bg-accent/70" : ""
+                  } ${isHighlighted ? "bg-accent text-accent-foreground" : ""}`}
+                  data-testid={`select-project-${project.id}`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="truncate font-medium">{project.title}</span>
+                    <Badge variant="secondary" className={`text-xs shrink-0 ${statusColors[project.status] || ""}`}>
+                      {statusLabels[project.status] || project.status}
+                    </Badge>
+                  </div>
+                  {(authorName || seriesName) && (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {authorName && (
+                        <span className="text-xs text-muted-foreground">{authorName}</span>
+                      )}
+                      {authorName && seriesName && (
+                        <span className="text-xs text-muted-foreground">·</span>
+                      )}
+                      {seriesName && (
+                        <span className="text-xs text-muted-foreground italic">
+                          {seriesName}{project.seriesOrder ? ` #${project.seriesOrder}` : ""}
+                        </span>
+                      )}
                     </div>
-                    {(authorName || seriesName) && (
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        {authorName && (
-                          <span className="text-xs text-muted-foreground">{authorName}</span>
-                        )}
-                        {authorName && seriesName && (
-                          <span className="text-xs text-muted-foreground">·</span>
-                        )}
-                        {seriesName && (
-                          <span className="text-xs text-muted-foreground italic">
-                            {seriesName}{project.seriesOrder ? ` #${project.seriesOrder}` : ""}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </ScrollArea>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
       </PopoverContent>
     </Popover>
   );

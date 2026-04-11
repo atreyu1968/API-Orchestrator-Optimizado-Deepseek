@@ -9333,16 +9333,36 @@ CRITERIOS:
 
         let volumeTitles: string[] = [];
         if (createAllVolumes && remainingVolumes > 1) {
-          const titleMatch = result.content.match(/PLANIFICACI[OÓ]N DE VOL[UÚ]MENES/i);
-          if (titleMatch) {
-            const sectionStart = result.content.indexOf(titleMatch[0]);
-            const section = result.content.substring(sectionStart, sectionStart + 3000);
-            const titleRegex = /(?:vol(?:umen)?\.?\s*(?:\d+|[ivxlcdm]+)[\s:.\-—]+|libro\s*(?:\d+|[ivxlcdm]+)[\s:.\-—]+|#\s*\d+[\s:.\-—]+|\d+\.\s*)["«]?([^"»\n]+?)["»]?\s*(?:\n|$|—|\|)/gi;
-            let m;
+          const sectionMatch = result.content.match(/PLANIFICACI[OÓ]N DE VOL[UÚ]MENES/i);
+          if (sectionMatch) {
+            const sectionStart = result.content.indexOf(sectionMatch[0]);
+            const section = result.content.substring(sectionStart, sectionStart + 5000);
             const allExtracted: string[] = [];
-            while ((m = titleRegex.exec(section)) !== null) {
-              const t = m[1].trim().replace(/^[-:—\s]+/, '').replace(/[-:—\s]+$/, '');
-              if (t.length > 2 && t.length < 150) allExtracted.push(t);
+
+            const patterns = [
+              /(?:vol(?:umen)?\.?\s*(?:\d+|[ivxlcdm]+))[\s:.\-—]+["«]([^"»\n]+?)["»]/gi,
+              /(?:vol(?:umen)?\.?\s*(?:\d+|[ivxlcdm]+))[\s:.\-—]+\*\*([^*\n]+?)\*\*/gi,
+              /(?:libro\s*(?:\d+|[ivxlcdm]+))[\s:.\-—]+["«]([^"»\n]+?)["»]/gi,
+              /(?:libro\s*(?:\d+|[ivxlcdm]+))[\s:.\-—]+\*\*([^*\n]+?)\*\*/gi,
+              /#+\s*(?:vol(?:umen)?\.?\s*(?:\d+|[ivxlcdm]+))[\s:.\-—]+(.+)/gi,
+              /(?:^|\n)\s*(?:\d+)\.\s*["«]([^"»\n]+?)["»]/gm,
+              /(?:^|\n)\s*(?:\d+)\.\s*\*\*([^*\n]+?)\*\*/gm,
+              /(?:^|\n)\s*[-•]\s*(?:vol(?:umen)?\.?\s*(?:\d+|[ivxlcdm]+))[\s:.\-—]+(.+)/gi,
+              /(?:^|\n)\s*(?:\d+)\.\s+([A-ZÁÉÍÓÚÑ][^\n]{3,80})$/gm,
+              /(?:vol(?:umen)?\.?\s*(?:\d+|[ivxlcdm]+))[\s:.\-—]+([A-ZÁÉÍÓÚÑ][^\n]{3,80})$/gmi,
+            ];
+
+            for (const regex of patterns) {
+              let m;
+              while ((m = regex.exec(section)) !== null) {
+                const t = m[1].trim()
+                  .replace(/^[-:—*\s]+/, '')
+                  .replace(/[-:—*\s]+$/, '')
+                  .replace(/\*+/g, '');
+                if (t.length > 2 && t.length < 150 && !t.match(/^vol/i) && !t.match(/sinopsis|resumen|descripci/i)) {
+                  if (!allExtracted.includes(t)) allExtracted.push(t);
+                }
+              }
             }
             volumeTitles = allExtracted.slice(existingVolumeCount, existingVolumeCount + remainingVolumes);
           }
