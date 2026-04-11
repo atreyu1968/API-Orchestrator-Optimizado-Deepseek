@@ -20,7 +20,7 @@ export interface AgentResponse {
   error?: string;
 }
 
-export type GeminiModel = "gemini-2.5-flash" | "gemini-2.0-flash" | "gemini-2.5-pro" | "gemini-3-flash-preview";
+export type GeminiModel = "gemini-2.5-flash" | "gemini-2.0-flash" | "gemini-2.5-pro" | "gemini-3-flash-preview" | "gemini-3.1-flash-lite-preview";
 
 export interface AgentConfig {
   name: string;
@@ -174,16 +174,36 @@ export abstract class BaseAgent {
         const modelToUse = this.config.model || "gemini-2.5-flash";
         const useThinking = this.config.useThinking === true;
         
-        const defaultMaxOutput = (modelToUse === "gemini-2.5-pro" || modelToUse === "gemini-3-flash-preview") ? 65536 : 32768;
+        const defaultMaxOutput = (modelToUse === "gemini-2.5-pro" || modelToUse === "gemini-3-flash-preview" || modelToUse === "gemini-3.1-flash-lite-preview") ? 65536 : 32768;
         const maxOutput = this.config.maxOutputTokens || defaultMaxOutput;
         
         const startTime = Date.now();
         console.log(`[${this.config.name}] Starting API call (attempt ${attempt + 1}, model=${modelToUse}, maxOut=${maxOutput}, thinking=${useThinking})...`);
         
-        const modelsWithThinking = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash-preview"];
+        const modelsWithThinkingBudget = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash-preview"];
+        const modelsWithThinkingLevel = ["gemini-3.1-flash-lite-preview"];
         const defaultThinkingBudget = modelToUse === "gemini-2.5-pro" ? 8192 
           : modelToUse === "gemini-3-flash-preview" ? 16384 
           : 4096;
+        
+        let thinkingConfigObj: any = {};
+        if (useThinking) {
+          if (modelsWithThinkingLevel.includes(modelToUse)) {
+            thinkingConfigObj = {
+              thinkingConfig: {
+                thinkingLevel: "high",
+                includeThoughts: true,
+              },
+            };
+          } else if (modelsWithThinkingBudget.includes(modelToUse)) {
+            thinkingConfigObj = {
+              thinkingConfig: {
+                thinkingBudget: this.config.thinkingBudget || defaultThinkingBudget,
+                includeThoughts: true,
+              },
+            };
+          }
+        }
         
         const generatePromise = this.ai.models.generateContent({
           model: modelToUse,
@@ -195,12 +215,7 @@ export abstract class BaseAgent {
             temperature,
             topP: 0.95,
             maxOutputTokens: maxOutput,
-            ...(useThinking && modelsWithThinking.includes(modelToUse) ? {
-              thinkingConfig: {
-                thinkingBudget: this.config.thinkingBudget || defaultThinkingBudget,
-                includeThoughts: true,
-              },
-            } : {}),
+            ...thinkingConfigObj,
           },
         });
 

@@ -469,7 +469,7 @@ export class GhostwriterAgent extends BaseAgent {
       name: "El Narrador",
       role: "ghostwriter",
       systemPrompt: SYSTEM_PROMPT,
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.1-flash-lite-preview",
       useThinking: true,
       thinkingBudget: 16384,
       maxOutputTokens: 65536,
@@ -1058,7 +1058,7 @@ export class GhostwriterAgent extends BaseAgent {
     Este estado es CRÍTICO para mantener la continuidad entre capítulos.
     `;
 
-    const temperature = input.isRewrite ? 0.7 : 0.85;
+    const temperature = input.isRewrite ? 0.85 : 1.0;
     return this.generateContent(prompt, undefined, { temperature });
   }
   

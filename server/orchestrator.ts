@@ -296,6 +296,7 @@ export class Orchestrator {
       "gemini-2.0-flash": { input: 0.10, output: 0.40, thinking: 0 },
       "gemini-2.5-pro": { input: 1.25, output: 10.00, thinking: 10.00 },
       "gemini-3-flash-preview": { input: 0.50, output: 3.00, thinking: 3.50 },
+      "gemini-3.1-flash-lite-preview": { input: 0.25, output: 1.50, thinking: 1.50 },
     };
     
     const modelPricing = pricing[model] || pricing["gemini-2.5-flash"];
@@ -1218,7 +1219,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             console.warn(`[Orchestrator] ⚠️ Capítulo largo: ${sectionLabel} tiene ${contentWordCount} palabras (máximo flexible: ${FLEXIBLE_MAX}). Pasando al Editor.`);
           }
           
-          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "chapter_write");
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3.1-flash-lite-preview", sectionData.numero, "chapter_write");
 
           if (writerResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -1845,7 +1846,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             console.warn(`[Orchestrator] ⚠️ Capítulo largo: ${sectionLabel} tiene ${contentWordCount} palabras (máximo flexible: ${FLEXIBLE_MAX}). Pasando al Editor.`);
           }
           
-          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "chapter_write");
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3.1-flash-lite-preview", sectionData.numero, "chapter_write");
 
           if (writerResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -2876,7 +2877,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         });
 
         let chapterContent = writerResult.content;
-        await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite");
+        await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3.1-flash-lite-preview", sectionData.numero, "qa_rewrite");
 
         this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
 
@@ -2911,7 +2912,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
           chapterContent = rewriteResult.content;
-          await this.trackTokenUsage(project.id, rewriteResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite");
+          await this.trackTokenUsage(project.id, rewriteResult.tokenUsage, "El Narrador", "gemini-3.1-flash-lite-preview", sectionData.numero, "qa_rewrite");
         }
 
         this.callbacks.onAgentStatus("copyeditor", "polishing", `El Estilista está puliendo ${sectionLabel}...`);
@@ -3284,7 +3285,7 @@ Responde SOLO con un JSON válido con la estructura:
           
           const contentWordCount = currentContent.split(/\s+/).filter((w: string) => w.length > 0).length;
           
-          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "extend_write");
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3.1-flash-lite-preview", sectionData.numero, "extend_write");
 
           // Editor review
           this.callbacks.onAgentStatus("editor", "reviewing", `El Editor está revisando ${sectionLabel}...`);
@@ -3594,7 +3595,7 @@ Responde SOLO con un JSON válido con la estructura:
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
-          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", chapter.chapterNumber, "chapter_regenerate");
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3.1-flash-lite-preview", chapter.chapterNumber, "chapter_regenerate");
 
           const { cleanContent } = this.ghostwriter.extractContinuityState(writerResult.content);
           const wordCount = cleanContent.split(/\s+/).filter((w: string) => w.length > 0).length;
@@ -5133,7 +5134,7 @@ Responde SOLO con un JSON válido con la estructura:
       kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
     });
 
-    await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite");
+    await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3.1-flash-lite-preview", sectionData.numero, "qa_rewrite");
 
     if (writerResult.content) {
       const wordCount = writerResult.content.split(/\s+/).filter(w => w.length > 0).length;
