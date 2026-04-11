@@ -10632,6 +10632,353 @@ CRITERIOS:
     }
   });
 
+  // ========================
+  // PROOFREADING (Corrección Ortotipográfica)
+  // ========================
+
+  app.get("/api/proofreading/sources/available", async (_req: Request, res: Response) => {
+    try {
+      const allProjects = await storage.getAllProjects();
+      const allReedits = await storage.getAllReeditProjects();
+      const { translations: translationsTable } = await import("@shared/schema");
+      const { db: dbInstance } = await import("./db");
+      const { desc: descOrder } = await import("drizzle-orm");
+      const translationRows = await dbInstance.select().from(translationsTable).orderBy(descOrder(translationsTable.createdAt));
+      const importedMs = await storage.getAllImportedManuscripts();
+
+      const sources: any[] = [];
+
+      for (const p of allProjects) {
+        if (p.status === "completed") {
+          sources.push({ sourceType: "project", sourceId: p.id, title: p.title, chapters: p.totalChapters || 0, language: "es", genre: p.genre, pseudonymId: p.pseudonymId });
+        }
+      }
+      for (const r of allReedits) {
+        if (r.status === "completed") {
+          sources.push({ sourceType: "reedit", sourceId: r.id, title: r.title, chapters: r.totalChapters || 0, language: r.detectedLanguage || "es", pseudonymId: r.pseudonymId });
+        }
+      }
+      for (const m of importedMs) {
+        if (m.status === "completed") {
+          sources.push({ sourceType: "imported", sourceId: m.id, title: m.title, chapters: m.totalChapters || 0, language: m.detectedLanguage || "es", pseudonymId: m.pseudonymId });
+        }
+      }
+      for (const t of translationRows) {
+        if (t.status === "completed") {
+          sources.push({ sourceType: "translation", sourceId: t.id, title: t.projectTitle || `Traducción #${t.id}`, chapters: t.chaptersTranslated || 0, language: t.targetLanguage || "en" });
+        }
+      }
+
+      res.json(sources);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/proofreading", async (_req: Request, res: Response) => {
+    try {
+      const projects = await storage.getAllProofreadingProjects();
+      res.json(projects);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/proofreading/:id", async (req: Request, res: Response) => {
+    try {
+      const project = await storage.getProofreadingProject(parseInt(req.params.id));
+      if (!project) return res.status(404).json({ error: "Not found" });
+      const chapters = await storage.getProofreadingChaptersByProject(project.id);
+      res.json({ ...project, chapters });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/proofreading", async (req: Request, res: Response) => {
+    try {
+      const { sourceType, sourceId } = req.body;
+      if (!sourceType || !sourceId) return res.status(400).json({ error: "sourceType and sourceId required" });
+
+      let title = "";
+      let genre = "";
+      let authorStyle = "";
+      let language = "es";
+      let chaptersData: { number: string; title: string; content: string }[] = [];
+
+      if (sourceType === "project") {
+        const project = await storage.getProject(sourceId);
+        if (!project) return res.status(404).json({ error: "Project not found" });
+        title = project.title;
+        genre = project.genre || "";
+        language = "es";
+        if (project.pseudonymId) {
+          const ps = await storage.getPseudonym(project.pseudonymId);
+          if (ps) authorStyle = `Pseudónimo: ${ps.name}. ${ps.writingStyle || ""}`;
+        }
+        const chapters = await storage.getChaptersByProject(sourceId);
+        chaptersData = chapters
+          .filter(c => c.content && c.content.trim().length > 0)
+          .sort((a, b) => {
+            const orderA = a.chapterNumber === 0 ? -1 : a.chapterNumber === -1 ? 999 : a.chapterNumber;
+            const orderB = b.chapterNumber === 0 ? -1 : b.chapterNumber === -1 ? 999 : b.chapterNumber;
+            return orderA - orderB;
+          })
+          .map(c => ({
+            number: c.chapterNumber === 0 ? "Prólogo" : c.chapterNumber === -1 ? "Epílogo" : c.chapterNumber === -2 ? "Nota del Autor" : `Capítulo ${c.chapterNumber}`,
+            title: c.title || "",
+            content: c.content || "",
+          }));
+      } else if (sourceType === "reedit") {
+        const project = await storage.getReeditProject(sourceId);
+        if (!project) return res.status(404).json({ error: "Reedit project not found" });
+        title = project.title;
+        language = project.detectedLanguage || "es";
+        if (project.pseudonymId) {
+          const ps = await storage.getPseudonym(project.pseudonymId);
+          if (ps) authorStyle = `Pseudónimo: ${ps.name}. ${ps.writingStyle || ""}`;
+        }
+        const chapters = await storage.getReeditChaptersByProject(sourceId);
+        chaptersData = chapters
+          .filter(c => (c.editedContent || c.originalContent || "").trim().length > 0)
+          .map(c => ({
+            number: c.chapterNumber,
+            title: c.title || "",
+            content: c.editedContent || c.originalContent || "",
+          }));
+      } else if (sourceType === "imported") {
+        const ms = await storage.getImportedManuscript(sourceId);
+        if (!ms) return res.status(404).json({ error: "Imported manuscript not found" });
+        title = ms.title;
+        language = ms.detectedLanguage || "es";
+        if (ms.pseudonymId) {
+          const ps = await storage.getPseudonym(ms.pseudonymId);
+          if (ps) authorStyle = `Pseudónimo: ${ps.name}. ${ps.writingStyle || ""}`;
+        }
+        const chapters = await storage.getImportedChaptersByManuscript(sourceId);
+        chaptersData = chapters
+          .filter(c => (c.editedContent || c.originalContent || "").trim().length > 0)
+          .map(c => ({
+            number: c.chapterNumber?.toString() || `Cap ${c.id}`,
+            title: c.title || "",
+            content: c.editedContent || c.originalContent || "",
+          }));
+      } else if (sourceType === "translation") {
+        const { translations: translationsTable } = await import("@shared/schema");
+        const { db: dbInstance } = await import("./db");
+        const [trans] = await dbInstance.select().from(translationsTable).where(eq(translationsTable.id, sourceId));
+        if (!trans) return res.status(404).json({ error: "Translation not found" });
+        title = trans.projectTitle || `Traducción #${trans.id}`;
+        language = trans.targetLanguage || "en";
+        const markdown = trans.markdown || "";
+        const chapterBlocks = markdown.split(/^# /m).filter((b: string) => b.trim().length > 0);
+        chaptersData = chapterBlocks.map((block: string, idx: number) => {
+          const lines = block.split("\n");
+          const chTitle = lines[0]?.trim() || `Capítulo ${idx + 1}`;
+          const content = lines.slice(1).join("\n").trim();
+          return { number: `${idx + 1}`, title: chTitle, content };
+        }).filter((c: any) => c.content.length > 0);
+      } else {
+        return res.status(400).json({ error: "Invalid sourceType" });
+      }
+
+      if (chaptersData.length === 0) return res.status(400).json({ error: "No chapters with content found" });
+
+      const proofProject = await storage.createProofreadingProject({
+        title: `Corrección: ${title}`,
+        sourceType,
+        sourceId,
+        genre,
+        authorStyle,
+        language,
+        totalChapters: chaptersData.length,
+        processedChapters: 0,
+        totalChanges: 0,
+        status: "pending",
+        inputTokens: 0,
+        outputTokens: 0,
+      });
+
+      for (const ch of chaptersData) {
+        await storage.createProofreadingChapter({
+          projectId: proofProject.id,
+          chapterNumber: ch.number,
+          title: ch.title,
+          originalContent: ch.content,
+          status: "pending",
+          totalChanges: 0,
+        });
+      }
+
+      res.json({ id: proofProject.id, title: proofProject.title, chapters: chaptersData.length });
+    } catch (error: any) {
+      console.error("[Proofreading] Error creating project:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/proofreading/:id/start", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getProofreadingProject(projectId);
+      if (!project) return res.status(404).json({ error: "Not found" });
+      if (project.status === "processing") return res.status(400).json({ error: "Already processing" });
+
+      await storage.updateProofreadingProject(projectId, { status: "processing" });
+      res.json({ message: "Corrección iniciada" });
+
+      const { ProofreaderAgent } = await import("./agents/proofreader");
+      const proofreader = new ProofreaderAgent();
+      const chapters = await storage.getProofreadingChaptersByProject(projectId);
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+      let totalChanges = 0;
+
+      for (let i = 0; i < chapters.length; i++) {
+        const chapter = chapters[i];
+        if (chapter.status === "completed") {
+          totalChanges += chapter.totalChanges;
+          continue;
+        }
+
+        await storage.updateProofreadingChapter(chapter.id, { status: "processing" });
+        await storage.updateProofreadingProject(projectId, { processedChapters: i });
+
+        try {
+          const result = await proofreader.execute({
+            chapterContent: chapter.originalContent,
+            chapterNumber: chapter.chapterNumber,
+            genre: project.genre || undefined,
+            authorStyle: project.authorStyle || undefined,
+            language: project.language || "es",
+            projectId,
+          });
+
+          if (result.error || !result.result) {
+            await storage.updateProofreadingChapter(chapter.id, {
+              status: "error",
+              summary: result.error || "Error desconocido",
+            });
+            continue;
+          }
+
+          const pr = result.result;
+          totalChanges += pr.totalCambios;
+          totalInputTokens += result.tokenUsage?.inputTokens || 0;
+          totalOutputTokens += result.tokenUsage?.outputTokens || 0;
+
+          await storage.updateProofreadingChapter(chapter.id, {
+            correctedContent: pr.textoCorregido,
+            changes: pr.cambiosRealizados as any,
+            totalChanges: pr.totalCambios,
+            qualityLevel: pr.nivelCalidad,
+            summary: pr.resumen,
+            status: "completed",
+          });
+        } catch (err: any) {
+          console.error(`[Proofreading] Error on chapter ${chapter.chapterNumber}:`, err.message);
+          await storage.updateProofreadingChapter(chapter.id, { status: "error", summary: err.message });
+        }
+      }
+
+      const updatedChapters = await storage.getProofreadingChaptersByProject(projectId);
+      const hasErrors = updatedChapters.some(c => c.status === "error");
+      await storage.updateProofreadingProject(projectId, {
+        status: hasErrors ? "completed_with_errors" : "completed",
+        processedChapters: chapters.length,
+        totalChanges,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        completedAt: new Date(),
+      });
+
+      console.log(`[Proofreading] Project ${projectId} completed: ${totalChanges} changes in ${chapters.length} chapters`);
+    } catch (error: any) {
+      console.error("[Proofreading] Error:", error);
+      const projectId = parseInt(req.params.id);
+      await storage.updateProofreadingProject(projectId, { status: "error" }).catch(() => {});
+    }
+  });
+
+  app.post("/api/proofreading/:id/apply", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getProofreadingProject(projectId);
+      if (!project) return res.status(404).json({ error: "Not found" });
+      if (project.status !== "completed" && project.status !== "completed_with_errors") return res.status(400).json({ error: "Project not completed" });
+
+      const chapters = await storage.getProofreadingChaptersByProject(projectId);
+      const correctedChapters = chapters.filter(c => c.status === "completed" && c.correctedContent);
+      let applied = 0;
+
+      for (const ch of correctedChapters) {
+        if (project.sourceType === "project") {
+          const projChapters = await storage.getChaptersByProject(project.sourceId);
+          const target = projChapters.find(c => {
+            const label = c.chapterNumber === 0 ? "Prólogo" : c.chapterNumber === -1 ? "Epílogo" : c.chapterNumber === -2 ? "Nota del Autor" : `Capítulo ${c.chapterNumber}`;
+            return label === ch.chapterNumber;
+          });
+          if (target) {
+            await storage.updateChapter(target.id, { content: ch.correctedContent! });
+            applied++;
+          }
+        } else if (project.sourceType === "reedit") {
+          const reeditChapters = await storage.getReeditChaptersByProject(project.sourceId);
+          const target = reeditChapters.find(c => String(c.chapterNumber) === ch.chapterNumber);
+          if (target) {
+            await storage.updateReeditChapter(target.id, { editedContent: ch.correctedContent! });
+            applied++;
+          }
+        } else if (project.sourceType === "imported") {
+          const impChapters = await storage.getImportedChaptersByManuscript(project.sourceId);
+          const target = impChapters.find(c => (c.chapterNumber?.toString() || `Cap ${c.id}`) === ch.chapterNumber);
+          if (target) {
+            await storage.updateImportedChapter(target.id, { editedContent: ch.correctedContent! });
+            applied++;
+          }
+        } else if (project.sourceType === "translation") {
+          const { translations: translationsTable } = await import("@shared/schema");
+          const { db: dbInstance } = await import("./db");
+          const [trans] = await dbInstance.select().from(translationsTable).where(eq(translationsTable.id, project.sourceId));
+          if (trans) {
+            const markdown = trans.markdown || "";
+            const chapterBlocks = markdown.split(/^# /m).filter((b: string) => b.trim().length > 0);
+            const rebuilt: string[] = [];
+            for (let idx = 0; idx < chapterBlocks.length; idx++) {
+              const lines = chapterBlocks[idx].split("\n");
+              const chTitle = lines[0]?.trim() || `Capítulo ${idx + 1}`;
+              const chNum = `${idx + 1}`;
+              const matchingCorrected = correctedChapters.find(cc => cc.chapterNumber === chNum);
+              if (matchingCorrected && matchingCorrected.correctedContent) {
+                rebuilt.push(`# ${chTitle}\n\n${matchingCorrected.correctedContent}`);
+                applied++;
+              } else {
+                rebuilt.push(`# ${chapterBlocks[idx]}`);
+              }
+            }
+            await dbInstance.update(translationsTable).set({
+              markdown: rebuilt.join("\n\n---\n\n"),
+            }).where(eq(translationsTable.id, project.sourceId));
+          }
+        }
+      }
+
+      res.json({ applied, total: correctedChapters.length });
+    } catch (error: any) {
+      console.error("[Proofreading] Error applying corrections:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/proofreading/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteProofreadingProject(parseInt(req.params.id));
+      res.json({ message: "Eliminado" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }
 

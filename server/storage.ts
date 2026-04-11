@@ -36,7 +36,10 @@ import {
   kdpMetadata, type KdpMetadata, type InsertKdpMetadata,
   bookCatalog, type BookCatalogEntry, type InsertBookCatalogEntry,
   nameBlacklist, type NameBlacklistEntry, type InsertNameBlacklistEntry,
-  projectBackMatter, type ProjectBackMatter, type InsertProjectBackMatter
+  projectBackMatter, type ProjectBackMatter, type InsertProjectBackMatter,
+  proofreadingProjects, proofreadingChapters,
+  type ProofreadingProject, type InsertProofreadingProject,
+  type ProofreadingChapter, type InsertProofreadingChapter
 } from "@shared/schema";
 import { eq, desc, asc, and, lt, isNull, or, sql } from "drizzle-orm";
 
@@ -265,6 +268,15 @@ export interface IStorage {
   createNameBlacklistEntry(data: InsertNameBlacklistEntry): Promise<NameBlacklistEntry>;
   getAllNameBlacklistEntries(): Promise<NameBlacklistEntry[]>;
   deleteNameBlacklistEntry(id: number): Promise<void>;
+
+  createProofreadingProject(data: InsertProofreadingProject): Promise<ProofreadingProject>;
+  getProofreadingProject(id: number): Promise<ProofreadingProject | undefined>;
+  getAllProofreadingProjects(): Promise<ProofreadingProject[]>;
+  updateProofreadingProject(id: number, data: Partial<ProofreadingProject>): Promise<ProofreadingProject | undefined>;
+  deleteProofreadingProject(id: number): Promise<void>;
+  createProofreadingChapter(data: InsertProofreadingChapter): Promise<ProofreadingChapter>;
+  getProofreadingChaptersByProject(projectId: number): Promise<ProofreadingChapter[]>;
+  updateProofreadingChapter(id: number, data: Partial<ProofreadingChapter>): Promise<ProofreadingChapter | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1413,6 +1425,43 @@ export class DatabaseStorage implements IStorage {
 
   async deleteNameBlacklistEntry(id: number): Promise<void> {
     await db.delete(nameBlacklist).where(eq(nameBlacklist.id, id));
+  }
+
+  async createProofreadingProject(data: InsertProofreadingProject): Promise<ProofreadingProject> {
+    const [project] = await db.insert(proofreadingProjects).values(data).returning();
+    return project;
+  }
+
+  async getProofreadingProject(id: number): Promise<ProofreadingProject | undefined> {
+    const [project] = await db.select().from(proofreadingProjects).where(eq(proofreadingProjects.id, id));
+    return project;
+  }
+
+  async getAllProofreadingProjects(): Promise<ProofreadingProject[]> {
+    return db.select().from(proofreadingProjects).orderBy(desc(proofreadingProjects.createdAt));
+  }
+
+  async updateProofreadingProject(id: number, data: Partial<ProofreadingProject>): Promise<ProofreadingProject | undefined> {
+    const [updated] = await db.update(proofreadingProjects).set(data).where(eq(proofreadingProjects.id, id)).returning();
+    return updated;
+  }
+
+  async deleteProofreadingProject(id: number): Promise<void> {
+    await db.delete(proofreadingProjects).where(eq(proofreadingProjects.id, id));
+  }
+
+  async createProofreadingChapter(data: InsertProofreadingChapter): Promise<ProofreadingChapter> {
+    const [chapter] = await db.insert(proofreadingChapters).values(data).returning();
+    return chapter;
+  }
+
+  async getProofreadingChaptersByProject(projectId: number): Promise<ProofreadingChapter[]> {
+    return db.select().from(proofreadingChapters).where(eq(proofreadingChapters.projectId, projectId)).orderBy(asc(proofreadingChapters.id));
+  }
+
+  async updateProofreadingChapter(id: number, data: Partial<ProofreadingChapter>): Promise<ProofreadingChapter | undefined> {
+    const [updated] = await db.update(proofreadingChapters).set(data).where(eq(proofreadingChapters.id, id)).returning();
+    return updated;
   }
 }
 

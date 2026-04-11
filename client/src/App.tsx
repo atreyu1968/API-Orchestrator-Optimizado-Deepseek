@@ -33,6 +33,7 @@ import CoversPage from "@/pages/covers";
 import KdpMetadataPage from "@/pages/kdp-metadata";
 import BookCatalogPage from "@/pages/book-catalog";
 import NameBlacklistPage from "@/pages/name-blacklist";
+import ProofreadingPage from "@/pages/proofreading";
 import asdLogo from "@assets/ASD_1766442257801.png";
 
 function Router() {
@@ -56,6 +57,7 @@ function Router() {
       <Route path="/kdp-metadata" component={KdpMetadataPage} />
       <Route path="/book-catalog" component={BookCatalogPage} />
       <Route path="/name-blacklist" component={NameBlacklistPage} />
+      <Route path="/proofreading" component={ProofreadingPage} />
       <Route path="/config" component={ConfigPage} />
       <Route component={NotFound} />
     </Switch>

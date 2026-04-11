@@ -11,3 +11,4 @@ export { SemanticRepetitionDetectorAgent, type SemanticRepetitionResult, type Re
 export { ArcValidatorAgent, type ArcValidatorResult, type MilestoneVerification, type ThreadProgression } from "./arc-validator";
 export { SeriesThreadFixerAgent, type ThreadFixerResult, type ThreadFix } from "./series-thread-fixer";
 export { ItalianReviewerAgent, type ItalianReviewResult } from "./italian-reviewer";
+export { ProofreaderAgent, type ProofreaderResult, type ProofreaderChange } from "./proofreader";

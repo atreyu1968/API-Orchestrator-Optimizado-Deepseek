@@ -30,7 +30,8 @@ import {
   Image,
   Tag,
   BookCopy,
-  ShieldBan
+  ShieldBan,
+  SpellCheck
 } from "lucide-react";
 
 const mainNavItems = [
@@ -49,6 +50,7 @@ const translationsNavItems = [
   { title: "Audiolibros", url: "/audiobooks", icon: Headphones },
   { title: "Portadas", url: "/covers", icon: Image },
   { title: "Metadatos KDP", url: "/kdp-metadata", icon: Tag },
+  { title: "Corrector Ortotipográfico", url: "/proofreading", icon: SpellCheck },
   { title: "Catálogo de Libros", url: "/book-catalog", icon: BookCopy },
   { title: "Lista Negra Nombres", url: "/name-blacklist", icon: ShieldBan },
 ];

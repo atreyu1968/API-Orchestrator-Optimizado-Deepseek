@@ -895,4 +895,51 @@ export const insertNameBlacklistSchema = createInsertSchema(nameBlacklist).omit(
 export type NameBlacklistEntry = typeof nameBlacklist.$inferSelect;
 export type InsertNameBlacklistEntry = z.infer<typeof insertNameBlacklistSchema>;
 
+export const proofreadingProjects = pgTable("proofreading_projects", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceId: integer("source_id").notNull(),
+  genre: text("genre"),
+  authorStyle: text("author_style"),
+  language: text("language").default("es"),
+  totalChapters: integer("total_chapters").notNull().default(0),
+  processedChapters: integer("processed_chapters").notNull().default(0),
+  totalChanges: integer("total_changes").notNull().default(0),
+  status: text("status").notNull().default("pending"),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const proofreadingChapters = pgTable("proofreading_chapters", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => proofreadingProjects.id, { onDelete: "cascade" }),
+  chapterNumber: text("chapter_number").notNull(),
+  title: text("title"),
+  originalContent: text("original_content").notNull(),
+  correctedContent: text("corrected_content"),
+  changes: jsonb("changes").default([]),
+  totalChanges: integer("total_changes").notNull().default(0),
+  qualityLevel: text("quality_level"),
+  summary: text("summary"),
+  status: text("status").notNull().default("pending"),
+});
+
+export const insertProofreadingProjectSchema = createInsertSchema(proofreadingProjects).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true,
+});
+
+export const insertProofreadingChapterSchema = createInsertSchema(proofreadingChapters).omit({
+  id: true,
+});
+
+export type ProofreadingProject = typeof proofreadingProjects.$inferSelect;
+export type InsertProofreadingProject = z.infer<typeof insertProofreadingProjectSchema>;
+export type ProofreadingChapter = typeof proofreadingChapters.$inferSelect;
+export type InsertProofreadingChapter = z.infer<typeof insertProofreadingChapterSchema>;
+
 export * from "./models/chat";
