@@ -34,7 +34,7 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 | Agente | Modelo | Tokens Max | Funcion |
 |--------|--------|------------|---------|
 | Arquitecto Global | Gemini 2.5 Flash | 65536 | Planificacion de estructura narrativa y World Bible (thinking: 8K) |
-| Ghostwriter | Gemini 3.1 Flash-Lite | 65536 | Escritura creativa de capitulos completos (thinking: high) |
+| Ghostwriter | Gemini 3 Flash | 65536 | Escritura creativa de capitulos completos (thinking: 16K) |
 | Editor | Gemini 2.5 Flash | 8192 | Evaluacion de calidad y plan quirurgico de correcciones (thinking: 4K) |
 | Corrector (Copyeditor) | Gemini 2.5 Flash | 65536 | Reescritura y correccion de capitulos rechazados (thinking: 8K) |
 | Revisor Final | Gemini 2.5 Flash | 16384 | Evaluacion completa del manuscrito con auditoria forense (thinking: 4K) |
