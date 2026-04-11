@@ -1,4 +1,4 @@
-# LitAgents v6.3 - Autonomous Literary Agent Orchestration System
+# LitAgents v6.4 - Autonomous Literary Agent Orchestration System
 
 ## Overview
 
@@ -232,6 +232,27 @@ Preferred communication style: Simple, everyday language.
 ### Series Project Editing
 - **Series page** (`client/src/pages/series.tsx`): Each project volume has a settings icon (Settings2) that opens the full ConfigPanel dialog for editing chapterCount, minWordsPerChapter, maxWordsPerChapter, and all other project fields. Changes are saved via PATCH `/api/projects/:id`.
 - **Config page** (`client/src/pages/config.tsx`): Edit dialog now passes `minWordsPerChapter`, `maxWordsPerChapter`, and `kindleUnlimitedOptimized` in defaultValues so they don't reset to defaults on save.
+
+#### Enhanced Project Selector (v6.4)
+- Replaced flat project dropdown with a Popover-based combobox supporting text search and multi-filter capabilities.
+- **Text Search**: Filters projects by title, author name, or series name as you type. Search resets on popover close.
+- **Filter by Author**: Dropdown showing only pseudonyms that have projects, plus "Sin autor" option.
+- **Filter by Series**: Dropdown showing only series that have projects, plus "Sin serie" option.
+- **Filter by Status**: Dropdown with all active statuses (Pendiente, Generando, Completado, Archivado, Pausado, Error, Esperando, Planificando, Revisando, Exportando).
+- **Active Filter Indicator**: Shows "X de Y proyectos" count when filters are active. Clear-all button resets everything.
+- **Rich Project Items**: Each item shows title, status badge (color-coded), author name, and series name with volume number.
+- **Component**: `client/src/components/project-selector.tsx`.
+
+#### Series from Project with AI Guide (v6.4)
+- **Convert any project to series**: The convert-to-series button now appears on all projects without a series (not just standalone). Available from the Config page.
+- **AI Series Guide Generation**: Checkbox "Generar guía de serie con IA" (enabled by default) in the convert dialog. When active, generates a series writing guide using the project's World Bible, characters, timeline, world rules, and chapter excerpts. The guide is saved to the series for maintaining coherence in subsequent volumes.
+- **Backend**: `POST /api/projects/:id/convert-to-series` accepts `generateGuide` boolean parameter. Uses `generateStyleGuide` with `series_writing` type.
+- **Duplicate route cleanup**: Removed duplicate `POST /api/projects/:id/create-series` route that was redundant with `convert-to-series`.
+
+#### Link Projects to Series (v6.4)
+- **Link existing generated projects to series**: `POST /api/series/:id/link-project` route allows linking a generated project to an existing series with a specified volume number.
+- **Frontend**: Series dialog "Vincular Existente" now includes "Proyecto Generado" as a third link type alongside "Manuscrito Importado" and "Libro Re-editado".
+- Validates volume order conflicts and inherits pseudonym from the series.
 
 ### Key NPM Packages
 - `@google/genai`: Google Gemini AI SDK.
