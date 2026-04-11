@@ -3181,7 +3181,12 @@ ${series.seriesGuide.substring(0, 50000)}`;
       const id = parseInt(req.params.id);
       const { name, bio, email, goodreadsUrl, websiteUrl } = req.body;
       const updateData: { name?: string; bio?: string; email?: string | null; goodreadsUrl?: string | null; websiteUrl?: string | null } = {};
-      if (name !== undefined) updateData.name = name;
+      if (name !== undefined) {
+        if (typeof name === "string" && name.trim().length === 0) {
+          return res.status(400).json({ error: "El nombre no puede estar vacío" });
+        }
+        updateData.name = name.trim();
+      }
       if (bio !== undefined) updateData.bio = bio;
       if (email !== undefined) {
         if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {

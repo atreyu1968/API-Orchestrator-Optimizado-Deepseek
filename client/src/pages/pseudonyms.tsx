@@ -355,22 +355,66 @@ export default function PseudonymsPage() {
                   data-testid={`pseudonym-item-${pseudonym.id}`}
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{pseudonym.name}</p>
-                    {pseudonym.bio && (
+                    {editingField?.id === pseudonym.id && editingField?.field === "name" ? (
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <Input
+                          className="h-7 text-sm font-medium"
+                          value={editingField.value}
+                          onChange={(e) => setEditingField({ ...editingField, value: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && editingField.value.trim()) {
+                              updatePseudonymMutation.mutate({ id: pseudonym.id, data: { name: editingField.value.trim() } });
+                            } else if (e.key === "Escape") {
+                              setEditingField(null);
+                            }
+                          }}
+                          autoFocus
+                          data-testid={`input-edit-name-${pseudonym.id}`}
+                        />
+                        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={(e) => {
+                          e.stopPropagation();
+                          if (editingField.value.trim()) {
+                            updatePseudonymMutation.mutate({ id: pseudonym.id, data: { name: editingField.value.trim() } });
+                          }
+                        }} data-testid={`button-save-name-${pseudonym.id}`}><Check className="h-3 w-3" /></Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingField(null);
+                        }} data-testid={`button-cancel-name-${pseudonym.id}`}><X className="h-3 w-3" /></Button>
+                      </div>
+                    ) : (
+                      <p className="font-medium truncate">{pseudonym.name}</p>
+                    )}
+                    {pseudonym.bio && !(editingField?.id === pseudonym.id && editingField?.field === "name") && (
                       <p className="text-xs text-muted-foreground truncate">{pseudonym.bio}</p>
                     )}
                   </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeletePseudonymId(pseudonym.id);
-                    }}
-                    data-testid={`button-delete-pseudonym-${pseudonym.id}`}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    {!(editingField?.id === pseudonym.id && editingField?.field === "name") && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingField({ id: pseudonym.id, field: "name", value: pseudonym.name });
+                        }}
+                        data-testid={`button-edit-name-${pseudonym.id}`}
+                      >
+                        <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                    )}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletePseudonymId(pseudonym.id);
+                      }}
+                      data-testid={`button-delete-pseudonym-${pseudonym.id}`}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
                 </div>
               ))
             )}
@@ -413,6 +457,8 @@ export default function PseudonymsPage() {
               {selectedPseudonymData && (
                 <div className="mb-4 p-3 rounded-md bg-muted/30 space-y-2">
                   {[
+                    { field: "name", icon: <User className="h-4 w-4" />, label: "Nombre", value: selectedPseudonymData.name },
+                    { field: "bio", icon: <Edit2 className="h-4 w-4" />, label: "Bio", value: selectedPseudonymData.bio },
                     { field: "email", icon: <Mail className="h-4 w-4" />, label: "Email", value: selectedPseudonymData.email },
                     { field: "goodreadsUrl", icon: <BookOpen className="h-4 w-4" />, label: "Goodreads", value: selectedPseudonymData.goodreadsUrl },
                     { field: "websiteUrl", icon: <Globe className="h-4 w-4" />, label: "Web", value: selectedPseudonymData.websiteUrl },

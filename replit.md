@@ -1,4 +1,4 @@
-# LitAgents v6.1 - Autonomous Literary Agent Orchestration System
+# LitAgents v6.2 - Autonomous Literary Agent Orchestration System
 
 ## Overview
 
@@ -218,6 +218,7 @@ Preferred communication style: Simple, everyday language.
   - **Review Request Page**: Amazon ToS-compliant review solicitation in 6 languages (ES, EN, FR, DE, IT, PT). Requests reviews on both Amazon and Goodreads. No incentives, just honest request.
   - **Also By Page**: Lists selected books from the catalog with synopses and KU status. Instead of individual Amazon links per book, directs readers to the author's website URL (from pseudonym profile) for all books.
   - **Author Page** ("Sobre el Autor" / "About the Author"): Toggle `enableAuthorPage` + `authorPageBio` text field. Generates a dedicated author biography section at the end of the book in both Markdown and DOCX. Pre-populates from pseudonym bio when creating new config. Multilingual titles in 6 languages.
+- **Pseudonym Name Editing (v6.2)**: Pseudonym names can be edited inline from the sidebar list (pencil icon) or from the detail panel. Supports Enter to save, Escape to cancel. Backend validates non-empty names.
 - **Pseudonym Website URL**: `pseudonyms.website_url` field stores the author's website. Used in back matter "Also By" and "Author Page" sections. Multilingual CTA texts in 6 languages.
 - **Export Integration**: Back matter is automatically appended to DOCX and Markdown exports (all pipelines: project export-markdown, reedit export-markdown, reedit export-md, project DOCX, reedit DOCX) after the author note.
 - **Unified Manuscript Download**: Both the "Manuscrito" page and the "Descargar y Traducir" (Export) page use the same backend route (`/api/projects/:id/export-markdown`) ensuring consistent cleaning, formatting, and back matter inclusion.
