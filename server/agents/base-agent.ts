@@ -28,6 +28,7 @@ export interface AgentConfig {
   systemPrompt: string;
   model?: GeminiModel;
   useThinking?: boolean;
+  thinkingBudget?: number;
   maxOutputTokens?: number;
 }
 
@@ -191,7 +192,7 @@ export abstract class BaseAgent {
             maxOutputTokens: maxOutput,
             ...(useThinking && (modelToUse === "gemini-2.5-pro" || modelToUse === "gemini-2.5-flash") ? {
               thinkingConfig: {
-                thinkingBudget: modelToUse === "gemini-2.5-pro" ? 2048 : 1024,
+                thinkingBudget: this.config.thinkingBudget || (modelToUse === "gemini-2.5-pro" ? 8192 : 4096),
                 includeThoughts: true,
               },
             } : {}),

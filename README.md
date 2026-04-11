@@ -1,4 +1,4 @@
-# LitAgents v6.0 — Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v6.1 — Sistema de Orquestacion de Agentes Literarios IA
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando Google Gemini.
 
@@ -24,6 +24,8 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 - **Portadas IA**: Generacion de prompts optimizados para crear portadas con Midjourney, DALL-E, Stable Diffusion, etc.
 - **Catalogo de Libros y Back Matter**: Gestion centralizada de obras publicadas con generacion automatica de paginas finales
 - **Originalidad de Nombres**: Sistema dinamico que prohibe al Arquitecto reutilizar nombres de personajes entre novelas diferentes (permitidos dentro de la misma serie)
+- **Corrector Ortotipografico**: Agente de correccion post-produccion que adapta al genero y estilo del autor, detecta glitches de IA y aplica correcciones directamente al manuscrito original
+- **Thinking Mejorado**: Presupuestos de pensamiento (thinking budget) optimizados por agente — el Ghostwriter planifica con 10K tokens de razonamiento antes de escribir
 - **PWA**: Aplicacion web progresiva instalable con soporte offline
 
 ## Agentes del Sistema
@@ -31,11 +33,11 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 ### Generador de Novelas
 | Agente | Modelo | Tokens Max | Funcion |
 |--------|--------|------------|---------|
-| Arquitecto Global | Gemini 2.5 Flash | 16384 | Planificacion de estructura narrativa y World Bible |
-| Ghostwriter | Gemini 2.5 Flash | 65536 | Escritura creativa de capitulos completos (con thinking) |
-| Editor | Gemini 2.5 Flash | 8192 | Evaluacion de calidad y plan quirurgico de correcciones |
-| Corrector (Copyeditor) | Gemini 2.5 Flash | 8192 | Correccion de estilo y gramatica |
-| Revisor Final | Gemini 2.5 Flash | 16384 | Evaluacion completa del manuscrito con auditoria forense |
+| Arquitecto Global | Gemini 2.5 Flash | 65536 | Planificacion de estructura narrativa y World Bible (thinking: 8K) |
+| Ghostwriter | Gemini 2.5 Flash | 65536 | Escritura creativa de capitulos completos (thinking: 10K) |
+| Editor | Gemini 2.5 Flash | 8192 | Evaluacion de calidad y plan quirurgico de correcciones (thinking: 4K) |
+| Corrector (Copyeditor) | Gemini 2.5 Flash | 65536 | Reescritura y correccion de capitulos rechazados (thinking: 8K) |
+| Revisor Final | Gemini 2.5 Flash | 16384 | Evaluacion completa del manuscrito con auditoria forense (thinking: 4K) |
 | Centinela de Continuidad | Gemini 2.5 Flash | 4096 | Validacion de consistencia post-escritura |
 | Auditor de Voz y Ritmo | Gemini 2.5 Flash | 4096 | Deteccion de problemas de ritmo narrativo |
 | Detector de Repeticiones | Gemini 2.5 Flash | 4096 | Deteccion de repeticiones semanticas y lexicas |
@@ -64,6 +66,11 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 | Corrector Estructural | Gemini 2.5 Flash | 65536 | Correccion de problemas estructurales (con thinking) |
 | Reescritor Narrativo | Gemini 2.5 Flash | 65536 | Reescritura completa de capitulos (con thinking) |
 | Revisor Final | Gemini 2.5 Flash | 8192 | Evaluacion forense de consistencia |
+
+### Post-produccion
+| Agente | Modelo | Tokens Max | Funcion |
+|--------|--------|------------|---------|
+| Corrector Ortotipografico | Gemini 2.5 Flash | 65536 | Correccion profesional adaptada a genero/autor, detecta glitches IA (thinking: 4K) |
 
 ### Adaptacion Literaria Profesional (LitTranslators)
 | Agente | Modelo | Tokens Max | Funcion |
@@ -537,6 +544,25 @@ sudo systemctl restart nginx
 - **Proxy**: Nginx
 - **Proceso**: systemd
 - **Idioma**: Interfaz en espanol (`lang="es"`)
+
+## Changelog
+
+### v6.1
+- **Corrector Ortotipografico**: Nuevo agente de post-produccion para correccion profesional adaptada a genero y estilo del autor. Detecta glitches de IA (parrafos clonados, dialogos rotos, bucles de accion). Soporta las 4 fuentes: proyectos, re-ediciones, importados y traducciones. Aplica correcciones directamente al manuscrito original.
+- **Thinking Budget Optimizado**: Presupuestos de pensamiento configurables por agente. Ghostwriter: 10K tokens (antes 1K), Arquitecto: 8K, Corrector/Copyeditor: 8K, Editor: 4K (antes sin thinking), Revisor Final: 4K (antes sin thinking). Mejora drastica en la tasa de aprobacion de capitulos.
+- **Editor y Revisor Final con Thinking**: Ambos agentes ahora usan thinking para evaluaciones mas profundas y consistentes.
+
+### v6.0
+- Version inicial con 13+ agentes especializados
+- Re-editor de manuscritos (LitEditors)
+- Adaptacion literaria profesional (LitTranslators)
+- Spin-offs de series
+- Critica editorial en re-ediciones
+- Optimizacion clone-to-reedit (skip stages 1-3)
+- Audiolibros con Fish Audio TTS
+- Metadatos KDP y portadas IA
+- Catalogo de libros y back matter
+- PWA instalable
 
 ## Licencia
 

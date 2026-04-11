@@ -244,7 +244,8 @@ export class CopyEditorAgent extends BaseAgent {
       role: "copyeditor",
       systemPrompt: SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
-      useThinking: false,
+      useThinking: true,
+      thinkingBudget: 8192,
       maxOutputTokens: 65536,
     });
   }

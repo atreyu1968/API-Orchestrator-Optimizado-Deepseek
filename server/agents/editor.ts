@@ -302,7 +302,8 @@ export class EditorAgent extends BaseAgent {
       role: "editor",
       systemPrompt: SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
-      useThinking: false,
+      useThinking: true,
+      thinkingBudget: 4096,
       maxOutputTokens: 8192,
     });
   }

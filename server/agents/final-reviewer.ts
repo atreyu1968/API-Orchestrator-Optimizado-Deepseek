@@ -428,7 +428,8 @@ export class FinalReviewerAgent extends BaseAgent {
       role: "final-reviewer",
       systemPrompt: SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
-      useThinking: false,
+      useThinking: true,
+      thinkingBudget: 4096,
       maxOutputTokens: 16384,
     });
   }

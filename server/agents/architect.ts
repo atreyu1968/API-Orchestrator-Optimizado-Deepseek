@@ -285,6 +285,7 @@ export class ArchitectAgent extends BaseAgent {
       systemPrompt: PHASE1_SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
       useThinking: true,
+      thinkingBudget: 8192,
       maxOutputTokens: 65536,
     });
   }

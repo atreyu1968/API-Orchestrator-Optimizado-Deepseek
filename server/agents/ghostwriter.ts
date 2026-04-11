@@ -471,6 +471,7 @@ export class GhostwriterAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
       useThinking: true,
+      thinkingBudget: 10240,
       maxOutputTokens: 65536,
     });
   }
