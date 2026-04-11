@@ -64,7 +64,7 @@ REGLAS PARA PROMPTS:
 1. Genera prompts en INGLÉS (los modelos de IA funcionan mejor en inglés)
 2. Incluye siempre: estilo artístico, composición, iluminación, paleta de colores, atmósfera
 3. Especifica "book cover design", "portrait orientation", "high contrast"
-4. NO incluyas texto real en el prompt (el título se añade después) - di "space for title text at top" 
+4. Indica CLARAMENTE en el prompt dónde debe ir el texto (título arriba/centro, autor abajo) - di "clear space for prominent title text at top" y "space for author name at bottom"
 5. Piensa en el GÉNERO: thriller=oscuro/misterioso, romance=cálido/suave, fantasía=épico/detallado, ciencia ficción=futurista/tecnológico
 6. Para SERIES: mantén coherencia visual (misma paleta, misma composición general, mismo estilo)
 7. Incluye "negative prompt" para evitar elementos no deseados
@@ -188,7 +188,7 @@ RESPONDE SIEMPRE EN JSON con este formato:
 - El prompt debe ser en INGLÉS
 - Formato vertical (portrait) para KDP (2560x1600)
 - Debe funcionar como miniatura pequeña
-- NO incluir texto literal del título en el prompt
+- Indicar zonas claras para texto (título y autor) pero NO escribir el texto literal del título
 - Incluir "negative prompt"
 - Responder SOLO con JSON válido`;
 

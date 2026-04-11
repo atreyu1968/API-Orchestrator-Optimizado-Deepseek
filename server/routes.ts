@@ -10564,12 +10564,63 @@ CRITERIOS:
       const coversDir = path.join(".", "covers");
       if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true });
 
-      let fullPrompt = coverPrompt.prompt;
+      let authorName = "";
+      let seriesName = "";
+      let seriesNumber = 0;
+      let bookTitle = coverPrompt.title;
+
+      if (coverPrompt.pseudonymId) {
+        const pseudonym = await storage.getPseudonym(coverPrompt.pseudonymId);
+        if (pseudonym) authorName = pseudonym.name;
+      }
+
+      if (coverPrompt.projectId) {
+        const project = await storage.getProject(coverPrompt.projectId);
+        if (project) {
+          bookTitle = project.title;
+          if (project.seriesId) {
+            const s = await storage.getSeries(project.seriesId);
+            if (s) seriesName = s.title;
+            seriesNumber = project.seriesOrder || 0;
+          }
+          if (!authorName && project.pseudonymId) {
+            const pseudonym = await storage.getPseudonym(project.pseudonymId);
+            if (pseudonym) authorName = pseudonym.name;
+          }
+        }
+      } else if (coverPrompt.seriesId) {
+        const s = await storage.getSeries(coverPrompt.seriesId);
+        if (s) {
+          seriesName = s.title;
+          if (!authorName && s.pseudonymId) {
+            const pseudonym = await storage.getPseudonym(s.pseudonymId);
+            if (pseudonym) authorName = pseudonym.name;
+          }
+        }
+      }
+
+      const typographyHint = coverPrompt.typography || "";
+      const brandingTypo = (coverPrompt.authorBranding as any)?.typographyStyle || "";
+      const seriesTypo = (coverPrompt.seriesDesignSystem as any)?.typographyStyle || "";
+      const typoStyle = typographyHint || seriesTypo || brandingTypo || "elegant, high-contrast, legible";
+
+      let textOverlayInstructions = `\n\nCRITICAL TEXT OVERLAY REQUIREMENTS — the cover MUST include the following text rendered directly on the image:\n`;
+      textOverlayInstructions += `- TITLE: "${bookTitle}" — large, prominent, highly legible, positioned at the top or center of the cover. Typography style: ${typoStyle}.\n`;
+      if (authorName) {
+        textOverlayInstructions += `- AUTHOR NAME: "${authorName}" — smaller than the title, positioned at the bottom of the cover.\n`;
+      }
+      if (seriesName) {
+        textOverlayInstructions += `- SERIES: "${seriesName}${seriesNumber > 0 ? ` — Book ${seriesNumber}` : ""}" — subtle, positioned near the top or below the title.\n`;
+      }
+      textOverlayInstructions += `- All text must have HIGH CONTRAST against the background for readability at thumbnail size (~150px).\n`;
+      textOverlayInstructions += `- Text must be SPELLED EXACTLY as specified above — no variations, no extra words.\n`;
+
+      let fullPrompt = coverPrompt.prompt + textOverlayInstructions;
       if (coverPrompt.negativePrompt) {
         fullPrompt += `\n\nAvoid: ${coverPrompt.negativePrompt}`;
       }
 
-      console.log(`[CoverPrompts] Generando imagen para prompt #${id}: "${coverPrompt.title}"...`);
+      console.log(`[CoverPrompts] Generando imagen para prompt #${id}: "${bookTitle}" by "${authorName}"${seriesName ? ` (${seriesName} #${seriesNumber})` : ""}...`);
       const dataUrl = await generateImage(fullPrompt);
 
       const matches = dataUrl.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/);
