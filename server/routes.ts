@@ -9474,33 +9474,23 @@ CRITERIOS:
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>');
+      .replace(/&gt;/g, '>')
+      .replace(/\r\n/g, '\n');
 
-    text = text.replace(/\r\n/g, '\n');
-
-    text = text.replace(/\.{3,}/g, '...');
     text = text.replace(/…/g, '...');
+
+    text = text.replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1');
+    text = text.replace(/_{1,2}([^_]+)_{1,2}/g, '$1');
+    text = text.replace(/^#{1,6}\s*/gm, '');
 
     const paragraphs = text.split(/\n\s*\n/);
     const processed = paragraphs.map(para => {
       let p = para.replace(/[ \t]+/g, ' ').trim();
-
-      p = p.replace(/([.])(\s+)(?=[A-ZÁÉÍÓÚÑÜ¿¡])/g, '$1\n$2');
-      p = p.replace(/([!?])(\s+)/g, '$1\n$2');
-
-      p = p.replace(/(\.\.\.)(\s*)/g, '$1\n$2');
-
-      p = p.replace(/([:;])(\s+)(?=[A-ZÁÉÍÓÚÑÜ¿¡])/g, '$1\n$2');
-
-      p = p.replace(/\n\s*(—\s*)/g, '\n\n$1');
-      p = p.replace(/^(—\s*)/g, '\n$1');
-
-      p = p.replace(/([.!?])(["»"'\u201D])(\s+)/g, '$1$2\n$3');
-
+      if (!p) return '';
       return p;
     }).filter(p => p.length > 0);
 
-    return processed.join('\n\n\n');
+    return processed.join('\n\n');
   }
 
   const AUDIOBOOKS_DIR = process.env.LITAGENTS_AUDIOBOOKS_DIR || "./audiobooks";
@@ -9835,17 +9825,17 @@ CRITERIOS:
             headers: {
               "Authorization": `Bearer ${apiKey}`,
               "Content-Type": "application/json",
-              "model": "speech-1.6",
             },
             body: JSON.stringify({
               text: chunk,
               reference_id: project.voiceId,
+              model: "speech-1.6",
               format: project.format || "mp3",
               mp3_bitrate: project.bitrate || 128,
               prosody: { speed: project.speed || 1.0, volume: 0 },
-              top_p: 0.7,
-              temperature: 0.9,
-              repetition_penalty: 1.0,
+              top_p: 0.8,
+              temperature: 0.7,
+              repetition_penalty: 1.5,
               latency: "normal",
             }),
             signal: abortController.signal,
@@ -10050,17 +10040,17 @@ CRITERIOS:
               headers: {
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json",
-                "model": "speech-1.6",
               },
               body: JSON.stringify({
                 text: chunk,
                 reference_id: project.voiceId,
+                model: "speech-1.6",
                 format: project.format || "mp3",
                 mp3_bitrate: project.bitrate || 128,
                 prosody: { speed: project.speed || 1.0, volume: 0 },
-                top_p: 0.7,
-                temperature: 0.9,
-                repetition_penalty: 1.0,
+                top_p: 0.8,
+                temperature: 0.7,
+                repetition_penalty: 1.5,
                 latency: "normal",
               }),
             });
