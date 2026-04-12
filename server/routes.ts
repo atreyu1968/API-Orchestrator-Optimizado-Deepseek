@@ -10182,12 +10182,14 @@ CRITERIOS:
 
       const metadata = {
         title: project.title,
-        author: authorName || undefined,
-        narrator: project.voiceName || undefined,
+        author: authorName || "",
+        narrator: project.voiceName || "",
         description: `Audiolibro generado por LitAgents — ${project.title}`,
         category: "Fiction",
         language: project.sourceLanguage || "es",
-        coverImage: coverFileName || undefined,
+        isFree: false,
+        priceCents: 0,
+        currency: "EUR",
         chapters: sortedCompleted.map((c, idx) => {
           const label = c.chapterNumber === 0 ? "Prólogo" :
                         c.chapterNumber === -1 ? "Epílogo" :
@@ -10198,12 +10200,11 @@ CRITERIOS:
             title: titleStr,
             chapterNumber: idx + 1,
             audioFile: c.audioFileName,
-            duration: c.audioDurationSeconds || undefined,
+            duration: c.audioDurationSeconds || 0,
             isSample: idx === 0,
             description: titleStr,
           };
         }),
-        generatedAt: new Date().toISOString(),
       };
       archive.append(JSON.stringify(metadata, null, 2), { name: "metadata.json" });
 
@@ -10348,26 +10349,58 @@ CRITERIOS:
         }
       }
 
-      if (partNumber === 1) {
-        if (project.coverImage) {
-          const coverPath = path.join(AUDIOBOOKS_DIR, "covers", project.coverImage);
-          if (fs.existsSync(coverPath)) {
-            archive.file(coverPath, { name: `cover${path.extname(project.coverImage)}` });
+      if (project.coverImage) {
+        const coverPath = path.join(AUDIOBOOKS_DIR, "covers", project.coverImage);
+        if (fs.existsSync(coverPath)) {
+          archive.file(coverPath, { name: `cover${path.extname(project.coverImage)}` });
+        }
+      }
+
+      let partAuthorName = "";
+      try {
+        if (project.sourceType === "project") {
+          const srcProject = await storage.getProject(project.sourceId);
+          if (srcProject?.pseudonymId) {
+            const pseudonym = await storage.getPseudonym(srcProject.pseudonymId);
+            if (pseudonym) partAuthorName = pseudonym.name;
+          }
+        } else if (project.sourceType === "reedit") {
+          const srcReedit = await storage.getReeditProject(project.sourceId);
+          if (srcReedit?.pseudonymId) {
+            const pseudonym = await storage.getPseudonym(srcReedit.pseudonymId);
+            if (pseudonym) partAuthorName = pseudonym.name;
           }
         }
+      } catch (_e) {}
 
-        const metadata = {
-          title: project.title,
-          totalParts: parts.length,
-          currentPart: partNumber,
-          chapters: selectedPart.map((c, idx) => ({
-            title: c.chapterTitle || `Capítulo ${c.chapterNumber}`,
-            chapterNumber: c.chapterNumber,
+      const partSuffix = parts.length > 1 ? ` (Parte ${partNumber} de ${parts.length})` : "";
+      const metadata = {
+        title: `${project.title}${partSuffix}`,
+        author: partAuthorName || "",
+        narrator: project.voiceName || "",
+        description: `Audiolibro generado por LitAgents — ${project.title}${partSuffix}`,
+        category: "Fiction",
+        language: project.sourceLanguage || "es",
+        isFree: false,
+        priceCents: 0,
+        currency: "EUR",
+        chapters: selectedPart.map((c, idx) => {
+          const label = c.chapterNumber === 0 ? "Prólogo" :
+                        c.chapterNumber === -1 ? "Epílogo" :
+                        c.chapterNumber === -2 ? "Nota del Autor" :
+                        `Capítulo ${c.chapterNumber}`;
+          const titleStr = c.chapterTitle ? `${label}: ${c.chapterTitle}` : label;
+          return {
+            title: titleStr,
+            chapterNumber: idx + 1,
             audioFile: c.audioFileName,
-          })),
-        };
-        archive.append(JSON.stringify(metadata, null, 2), { name: "metadata.json" });
-      }
+            duration: c.audioDurationSeconds || 0,
+            isSample: idx === 0,
+            description: titleStr,
+          };
+        }),
+      };
+      archive.append(JSON.stringify(metadata, null, 2), { name: "metadata.json" });
 
       await archive.finalize();
     } catch (error: any) {
