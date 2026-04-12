@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -14,7 +14,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Headphones, Play, Download, Trash2, RefreshCw, AlertCircle, CheckCircle2,
-  Clock, Volume2, FileAudio, Loader2, Plus, ArrowLeft, Upload, Music, Pencil, Check, X, Pause, Square
+  Clock, Volume2, FileAudio, Loader2, Plus, ArrowLeft, Upload, Music, Pencil, Check, X, Pause, Square, Package
 } from "lucide-react";
 import type { AudiobookProject, AudiobookChapter } from "@shared/schema";
 
@@ -507,12 +507,7 @@ function AudiobookDetail({ projectId, onBack }: { projectId: number; onBack: () 
             )}
 
             {hasCompleted && (
-              <a href={`/api/audiobooks/${projectId}/download`} download>
-                <Button data-testid="button-download-zip" variant="secondary">
-                  <Download className="h-4 w-4 mr-2" />
-                  Descargar ZIP
-                </Button>
-              </a>
+              <DownloadButton projectId={projectId!} projectTitle={project.title} />
             )}
 
             <Button
@@ -743,6 +738,62 @@ export default function AudiobooksPage() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function DownloadButton({ projectId, projectTitle }: { projectId: number; projectTitle: string }) {
+  const [showParts, setShowParts] = useState(false);
+  const [partsInfo, setPartsInfo] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  const checkParts = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/audiobooks/${projectId}/download-parts?maxMb=90`);
+      const data = await res.json();
+      setPartsInfo(data);
+      if (data.totalParts <= 1) {
+        window.location.href = `/api/audiobooks/${projectId}/download`;
+      } else {
+        setShowParts(true);
+      }
+    } catch {
+      window.location.href = `/api/audiobooks/${projectId}/download`;
+    }
+    setLoading(false);
+  };
+
+  if (!showParts) {
+    return (
+      <Button
+        data-testid="button-download-zip"
+        variant="secondary"
+        onClick={checkParts}
+        disabled={loading}
+      >
+        {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+        Descargar
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      <Badge variant="outline" className="text-xs py-1">
+        {partsInfo.totalSizeMb} MB total · {partsInfo.totalParts} partes
+      </Badge>
+      {partsInfo.parts.map((part: any) => (
+        <a key={part.partNumber} href={`/api/audiobooks/${projectId}/download-part/${part.partNumber}?maxMb=90`} download>
+          <Button variant="secondary" size="sm" data-testid={`button-download-part-${part.partNumber}`}>
+            <Package className="h-3 w-3 mr-1" />
+            Parte {part.partNumber} ({part.sizeMb} MB)
+          </Button>
+        </a>
+      ))}
+      <Button variant="ghost" size="sm" onClick={() => setShowParts(false)}>
+        <X className="h-3 w-3" />
+      </Button>
     </div>
   );
 }

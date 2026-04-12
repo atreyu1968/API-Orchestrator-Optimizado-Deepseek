@@ -10216,6 +10216,168 @@ CRITERIOS:
     }
   });
 
+  app.get("/api/audiobooks/:id/download-parts", async (req: Request, res: Response) => {
+    try {
+      const projectId = Number(req.params.id);
+      const project = await storage.getAudiobookProject(projectId);
+      if (!project) return res.status(404).json({ error: "Audiobook project not found" });
+
+      const chapters = await storage.getAudiobookChaptersByProject(projectId);
+      const completedChapters = chapters.filter(c => c.status === "completed" && c.audioFileName);
+      if (completedChapters.length === 0) {
+        return res.status(400).json({ error: "No completed audio chapters" });
+      }
+
+      const projectDir = path.join(AUDIOBOOKS_DIR, `project_${projectId}`);
+      const maxPartSize = parseInt(req.query.maxMb as string) || 90;
+      const maxPartBytes = maxPartSize * 1024 * 1024;
+
+      const sortedCompleted = [...completedChapters].sort((a, b) => {
+        const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
+        const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
+        return orderA - orderB;
+      });
+
+      const chaptersWithSize = sortedCompleted.map(ch => {
+        const audioPath = path.join(projectDir, ch.audioFileName!);
+        const size = fs.existsSync(audioPath) ? fs.statSync(audioPath).size : 0;
+        return { ...ch, fileSize: size };
+      }).filter(ch => ch.fileSize > 0);
+
+      const parts: typeof chaptersWithSize[] = [];
+      let currentPart: typeof chaptersWithSize = [];
+      let currentSize = 0;
+
+      for (const ch of chaptersWithSize) {
+        if (currentPart.length > 0 && currentSize + ch.fileSize > maxPartBytes) {
+          parts.push(currentPart);
+          currentPart = [ch];
+          currentSize = ch.fileSize;
+        } else {
+          currentPart.push(ch);
+          currentSize += ch.fileSize;
+        }
+      }
+      if (currentPart.length > 0) parts.push(currentPart);
+
+      const totalSize = chaptersWithSize.reduce((sum, ch) => sum + ch.fileSize, 0);
+
+      res.json({
+        totalParts: parts.length,
+        totalSize: totalSize,
+        totalSizeMb: Math.round(totalSize / 1024 / 1024 * 10) / 10,
+        maxPartSizeMb: maxPartSize,
+        parts: parts.map((part, idx) => {
+          const partSize = part.reduce((sum, ch) => sum + ch.fileSize, 0);
+          return {
+            partNumber: idx + 1,
+            chapters: part.map(ch => ch.chapterNumber),
+            chapterCount: part.length,
+            sizeMb: Math.round(partSize / 1024 / 1024 * 10) / 10,
+            firstChapter: part[0].chapterNumber,
+            lastChapter: part[part.length - 1].chapterNumber,
+          };
+        }),
+      });
+    } catch (error: any) {
+      console.error("[Audiobook] Error calculating parts:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/audiobooks/:id/download-part/:partNumber", async (req: Request, res: Response) => {
+    try {
+      const projectId = Number(req.params.id);
+      const partNumber = Number(req.params.partNumber);
+      const project = await storage.getAudiobookProject(projectId);
+      if (!project) return res.status(404).json({ error: "Audiobook project not found" });
+
+      const chapters = await storage.getAudiobookChaptersByProject(projectId);
+      const completedChapters = chapters.filter(c => c.status === "completed" && c.audioFileName);
+      const projectDir = path.join(AUDIOBOOKS_DIR, `project_${projectId}`);
+      const maxPartSize = parseInt(req.query.maxMb as string) || 90;
+      const maxPartBytes = maxPartSize * 1024 * 1024;
+
+      const sortedCompleted = [...completedChapters].sort((a, b) => {
+        const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
+        const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
+        return orderA - orderB;
+      });
+
+      const chaptersWithSize = sortedCompleted.map(ch => {
+        const audioPath = path.join(projectDir, ch.audioFileName!);
+        const size = fs.existsSync(audioPath) ? fs.statSync(audioPath).size : 0;
+        return { ...ch, fileSize: size };
+      }).filter(ch => ch.fileSize > 0);
+
+      const parts: typeof chaptersWithSize[] = [];
+      let currentPart: typeof chaptersWithSize = [];
+      let currentSize = 0;
+
+      for (const ch of chaptersWithSize) {
+        if (currentPart.length > 0 && currentSize + ch.fileSize > maxPartBytes) {
+          parts.push(currentPart);
+          currentPart = [ch];
+          currentSize = ch.fileSize;
+        } else {
+          currentPart.push(ch);
+          currentSize += ch.fileSize;
+        }
+      }
+      if (currentPart.length > 0) parts.push(currentPart);
+
+      if (partNumber < 1 || partNumber > parts.length) {
+        return res.status(400).json({ error: `Part ${partNumber} not found. Total parts: ${parts.length}` });
+      }
+
+      const selectedPart = parts[partNumber - 1];
+      const archiver = (await import("archiver")).default;
+      const archive = archiver("zip", { zlib: { level: 5 } });
+
+      const safeTitle = project.title.replace(/[^a-zA-Z0-9\u00C0-\u024F _-]/g, "_");
+      const partLabel = parts.length > 1 ? `_parte${partNumber}de${parts.length}` : "";
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}_audiobook${partLabel}.zip"`);
+
+      archive.pipe(res);
+
+      for (const ch of selectedPart) {
+        const audioPath = path.join(projectDir, ch.audioFileName!);
+        if (fs.existsSync(audioPath)) {
+          archive.file(audioPath, { name: ch.audioFileName! });
+        }
+      }
+
+      if (partNumber === 1) {
+        if (project.coverImage) {
+          const coverPath = path.join(AUDIOBOOKS_DIR, "covers", project.coverImage);
+          if (fs.existsSync(coverPath)) {
+            archive.file(coverPath, { name: `cover${path.extname(project.coverImage)}` });
+          }
+        }
+
+        const metadata = {
+          title: project.title,
+          totalParts: parts.length,
+          currentPart: partNumber,
+          chapters: selectedPart.map((c, idx) => ({
+            title: c.chapterTitle || `Capítulo ${c.chapterNumber}`,
+            chapterNumber: c.chapterNumber,
+            audioFile: c.audioFileName,
+          })),
+        };
+        archive.append(JSON.stringify(metadata, null, 2), { name: "metadata.json" });
+      }
+
+      await archive.finalize();
+    } catch (error: any) {
+      console.error("[Audiobook] Error creating part ZIP:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: error.message });
+      }
+    }
+  });
+
   app.get("/api/audiobooks/:id/chapter/:chapterId/audio", async (req: Request, res: Response) => {
     try {
       const projectId = Number(req.params.id);
