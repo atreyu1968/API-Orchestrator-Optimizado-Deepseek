@@ -1447,7 +1447,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               accumulatedContinuityIssues
             );
             
-            if (!checkpointResult.passed && checkpointResult.chaptersToRevise.length > 0) {
+            if (!checkpointResult.passed) {
               accumulatedContinuityIssues = [...accumulatedContinuityIssues, ...checkpointResult.issues];
               
               const hasActionableIssues = checkpointResult.issues.some(issue => 
@@ -1457,19 +1457,26 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                 issue.toLowerCase().includes("mayor")
               );
               
-              if (hasActionableIssues) {
+              if (hasActionableIssues && checkpointResult.chaptersToRevise.length > 0) {
                 this.callbacks.onAgentStatus("continuity-sentinel", "editing", 
                   `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores de continuidad detectados`
                 );
                 
+                const allProjectChapters = await storage.getChaptersByProject(project.id);
+                
                 for (const chapterNum of checkpointResult.chaptersToRevise) {
-                  const chapterToFix = chaptersInScope.find(c => c.chapterNumber === chapterNum);
+                  const chapterToFix = allProjectChapters.find(c => c.chapterNumber === chapterNum && c.status === "completed");
                   const sectionForFix = allSections.find(s => s.numero === chapterNum);
                   
                   if (chapterToFix && sectionForFix) {
-                    const issuesForChapter = checkpointResult.issues.filter(issue => 
-                      issue.includes(`capítulo ${chapterNum}`) || issue.includes(`Cap ${chapterNum}`)
-                    ).join("\n");
+                    const chapterNumStr = String(chapterNum);
+                    const issuesForChapter = checkpointResult.issues.filter(issue => {
+                      const lower = issue.toLowerCase();
+                      return lower.includes(`capítulo ${chapterNumStr}`) || 
+                             lower.includes(`cap ${chapterNumStr}`) ||
+                             lower.includes(`cap. ${chapterNumStr}`) ||
+                             lower.includes(`capitulo ${chapterNumStr}`);
+                    }).join("\n");
                     
                     await this.rewriteChapterForQA(
                       project,
@@ -1482,6 +1489,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                     );
                   }
                 }
+              } else if (hasActionableIssues && checkpointResult.chaptersToRevise.length === 0) {
+                this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
+                  `Issues de continuidad detectados pero sin capítulos específicos identificados. Se anotarán para la auditoría final.`
+                );
               } else {
                 this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
                   `Issues menores detectados. Se anotarán para la auditoría final.`
@@ -2056,7 +2067,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               []
             );
             
-            if (!checkpointResult.passed && checkpointResult.chaptersToRevise.length > 0) {
+            if (!checkpointResult.passed) {
               const hasActionableIssues = checkpointResult.issues.some(issue => 
                 issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]") ||
                 issue.includes("[MAYOR]") ||
@@ -2064,19 +2075,26 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                 issue.toLowerCase().includes("mayor")
               );
               
-              if (hasActionableIssues) {
+              if (hasActionableIssues && checkpointResult.chaptersToRevise.length > 0) {
                 this.callbacks.onAgentStatus("continuity-sentinel", "editing", 
                   `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores de continuidad detectados`
                 );
                 
+                const allProjectChaptersResume = await storage.getChaptersByProject(project.id);
+                
                 for (const chapterNum of checkpointResult.chaptersToRevise) {
-                  const chapterToFix = chaptersForCheckpoint.find(c => c.chapterNumber === chapterNum);
-                  const sectionForFix = this.buildSectionDataFromChapter(chapterToFix!, worldBibleData);
+                  const chapterToFix = allProjectChaptersResume.find(c => c.chapterNumber === chapterNum && c.status === "completed");
                   
                   if (chapterToFix) {
-                    const issuesForChapter = checkpointResult.issues.filter(issue => 
-                      issue.includes(`capítulo ${chapterNum}`) || issue.includes(`Cap ${chapterNum}`)
-                    ).join("\n");
+                    const sectionForFix = this.buildSectionDataFromChapter(chapterToFix, worldBibleData);
+                    const chapterNumStr = String(chapterNum);
+                    const issuesForChapter = checkpointResult.issues.filter(issue => {
+                      const lower = issue.toLowerCase();
+                      return lower.includes(`capítulo ${chapterNumStr}`) || 
+                             lower.includes(`cap ${chapterNumStr}`) ||
+                             lower.includes(`cap. ${chapterNumStr}`) ||
+                             lower.includes(`capitulo ${chapterNumStr}`);
+                    }).join("\n");
                     
                     const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
                     const fullStyleGuide = styleGuideContent 
@@ -2094,6 +2112,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                     );
                   }
                 }
+              } else if (hasActionableIssues) {
+                this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
+                  `Issues de continuidad detectados pero sin capítulos específicos identificados. Se anotarán para la auditoría final.`
+                );
               } else {
                 this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
                   `Issues menores detectados. Se anotarán para la auditoría final.`
@@ -4693,9 +4715,9 @@ Responde SOLO con un JSON válido con la estructura:
         return;
       }
 
-      if (failedBatches > 0 && allChaptersToRevise.length === 0) {
+      if (failedBatches > 0 && allChaptersToRevise.length === 0 && allIssues.length === 0) {
         this.callbacks.onAgentStatus("continuity-sentinel", "warning",
-          `Auditoría final: ${failedBatches} lotes fallaron/timeout. ${allIssues.length} issues no verificados. Proyecto continuará pero requiere revisión.`
+          `Auditoría final: ${failedBatches} lotes fallaron/timeout. Sin issues concretos detectados. Proyecto continuará pero requiere revisión manual.`
         );
         return;
       }
@@ -4707,18 +4729,27 @@ Responde SOLO con un JSON válido con la estructura:
         issue.toLowerCase().includes("mayor")
       );
 
-      if (hasActionable) {
+      if (hasActionable && allChaptersToRevise.length > 0) {
         this.callbacks.onAgentStatus("continuity-sentinel", "editing",
           `Auditoría final: ${allIssues.length} errores detectados. Corrigiendo ${allChaptersToRevise.length} capítulos...`
         );
 
-        const correctionInstructions = allIssues.join("\n");
+        const allFreshChapters = await storage.getChaptersByProject(project.id);
 
         for (const chapterNum of allChaptersToRevise) {
-          const chapter = completedChapters.find(c => c.chapterNumber === chapterNum);
+          const chapter = allFreshChapters.find(c => c.chapterNumber === chapterNum && (c.status === "completed" || c.status === "revision"));
           const sectionData = allSections.find(s => s.numero === chapterNum);
 
           if (chapter && sectionData) {
+            const chapterNumStr = String(chapterNum);
+            const issuesForChapter = allIssues.filter(issue => {
+              const lower = issue.toLowerCase();
+              return lower.includes(`capítulo ${chapterNumStr}`) || 
+                     lower.includes(`cap ${chapterNumStr}`) ||
+                     lower.includes(`cap. ${chapterNumStr}`) ||
+                     lower.includes(`capitulo ${chapterNumStr}`);
+            }).join("\n");
+
             this.callbacks.onChapterRewrite(
               chapterNum,
               chapter.title || `Capítulo ${chapterNum}`,
@@ -4734,7 +4765,7 @@ Responde SOLO con un JSON válido con la estructura:
               worldBibleData,
               guiaEstilo,
               "continuity",
-              correctionInstructions
+              issuesForChapter || allIssues.join("\n")
             );
           }
         }
@@ -4750,6 +4781,10 @@ Responde SOLO con un JSON válido con la estructura:
 
         this.callbacks.onAgentStatus("continuity-sentinel", "completed",
           `Auditoría final completada. ${allChaptersToRevise.length} capítulos corregidos.`
+        );
+      } else if (hasActionable && allChaptersToRevise.length === 0) {
+        this.callbacks.onAgentStatus("continuity-sentinel", "warning",
+          `Auditoría final: ${allIssues.length} errores detectados pero sin capítulos específicos para corregir. Requiere revisión manual.`
         );
       } else {
         this.callbacks.onAgentStatus("continuity-sentinel", "warning",
