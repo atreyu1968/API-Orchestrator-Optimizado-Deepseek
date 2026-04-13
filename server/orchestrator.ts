@@ -80,6 +80,17 @@ interface SectionData {
   };
 }
 
+function narrativeSortOrder(chapterNumber: number): number {
+  if (chapterNumber === 0) return -1000;
+  if (chapterNumber === -1) return 9000;
+  if (chapterNumber === -2) return 9001;
+  return chapterNumber;
+}
+
+function sortChaptersNarrative<T extends { chapterNumber: number }>(chapters: T[]): T[] {
+  return [...chapters].sort((a, b) => narrativeSortOrder(a.chapterNumber) - narrativeSortOrder(b.chapterNumber));
+}
+
 export class Orchestrator {
   private architect = new ArchitectAgent();
   private ghostwriter = new GhostwriterAgent();
@@ -4603,9 +4614,9 @@ Responde SOLO con un JSON válido con la estructura:
   private async runFinalContinuityAudit(project: Project): Promise<void> {
     try {
       const chapters = await storage.getChaptersByProject(project.id);
-      const completedChapters = chapters
-        .filter(c => c.status === "completed" && c.content)
-        .sort((a, b) => a.chapterNumber - b.chapterNumber);
+      const completedChapters = sortChaptersNarrative(
+        chapters.filter(c => c.status === "completed" && c.content)
+      );
 
       if (completedChapters.length < 4) return;
 
@@ -4642,9 +4653,9 @@ Responde SOLO con un JSON válido con la estructura:
 
       for (let start = 0; start < completedChapters.length; start += BATCH_SIZE - OVERLAP) {
         const freshChapters = await storage.getChaptersByProject(project.id);
-        const freshCompleted = freshChapters
-          .filter(c => (c.status === "completed" || c.status === "revision") && c.content)
-          .sort((a, b) => a.chapterNumber - b.chapterNumber);
+        const freshCompleted = sortChaptersNarrative(
+          freshChapters.filter(c => (c.status === "completed" || c.status === "revision") && c.content)
+        );
 
         const batchChapterNums = completedChapters.slice(start, start + BATCH_SIZE).map(c => c.chapterNumber);
         const batch = freshCompleted.filter(c => batchChapterNums.includes(c.chapterNumber));
@@ -4805,9 +4816,9 @@ Responde SOLO con un JSON válido con la estructura:
       if (!project.seriesId) return;
 
       const chapters = await storage.getChaptersByProject(project.id);
-      const completedChapters = chapters
-        .filter(c => c.status === "completed" && c.content)
-        .sort((a, b) => a.chapterNumber - b.chapterNumber);
+      const completedChapters = sortChaptersNarrative(
+        chapters.filter(c => c.status === "completed" && c.content)
+      );
 
       if (completedChapters.length === 0) return;
 
@@ -4920,7 +4931,7 @@ Responde SOLO con un JSON válido con la estructura:
       this.callbacks.onAgentStatus("arc-validator", "reviewing", "Verificando cumplimiento de hitos y progresión de hilos de la serie...");
 
       const chapters = await storage.getChaptersByProject(project.id);
-      const sortedChapters = chapters.sort((a, b) => a.chapterNumber - b.chapterNumber);
+      const sortedChapters = sortChaptersNarrative(chapters);
       const worldBible = await storage.getWorldBibleByProject(project.id);
 
       const chaptersSummary = sortedChapters.map(c => {
