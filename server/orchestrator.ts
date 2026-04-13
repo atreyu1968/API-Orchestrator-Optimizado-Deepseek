@@ -17,6 +17,7 @@ import {
   type SemanticRepetitionResult
 } from "./agents";
 import type { TokenUsage } from "./agents/base-agent";
+import type { FinalReviewIssue } from "./agents/final-reviewer";
 import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, TimelineEvent } from "@shared/schema";
 import { ensureChapterNumbers } from "./utils/extract-chapters";
 
@@ -3205,6 +3206,289 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       console.error("Final review error:", error);
       this.callbacks.onError(`Error en revisión final: ${error instanceof Error ? error.message : "Error desconocido"}`);
       await storage.updateProject(project.id, { status: "error" });
+    }
+  }
+
+  async resolveDocumentedIssues(project: Project): Promise<void> {
+    try {
+      this.cumulativeTokens = {
+        inputTokens: project.totalInputTokens || 0,
+        outputTokens: project.totalOutputTokens || 0,
+        thinkingTokens: project.totalThinkingTokens || 0,
+      };
+
+      const finalReviewResult = project.finalReviewResult as any;
+      if (!finalReviewResult?.issues || finalReviewResult.issues.length === 0) {
+        this.callbacks.onError("No hay issues documentados para resolver.");
+        await storage.updateProject(project.id, { status: "completed" });
+        return;
+      }
+
+      const rawIssues = finalReviewResult.issues as any[];
+      const issues: FinalReviewIssue[] = rawIssues.map((issue: any) => {
+        let caps = issue.capitulos_afectados;
+        if (!caps || !Array.isArray(caps) || caps.length === 0) {
+          if (issue.capitulo != null && typeof issue.capitulo === "number") {
+            caps = [issue.capitulo];
+          } else if (issue.capitulos_para_revision && Array.isArray(issue.capitulos_para_revision)) {
+            caps = issue.capitulos_para_revision;
+          } else {
+            caps = [];
+          }
+        }
+        return {
+          ...issue,
+          capitulos_afectados: caps,
+          descripcion: issue.descripcion || issue.problema || "",
+          instrucciones_correccion: issue.instrucciones_correccion || "",
+          categoria: issue.categoria || issue.severidad || "otro",
+        } as FinalReviewIssue;
+      });
+      
+      let styleGuideContent = "";
+      let authorName = "";
+      if (project.styleGuideId) {
+        const sg = await storage.getStyleGuide(project.styleGuideId);
+        if (sg) styleGuideContent = sg.content;
+      }
+      if (project.pseudonymId) {
+        const pseudonym = await storage.getPseudonym(project.pseudonymId);
+        if (pseudonym) authorName = pseudonym.name;
+      }
+
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (!worldBible) {
+        this.callbacks.onError("No se encontró la biblia del mundo para este proyecto");
+        await storage.updateProject(project.id, { status: "completed" });
+        return;
+      }
+
+      const worldBibleData: ParsedWorldBible = {
+        world_bible: {
+          personajes: worldBible.characters as any[] || [],
+          lugares: [],
+          reglas_lore: worldBible.worldRules as any[] || [],
+        },
+        escaleta_capitulos: worldBible.plotOutline as any[] || [],
+      };
+
+      const allChapters = await storage.getChaptersByProject(project.id);
+      const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
+      const guiaEstilo = styleGuideContent
+        ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+        : `Género: ${project.genre}, Tono: ${project.tone}`;
+
+      const chaptersToFix = new Set<number>();
+      issues.forEach(issue => {
+        const affected = issue.capitulos_afectados || [];
+        affected.forEach(ch => chaptersToFix.add(ch));
+      });
+
+      if (chaptersToFix.size === 0) {
+        this.callbacks.onError("Los issues documentados no especifican capítulos afectados.");
+        await storage.updateProject(project.id, { status: "completed" });
+        return;
+      }
+
+      const sortedChapters = Array.from(chaptersToFix).sort((a, b) => {
+        const orderA = a === 0 ? -1000 : a === -1 ? 1000 : a === -2 ? 1001 : a;
+        const orderB = b === 0 ? -1000 : b === -1 ? 1000 : b === -2 ? 1001 : b;
+        return orderA - orderB;
+      });
+
+      this.callbacks.onAgentStatus("final-reviewer", "editing",
+        `Resolviendo ${issues.length} issues documentados en ${sortedChapters.length} capítulos...`
+      );
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "info",
+        message: `Iniciando resolución de ${issues.length} issues documentados en capítulos: ${sortedChapters.join(", ")}`,
+        agentRole: "final-reviewer",
+      });
+
+      let resolvedCount = 0;
+
+      for (let i = 0; i < sortedChapters.length; i++) {
+        const chapterNum = sortedChapters[i];
+        const chapter = allChapters.find(c => c.chapterNumber === chapterNum);
+        const sectionData = allSections.find(s => s.numero === chapterNum);
+
+        if (!chapter || !sectionData || !chapter.content) {
+          console.warn(`[ResolveIssues] Chapter ${chapterNum} not found or empty, skipping`);
+          continue;
+        }
+
+        this.callbacks.onChapterStatusChange(chapterNum, "revision");
+
+        const issuesForChapter = issues.filter(
+          issue => (issue.capitulos_afectados || []).includes(chapterNum)
+        );
+
+        if (issuesForChapter.length === 0) continue;
+
+        const revisionInstructions = issuesForChapter.map(issue => {
+          const preservar = issue.elementos_a_preservar
+            ? `\n⚠️ PRESERVAR (NO MODIFICAR): ${issue.elementos_a_preservar}`
+            : "";
+          return `[${(issue.categoria || "otro").toUpperCase()}] ${issue.descripcion}${preservar}\n✏️ CORRECCIÓN QUIRÚRGICA: ${issue.instrucciones_correccion}`;
+        }).join("\n\n");
+
+        const issuesSummary = issuesForChapter.map(i => i.categoria).join(", ");
+        const sectionLabel = this.getSectionLabel(sectionData);
+
+        this.callbacks.onChapterRewrite(
+          chapterNum, sectionData.titulo, i + 1, sortedChapters.length,
+          `Corrección de issues: ${issuesSummary}`
+        );
+
+        this.callbacks.onAgentStatus("ghostwriter", "writing",
+          `Reescribiendo ${sectionLabel} (${i + 1}/${sortedChapters.length}): ${issuesSummary}`
+        );
+
+        const totalChapters = allChapters.length || project.chapterCount || 1;
+        const calculatedTarget = this.calculatePerChapterTarget((project as any).minWordCount, totalChapters);
+        const perChapterMin = (project as any).minWordsPerChapter || calculatedTarget;
+        const perChapterMax = (project as any).maxWordsPerChapter || Math.round(perChapterMin * 1.15);
+
+        const writerResult = await this.ghostwriter.execute({
+          chapterNumber: sectionData.numero,
+          chapterData: sectionData,
+          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+          guiaEstilo,
+          previousContinuity: "",
+          refinementInstructions: `CORRECCIONES DE ISSUES DOCUMENTADOS:\n${revisionInstructions}`,
+          authorName,
+          isRewrite: true,
+          minWordCount: perChapterMin,
+          maxWordCount: perChapterMax,
+          extendedGuideContent: styleGuideContent || undefined,
+          previousChapterContent: chapter.content,
+          kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+        });
+
+        let chapterContent = writerResult.content;
+        await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "resolve_issues");
+
+        this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
+
+        const editorChapters = await storage.getChaptersByProject(project.id);
+        const editorResult = await this.editor.execute({
+          chapterNumber: sectionData.numero,
+          chapterContent,
+          chapterData: sectionData,
+          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+          guiaEstilo,
+          previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChapters, sectionData.numero),
+        });
+        await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "resolve_issues_edit");
+
+        this.enforceApprovalLogic(editorResult);
+        if (!editorResult.result?.aprobado) {
+          const refinementInstructions = this.buildRefinementInstructions(editorResult.result);
+          const rewriteResult = await this.ghostwriter.execute({
+            chapterNumber: sectionData.numero,
+            chapterData: sectionData,
+            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+            guiaEstilo,
+            previousContinuity: "",
+            refinementInstructions,
+            authorName,
+            isRewrite: true,
+            minWordCount: perChapterMin,
+            maxWordCount: perChapterMax,
+            extendedGuideContent: styleGuideContent || undefined,
+            previousChapterContent: chapterContent,
+            kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+          });
+          chapterContent = rewriteResult.content;
+          await this.trackTokenUsage(project.id, rewriteResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "resolve_issues_rewrite");
+        }
+
+        this.callbacks.onAgentStatus("copyeditor", "polishing", `El Estilista está puliendo ${sectionLabel}...`);
+
+        const polishResult = await this.copyeditor.execute({
+          chapterContent,
+          chapterNumber: sectionData.numero,
+          chapterTitle: sectionData.titulo,
+          guiaEstilo: styleGuideContent || undefined,
+        });
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "resolve_issues_polish");
+
+        const finalContent = polishResult.result?.texto_final || chapterContent;
+        const wordCount = finalContent.split(/\s+/).length;
+
+        await storage.updateChapter(chapter.id, {
+          content: finalContent,
+          wordCount,
+          status: "completed",
+        });
+
+        resolvedCount++;
+        this.callbacks.onChapterComplete(chapterNum, wordCount, sectionData.titulo);
+        this.callbacks.onAgentStatus("copyeditor", "completed",
+          `${sectionLabel} corregido y finalizado (${wordCount} palabras)`
+        );
+      }
+
+      if (resolvedCount === 0) {
+        this.callbacks.onError("No se pudo corregir ningún capítulo — los issues no apuntan a capítulos válidos.");
+        await storage.updateProject(project.id, { status: "completed" });
+        return;
+      }
+
+      this.callbacks.onAgentStatus("final-reviewer", "reviewing",
+        `Re-evaluando manuscrito tras corrección de ${resolvedCount} capítulos...`
+      );
+
+      const updatedChapters = await storage.getChaptersByProject(project.id);
+      const chaptersForReview = sortChaptersNarrative(
+        updatedChapters.filter(c => c.content && c.status === "completed")
+      ).map(c => ({
+        numero: c.chapterNumber,
+        titulo: c.title || `Capítulo ${c.chapterNumber}`,
+        contenido: c.content || "",
+      }));
+
+      const reviewResult = await this.finalReviewer.execute({
+        projectTitle: project.title,
+        chapters: chaptersForReview,
+        worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+        guiaEstilo,
+        pasadaNumero: 1,
+        issuesPreviosCorregidos: issues.map(i => `[${i.categoria}] ${i.descripcion}`),
+        capitulosConLimitaciones: [],
+      });
+
+      await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "gemini-2.5-flash", undefined, "resolve_issues_verify");
+
+      const newScore = reviewResult.result?.puntuacion_global || 0;
+      const scoreForDb = newScore != null ? Math.round(newScore) : null;
+
+      await storage.updateProject(project.id, {
+        status: "completed",
+        finalScore: scoreForDb,
+        finalReviewResult: reviewResult.result as any,
+      });
+
+      const newIssueCount = reviewResult.result?.issues?.length || 0;
+
+      this.callbacks.onAgentStatus("final-reviewer", "completed",
+        `Issues resueltos. ${resolvedCount} capítulos corregidos. Nueva puntuación: ${newScore}/10${newIssueCount > 0 ? ` (${newIssueCount} issues restantes)` : " — sin issues pendientes"}.`
+      );
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "success",
+        message: `Resolución completada: ${resolvedCount}/${sortedChapters.length} capítulos corregidos. Puntuación: ${newScore}/10. Issues restantes: ${newIssueCount}.`,
+        agentRole: "final-reviewer",
+      });
+
+      this.callbacks.onProjectComplete();
+    } catch (error) {
+      console.error("[Orchestrator] resolveDocumentedIssues error:", error);
+      await storage.updateProject(project.id, { status: "completed" });
+      this.callbacks.onError(`Error resolviendo issues: ${error instanceof Error ? error.message : "Error desconocido"}`);
     }
   }
 

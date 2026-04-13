@@ -998,6 +998,83 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/projects/:id/resolve-issues", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProject(id);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (project.status !== "completed") {
+        return res.status(400).json({ error: "Solo se pueden resolver issues en proyectos completados" });
+      }
+
+      const finalReviewResult = project.finalReviewResult as any;
+      if (!finalReviewResult?.issues || finalReviewResult.issues.length === 0) {
+        return res.status(400).json({ error: "No hay issues documentados para resolver" });
+      }
+
+      await storage.updateProject(id, { status: "generating" });
+
+      res.json({ message: "Resolución de issues iniciada", projectId: id, issueCount: finalReviewResult.issues.length });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => {
+            try {
+              stream.write(message);
+            } catch (e) {
+              console.error("Error writing to stream:", e);
+            }
+          });
+        }
+      };
+
+      const orchestrator = new Orchestrator({
+        onAgentStatus: async (role, status, message) => {
+          await storage.updateAgentStatus(id, role, { status, currentTask: message });
+          sendToStreams({ type: "agent_status", role, status, message });
+          if (message) await persistActivityLog(id, "info", message, role);
+        },
+        onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
+          const label = getSectionLabel(chapterNumber, chapterTitle);
+          await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter");
+        },
+        onChapterRewrite: async (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
+          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
+          const label = getSectionLabel(chapterNumber, chapterTitle);
+          await persistActivityLog(id, "warning", `Reescritura ${currentIndex}/${totalToRewrite}: ${label} - ${reason}`, "editor");
+        },
+        onChapterStatusChange: (chapterNumber, status) => {
+          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
+        },
+        onProjectComplete: async () => {
+          sendToStreams({ type: "project_complete" });
+          await persistActivityLog(id, "success", "Resolución de issues completada", "final-reviewer");
+        },
+        onError: async (error) => {
+          sendToStreams({ type: "error", message: error });
+          await persistActivityLog(id, "error", error, "orchestrator");
+        },
+      });
+
+      orchestrator.resolveDocumentedIssues(project).catch(async (err) => {
+        console.error("Background resolve issues failed:", err);
+        await storage.updateProject(id, { status: "completed" });
+        await persistActivityLog(id, "error", `Error fatal resolviendo issues: ${err instanceof Error ? err.message : String(err)}`, "orchestrator");
+      });
+
+    } catch (error) {
+      console.error("Error starting resolve issues:", error);
+      res.status(500).json({ error: "Failed to start issue resolution" });
+    }
+  });
+
   // Extend project - continue generating additional chapters for incomplete projects
   app.post("/api/projects/:id/extend", async (req: Request, res: Response) => {
     try {

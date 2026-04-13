@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2 } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
@@ -310,6 +310,21 @@ export default function Dashboard() {
     },
     onError: () => {
       toast({ title: "Error", description: "No se pudo iniciar la revisión final", variant: "destructive" });
+    },
+  });
+
+  const resolveIssuesMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/resolve-issues`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Resolución iniciada", description: `Corrigiendo ${data.issueCount || ""} issues documentados...` });
+      addLog("thinking", "Resolviendo issues documentados del manuscrito...", "final-reviewer");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo iniciar la resolución de issues", variant: "destructive" });
     },
   });
 
@@ -625,6 +640,20 @@ export default function Dashboard() {
                         <Download className="h-4 w-4 mr-2" />
                         Exportar Word
                       </Button>
+                      {currentProject.finalScore != null && currentProject.finalScore < 9 && 
+                       (fullProjectDetail?.finalReviewResult as any)?.issues?.length > 0 && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => resolveIssuesMutation.mutate(currentProject.id)}
+                          disabled={resolveIssuesMutation.isPending}
+                          data-testid="button-resolve-issues"
+                          className="bg-amber-600 hover:bg-amber-700 text-white"
+                        >
+                          <Wrench className="h-4 w-4 mr-2" />
+                          Resolver Issues ({(fullProjectDetail?.finalReviewResult as any)?.issues?.length || 0})
+                        </Button>
+                      )}
                     </>
                   )}
                 </div>
@@ -721,29 +750,34 @@ export default function Dashboard() {
                       <div className="mt-4 pt-4 border-t border-border/50">
                         <p className="text-sm font-medium mb-2">Issues Documentados ({(fullProjectDetail.finalReviewResult as any).issues.length})</p>
                         <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {((fullProjectDetail.finalReviewResult as any).issues as Array<{capitulo: number; problema: string; severidad: string; instrucciones_correccion: string}>).map((issue, idx) => (
-                            <div 
-                              key={idx} 
-                              className="text-xs p-2 rounded bg-background/50 border border-border/30"
-                              data-testid={`issue-${idx}`}
-                            >
-                              <div className="flex items-center gap-2 mb-1">
-                                <Badge 
-                                  variant={issue.severidad === "critica" ? "destructive" : issue.severidad === "mayor" ? "secondary" : "outline"}
-                                  className="text-[10px] px-1.5 py-0"
-                                >
-                                  {issue.severidad}
-                                </Badge>
-                                <span className="text-muted-foreground">
-                                  {issue.capitulo === 0 ? "Prólogo" : issue.capitulo === -1 ? "Epílogo" : `Cap. ${issue.capitulo}`}
-                                </span>
+                          {((fullProjectDetail.finalReviewResult as any).issues as Array<{capitulos_afectados?: number[]; categoria?: string; descripcion?: string; severidad?: string; instrucciones_correccion?: string}>).map((issue, idx) => {
+                            const chapters = issue.capitulos_afectados || [];
+                            const chapterLabel = chapters.length > 0
+                              ? chapters.map(ch => ch === 0 ? "Prólogo" : ch === -1 ? "Epílogo" : ch === -2 ? "Nota" : `Cap. ${ch}`).join(", ")
+                              : "General";
+                            const severity = issue.severidad || issue.categoria || "otro";
+                            return (
+                              <div 
+                                key={idx} 
+                                className="text-xs p-2 rounded bg-background/50 border border-border/30"
+                                data-testid={`issue-${idx}`}
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge 
+                                    variant={severity === "critica" ? "destructive" : severity === "mayor" ? "secondary" : "outline"}
+                                    className="text-[10px] px-1.5 py-0"
+                                  >
+                                    {severity}
+                                  </Badge>
+                                  <span className="text-muted-foreground">{chapterLabel}</span>
+                                </div>
+                                <p className="text-foreground">{issue.descripcion}</p>
+                                {issue.instrucciones_correccion && (
+                                  <p className="text-muted-foreground mt-1 italic">{issue.instrucciones_correccion}</p>
+                                )}
                               </div>
-                              <p className="text-foreground">{issue.problema}</p>
-                              {issue.instrucciones_correccion && (
-                                <p className="text-muted-foreground mt-1 italic">{issue.instrucciones_correccion}</p>
-                              )}
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
