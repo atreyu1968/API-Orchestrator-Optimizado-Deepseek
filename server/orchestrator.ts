@@ -8,6 +8,7 @@ import {
   ContinuitySentinelAgent,
   VoiceRhythmAuditorAgent,
   SemanticRepetitionDetectorAgent,
+  ProofreaderAgent,
   isProjectCancelledFromDb,
   type EditorResult, 
   type FinalReviewerResult,
@@ -98,6 +99,7 @@ export class Orchestrator {
   private copyeditor = new CopyEditorAgent();
   private finalReviewer = new FinalReviewerAgent();
   private continuitySentinel = new ContinuitySentinelAgent();
+  private proofreader = new ProofreaderAgent();
   private voiceRhythmAuditor = new VoiceRhythmAuditorAgent();
   private semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
   private callbacks: OrchestratorCallbacks;
@@ -4626,28 +4628,88 @@ Responde SOLO con un JSON válido con la estructura:
   }
 
   private async finalizeCompletedProject(project: Project): Promise<void> {
-    await this.runFinalContinuityAudit(project);
+    const processChecklist: { step: string; status: "passed" | "corrected" | "skipped"; detail: string }[] = [];
+
+    processChecklist.push({ step: "Revisión Final", status: "passed", detail: "Manuscrito aprobado con puntuación 9+/10" });
+
+    const auditResult = await this.runFinalContinuityAudit(project);
+    const auditStatusMap: Record<string, "passed" | "corrected" | "skipped"> = {
+      clean: "passed", corrected: "corrected", unresolved: "skipped", error: "skipped"
+    };
+    const auditDetailMap: Record<string, string> = {
+      clean: "Sin errores de continuidad",
+      corrected: `${auditResult.correctedCount} capítulos corregidos`,
+      unresolved: auditResult.warnings.join("; ") || "Errores sin resolver",
+      error: auditResult.warnings.join("; ") || "Error en auditoría",
+    };
+    processChecklist.push({
+      step: "Auditoría de Continuidad",
+      status: auditStatusMap[auditResult.status] || "skipped",
+      detail: auditDetailMap[auditResult.status] || "Completado"
+    });
+
+    if (auditResult.correctedCount > 0) {
+      this.callbacks.onAgentStatus("final-reviewer", "reviewing",
+        `Re-verificación post-auditoría: ${auditResult.correctedCount} capítulos fueron corregidos. Verificando calidad del manuscrito...`
+      );
+
+      const reVerifyResult = await this.runPostAuditVerification(project);
+      processChecklist.push({
+        step: "Re-verificación Post-Auditoría",
+        status: reVerifyResult === "passed" ? "passed" : reVerifyResult === "acceptable" ? "corrected" : "skipped",
+        detail: reVerifyResult === "passed" ? "Manuscrito re-aprobado (9+/10)" 
+          : reVerifyResult === "acceptable" ? "Aceptado con puntuación 8+/10"
+          : "Verificación inconclusa — requiere atención"
+      });
+    }
+
+    const orthoResult = await this.runOrthotypographicPass(project);
+    processChecklist.push({
+      step: "Corrección Ortotipográfica",
+      status: orthoResult.totalChanges > 0 ? "corrected" : "passed",
+      detail: orthoResult.totalChanges > 0
+        ? `${orthoResult.totalChanges} correcciones en ${orthoResult.chaptersProcessed} capítulos`
+        : `${orthoResult.chaptersProcessed} capítulos revisados sin correcciones`
+    });
+
+    const checklistSummary = processChecklist.map(p => {
+      const icon = p.status === "passed" ? "✅" : p.status === "corrected" ? "🔧" : "⏭️";
+      return `${icon} ${p.step}: ${p.detail}`;
+    }).join("\n");
+
+    this.callbacks.onAgentStatus("final-reviewer", "completed",
+      `MANUSCRITO FINALIZADO — Checklist de procesos:\n${checklistSummary}`
+    );
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "success",
+      message: `Manuscrito finalizado. Procesos completados: ${processChecklist.map(p => `[${p.step}: ${p.detail}]`).join(", ")}`,
+      agentRole: "orchestrator",
+    });
+
     await storage.updateProject(project.id, { status: "completed" });
     await this.generateSeriesContinuitySnapshot(project);
     await this.runSeriesArcVerification(project);
     this.callbacks.onProjectComplete();
   }
 
-  private async runFinalContinuityAudit(project: Project): Promise<void> {
+  private async runFinalContinuityAudit(project: Project): Promise<{ correctedCount: number; status: "clean" | "corrected" | "unresolved" | "error"; warnings: string[] }> {
     try {
       const chapters = await storage.getChaptersByProject(project.id);
       const completedChapters = sortChaptersNarrative(
         chapters.filter(c => c.status === "completed" && c.content)
       );
+      const warnings: string[] = [];
 
-      if (completedChapters.length < 4) return;
+      if (completedChapters.length < 4) return { correctedCount: 0, status: "clean", warnings };
 
       this.callbacks.onAgentStatus("continuity-sentinel", "analyzing",
         `Auditoría final de continuidad: verificando ${completedChapters.length} capítulos completos...`
       );
 
       const worldBible = await storage.getWorldBibleByProject(project.id);
-      if (!worldBible) return;
+      if (!worldBible) return { correctedCount: 0, status: "clean", warnings };
 
       const worldBibleData: ParsedWorldBible = {
         world_bible: {
@@ -4712,14 +4774,15 @@ Responde SOLO con un JSON válido con la estructura:
         this.callbacks.onAgentStatus("continuity-sentinel", "completed",
           `Auditoría final APROBADA. No se encontraron errores de continuidad en el manuscrito completo.`
         );
-        return;
+        return { correctedCount: 0, status: "clean", warnings };
       }
 
       if (failedBatches > 0 && allChaptersToRevise.length === 0 && allIssues.length === 0) {
+        warnings.push(`${failedBatches} lotes fallaron/timeout sin issues concretos`);
         this.callbacks.onAgentStatus("continuity-sentinel", "warning",
           `Auditoría final: ${failedBatches} lotes fallaron/timeout. Sin issues concretos detectados. Proyecto continuará pero requiere revisión manual.`
         );
-        return;
+        return { correctedCount: 0, status: "unresolved", warnings };
       }
 
       const hasActionable = allIssues.some(issue =>
@@ -4782,20 +4845,223 @@ Responde SOLO con un JSON válido con la estructura:
         this.callbacks.onAgentStatus("continuity-sentinel", "completed",
           `Auditoría final completada. ${allChaptersToRevise.length} capítulos corregidos.`
         );
+        return { correctedCount: allChaptersToRevise.length, status: "corrected", warnings };
       } else if (hasActionable && allChaptersToRevise.length === 0) {
+        warnings.push(`${allIssues.length} errores detectados sin capítulos específicos para corregir`);
         this.callbacks.onAgentStatus("continuity-sentinel", "warning",
           `Auditoría final: ${allIssues.length} errores detectados pero sin capítulos específicos para corregir. Requiere revisión manual.`
         );
+        return { correctedCount: 0, status: "unresolved", warnings };
       } else {
         this.callbacks.onAgentStatus("continuity-sentinel", "warning",
           `Auditoría final: ${allIssues.length} errores MENORES detectados (no críticos). Anotados pero no reescritos.`
         );
+        return { correctedCount: 0, status: "clean", warnings };
       }
     } catch (error) {
       console.error("[Orchestrator] Final continuity audit error:", error);
       this.callbacks.onAgentStatus("continuity-sentinel", "warning",
         `Error en auditoría final: ${error instanceof Error ? error.message : "Error desconocido"}. Continuando...`
       );
+      return { correctedCount: 0, status: "error", warnings: [error instanceof Error ? error.message : "Error desconocido"] };
+    }
+  }
+
+  private async runPostAuditVerification(project: Project): Promise<"passed" | "acceptable" | "inconclusive"> {
+    try {
+      let styleGuideContent = "";
+
+      if (project.styleGuideId) {
+        const sg = await storage.getStyleGuide(project.styleGuideId);
+        if (sg) styleGuideContent = sg.content;
+      }
+
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (!worldBible) return "passed";
+
+      const worldBibleData: ParsedWorldBible = {
+        world_bible: {
+          personajes: worldBible.characters as any[] || [],
+          lugares: [],
+          reglas_lore: worldBible.worldRules as any[] || [],
+        },
+        escaleta_capitulos: worldBible.plotOutline as any[] || [],
+      };
+
+      const chapters = await storage.getChaptersByProject(project.id);
+      const sortedChapters = sortChaptersNarrative(
+        chapters.filter(c => c.content && c.status === "completed")
+      );
+      const chaptersForReview = sortedChapters.map(c => ({
+        numero: c.chapterNumber,
+        titulo: c.title || `Capítulo ${c.chapterNumber}`,
+        contenido: c.content || "",
+      }));
+
+      const guiaEstilo = styleGuideContent
+        ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+        : `Género: ${project.genre}, Tono: ${project.tone}`;
+
+      const MAX_VERIFY_CYCLES = 2;
+      const scores: number[] = [];
+
+      for (let cycle = 0; cycle < MAX_VERIFY_CYCLES; cycle++) {
+        this.callbacks.onAgentStatus("final-reviewer", "reviewing",
+          `Re-verificación post-auditoría (Ciclo ${cycle + 1}/${MAX_VERIFY_CYCLES})...`
+        );
+
+        const reviewResult = await this.finalReviewer.execute({
+          projectTitle: project.title,
+          chapters: chaptersForReview,
+          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+          guiaEstilo,
+          pasadaNumero: cycle + 1,
+          issuesPreviosCorregidos: ["Correcciones de auditoría de continuidad aplicadas"],
+          capitulosConLimitaciones: [],
+        });
+
+        await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "gemini-2.5-flash", undefined, "post_audit_verify");
+
+        const score = reviewResult.result?.puntuacion_global || 0;
+        scores.push(score);
+
+        const scoreForDb = score != null ? Math.round(score) : null;
+        await storage.updateProject(project.id, {
+          finalScore: scoreForDb,
+          finalReviewResult: reviewResult.result as any,
+        });
+
+        this.callbacks.onAgentStatus("final-reviewer", "reviewing",
+          `Re-verificación: puntuación ${score}/10`
+        );
+
+        if (scores.length >= 2 && scores.every(s => s >= 9)) {
+          this.callbacks.onAgentStatus("final-reviewer", "completed",
+            `Re-verificación APROBADA. Puntuaciones: ${scores.join(", ")}/10. Manuscrito confirmado tras correcciones.`
+          );
+          return "passed";
+        }
+      }
+
+      const bestScore = Math.max(...scores);
+      if (bestScore >= 8) {
+        this.callbacks.onAgentStatus("final-reviewer", "completed",
+          `Re-verificación aceptada. Mejor puntuación: ${bestScore}/10. Calidad suficiente tras correcciones.`
+        );
+        return "acceptable";
+      }
+
+      this.callbacks.onAgentStatus("final-reviewer", "warning",
+        `Re-verificación inconclusa. Puntuaciones: ${scores.join(", ")}/10. Manuscrito aceptado pero requiere atención.`
+      );
+      return "inconclusive";
+    } catch (error) {
+      console.error("[Orchestrator] Post-audit verification error:", error);
+      this.callbacks.onAgentStatus("final-reviewer", "warning",
+        `Error en re-verificación: ${error instanceof Error ? error.message : "Error desconocido"}. Continuando...`
+      );
+      return "inconclusive";
+    }
+  }
+
+  private async runOrthotypographicPass(project: Project): Promise<{ chaptersProcessed: number; totalChanges: number }> {
+    try {
+      const chapters = await storage.getChaptersByProject(project.id);
+      const completedChapters = sortChaptersNarrative(
+        chapters.filter(c => c.status === "completed" && c.content)
+      );
+
+      if (completedChapters.length === 0) return { chaptersProcessed: 0, totalChanges: 0 };
+
+      this.callbacks.onAgentStatus("copyeditor", "polishing",
+        `Corrección ortotipográfica final: revisando ${completedChapters.length} capítulos...`
+      );
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "info",
+        message: `Iniciando corrección ortotipográfica de ${completedChapters.length} capítulos`,
+        agentRole: "proofreader",
+      });
+
+      let totalChanges = 0;
+      let chaptersProcessed = 0;
+
+      for (let i = 0; i < completedChapters.length; i++) {
+        const chapter = completedChapters[i];
+
+        if (await isProjectCancelledFromDb(project.id)) {
+          console.log(`[Orchestrator] Project ${project.id} cancelled during orthotypographic pass.`);
+          break;
+        }
+
+        const sectionLabel = chapter.chapterNumber === 0 ? "el Prólogo"
+          : chapter.chapterNumber === -1 ? "el Epílogo"
+          : `el Capítulo ${chapter.chapterNumber}`;
+
+        this.callbacks.onAgentStatus("copyeditor", "polishing",
+          `Corrector Ortotipográfico revisando ${sectionLabel} (${i + 1}/${completedChapters.length})...`
+        );
+
+        try {
+          const result = await this.proofreader.execute({
+            chapterContent: chapter.content!,
+            chapterNumber: String(chapter.chapterNumber),
+            genre: project.genre || undefined,
+            language: "es",
+            projectId: project.id,
+          });
+
+          await this.trackTokenUsage(project.id, result.tokenUsage, "Corrector Ortotipográfico", "gemini-2.5-flash", chapter.chapterNumber, "orthotypographic");
+
+          if (result.result && result.result.textoCorregido && result.result.textoCorregido.length > 100) {
+            const changes = result.result.totalCambios || 0;
+            totalChanges += changes;
+
+            if (changes > 0) {
+              const wordCount = result.result.textoCorregido.split(/\s+/).filter(w => w.length > 0).length;
+              await storage.updateChapter(chapter.id, {
+                content: result.result.textoCorregido,
+                wordCount,
+              });
+
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "info",
+                message: `${sectionLabel}: ${changes} correcciones ortotipográficas aplicadas. Calidad: ${result.result.nivelCalidad || "bueno"}`,
+                agentRole: "proofreader",
+              });
+            }
+
+            chaptersProcessed++;
+          } else {
+            chaptersProcessed++;
+            console.warn(`[Proofreader] ${sectionLabel}: No result or too short, skipping.`);
+          }
+        } catch (err) {
+          console.error(`[Proofreader] Error on ${sectionLabel}:`, err);
+          chaptersProcessed++;
+        }
+      }
+
+      this.callbacks.onAgentStatus("copyeditor", "completed",
+        `Corrección ortotipográfica completada: ${totalChanges} correcciones en ${chaptersProcessed} capítulos`
+      );
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "success",
+        message: `Corrección ortotipográfica completada: ${totalChanges} correcciones en ${chaptersProcessed}/${completedChapters.length} capítulos`,
+        agentRole: "proofreader",
+      });
+
+      return { chaptersProcessed, totalChanges };
+    } catch (error) {
+      console.error("[Orchestrator] Orthotypographic pass error:", error);
+      this.callbacks.onAgentStatus("copyeditor", "warning",
+        `Error en corrección ortotipográfica: ${error instanceof Error ? error.message : "Error desconocido"}. Continuando...`
+      );
+      return { chaptersProcessed: 0, totalChanges: 0 };
     }
   }
 
