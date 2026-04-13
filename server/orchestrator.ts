@@ -2793,9 +2793,61 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
       }
 
+      const HIGH_FP_CATEGORIES = new Set(["trama", "repeticion_lexica", "identidad_confusa"]);
+      if (result?.issues && result.issues.length > 0) {
+        const beforeCount = result.issues.length;
+        result.issues = result.issues.filter(issue => {
+          if (!HIGH_FP_CATEGORIES.has(issue.categoria)) return true;
+          
+          const hasTextualEvidence = issue.descripcion.length > 40 && 
+            (issue.descripcion.includes("Cap") || issue.descripcion.includes("cap") || 
+             issue.descripcion.includes("Capítulo") || issue.descripcion.includes("capítulo"));
+          const hasSpecificCorrection = issue.instrucciones_correccion && 
+            issue.instrucciones_correccion.length > 30;
+          const hasPreservation = issue.elementos_a_preservar && 
+            issue.elementos_a_preservar.length > 10;
+          
+          if (!hasTextualEvidence || !hasSpecificCorrection || !hasPreservation) {
+            console.log(`[Orchestrator] Filtered vague ${issue.categoria} issue: "${issue.descripcion.slice(0, 80)}..." (evidence=${hasTextualEvidence}, correction=${hasSpecificCorrection}, preservation=${hasPreservation})`);
+            return false;
+          }
+
+          if (issue.categoria === "repeticion_lexica" && issue.severidad !== "critica") {
+            console.log(`[Orchestrator] Downgrading non-critical repeticion_lexica to ignored: "${issue.descripcion.slice(0, 60)}..."`);
+            return false;
+          }
+          
+          return true;
+        });
+        const filteredCount = beforeCount - result.issues.length;
+        if (filteredCount > 0) {
+          console.log(`[Orchestrator] Filtered ${filteredCount}/${beforeCount} vague issues in high-FP categories (trama/repeticion_lexica/identidad_confusa)`);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "info",
+            message: `${filteredCount} issues vagos filtrados (categorías trama/repetición/identidad). ${result.issues.length} issues válidos restantes.`,
+            agentRole: "final-reviewer",
+          });
+        }
+      }
+
       const issueCount = result?.issues?.length || 0;
       const chaptersToRewrite = result?.capitulos_para_reescribir || [];
       
+      if (result?.issues && chaptersToRewrite.length > 0) {
+        const chaptersWithValidIssues = new Set<number>();
+        result.issues.forEach(issue => {
+          (issue.capitulos_afectados || []).forEach(ch => chaptersWithValidIssues.add(ch));
+        });
+        const beforeRewriteCount = chaptersToRewrite.length;
+        const validRewrites = chaptersToRewrite.filter(ch => chaptersWithValidIssues.has(ch));
+        if (validRewrites.length < beforeRewriteCount) {
+          console.log(`[Orchestrator] Synced rewrite list after issue filtering: ${beforeRewriteCount} → ${validRewrites.length}`);
+          chaptersToRewrite.length = 0;
+          chaptersToRewrite.push(...validRewrites);
+        }
+      }
+
       if (issueCount > 0) {
         this.callbacks.onAgentStatus("final-reviewer", "editing", 
           `Manuscrito REQUIERE REVISIÓN. ${issueCount} problemas detectados en ${chaptersToRewrite.length || "varios"} capítulos.`
