@@ -836,6 +836,30 @@ export class GhostwriterAgent extends BaseAgent {
 
     const chapterData = input.chapterData;
     
+    const isEarlyChapter = chapterData.numero >= 1 && chapterData.numero <= 2;
+    if (isEarlyChapter && !input.refinementInstructions) {
+      prompt += `
+    ═══════════════════════════════════════════════════════════════════
+    🔥 CAPÍTULO DE APERTURA — CALIDAD MÁXIMA OBLIGATORIA 🔥
+    ═══════════════════════════════════════════════════════════════════
+    Este es uno de los primeros capítulos de la novela. El lector está decidiendo
+    si continúa leyendo. EXIGE lo siguiente:
+    
+    1. ARRANQUE ELÉCTRICO: La primera frase debe crear intriga inmediata. NO
+       empieces con descripciones genéricas del amanecer, del clima o del entorno.
+       Empieza IN MEDIAS RES con acción, diálogo tenso, o una revelación.
+    2. ESTABLECE AL PROTAGONISTA: El lector debe SENTIR quién es el personaje
+       principal en los primeros 3 párrafos — su voz, sus miedos, su deseo.
+    3. GANCHO DE PRIMER ACTO: Planta una pregunta dramática irresistible que el
+       lector NECESITE responder.
+    4. TENSIÓN DESDE LA PRIMERA PÁGINA: Aunque sea una escena tranquila, debe
+       haber una corriente subterránea de conflicto, secreto o amenaza.
+    5. PROSA IMPECABLE: Vocabulario preciso, cero muletillas, diálogos con subtexto.
+       Este capítulo define la voz de toda la novela.
+    ═══════════════════════════════════════════════════════════════════
+    `;
+    }
+
     prompt += `
     ═══════════════════════════════════════════════════════════════════
     TAREA ACTUAL: CAPÍTULO ${chapterData.numero} - "${chapterData.titulo}"

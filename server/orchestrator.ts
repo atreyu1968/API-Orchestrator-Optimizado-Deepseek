@@ -90,7 +90,7 @@ export class Orchestrator {
   private voiceRhythmAuditor = new VoiceRhythmAuditorAgent();
   private semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
   private callbacks: OrchestratorCallbacks;
-  private maxRefinementLoops = 3;
+  private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
   private minAcceptableScore = 9; // Minimum score required for final manuscript approval
   private requiredConsecutiveHighScores = 2; // Must achieve 9+ this many times in a row
@@ -1137,19 +1137,25 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const perChapterMax = projectMaxPerChapter || Math.round(perChapterTarget * 1.15);
           const enrichedWB = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreads, seriesKeyEvents);
           const previousContent = isRewrite ? (bestVersion.content || undefined) : undefined;
+
+          const isStalled = refinementAttempts >= 2 && bestVersion.score === 7 && bestVersion.score <= 7;
+          const stalledEscalation = isStalled
+            ? `\n\n⚠️ PERSPECTIVA FRESCA REQUERIDA: Los intentos anteriores se estancaron en 7/10. El editor detecta los mismos problemas repetidamente. NO sigas la misma estructura — reimagina las escenas desde un ángulo completamente diferente. Cambia las aperturas de escena, los patrones de diálogo, la distribución sensorial. Sorpréndeme.`
+            : "";
+
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
             worldBible: enrichedWB,
             guiaEstilo: fullStyleGuide,
             previousContinuity: optimizedContinuity,
-            refinementInstructions,
+            refinementInstructions: refinementInstructions + stalledEscalation,
             authorName,
-            isRewrite,
+            isRewrite: isRewrite || isStalled,
             minWordCount: perChapterTarget,
             maxWordCount: perChapterMax,
             extendedGuideContent: extendedGuideContent || undefined,
-            previousChapterContent: previousContent,
+            previousChapterContent: isStalled ? undefined : previousContent,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -1768,19 +1774,25 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           const perChapterMaxResume = (project as any).maxWordsPerChapter || Math.round(perChapterMinResume * 1.15);
           const enrichedWBResume = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsResume, seriesKeyEventsResume);
           const previousContent = isRewrite ? (bestVersion.content || undefined) : undefined;
+
+          const isStalledResume = refinementAttempts >= 2 && bestVersion.score === 7 && bestVersion.score <= 7;
+          const stalledEscalationResume = isStalledResume
+            ? `\n\n⚠️ PERSPECTIVA FRESCA REQUERIDA: Los intentos anteriores se estancaron en 7/10. El editor detecta los mismos problemas repetidamente. NO sigas la misma estructura — reimagina las escenas desde un ángulo completamente diferente. Cambia las aperturas de escena, los patrones de diálogo, la distribución sensorial. Sorpréndeme.`
+            : "";
+
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
             worldBible: enrichedWBResume,
             guiaEstilo: fullStyleGuide,
             previousContinuity,
-            refinementInstructions,
+            refinementInstructions: refinementInstructions + stalledEscalationResume,
             authorName,
-            isRewrite,
+            isRewrite: isRewrite || isStalledResume,
             minWordCount: perChapterMinResume,
             maxWordCount: perChapterMaxResume,
             extendedGuideContent: extendedGuideContent || undefined,
-            previousChapterContent: previousContent,
+            previousChapterContent: isStalledResume ? undefined : previousContent,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -3298,19 +3310,24 @@ Responde SOLO con un JSON válido con la estructura:
           const perChapterMin = (project as any).minWordsPerChapter || 2500;
           const perChapterMax = (project as any).maxWordsPerChapter || Math.round(perChapterMin * 1.15);
           
+          const isStalledExt = refinementAttempts >= 2 && bestVersion.score === 7 && bestVersion.score <= 7;
+          const stalledEscalationExt = isStalledExt
+            ? `\n\n⚠️ PERSPECTIVA FRESCA REQUERIDA: Los intentos anteriores se estancaron en 7/10. El editor detecta los mismos problemas repetidamente. NO sigas la misma estructura — reimagina las escenas desde un ángulo completamente diferente. Cambia las aperturas de escena, los patrones de diálogo, la distribución sensorial. Sorpréndeme.`
+            : "";
+
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
             worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsExt, seriesKeyEventsExt),
             guiaEstilo: fullStyleGuide,
             previousContinuity,
-            refinementInstructions,
+            refinementInstructions: refinementInstructions + stalledEscalationExt,
             authorName,
-            isRewrite,
+            isRewrite: isRewrite || isStalledExt,
             minWordCount: perChapterMin,
             maxWordCount: perChapterMax,
             extendedGuideContent: extendedGuideContent || undefined,
-            previousChapterContent: isRewrite ? bestVersion.content : undefined,
+            previousChapterContent: isStalledExt ? undefined : (isRewrite ? bestVersion.content : undefined),
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -5129,14 +5146,29 @@ Responde SOLO con un JSON válido con la estructura:
         `[${(i.severidad || "mayor").toUpperCase()}] ${i.tipo || "general"}: ${i.descripcion || "Sin descripción"}\n⚠️ PRESERVAR: ${i.elementos_a_preservar || "El resto del capítulo"}\n✏️ CORRECCIÓN: ${i.fix_sugerido || "Revisar manualmente"}`
       );
       
+      let chaptersToRevise = sentinelResult?.capitulos_para_revision || [];
+      const issues = sentinelResult?.issues ?? [];
+      if (chaptersToRevise.length === 0 && issues.length > 0) {
+        const derived = new Set<number>();
+        for (const issue of issues) {
+          if (issue.capitulos_afectados && Array.isArray(issue.capitulos_afectados)) {
+            for (const cap of issue.capitulos_afectados) {
+              const num = typeof cap === "number" ? cap : Number(cap);
+              if (Number.isFinite(num) && Number.isInteger(num)) derived.add(num);
+            }
+          }
+        }
+        chaptersToRevise = Array.from(derived).sort((a, b) => a - b);
+      }
+
       this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
-        `Checkpoint #${checkpointNumber}: ${sentinelResult?.issues?.length || 0} issues detectados. Caps afectados: ${sentinelResult?.capitulos_para_revision?.join(", ") || "N/A"}`
+        `Checkpoint #${checkpointNumber}: ${sentinelResult?.issues?.length || 0} issues detectados. Caps afectados: ${chaptersToRevise.length > 0 ? chaptersToRevise.join(", ") : "N/A"}`
       );
       
       return { 
         passed: false, 
         issues: issueDescriptions, 
-        chaptersToRevise: sentinelResult?.capitulos_para_revision || [] 
+        chaptersToRevise 
       };
     }
   }

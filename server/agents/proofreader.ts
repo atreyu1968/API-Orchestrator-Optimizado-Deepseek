@@ -38,12 +38,18 @@ DIRECTRICES ESTRICTAS DE CORRECCIÓN
 
 3. CORRECCIÓN DE ESTILO (solo errores evidentes):
    - Cacofonías involuntarias (rimas internas no deseadas, repetición de sonidos)
-   - Repeticiones léxicas cercanas (misma palabra en oraciones consecutivas, salvo que sea intencional)
    - Anacolutos (oraciones que empiezan con una estructura y terminan con otra)
    - Gerundios de posterioridad ("Abrió la puerta, encontrando a María" → "Abrió la puerta y encontró a María")
    - Leísmo, laísmo, loísmo (según norma estándar)
    - Queísmo y dequeísmo
    - Pleonasmos innecesarios ("subir arriba", "bajar abajo")
+
+3a. ERRADICACIÓN DE REPETICIONES LÉXICAS (PRIORIDAD ALTA):
+   - Detecta palabras sustantivas, adjetivos o verbos no triviales que se repiten 3+ veces en la misma página (aprox. 250 palabras).
+   - Detecta la misma metáfora, símil o imagen sensorial usada 2+ veces en el capítulo.
+   - Detecta muletillas fisiológicas repetidas: "un escalofrío recorrió", "un nudo en el estómago", "el corazón latió", "tragó saliva", "apretó los puños", "contuvo el aliento". Si alguna aparece 3+ veces, REEMPLAZA con variaciones.
+   - Detecta epítetos repetidos: si el mismo rasgo físico se describe 3+ veces ("sus ojos azules", "su cabello oscuro"), VARÍA la forma de referirse al personaje.
+   - NO elimines la emoción ni la acción — reemplaza con SINÓNIMOS CONTEXTUALES que mantengan la intensidad.
 
 4. PRESERVACIÓN DEL ESTILO (REGLA DE ORO):
    - NO alteres la trama ni elimines escenas
