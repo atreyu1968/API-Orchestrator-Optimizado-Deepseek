@@ -2537,8 +2537,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
         }
         
-        // Crear issues adicionales para plot_decisions inconsistentes
-        if (result.plot_decisions) {
+        const syntheticIssueScore = result?.puntuacion_global || 0;
+        const shouldInjectSyntheticIssues = syntheticIssueScore < this.minAcceptableScore;
+        
+        if (!shouldInjectSyntheticIssues && (result.plot_decisions?.some(d => d.consistencia_actual === "inconsistente") || result.persistent_injuries?.some(i => i.consistencia === "ignorada"))) {
+          console.log(`[Orchestrator] Score ${syntheticIssueScore}/10 >= ${this.minAcceptableScore}: suppressing synthetic issue injection from plot_decisions/persistent_injuries only (appearance_drift, knowledge_leaks, orphan_chapters still active)`);
+        }
+        
+        if (shouldInjectSyntheticIssues && result.plot_decisions) {
           const inconsistentDecisions = result.plot_decisions.filter(d => d.consistencia_actual === "inconsistente");
           for (const decision of inconsistentDecisions) {
             const newIssue = {
@@ -2558,8 +2564,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
         }
         
-        // Crear issues para lesiones persistentes ignoradas
-        if (result.persistent_injuries) {
+        if (shouldInjectSyntheticIssues && result.persistent_injuries) {
           const ignoredInjuries = result.persistent_injuries.filter(i => i.consistencia === "ignorada");
           for (const injury of ignoredInjuries) {
             const newIssue = {
@@ -2691,7 +2696,18 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       if (currentScore >= this.minAcceptableScore) {
         consecutiveHighScores++;
       } else {
-        consecutiveHighScores = 0; // Reset counter if score drops below 9
+        if (consecutiveHighScores > 0 && currentScore >= 8) {
+          const hasCurrentCritical = result?.issues?.some(i => i.severidad === "critica" || i.severidad === "mayor");
+          if (!hasCurrentCritical) {
+            console.log(`[Orchestrator] Score oscillation detected: had ${consecutiveHighScores} consecutive 9+, now ${currentScore}/10. No critical/mayor issues. Model is oscillating — treating as acceptable.`);
+            this.callbacks.onAgentStatus("final-reviewer", "completed", 
+              `Puntuación oscilante (${previousScores.slice(-3).join(", ")}/10) — modelo inestable. Mejor puntuación ${Math.max(...previousScores)}/10 ya confirmó calidad. Sin defectos graves. APROBADO.`
+            );
+            return true;
+          }
+          console.log(`[Orchestrator] Score oscillation (${consecutiveHighScores} × 9+ → ${currentScore}) but ${result?.issues?.filter(i => i.severidad === "critica" || i.severidad === "mayor").length} critical/mayor issues found. Continuing revision.`);
+        }
+        consecutiveHighScores = 0;
       }
       
       // APROBADO: Puntuación >= 9 por N veces consecutivas
@@ -2866,6 +2882,34 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         );
         revisionCycle++;
         continue;
+      }
+
+      const MAX_REWRITES_PER_CYCLE = 6;
+      if (chaptersToRewrite.length > MAX_REWRITES_PER_CYCLE) {
+        const criticalChapters = chaptersToRewrite.filter(chNum => {
+          const issuesForCh = result?.issues?.filter(i => (i.capitulos_afectados || []).includes(chNum)) || [];
+          return issuesForCh.some(i => i.severidad === "critica");
+        });
+        const majorChapters = chaptersToRewrite.filter(chNum => {
+          if (criticalChapters.includes(chNum)) return false;
+          const issuesForCh = result?.issues?.filter(i => (i.capitulos_afectados || []).includes(chNum)) || [];
+          return issuesForCh.some(i => i.severidad === "mayor");
+        });
+        const prioritized = [...criticalChapters, ...majorChapters].slice(0, MAX_REWRITES_PER_CYCLE);
+        if (prioritized.length < MAX_REWRITES_PER_CYCLE) {
+          const remaining = chaptersToRewrite.filter(ch => !prioritized.includes(ch));
+          prioritized.push(...remaining.slice(0, MAX_REWRITES_PER_CYCLE - prioritized.length));
+        }
+        const skippedCount = chaptersToRewrite.length - prioritized.length;
+        console.log(`[Orchestrator] Capping rewrites: ${chaptersToRewrite.length} → ${prioritized.length} (skipped ${skippedCount} lower-priority). Prioritized critical/mayor issues.`);
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `Reescrituras limitadas: ${chaptersToRewrite.length} solicitadas → ${prioritized.length} ejecutadas (máx ${MAX_REWRITES_PER_CYCLE}/ciclo). ${skippedCount} capítulos de menor prioridad se evaluarán en el siguiente ciclo.`,
+          agentRole: "final-reviewer",
+        });
+        chaptersToRewrite.length = 0;
+        chaptersToRewrite.push(...prioritized);
       }
 
       for (let rewriteIndex = 0; rewriteIndex < chaptersToRewrite.length; rewriteIndex++) {
@@ -4793,6 +4837,14 @@ Responde SOLO con un JSON válido con la estructura:
       );
 
       if (hasActionable && allChaptersToRevise.length > 0) {
+        const MAX_AUDIT_REWRITES = 8;
+        if (allChaptersToRevise.length > MAX_AUDIT_REWRITES) {
+          const originalCount = allChaptersToRevise.length;
+          allChaptersToRevise.length = MAX_AUDIT_REWRITES;
+          warnings.push(`Auditoría limitada: ${originalCount} capítulos → ${MAX_AUDIT_REWRITES} (máximo por auditoría)`);
+          console.log(`[FinalAudit] Capping audit rewrites: ${originalCount} → ${MAX_AUDIT_REWRITES}`);
+        }
+
         this.callbacks.onAgentStatus("continuity-sentinel", "editing",
           `Auditoría final: ${allIssues.length} errores detectados. Corrigiendo ${allChaptersToRevise.length} capítulos...`
         );

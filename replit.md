@@ -160,7 +160,10 @@ Preferred communication style: Simple, everyday language.
 | `getEnrichedWorldBible()` | Enriches base World Bible with DB character states, narrative threads, author notes, series context |
 | `generateSeriesContinuitySnapshot()` | Extracts and saves book completion data for series continuity |
 | `runSeriesArcVerification()` | Runs ArcValidatorAgent and stores verification results |
-| `runFinalReview()` | Multi-cycle final review with series context, QA rewrites, and approval logic |
+| `runFinalReview()` | Multi-cycle final review with series context, QA rewrites, oscillation protection, and approval logic |
+| `runPostAuditVerification()` | 2-cycle scoring-only re-verification after audit corrections (no rewrites). Returns `"passed"` / `"acceptable"` / `"inconclusive"` |
+| `runOrthotypographicPass()` | Runs ProofreaderAgent on all completed chapters for orthotypographic corrections |
+| `runFinalContinuityAudit()` | Full manuscript continuity audit with capped rewrites (max 8). Returns `{ correctedCount, status, warnings }` |
 
 ## External Dependencies
 
