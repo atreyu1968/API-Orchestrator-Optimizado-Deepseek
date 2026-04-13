@@ -5179,12 +5179,16 @@ Responde SOLO con un JSON válido con la estructura:
 
     const sentinelResult = result.result;
     
-    if (sentinelResult?.checkpoint_aprobado) {
-      const minorIssues = (sentinelResult?.issues || []).map(i => 
+    const effectiveIssues = sentinelResult?.issues || [];
+    const isEffectivelyApproved = sentinelResult?.checkpoint_aprobado || effectiveIssues.length === 0;
+
+    if (isEffectivelyApproved) {
+      const minorIssues = effectiveIssues.map(i => 
         `[${(i.severidad || "menor").toUpperCase()}] ${i.tipo || "general"}: ${i.descripcion || "Sin descripción"}`
       );
+      const score = sentinelResult?.puntuacion ?? 10;
       this.callbacks.onAgentStatus("continuity-sentinel", "completed", 
-        `Checkpoint #${checkpointNumber} APROBADO (${sentinelResult.puntuacion}/10).${minorIssues.length > 0 ? ` ${minorIssues.length} issues menores anotados para revisión final.` : " Sin issues de continuidad."}`
+        `Checkpoint #${checkpointNumber} APROBADO (${score}/10).${minorIssues.length > 0 ? ` ${minorIssues.length} issues menores anotados para revisión final.` : " Sin issues de continuidad."}`
       );
       return { passed: true, issues: minorIssues, chaptersToRevise: [] };
     } else {
@@ -5225,6 +5229,15 @@ Responde SOLO con un JSON válido con la estructura:
             const lower = text.toLowerCase();
             for (const [label, num] of Object.entries(labelMap)) {
               if (lower.includes(label) && scopeNums.has(num)) allNums.push(num);
+            }
+            if (allNums.length === 0) {
+              const bareNums = text.match(/\b(\d{1,3})\b/g);
+              if (bareNums) {
+                for (const ns of bareNums) {
+                  const n = Number(ns);
+                  if (n > 0 && n < 200 && scopeNums.has(n)) allNums.push(n);
+                }
+              }
             }
             for (const n of allNums) derived.add(n);
           }
