@@ -186,6 +186,12 @@ INSTRUCCIONES (VISIÓN PANORÁMICA — NO verificar capítulos consecutivos):
 5. Solo reporta errores con EVIDENCIA TEXTUAL de AL MENOS 2 capítulos distantes
 6. NO reportes problemas entre capítulos consecutivos (ya los verificó el Editor)
 
+⚠️ REGLA OBLIGATORIA SOBRE NÚMEROS DE CAPÍTULO:
+- Cada issue DEBE incluir en "capitulos_afectados" los números exactos de los capítulos involucrados (mínimo 2 capítulos distantes).
+- "capitulos_para_revision" DEBE listar los capítulos que necesitan ser reescritos para corregir los issues.
+- Si hay issues pero no hay capítulos que corregir, "capitulos_para_revision" puede estar vacío.
+- NUNCA dejes "capitulos_afectados" como array vacío [] — si reportas un issue, SIEMPRE especifica qué capítulos están afectados usando sus números del scope.
+
 Responde ÚNICAMENTE con el JSON estructurado.
 `;
 

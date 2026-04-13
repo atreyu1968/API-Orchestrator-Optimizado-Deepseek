@@ -5194,21 +5194,47 @@ Responde SOLO con un JSON válido con la estructura:
       
       let chaptersToRevise = sentinelResult?.capitulos_para_revision || [];
       const issues = sentinelResult?.issues ?? [];
+      const scopeNums = new Set(chaptersInScope.map(c => c.chapterNumber));
       if (chaptersToRevise.length === 0 && issues.length > 0) {
         const derived = new Set<number>();
         for (const issue of issues) {
           if (issue.capitulos_afectados && Array.isArray(issue.capitulos_afectados)) {
             for (const cap of issue.capitulos_afectados) {
               const num = typeof cap === "number" ? cap : Number(cap);
-              if (Number.isFinite(num) && Number.isInteger(num)) derived.add(num);
+              if (Number.isFinite(num) && Number.isInteger(num) && scopeNums.has(num)) derived.add(num);
             }
+          }
+        }
+        if (derived.size === 0) {
+          for (const issue of issues) {
+            const text = `${issue.descripcion || ""} ${issue.evidencia_textual || ""} ${issue.fix_sugerido || ""}`;
+            const allNums: number[] = [];
+            const numPattern = /(?:cap[íi]tulos?|caps?\.?)\s*([\d]+(?:\s*[,y]\s*\d+)*)/gi;
+            let m;
+            while ((m = numPattern.exec(text)) !== null) {
+              const segment = m[1];
+              const nums = segment.match(/\d+/g);
+              if (nums) {
+                for (const ns of nums) {
+                  const n = Number(ns);
+                  if (scopeNums.has(n)) allNums.push(n);
+                }
+              }
+            }
+            const labelMap: Record<string, number> = { "prólogo": 0, "prologo": 0, "epílogo": -1, "epilogo": -1, "nota del autor": -2 };
+            const lower = text.toLowerCase();
+            for (const [label, num] of Object.entries(labelMap)) {
+              if (lower.includes(label) && scopeNums.has(num)) allNums.push(num);
+            }
+            for (const n of allNums) derived.add(n);
           }
         }
         chaptersToRevise = Array.from(derived).sort((a, b) => a - b);
       }
 
+      const derivedViaFallback = (sentinelResult?.capitulos_para_revision || []).length === 0 && chaptersToRevise.length > 0;
       this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
-        `Checkpoint #${checkpointNumber}: ${sentinelResult?.issues?.length || 0} issues detectados. Caps afectados: ${chaptersToRevise.length > 0 ? chaptersToRevise.join(", ") : "N/A"}`
+        `Checkpoint #${checkpointNumber}: ${sentinelResult?.issues?.length || 0} issues detectados. Caps afectados: ${chaptersToRevise.length > 0 ? chaptersToRevise.join(", ") + (derivedViaFallback ? " (derivados)" : "") : "N/A"}`
       );
       
       return { 
