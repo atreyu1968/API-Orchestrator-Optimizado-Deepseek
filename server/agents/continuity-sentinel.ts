@@ -211,7 +211,15 @@ Responde ÚNICAMENTE con el JSON estructurado.
       checkpoint_aprobado: false,
       puntuacion: 0,
       resumen: "Checkpoint NO aprobado — error de parseo JSON. Requiere re-verificación.",
-      issues: [`[MAYOR] Error de parseo en checkpoint #${input.checkpointNumber}. Capítulos ${chapterNumbers.join(", ")} no verificados.`],
+      issues: [{
+        tipo: "timeline" as const,
+        capitulos_afectados: chapterNumbers,
+        descripcion: `Error de parseo en checkpoint #${input.checkpointNumber}. Capítulos ${chapterNumbers.join(", ")} no verificados.`,
+        evidencia_textual: "",
+        severidad: "mayor" as const,
+        elementos_a_preservar: "",
+        fix_sugerido: "Re-ejecutar verificación de continuidad",
+      }],
       capitulos_para_revision: [],
       continuity_fix_plan: "Re-ejecutar verificación de continuidad"
       } 

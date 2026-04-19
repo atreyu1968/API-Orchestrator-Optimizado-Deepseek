@@ -440,7 +440,7 @@ export default function BookCatalogPage() {
           if (deleteId) deleteMutation.mutate(deleteId);
           setDeleteId(null);
         }}
-        onCancel={() => setDeleteId(null)}
+        onOpenChange={(open) => { if (!open) setDeleteId(null); }}
         title="Eliminar del catálogo"
         description="¿Seguro que quieres eliminar este libro del catálogo? Se quitará de las páginas finales de cualquier proyecto que lo use."
       />

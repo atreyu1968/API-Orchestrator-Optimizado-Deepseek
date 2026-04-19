@@ -365,5 +365,7 @@ export abstract class BaseAgent {
     };
   }
 
-  abstract execute(input: any): Promise<AgentResponse>;
+  async execute(input: any): Promise<AgentResponse> {
+    throw new Error(`${this.config.name} does not implement execute()`);
+  }
 }

@@ -7,6 +7,7 @@ import { queueManager } from "./queue-manager";
 import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema } from "@shared/schema";
 import multer from "multer";
 import mammoth from "mammoth";
+import { eq } from "drizzle-orm";
 import { generateManuscriptDocx } from "./services/docx-exporter";
 import { generateBackMatterMarkdown } from "./services/back-matter-generator";
 import { z } from "zod";
@@ -1890,9 +1891,8 @@ export async function registerRoutes(
         worldContext += `\n--- Guía de la serie original ---\n${parentSeries.seriesGuide.substring(0, 3000)}\n`;
       }
       
-      const { GoogleGenerativeAI } = await import("@google/generative-ai");
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      const { GoogleGenAI } = await import("@google/genai");
+      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
       
       const prompt = `Eres un editor literario experto en planificación de series. Analiza los datos de la serie "${parentSeries.title}" y genera una GUÍA DE ESCRITURA completa para una nueva serie spin-off.
 
@@ -1932,12 +1932,13 @@ Genera una GUÍA DE ESCRITURA en español para la nueva serie spin-off que inclu
 
 Escribe en formato Markdown claro y organizado. Sé específico con datos concretos de la serie original — no inventes datos que no aparezcan en el contexto proporcionado.`;
       
-      const result = await model.generateContent({
+      const result = await genAI.models.generateContent({
+        model: "gemini-2.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 8192 },
+        config: { maxOutputTokens: 8192 },
       });
       
-      const guideText = result.response.text();
+      const guideText = result.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
       
       await storage.updateSeries(targetSeriesId, {
         seriesGuide: guideText,
@@ -4751,7 +4752,7 @@ IMPORTANTE:
         const chapters = await storage.getReeditChaptersByProject(projectId);
         chaptersList = chapters.map(c => ({
           chapterNumber: c.chapterNumber,
-          title: c.chapterTitle,
+          title: c.title,
           content: c.editedContent || c.originalContent,
           wordCount: (c.editedContent || c.originalContent || "").split(/\s+/).length,
         }));
@@ -4768,8 +4769,8 @@ IMPORTANTE:
         chaptersList = chapters.map(c => ({
           chapterNumber: c.chapterNumber,
           title: c.title,
-          content: c.content,
-          wordCount: (c.content || "").split(/\s+/).length,
+          content: c.editedContent || c.originalContent,
+          wordCount: (c.editedContent || c.originalContent || "").split(/\s+/).length,
         }));
       } else {
         const project = await storage.getProject(projectId);
@@ -5042,7 +5043,7 @@ Añade contenido narrativo explícito que cumpla este requisito, manteniendo tod
             const importedChaptersTable = (await import("@shared/schema")).importedChapters;
             const { db: dbImport } = await import("./db");
             const { eq } = await import("drizzle-orm");
-            await dbImport.update(importedChaptersTable).set({ content: currentContent }).where(eq(importedChaptersTable.id, chapter.id));
+            await dbImport.update(importedChaptersTable).set({ editedContent: currentContent }).where(eq(importedChaptersTable.id, chapter.id));
           } else {
             await storage.updateChapter(chapter.id, { content: currentContent, status: "completed" });
           }
@@ -5143,7 +5144,7 @@ Añade contenido narrativo explícito que cumpla este requisito, manteniendo tod
         if (volumeType === "reedit") {
           const chapters = await storage.getReeditChaptersByProject(projectId);
           const found = chapters.find(c => c.chapterNumber === chapterNumber);
-          if (found) chapter = { id: found.id, chapterNumber: found.chapterNumber, title: found.chapterTitle, content: found.editedContent || found.originalContent, _sourceType: "reedit" };
+          if (found) chapter = { id: found.id, chapterNumber: found.chapterNumber, title: found.title, content: found.editedContent || found.originalContent, _sourceType: "reedit" };
         } else if (volumeType === "imported") {
           const importedChaptersTable = (await import("@shared/schema")).importedChapters;
           const { db: dbImport } = await import("./db");
@@ -5214,7 +5215,7 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
             const importedChaptersTable = (await import("@shared/schema")).importedChapters;
             const { db: dbImport } = await import("./db");
             const { eq } = await import("drizzle-orm");
-            await dbImport.update(importedChaptersTable).set({ content: newContent }).where(eq(importedChaptersTable.id, chapter.id));
+            await dbImport.update(importedChaptersTable).set({ editedContent: newContent }).where(eq(importedChaptersTable.id, chapter.id));
           } else {
             await storage.updateChapter(chapter.id, { content: newContent, status: "completed", wordCount: newContent.split(/\s+/).length });
           }
@@ -9349,11 +9350,11 @@ CRITERIOS:
 
         if (isSeriesGuide && req.body.seriesId) {
           seriesId = req.body.seriesId;
-          const seriesObj = await storage.getSeries(seriesId);
+          const seriesObj = await storage.getSeries(seriesId!);
           if (!seriesObj) {
             return res.status(400).json({ error: "La serie seleccionada no existe" });
           }
-          const existingProjects = await storage.getProjectsBySeries(seriesId);
+          const existingProjects = await storage.getProjectsBySeries(seriesId!);
           let reeditProjects: any[] = [];
           let importedMs: any[] = [];
           try {
@@ -9361,7 +9362,7 @@ CRITERIOS:
             reeditProjects = allReedits.filter((rp: any) => rp.seriesId === seriesId);
           } catch (_e) { /* ignore */ }
           try {
-            importedMs = await storage.getImportedManuscriptsBySeries(seriesId);
+            importedMs = await storage.getImportedManuscriptsBySeries(seriesId!);
           } catch (_e) { /* ignore */ }
           
           const allOrders = [
@@ -9378,7 +9379,7 @@ CRITERIOS:
           if (req.body.seriesIdea && (!seriesObj?.description || seriesObj.description.trim() === "")) {
             seriesUpdateData.description = req.body.seriesIdea;
           }
-          await storage.updateSeries(seriesId, seriesUpdateData);
+          await storage.updateSeries(seriesId!, seriesUpdateData);
         }
 
         const createAllVolumes = req.body.createAllVolumes === true && isSeriesGuide && seriesId;
@@ -9603,7 +9604,7 @@ CRITERIOS:
             sourceType: "project",
             sourceId: p.id,
             title: p.title,
-            chapters: p.totalChapters || 0,
+            chapters: p.chapterCount || 0,
             language: "es",
           });
         }
@@ -9639,8 +9640,8 @@ CRITERIOS:
           sources.push({
             sourceType: "translation",
             sourceId: t.id,
-            title: t.title || `Translation #${t.id}`,
-            chapters: t.totalChapters || 0,
+            title: t.projectTitle || `Translation #${t.id}`,
+            chapters: t.chaptersTranslated || 0,
             language: t.targetLanguage || "en",
           });
         }
@@ -9742,7 +9743,7 @@ CRITERIOS:
         chaptersData = chapters
           .filter(c => c.editedContent && c.editedContent.trim().length > 0)
           .sort((a, b) => audiobookSortOrder(a.chapterNumber) - audiobookSortOrder(b.chapterNumber))
-          .map((c, idx) => ({ number: idx + 1, title: audiobookChapterLabel(c.chapterNumber, c.chapterTitle), content: c.editedContent! }));
+          .map((c, idx) => ({ number: idx + 1, title: audiobookChapterLabel(c.chapterNumber, c.title), content: c.editedContent! }));
       } else if (sourceType === "imported") {
         const importedChaptersTable = (await import("@shared/schema")).importedChapters;
         const { db: dbImport } = await import("./db");
@@ -9750,18 +9751,19 @@ CRITERIOS:
         const chapters = await dbImport.select().from(importedChaptersTable)
           .where(eq(importedChaptersTable.manuscriptId, sid));
         chaptersData = chapters
-          .filter(c => c.content && c.content.trim().length > 0)
+          .filter(c => (c.editedContent || c.originalContent) && (c.editedContent || c.originalContent).trim().length > 0)
           .sort((a, b) => audiobookSortOrder(a.chapterNumber) - audiobookSortOrder(b.chapterNumber))
-          .map((c, idx) => ({ number: idx + 1, title: audiobookChapterLabel(c.chapterNumber, c.title), content: c.content! }));
+          .map((c, idx) => ({ number: idx + 1, title: audiobookChapterLabel(c.chapterNumber, c.title), content: (c.editedContent || c.originalContent)! }));
       } else if (sourceType === "translation") {
         const translationsTable = (await import("@shared/schema")).translations;
         const { db: dbTrans } = await import("./db");
         const { eq } = await import("drizzle-orm");
         const [translation] = await dbTrans.select().from(translationsTable).where(eq(translationsTable.id, sid));
-        if (translation && translation.translatedChapters) {
-          const translatedChapters = typeof translation.translatedChapters === 'string'
-            ? JSON.parse(translation.translatedChapters)
-            : translation.translatedChapters;
+        const tAny = translation as any;
+        if (tAny && tAny.translatedChapters) {
+          const translatedChapters = typeof tAny.translatedChapters === 'string'
+            ? JSON.parse(tAny.translatedChapters)
+            : tAny.translatedChapters;
           if (Array.isArray(translatedChapters)) {
             chaptersData = translatedChapters.map((c: any, idx: number) => ({
               number: idx + 1,
@@ -9813,6 +9815,7 @@ CRITERIOS:
   });
 
   app.post("/api/audiobooks/:id/generate", async (req: Request, res: Response) => {
+    let abortController: AbortController | null = null;
     try {
       const apiKey = process.env.FISH_AUDIO_API_KEY;
       if (!apiKey) return res.status(500).json({ error: "FISH_AUDIO_API_KEY not configured" });
@@ -9825,7 +9828,7 @@ CRITERIOS:
         return res.status(409).json({ error: "Generation already in progress" });
       }
 
-      const abortController = new AbortController();
+      abortController = new AbortController();
       activeAudiobookGenerations.set(projectId, abortController);
 
       await storage.updateAudiobookProject(projectId, { status: "processing", errorMessage: null });
@@ -9841,8 +9844,10 @@ CRITERIOS:
       let wasCancelled = false;
       const CONCURRENCY = 3;
 
+      const ctrl = abortController!;
+      const proj = project!;
       async function generateChapterAudio(chapter: any): Promise<"completed" | "skipped" | "error" | "cancelled"> {
-        if (abortController.signal.aborted) return "cancelled";
+        if (ctrl.signal.aborted) return "cancelled";
 
         if (chapter.status === "completed" && chapter.audioFileName) {
           const audioPath = path.join(projectDir, chapter.audioFileName);
@@ -9896,7 +9901,7 @@ CRITERIOS:
 
         const audioBuffers: Buffer[] = [];
         for (const chunk of textChunks) {
-          if (abortController.signal.aborted) throw new Error("Generation cancelled");
+          if (ctrl.signal.aborted) throw new Error("Generation cancelled");
           const ttsResponse = await fetch("https://api.fish.audio/v1/tts", {
             method: "POST",
             headers: {
@@ -9905,17 +9910,17 @@ CRITERIOS:
             },
             body: JSON.stringify({
               text: chunk,
-              reference_id: project.voiceId,
+              reference_id: proj.voiceId,
               model: "speech-1.6",
-              format: project.format || "mp3",
-              mp3_bitrate: project.bitrate || 128,
-              prosody: { speed: project.speed || 1.0, volume: 0 },
+              format: proj.format || "mp3",
+              mp3_bitrate: proj.bitrate || 128,
+              prosody: { speed: proj.speed || 1.0, volume: 0 },
               top_p: 0.8,
               temperature: 0.7,
               repetition_penalty: 1.5,
               latency: "normal",
             }),
-            signal: abortController.signal,
+            signal: ctrl.signal,
           });
           if (!ttsResponse.ok) {
             const errorText = await ttsResponse.text();
@@ -9933,7 +9938,7 @@ CRITERIOS:
         if (finalAudio.length < 10000) {
           throw new Error(`Generated audio too small (${finalAudio.length} bytes) — likely invalid. Expected at least 10KB for a chapter.`);
         }
-        const audioFilename = `chapter_${String(chapter.chapterNumber).padStart(3, '0')}.${project.format || 'mp3'}`;
+        const audioFilename = `chapter_${String(chapter.chapterNumber).padStart(3, '0')}.${proj.format || 'mp3'}`;
         fs.writeFileSync(path.join(projectDir, audioFilename), finalAudio);
         await storage.updateAudiobookChapter(chapter.id, {
           status: "completed",
@@ -9954,7 +9959,7 @@ CRITERIOS:
             wasCancelled = true;
           }
         } catch (chapterError: any) {
-          if (abortController.signal.aborted || chapterError.name === "AbortError" || chapterError.message === "Generation cancelled") {
+          if (ctrl.signal.aborted || chapterError.name === "AbortError" || chapterError.message === "Generation cancelled") {
             await storage.updateAudiobookChapter(chapter.id, { status: "pending", errorMessage: null }).catch(() => {});
             wasCancelled = true;
             console.log(`[Audiobook] Project ${projectId}: Generation stopped during chapter ${chapter.chapterNumber}`);
@@ -10626,7 +10631,7 @@ CRITERIOS:
           }
           if (parts.length > 0) return parts.join("\n");
         }
-        const wb = await storage.getWorldBibleByProject(pid);
+        const wb = await storage.getWorldBibleByProject(pid) as any;
         if (wb?.content) {
           try {
             const wbData = typeof wb.content === "string" ? JSON.parse(wb.content) : wb.content;
@@ -11152,7 +11157,7 @@ CRITERIOS:
         }
 
         if (!context.worldBibleSummary) {
-          const wb = await storage.getWorldBibleByProject(projectId);
+          const wb = await storage.getWorldBibleByProject(projectId) as any;
           if (wb?.content) {
             try {
               const wbData = typeof wb.content === "string" ? JSON.parse(wb.content) : wb.content;
@@ -11192,16 +11197,16 @@ CRITERIOS:
         if (!reedit) return res.status(404).json({ error: "Reedit project not found" });
 
         context.title = reedit.title;
-        context.genre = reedit.genre || "fiction";
-        context.tone = reedit.tone || "dramatic";
+        context.genre = (reedit as any).genre || "fiction";
+        context.tone = (reedit as any).tone || "dramatic";
 
         const chapters = await storage.getReeditChaptersByProject(reeditProjectId);
         if (chapters.length > 0) {
           context.chapterCount = chapters.length;
-          context.wordCount = chapters.reduce((sum, ch) => sum + (ch.editedWordCount || ch.originalWordCount || 0), 0);
+          context.wordCount = chapters.reduce((sum, ch) => sum + (ch.wordCount || 0), 0);
         }
 
-        const wb = await storage.getReeditWorldBibleByProject(reeditProjectId);
+        const wb = await storage.getReeditWorldBibleByProject(reeditProjectId) as any;
         if (wb?.content) {
           try {
             const wbData = typeof wb.content === "string" ? JSON.parse(wb.content) : wb.content;
@@ -11410,7 +11415,7 @@ CRITERIOS:
 
       for (const p of allProjects) {
         if (p.status === "completed") {
-          sources.push({ sourceType: "project", sourceId: p.id, title: p.title, chapters: p.totalChapters || 0, language: "es", genre: p.genre, pseudonymId: p.pseudonymId });
+          sources.push({ sourceType: "project", sourceId: p.id, title: p.title, chapters: p.chapterCount || 0, language: "es", genre: p.genre, pseudonymId: p.pseudonymId });
         }
       }
       for (const r of allReedits) {
@@ -11474,7 +11479,7 @@ CRITERIOS:
         language = "es";
         if (project.pseudonymId) {
           const ps = await storage.getPseudonym(project.pseudonymId);
-          if (ps) authorStyle = `Pseudónimo: ${ps.name}. ${ps.writingStyle || ""}`;
+          if (ps) authorStyle = `Pseudónimo: ${ps.name}. ${(ps as any).writingStyle || ""}`;
         }
         const chapters = await storage.getChaptersByProject(sourceId);
         chaptersData = chapters
@@ -11496,13 +11501,13 @@ CRITERIOS:
         language = project.detectedLanguage || "es";
         if (project.pseudonymId) {
           const ps = await storage.getPseudonym(project.pseudonymId);
-          if (ps) authorStyle = `Pseudónimo: ${ps.name}. ${ps.writingStyle || ""}`;
+          if (ps) authorStyle = `Pseudónimo: ${ps.name}. ${(ps as any).writingStyle || ""}`;
         }
         const chapters = await storage.getReeditChaptersByProject(sourceId);
         chaptersData = chapters
           .filter(c => (c.editedContent || c.originalContent || "").trim().length > 0)
           .map(c => ({
-            number: c.chapterNumber,
+            number: String(c.chapterNumber),
             title: c.title || "",
             content: c.editedContent || c.originalContent || "",
           }));
@@ -11513,7 +11518,7 @@ CRITERIOS:
         language = ms.detectedLanguage || "es";
         if (ms.pseudonymId) {
           const ps = await storage.getPseudonym(ms.pseudonymId);
-          if (ps) authorStyle = `Pseudónimo: ${ps.name}. ${ps.writingStyle || ""}`;
+          if (ps) authorStyle = `Pseudónimo: ${ps.name}. ${(ps as any).writingStyle || ""}`;
         }
         const chapters = await storage.getImportedChaptersByManuscript(sourceId);
         chaptersData = chapters
