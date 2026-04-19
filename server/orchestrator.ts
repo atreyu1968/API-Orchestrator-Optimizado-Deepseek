@@ -118,6 +118,17 @@ export class Orchestrator {
     thinkingTokens: 0,
   };
 
+  private hasHardRejectViolations(editorResultObj: any): boolean {
+    if (!editorResultObj) return false;
+    const r = editorResultObj;
+    const continuityErrors = Array.isArray(r.errores_continuidad) ? r.errores_continuidad.length : 0;
+    const knowledgeLeaks = Array.isArray(r.filtracion_conocimiento) ? r.filtracion_conocimiento.length : 0;
+    const hasCriticalContinuityError = continuityErrors > 0 || knowledgeLeaks > 0;
+    const hasPlotRepetition = Array.isArray(r.repeticiones_trama) && r.repeticiones_trama.length >= 3;
+    const hasObjectInconsistency = Array.isArray(r.inconsistencias_objetos) && r.inconsistencias_objetos.length >= 2;
+    return hasCriticalContinuityError || hasPlotRepetition || hasObjectInconsistency;
+  }
+
   private enforceApprovalLogic(editorResult: any): void {
     if (!editorResult?.result) return;
     const r = editorResult.result;
@@ -1321,14 +1332,19 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
           this.enforceApprovalLogic(editorResult);
           const currentScore = editorResult.result?.puntuacion || 0;
-          
-          if (currentScore >= bestVersion.score) {
-            bestVersion = { 
-              content: currentContent, 
-              score: currentScore, 
-              continuityState: currentContinuityState 
-            };
-            console.log(`[Orchestrator] New best version for ${sectionLabel}: ${currentScore}/10`);
+          const currentHardReject = this.hasHardRejectViolations(editorResult.result);
+
+          const cleanBeatsHard = !currentHardReject && (bestVersion as any).hardReject === true;
+          const sameRejectStatusBetterScore = (currentHardReject === ((bestVersion as any).hardReject ?? false)) && currentScore > bestVersion.score;
+          const firstPass = bestVersion.score === 0;
+          if (cleanBeatsHard || sameRejectStatusBetterScore || firstPass) {
+            bestVersion = {
+              content: currentContent,
+              score: currentScore,
+              continuityState: currentContinuityState,
+              hardReject: currentHardReject,
+            } as any;
+            console.log(`[Orchestrator] New best version for ${sectionLabel}: ${currentScore}/10${currentHardReject ? " (con hard-reject)" : " (limpio)"}`);
           } else {
             console.log(`[Orchestrator] Keeping previous best version (${bestVersion.score}/10) over current (${currentScore}/10)`);
           }
@@ -1339,10 +1355,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           } else {
             refinementAttempts++;
 
-            if (refinementAttempts >= 2 && currentScore < bestVersion.score) {
-              console.log(`[Orchestrator] Anti-degradation: ${sectionLabel} scored ${currentScore}/10, worse than best ${bestVersion.score}/10 after ${refinementAttempts} attempts. Stopping rewrites.`);
+            if (refinementAttempts >= 2 && currentScore <= bestVersion.score && currentHardReject === ((bestVersion as any).hardReject ?? false)) {
+              console.log(`[Orchestrator] Anti-stagnation: ${sectionLabel} scored ${currentScore}/10 ≤ best ${bestVersion.score}/10 after ${refinementAttempts} attempts. Stopping rewrites.`);
               this.callbacks.onAgentStatus("editor", "editing",
-                `${sectionLabel} degradándose (${currentScore}/10 < mejor ${bestVersion.score}/10). Usando mejor versión.`
+                `${sectionLabel} sin mejora (${currentScore}/10 ≤ mejor ${bestVersion.score}/10). Usando mejor versión.`
               );
               break;
             }
@@ -1967,16 +1983,21 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             });
           }
 
-          const currentScore = editorResult.result?.puntuacion || 0;
-          
           this.enforceApprovalLogic(editorResult);
-          if (currentScore >= bestVersion.score) {
-            bestVersion = { 
-              content: currentContent, 
-              score: currentScore, 
-              continuityState: currentContinuityState 
-            };
-            console.log(`[Orchestrator Resume] New best version for ${sectionLabel}: ${currentScore}/10`);
+          const currentScore = editorResult.result?.puntuacion || 0;
+          const currentHardReject = this.hasHardRejectViolations(editorResult.result);
+
+          const cleanBeatsHard = !currentHardReject && (bestVersion as any).hardReject === true;
+          const sameRejectStatusBetterScore = (currentHardReject === ((bestVersion as any).hardReject ?? false)) && currentScore > bestVersion.score;
+          const firstPass = bestVersion.score === 0;
+          if (cleanBeatsHard || sameRejectStatusBetterScore || firstPass) {
+            bestVersion = {
+              content: currentContent,
+              score: currentScore,
+              continuityState: currentContinuityState,
+              hardReject: currentHardReject,
+            } as any;
+            console.log(`[Orchestrator Resume] New best version for ${sectionLabel}: ${currentScore}/10${currentHardReject ? " (con hard-reject)" : " (limpio)"}`);
           } else {
             console.log(`[Orchestrator Resume] Keeping previous best version (${bestVersion.score}/10) over current (${currentScore}/10)`);
           }
@@ -1987,10 +2008,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           } else {
             refinementAttempts++;
 
-            if (refinementAttempts >= 2 && currentScore < bestVersion.score) {
-              console.log(`[Orchestrator Resume] Anti-degradation: ${sectionLabel} scored ${currentScore}/10, worse than best ${bestVersion.score}/10 after ${refinementAttempts} attempts. Stopping rewrites.`);
+            if (refinementAttempts >= 2 && currentScore <= bestVersion.score && currentHardReject === ((bestVersion as any).hardReject ?? false)) {
+              console.log(`[Orchestrator Resume] Anti-stagnation: ${sectionLabel} scored ${currentScore}/10 ≤ best ${bestVersion.score}/10 after ${refinementAttempts} attempts. Stopping rewrites.`);
               this.callbacks.onAgentStatus("editor", "editing",
-                `${sectionLabel} degradándose (${currentScore}/10 < mejor ${bestVersion.score}/10). Usando mejor versión.`
+                `${sectionLabel} sin mejora (${currentScore}/10 ≤ mejor ${bestVersion.score}/10). Usando mejor versión.`
               );
               break;
             }
@@ -5873,9 +5894,23 @@ Responde SOLO con un JSON válido con la estructura:
         chaptersToRevise = Array.from(derived).sort((a, b) => a - b);
       }
 
+      let lastResortFallback = false;
+      if (chaptersToRevise.length === 0 && issues.length > 0 && chaptersInScope.length > 0) {
+        const lastInScope = chaptersInScope
+          .map(c => c.chapterNumber)
+          .filter(n => n > 0)
+          .sort((a, b) => b - a)[0];
+        if (typeof lastInScope === "number") {
+          chaptersToRevise = [lastInScope];
+          lastResortFallback = true;
+          console.log(`[ContinuitySentinel] No chapters identified by model or regex; defaulting to last chapter in scope: ${lastInScope}`);
+        }
+      }
+
       const derivedViaFallback = (sentinelResult?.capitulos_para_revision || []).length === 0 && chaptersToRevise.length > 0;
+      const fallbackTag = lastResortFallback ? " (fallback)" : (derivedViaFallback ? " (derivados)" : "");
       this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
-        `Checkpoint #${checkpointNumber}: ${sentinelResult?.issues?.length || 0} issues detectados. Caps afectados: ${chaptersToRevise.length > 0 ? chaptersToRevise.join(", ") + (derivedViaFallback ? " (derivados)" : "") : "N/A"}`
+        `Checkpoint #${checkpointNumber}: ${sentinelResult?.issues?.length || 0} issues detectados. Caps afectados: ${chaptersToRevise.length > 0 ? chaptersToRevise.join(", ") + fallbackTag : "N/A"}`
       );
       
       return { 
