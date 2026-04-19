@@ -5012,36 +5012,10 @@ Responde SOLO con un JSON válido con la estructura:
 
     processChecklist.push({ step: "Revisión Final", status: "passed", detail: "Manuscrito aprobado con puntuación 9+/10" });
 
-    const auditResult = await this.runFinalContinuityAudit(project);
-    const auditStatusMap: Record<string, "passed" | "corrected" | "skipped"> = {
-      clean: "passed", corrected: "corrected", unresolved: "skipped", error: "skipped"
-    };
-    const auditDetailMap: Record<string, string> = {
-      clean: "Sin errores de continuidad",
-      corrected: `${auditResult.correctedCount} capítulos corregidos`,
-      unresolved: auditResult.warnings.join("; ") || "Errores sin resolver",
-      error: auditResult.warnings.join("; ") || "Error en auditoría",
-    };
-    processChecklist.push({
-      step: "Auditoría de Continuidad",
-      status: auditStatusMap[auditResult.status] || "skipped",
-      detail: auditDetailMap[auditResult.status] || "Completado"
-    });
-
-    if (auditResult.correctedCount > 0) {
-      this.callbacks.onAgentStatus("final-reviewer", "reviewing",
-        `Re-verificación post-auditoría: ${auditResult.correctedCount} capítulos fueron corregidos. Verificando calidad del manuscrito...`
-      );
-
-      const reVerifyResult = await this.runPostAuditVerification(project);
-      processChecklist.push({
-        step: "Re-verificación Post-Auditoría",
-        status: reVerifyResult === "passed" ? "passed" : reVerifyResult === "acceptable" ? "corrected" : "skipped",
-        detail: reVerifyResult === "passed" ? "Manuscrito re-aprobado (9+/10)" 
-          : reVerifyResult === "acceptable" ? "Aceptado con puntuación 8+/10"
-          : "Verificación inconclusa — requiere atención"
-      });
-    }
+    // NOTA (v6.4): La auditoría final de continuidad y su re-verificación se han desactivado.
+    // La continuidad ya se vigila chapter-by-chapter durante la generación con el Continuity Sentinel,
+    // y una segunda pasada masiva al final introducía sobrecorrecciones que rompían escenas.
+    // Si necesitas reactivarla, restaura `runFinalContinuityAudit` + `runPostAuditVerification` aquí.
 
     const orthoResult = await this.runOrthotypographicPass(project);
     processChecklist.push({
