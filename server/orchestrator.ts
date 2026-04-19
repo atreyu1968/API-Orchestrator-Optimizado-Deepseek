@@ -108,7 +108,7 @@ export class Orchestrator {
   private maxFinalReviewCycles = 10;
   private minAcceptableScore = 9; // Minimum score required for final manuscript approval
   private requiredConsecutiveHighScores = 2; // Must achieve 9+ this many times in a row
-  private continuityCheckpointInterval = 3;
+  private continuityCheckpointInterval = 5;
   private currentProjectGenre = "";
   private chaptersRewrittenInCurrentCycle = 0;
   
