@@ -9555,16 +9555,67 @@ CRITERIOS:
       .replace(/&gt;/g, '>')
       .replace(/\r\n/g, '\n');
 
-    text = text.replace(/…/g, '...');
-
     text = text.replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1');
     text = text.replace(/_{1,2}([^_]+)_{1,2}/g, '$1');
     text = text.replace(/^#{1,6}\s*/gm, '');
 
+    text = text.replace(/^\s*[\*\-–—•·]{3,}\s*$/gm, '');
+    text = text.replace(/^\s*(?:[\*\-–—•·]\s*){3,}$/gm, '');
+
+    text = text.replace(/«\s*/g, '"').replace(/\s*»/g, '"');
+    text = text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+
+    text = text.replace(/\.{3,}/g, '…');
+    text = text.replace(/!{2,}/g, '!');
+    text = text.replace(/\?{2,}/g, '?');
+    text = text.replace(/!\?|\?!/g, '?');
+
+    text = text.replace(/\s*[—–]\s*/g, ', ');
+    text = text.replace(/(\S)\s-\s(\S)/g, '$1, $2');
+
+    const abbreviations: Array<[RegExp, string]> = [
+      [/\bSr\.\s*/g, 'Señor '],
+      [/\bSra\.\s*/g, 'Señora '],
+      [/\bSrta\.\s*/g, 'Señorita '],
+      [/\bDr\.\s*/g, 'Doctor '],
+      [/\bDra\.\s*/g, 'Doctora '],
+      [/\bProf\.\s*/g, 'Profesor '],
+      [/\bLic\.\s*/g, 'Licenciado '],
+      [/\bIng\.\s*/g, 'Ingeniero '],
+      [/\bArq\.\s*/g, 'Arquitecto '],
+      [/\bAv\.\s*/g, 'Avenida '],
+      [/\bAvda\.\s*/g, 'Avenida '],
+      [/\bCalle\b\.\s*/g, 'Calle '],
+      [/\bNº\s*/gi, 'número '],
+      [/\bNo\.\s*(\d)/g, 'número $1'],
+      [/\betc\./gi, 'etcétera'],
+      [/\bp\.\s*ej\./gi, 'por ejemplo'],
+      [/\bEE\.\s*UU\./g, 'Estados Unidos'],
+      [/\bRR\.\s*HH\./g, 'Recursos Humanos'],
+      [/\bvs\./gi, 'versus'],
+      [/\ba\.\s*m\./gi, 'a. m.'],
+      [/\bp\.\s*m\./gi, 'p. m.'],
+      [/\bs\.\s*XX\b/g, 'siglo veinte'],
+      [/\bs\.\s*XXI\b/g, 'siglo veintiuno'],
+      [/\bs\.\s*XIX\b/g, 'siglo diecinueve'],
+    ];
+    for (const [pattern, replacement] of abbreviations) {
+      text = text.replace(pattern, replacement);
+    }
+
+    text = text.replace(/\s*\(\s*/g, ', ').replace(/\s*\)\s*/g, ', ');
+    text = text.replace(/\s*\[\s*/g, ', ').replace(/\s*\]\s*/g, ', ');
+
+    text = text.replace(/,\s*,+/g, ',');
+    text = text.replace(/,\s*\./g, '.');
+    text = text.replace(/\s+([,.;:!?…])/g, '$1');
+    text = text.replace(/([.!?…])\s*([a-záéíóúñü])/g, (_m, p, c) => `${p} ${c}`);
+
     const paragraphs = text.split(/\n\s*\n/);
     const processed = paragraphs.map(para => {
-      let p = para.replace(/[ \t]+/g, ' ').trim();
+      let p = para.replace(/[ \t]+/g, ' ').replace(/\n+/g, ' ').trim();
       if (!p) return '';
+      if (!/[.!?…"']$/.test(p)) p += '.';
       return p;
     }).filter(p => p.length > 0);
 
@@ -9915,9 +9966,10 @@ CRITERIOS:
               format: proj.format || "mp3",
               mp3_bitrate: proj.bitrate || 128,
               prosody: { speed: proj.speed || 1.0, volume: 0 },
-              top_p: 0.8,
-              temperature: 0.7,
-              repetition_penalty: 1.5,
+              chunk_length: 200,
+              top_p: 0.7,
+              temperature: 0.65,
+              repetition_penalty: 1.2,
               latency: "normal",
             }),
             signal: ctrl.signal,
@@ -10130,9 +10182,10 @@ CRITERIOS:
                 format: project.format || "mp3",
                 mp3_bitrate: project.bitrate || 128,
                 prosody: { speed: project.speed || 1.0, volume: 0 },
-                top_p: 0.8,
-                temperature: 0.7,
-                repetition_penalty: 1.5,
+                chunk_length: 200,
+                top_p: 0.7,
+                temperature: 0.65,
+                repetition_penalty: 1.2,
                 latency: "normal",
               }),
             });
