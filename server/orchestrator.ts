@@ -6060,6 +6060,19 @@ Responde SOLO con un JSON válido con la estructura:
       semantic: "Detector Semántico"
     };
 
+    const originalContent = chapter.content || "";
+    const originalWordCount = chapter.wordCount || originalContent.split(/\s+/).filter(w => w.length > 0).length;
+    const originalContinuityState = chapter.continuityState;
+    const sectionLabel = this.getSectionLabel(sectionData);
+
+    if (!originalContent.trim()) {
+      console.warn(`[QA-Rewrite] ${sectionLabel} sin contenido original. Abortando reescritura por seguridad.`);
+      this.callbacks.onAgentStatus("ghostwriter", "warning",
+        `${sectionLabel}: sin contenido original. Reescritura cancelada.`
+      );
+      return;
+    }
+
     await storage.updateChapter(chapter.id, { 
       status: "revision",
       needsRevision: true,
@@ -6068,10 +6081,8 @@ Responde SOLO con un JSON válido con la estructura:
 
     this.callbacks.onChapterStatusChange(chapter.chapterNumber, "revision");
     
-    const sectionLabel = this.getSectionLabel(sectionData);
-    
     this.callbacks.onAgentStatus("ghostwriter", "writing", 
-      `Reescribiendo ${sectionLabel} por ${qaLabels[qaSource]}`
+      `Reescritura quirúrgica de ${sectionLabel} por ${qaLabels[qaSource]} (preservando texto sano)...`
     );
 
     const allChapters = await storage.getChaptersByProject(project.id);
@@ -6097,67 +6108,177 @@ Responde SOLO con un JSON válido con la estructura:
     const calculatedTargetRewrite = this.calculatePerChapterTarget((project as any).minWordCount, allChaptersCount);
     const perChapterMinRewrite = (project as any).minWordsPerChapter || calculatedTargetRewrite;
     const perChapterMaxRewrite = (project as any).maxWordsPerChapter || Math.round(perChapterMinRewrite * 1.15);
-    
+
+    const surgicalInstructions = `🔧 CORRECCIÓN QUIRÚRGICA — MÁXIMA PRUDENCIA 🔧
+
+Contexto: La novela ya está finalizada. Estás corrigiendo issues detectados en una auditoría posterior. CADA cambio innecesario es un riesgo de introducir nuevos problemas. Tu objetivo NO es reescribir el capítulo, sino aplicar correcciones MÍNIMAS y LOCALIZADAS.
+
+REGLAS INVIOLABLES:
+1. PRESERVA INTACTO el 90%+ del texto original. Solo modifica los pasajes que arrastran el problema señalado.
+2. NO reescribas escenas completas que ya funcionan. NO cambies prosa, diálogos, descripciones ni estructura que no estén directamente implicados en el issue.
+3. NO introduzcas información, eventos, personajes, objetos ni detalles nuevos que no estuvieran ya implícitos en el manuscrito original.
+4. Mantén EXACTAMENTE el mismo arco narrativo, los mismos beats y el mismo final. Lo que cambia es la coherencia local, no la trama.
+5. Mantén la longitud aproximada del original (${originalWordCount} palabras ± 10%). NO acortes ni alargues sustancialmente.
+6. Mantén el tono, la voz narrativa y el registro lingüístico originales — el lector NO debe notar la corrección.
+7. Si el issue señala una contradicción entre capítulos, ajusta SOLO la frase/párrafo conflictivo de este capítulo, no la escena entera.
+8. Antes de editar un pasaje, pregúntate: "¿Este cambio es estrictamente necesario para resolver el issue?". Si la respuesta es "no" o "tal vez", NO LO TOQUES.
+
+ISSUES A CORREGIR (origen: ${qaLabels[qaSource]}):
+${correctionInstructions}
+
+PROHIBIDO ABSOLUTAMENTE:
+- Reescribir desde cero.
+- Cambiar el inicio, el cierre o los giros narrativos.
+- Añadir foreshadowing, simbolismo o subtramas que no estuvieran ya.
+- Eliminar pasajes que no estén directamente relacionados con el issue.
+- "Mejorar" la prosa de paso (eso ya lo hizo el Estilista).
+
+Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del texto idéntico al original.`;
+
     const writerResult = await this.ghostwriter.execute({
       chapterNumber: sectionData.numero,
       chapterData: sectionData,
       worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreadsRewrite, seriesEventsRewrite),
       guiaEstilo,
       previousContinuity,
-      refinementInstructions: `CORRECCIONES DE ${qaLabels[qaSource].toUpperCase()}:\n${correctionInstructions}`,
-      minWordCount: perChapterMinRewrite,
-      maxWordCount: perChapterMaxRewrite,
+      refinementInstructions: surgicalInstructions,
+      previousChapterContent: originalContent,
+      minWordCount: Math.max(Math.round(originalWordCount * 0.9), perChapterMinRewrite),
+      maxWordCount: Math.max(Math.round(originalWordCount * 1.1), perChapterMaxRewrite),
       kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
-    });
+    } as any);
 
     await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite");
 
-    if (writerResult.content) {
-      let finalContent = writerResult.content;
-
-      try {
-        this.callbacks.onAgentStatus("copyeditor", "polishing",
-          `Puliendo ${sectionLabel} tras corrección de ${qaLabels[qaSource]}...`
-        );
-
-        let styleGuideContent = "";
-        if (project.styleGuideId) {
-          const sg = await storage.getStyleGuide(project.styleGuideId);
-          if (sg) styleGuideContent = sg.content;
-        }
-
-        const polishResult = await this.copyeditor.execute({
-          chapterContent: finalContent,
-          chapterNumber: sectionData.numero,
-          chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
-          guiaEstilo: styleGuideContent || undefined,
-        });
-
-        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "qa_polish");
-
-        if (polishResult.result?.texto_final) {
-          finalContent = polishResult.result.texto_final;
-        }
-      } catch (polishError) {
-        console.warn(`[Orchestrator] CopyEditor failed for QA rewrite of ${sectionLabel}, using raw Ghostwriter output:`, polishError);
-      }
-
-      const wordCount = finalContent.split(/\s+/).filter(w => w.length > 0).length;
-      
+    if (!writerResult.content || !writerResult.content.trim()) {
+      console.warn(`[QA-Rewrite] ${sectionLabel}: writer returned empty content. Reverting to original.`);
       await storage.updateChapter(chapter.id, {
-        content: finalContent,
+        content: originalContent,
         status: "completed",
-        wordCount,
+        wordCount: originalWordCount,
         needsRevision: false,
         revisionReason: null,
       });
-
-      this.chaptersRewrittenInCurrentCycle++;
       this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
-      this.callbacks.onAgentStatus("copyeditor", "completed", 
-        `${sectionLabel} reescrito y pulido correctamente`
+      this.callbacks.onAgentStatus("ghostwriter", "warning",
+        `${sectionLabel}: reescritura vacía. Conservando versión original.`
       );
+      return;
     }
+
+    let candidateContent = writerResult.content;
+    const candidateWordCount = candidateContent.split(/\s+/).filter(w => w.length > 0).length;
+
+    const lengthRatio = candidateWordCount / Math.max(originalWordCount, 1);
+    if (lengthRatio < 0.75 || lengthRatio > 1.30) {
+      console.warn(`[QA-Rewrite] ${sectionLabel}: longitud sospechosa (${candidateWordCount} vs original ${originalWordCount}, ratio ${lengthRatio.toFixed(2)}). Conservando original.`);
+      await storage.updateChapter(chapter.id, {
+        content: originalContent,
+        status: "completed",
+        wordCount: originalWordCount,
+        needsRevision: false,
+        revisionReason: null,
+      });
+      this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+      this.callbacks.onAgentStatus("ghostwriter", "warning",
+        `${sectionLabel}: reescritura cambió demasiado la longitud (${candidateWordCount}/${originalWordCount}). Conservando original para evitar regresiones.`
+      );
+      return;
+    }
+
+    let editorScoreCandidate = 0;
+    let editorHardRejectCandidate = false;
+    try {
+      this.callbacks.onAgentStatus("editor", "editing",
+        `Verificando reescritura de ${sectionLabel} antes de aplicarla...`
+      );
+      const editorChaptersCtx = await storage.getChaptersByProject(project.id);
+      const verifyResult = await this.editor.execute({
+        chapterNumber: sectionData.numero,
+        chapterContent: candidateContent,
+        chapterData: sectionData,
+        worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+        guiaEstilo,
+        previousContinuityState: previousChapter?.continuityState as any,
+        previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
+      });
+      await this.trackTokenUsage(project.id, verifyResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "qa_verify");
+
+      editorScoreCandidate = verifyResult.result?.puntuacion || 0;
+      editorHardRejectCandidate = this.hasHardRejectViolations(verifyResult.result);
+
+      const originalHadHardReject = (chapter as any).editorHardReject === true;
+      const introducedHardReject = editorHardRejectCandidate && !originalHadHardReject;
+
+      if (introducedHardReject) {
+        console.warn(`[QA-Rewrite] ${sectionLabel}: la reescritura introdujo nuevas violaciones críticas. Revirtiendo al original.`);
+        await storage.updateChapter(chapter.id, {
+          content: originalContent,
+          status: "completed",
+          wordCount: originalWordCount,
+          needsRevision: false,
+          revisionReason: null,
+        });
+        this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+        this.callbacks.onAgentStatus("editor", "warning",
+          `${sectionLabel}: la reescritura introdujo nuevos errores críticos (${editorScoreCandidate}/10). Conservando original.`
+        );
+        return;
+      }
+    } catch (verifyErr) {
+      console.warn(`[QA-Rewrite] ${sectionLabel}: verificación con Editor falló:`, verifyErr);
+    }
+
+    let finalContent = candidateContent;
+    try {
+      this.callbacks.onAgentStatus("copyeditor", "polishing",
+        `Puliendo ${sectionLabel} tras corrección de ${qaLabels[qaSource]}...`
+      );
+
+      let styleGuideContent = "";
+      if (project.styleGuideId) {
+        const sg = await storage.getStyleGuide(project.styleGuideId);
+        if (sg) styleGuideContent = sg.content;
+      }
+
+      const polishResult = await this.copyeditor.execute({
+        chapterContent: finalContent,
+        chapterNumber: sectionData.numero,
+        chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
+        guiaEstilo: styleGuideContent || undefined,
+      });
+
+      await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "qa_polish");
+
+      if (polishResult.result?.texto_final && polishResult.result.texto_final.trim().length > 0) {
+        const polishedWc = polishResult.result.texto_final.split(/\s+/).filter((w: string) => w.length > 0).length;
+        const polishRatio = polishedWc / Math.max(candidateWordCount, 1);
+        if (polishRatio >= 0.85 && polishRatio <= 1.15) {
+          finalContent = polishResult.result.texto_final;
+        } else {
+          console.warn(`[QA-Rewrite] ${sectionLabel}: polish cambió la longitud demasiado (${polishedWc}/${candidateWordCount}). Usando candidato sin pulir.`);
+        }
+      }
+    } catch (polishError) {
+      console.warn(`[Orchestrator] CopyEditor failed for QA rewrite of ${sectionLabel}, using raw Ghostwriter output:`, polishError);
+    }
+
+    const finalWordCount = finalContent.split(/\s+/).filter(w => w.length > 0).length;
+
+    await storage.updateChapter(chapter.id, {
+      content: finalContent,
+      status: "completed",
+      wordCount: finalWordCount,
+      needsRevision: false,
+      revisionReason: null,
+    });
+
+    this.chaptersRewrittenInCurrentCycle++;
+    this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+    this.callbacks.onAgentStatus("copyeditor", "completed",
+      `${sectionLabel} corregido quirúrgicamente${editorScoreCandidate ? ` (verificado ${editorScoreCandidate}/10)` : ""} — ${finalWordCount} palabras (original ${originalWordCount}).`
+    );
+    void originalContinuityState;
   }
 
   private async polishChapterForVoice(
