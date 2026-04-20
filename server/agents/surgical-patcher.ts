@@ -25,6 +25,7 @@ interface PatcherInput {
   chapterTitle: string;
   originalContent: string;
   instructions: string;
+  worldBibleContext?: string;
 }
 
 export class SurgicalPatcherAgent extends BaseAgent {
@@ -52,6 +53,7 @@ REGLAS INVIOLABLES:
 8. Si una instrucción no se puede traducir a operaciones puntuales (por ejemplo: "haz que el desenlace sea menos idealista"), devuelve "operations": [] y "not_applicable_reason".
 9. Cada operación debe tener una "justification" breve indicando qué instrucción resuelve.
 10. Si el original ya cumple lo que pide la instrucción, devuelve "operations": [].
+11. PROHIBIDO contradecir el WORLD BIBLE. Si la instrucción te empuja a introducir un dato que choca con la canon (nombre, edad, ubicación, parentesco, regla del mundo, evento previo, motivación de personaje, cronología, etc.), NO la apliques: omite esa operación o, si toda la instrucción depende de violar la canon, devuelve "operations": [] con "not_applicable_reason" explicando qué hecho del World Bible se vería violado. Tu replace_with siempre debe ser COMPATIBLE con cada hecho del World Bible que se te ha pasado.
 
 FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
 {
@@ -73,9 +75,19 @@ O bien, si no se puede:
   }
 
   async execute(input: PatcherInput): Promise<AgentResponse & { result?: SurgicalPatchResult }> {
+    const worldBibleBlock = input.worldBibleContext && input.worldBibleContext.trim().length > 0
+      ? `═══════════════════════════════════════════════════════════════════
+WORLD BIBLE — CANON INVIOLABLE (cualquier replace_with debe ser compatible con todo lo siguiente):
+═══════════════════════════════════════════════════════════════════
+${input.worldBibleContext}
+═══════════════════════════════════════════════════════════════════
+
+`
+      : "";
+
     const prompt = `CAPÍTULO ${input.chapterNumber}: "${input.chapterTitle}"
 
-═══════════════════════════════════════════════════════════════════
+${worldBibleBlock}═══════════════════════════════════════════════════════════════════
 TEXTO ORIGINAL DEL CAPÍTULO (no lo modifiques fuera de las operaciones que devuelvas):
 ═══════════════════════════════════════════════════════════════════
 ${input.originalContent}
@@ -84,7 +96,7 @@ ${input.originalContent}
 INSTRUCCIONES EDITORIALES A APLICAR (todas):
 ${input.instructions}
 
-Devuelve ÚNICAMENTE el JSON con las operaciones find/replace que resuelvan estas instrucciones. Recuerda: "find_exact" debe ser COPIADO LITERAL del texto original arriba.`;
+Devuelve ÚNICAMENTE el JSON con las operaciones find/replace que resuelvan estas instrucciones. Recuerda: "find_exact" debe ser COPIADO LITERAL del texto original arriba, y cada "replace_with" debe respetar el WORLD BIBLE al 100%.`;
 
     const response = await this.generateContent(prompt);
 

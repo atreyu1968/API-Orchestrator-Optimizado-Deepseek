@@ -5073,6 +5073,81 @@ Responde SOLO con un JSON válido con la estructura:
     return sections;
   }
 
+  /**
+   * Serializa lo esencial del World Bible en un bloque de texto compacto que
+   * el Cirujano de Texto puede consultar para no contradecir la canon al
+   * generar operaciones find/replace. Mantiene solo personajes, reglas del
+   * mundo, eventos clave y resumen de trama — sin metadatos pesados.
+   */
+  private serializeWorldBibleForSurgery(wb: any): string {
+    if (!wb || typeof wb !== "object") return "";
+
+    const sections: string[] = [];
+
+    const personajes = wb.personajes || wb.characters;
+    if (Array.isArray(personajes) && personajes.length > 0) {
+      const lines = personajes.map((p: any) => {
+        const nombre = p.nombre || p.name || "?";
+        const rol = p.rol || p.role || "";
+        const rasgos = p.rasgos || p.traits || p.descripcion || p.description || "";
+        const arco = p.arco || p.arc || "";
+        const relaciones = p.relaciones || p.relationships || "";
+        const parts = [
+          `- ${nombre}${rol ? ` (${rol})` : ""}`,
+          rasgos ? `  rasgos: ${typeof rasgos === "string" ? rasgos : JSON.stringify(rasgos)}` : "",
+          arco ? `  arco: ${typeof arco === "string" ? arco : JSON.stringify(arco)}` : "",
+          relaciones ? `  relaciones: ${typeof relaciones === "string" ? relaciones : JSON.stringify(relaciones)}` : "",
+        ].filter(Boolean);
+        return parts.join("\n");
+      });
+      sections.push(`PERSONAJES (canon):\n${lines.join("\n")}`);
+    }
+
+    const reglas = wb.reglas_del_mundo || wb.world_rules || wb.worldRules;
+    if (Array.isArray(reglas) && reglas.length > 0) {
+      const lines = reglas.map((r: any) => {
+        if (typeof r === "string") return `- ${r}`;
+        const nombre = r.nombre || r.name || r.regla || "";
+        const desc = r.descripcion || r.description || "";
+        return `- ${nombre}${nombre && desc ? ": " : ""}${desc}`;
+      });
+      sections.push(`REGLAS DEL MUNDO (canon):\n${lines.join("\n")}`);
+    }
+
+    const ambientacion = wb.ambientacion || wb.setting;
+    if (ambientacion) {
+      const text = typeof ambientacion === "string" ? ambientacion : JSON.stringify(ambientacion);
+      sections.push(`AMBIENTACIÓN: ${text}`);
+    }
+
+    const timeline = wb.timeline || wb.cronologia || wb.eventos_clave || wb.keyEvents;
+    if (Array.isArray(timeline) && timeline.length > 0) {
+      const lines = timeline.slice(0, 60).map((e: any) => {
+        if (typeof e === "string") return `- ${e}`;
+        const cap = e.capitulo || e.chapter || "?";
+        const desc = e.evento || e.event || e.descripcion || e.description || JSON.stringify(e);
+        return `- [cap ${cap}] ${desc}`;
+      });
+      sections.push(`EVENTOS CLAVE (canon cronológica):\n${lines.join("\n")}`);
+    }
+
+    const trama = wb.plotOutline || wb.trama || wb.plot;
+    if (trama) {
+      const text = typeof trama === "string" ? trama : JSON.stringify(trama);
+      if (text.length < 4000) {
+        sections.push(`SINOPSIS / ESTRUCTURA DE TRAMA:\n${text}`);
+      }
+    }
+
+    const seriesContext = wb.seriesContext || wb.series_context;
+    if (seriesContext) {
+      const text = typeof seriesContext === "string" ? seriesContext : JSON.stringify(seriesContext);
+      sections.push(`CONTEXTO DE SERIE:\n${text}`);
+    }
+
+    return sections.join("\n\n");
+  }
+
   private getSectionLabel(section: SectionData): string {
     switch (section.tipo) {
       case "prologue":
@@ -6904,12 +6979,28 @@ Responde SOLO con un JSON válido con la estructura:
       `Cirugía determinista en ${sectionLabel} por ${qaLabels[qaSource]}: intentando parches localizados antes de reescritura completa...`
     );
 
+    // Construimos el contexto canónico del World Bible que se pasará al Cirujano
+    // para que ninguna operación contradiga la canon (personajes, reglas, eventos).
+    let worldBibleContextForPatcher = "";
+    try {
+      const enrichedWB = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
+      worldBibleContextForPatcher = this.serializeWorldBibleForSurgery(enrichedWB);
+    } catch (wbErr) {
+      console.warn(`[QA-Rewrite] No se pudo enriquecer World Bible para cirugía de ${sectionLabel}:`, wbErr);
+      try {
+        worldBibleContextForPatcher = this.serializeWorldBibleForSurgery(worldBibleData.world_bible);
+      } catch {
+        worldBibleContextForPatcher = "";
+      }
+    }
+
     try {
       const patchResult = await this.surgicalPatcher.execute({
         chapterNumber: sectionData.numero,
         chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
         originalContent,
         instructions: correctionInstructions,
+        worldBibleContext: worldBibleContextForPatcher,
       });
 
       await this.trackTokenUsage(project.id, patchResult.tokenUsage, "Cirujano de Texto", "gemini-2.5-flash", sectionData.numero, `qa_surgical_${qaSource}`);
