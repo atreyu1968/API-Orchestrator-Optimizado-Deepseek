@@ -1,8 +1,17 @@
-# LitAgents v6.5 — Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v6.6 — Sistema de Orquestacion de Agentes Literarios IA
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando Google Gemini.
 
 **PWA instalable** — se puede instalar en escritorio y movil directamente desde el navegador.
+
+## Novedades v6.6 — Notas Editoriales en Dos Pasos
+
+- **Soporte multi-capitulo en notas editoriales**: El parser detecta correcciones que afectan a varios capitulos (arcos) y reparte la instruccion entre todos ellos, inyectando el rol especifico de cada capitulo y los roles "hermanos" en el plan quirurgico.
+- **Previsualizacion antes de aplicar**: Nuevo flujo en dos pasos. Primero se analizan las notas y se muestran las instrucciones extraidas (con badges de arco y plan distributivo); el usuario marca/desmarca con checkboxes y solo despues lanza la reescritura con la seleccion final.
+- **Carga de notas desde archivo**: Acepta `.txt` y `.md` directamente en el textarea de notas editoriales.
+- **Snapshot pre-edicion + diff visual**: Antes de reescribir un capitulo se guarda su contenido anterior (`preEditContent`/`preEditAt`). Cada capitulo modificado muestra un boton "Ver cambios" con un dialogo de diff palabra a palabra (rojo tachado = eliminado, verde = anadido).
+- **Revision Final automatica post-editorial**: Al terminar de aplicar las notas, se relanza el Revisor Final para recalcular la puntuacion global y mostrar la mejora/regresion antes-despues con flecha indicadora.
+- **Cancelacion entre capitulos**: Boton de cancelar registra un AbortController y se verifica entre capitulos y antes de la revision final, permitiendo detener procesos largos sin dejar el proyecto en estado inconsistente.
 
 ## Caracteristicas Principales
 
