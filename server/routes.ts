@@ -3918,6 +3918,39 @@ ${series.seriesGuide.substring(0, 50000)}`;
     }
   });
 
+  // Revierte un capítulo a su versión preEditContent (snapshot guardado antes
+  // de aplicar las últimas notas editoriales). Limpia el snapshot para que el
+  // botón "Ver cambios" / "Revertir" no quede colgado.
+  app.post("/api/projects/:projectId/chapters/:chapterId/revert-edit", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      const chapterId = parseInt(req.params.chapterId);
+      if (Number.isNaN(projectId) || Number.isNaN(chapterId)) {
+        return res.status(400).json({ error: "Invalid id" });
+      }
+      const chapters = await storage.getChaptersByProject(projectId);
+      const chapter = chapters.find(c => c.id === chapterId);
+      if (!chapter) {
+        return res.status(404).json({ error: "Chapter not found" });
+      }
+      if (!chapter.preEditContent) {
+        return res.status(400).json({ error: "No hay snapshot anterior para revertir" });
+      }
+      const restored = chapter.preEditContent;
+      const wordCount = restored.trim().length > 0 ? restored.trim().split(/\s+/).length : 0;
+      const updated = await storage.updateChapter(chapterId, {
+        content: restored,
+        wordCount,
+        preEditContent: null,
+        preEditAt: null,
+      });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error reverting chapter edit:", error);
+      res.status(500).json({ error: error?.message || "Failed to revert chapter" });
+    }
+  });
+
   app.patch("/api/imported-chapters/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);

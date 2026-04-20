@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp, Eye, ArrowLeft, FileUp } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp, Eye, ArrowLeft, FileUp, Undo2 } from "lucide-react";
 import { diffWords } from "diff";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
@@ -351,6 +351,26 @@ export default function Dashboard() {
 
   // Diff dialog state for "Ver cambios" per chapter
   const [diffChapter, setDiffChapter] = useState<Chapter | null>(null);
+
+  const revertChapterEditMutation = useMutation({
+    mutationFn: async ({ projectId, chapterId }: { projectId: number; chapterId: number }) => {
+      const response = await apiRequest("POST", `/api/projects/${projectId}/chapters/${chapterId}/revert-edit`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Capítulo revertido", description: "Se restauró la versión anterior del capítulo." });
+      setDiffChapter(null);
+    },
+    onError: (err: any) => {
+      toast({
+        title: "No se pudo revertir",
+        description: err?.message || "Error al restaurar el capítulo",
+        variant: "destructive",
+      });
+    },
+  });
 
   const sectionLabel = (n: number) =>
     n === 0 ? "Prólogo" : n === -1 ? "Epílogo" : n === -2 ? "Nota del autor" : `Cap. ${n}`;
@@ -1658,14 +1678,36 @@ export default function Dashboard() {
             })()}
           </div>
           <DialogFooter className="flex-row items-center justify-between gap-2">
-            {diffChapter && (diffChapter as any).preEditAt && (
+            {diffChapter && (diffChapter as any).preEditAt ? (
               <span className="text-[11px] text-muted-foreground">
                 Snapshot guardado el {new Date((diffChapter as any).preEditAt).toLocaleString()}
               </span>
-            )}
-            <Button variant="outline" onClick={() => setDiffChapter(null)} data-testid="button-close-diff">
-              Cerrar
-            </Button>
+            ) : <span />}
+            <div className="flex items-center gap-2">
+              {diffChapter && (diffChapter as any).preEditContent && currentProject && (
+                <Button
+                  variant="destructive"
+                  data-testid="button-revert-chapter-edit"
+                  disabled={revertChapterEditMutation.isPending}
+                  onClick={() => {
+                    if (!diffChapter || !currentProject) return;
+                    if (window.confirm("¿Revertir este capítulo a la versión anterior? Se descartarán los cambios actuales y el snapshot se eliminará.")) {
+                      revertChapterEditMutation.mutate({ projectId: currentProject.id, chapterId: diffChapter.id });
+                    }
+                  }}
+                >
+                  {revertChapterEditMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Undo2 className="h-4 w-4 mr-2" />
+                  )}
+                  Revertir cambios
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => setDiffChapter(null)} data-testid="button-close-diff">
+                Cerrar
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
