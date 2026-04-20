@@ -726,8 +726,24 @@ export class GhostwriterAgent extends BaseAgent {
     const minWords = input.minWordCount || 2500;
     // Reduced from 1.4 to 1.15 to prevent manuscripts from exceeding target by more than 15%
     const maxWords = input.maxWordCount || Math.round(minWords * 1.15);
-    
-    prompt += `
+
+    if (input.surgicalEdit) {
+      // Edición quirúrgica: NO inyectar técnicas para alargar (contradicen la preservación).
+      // El objetivo es mantener la longitud del borrador base, no alcanzar un mínimo.
+      prompt += `
+    ═══════════════════════════════════════════════════════════════════
+    🔧 RANGO DE LONGITUD (MODO QUIRÚRGICO — PRESERVACIÓN)
+    ═══════════════════════════════════════════════════════════════════
+    Este capítulo ya existe y estás aplicando correcciones localizadas.
+    Devuelve el capítulo con una extensión ESTRICTAMENTE entre ${minWords} y ${maxWords} palabras
+    (≈ la longitud del borrador base ±8%). NO lo alargues con descripciones nuevas,
+    monólogos añadidos ni desarrollo extra de beats. NO lo acortes eliminando pasajes.
+    Cualquier salida fuera de ese rango será descartada por la red de seguridad y
+    el capítulo se revertirá a su versión anterior (los cambios se perderán).
+    ═══════════════════════════════════════════════════════════════════
+    `;
+    } else {
+      prompt += `
     ╔═══════════════════════════════════════════════════════════════════╗
     ║  🚨🚨🚨 REQUISITO CRÍTICO DE EXTENSIÓN - LEE ESTO PRIMERO 🚨🚨🚨  ║
     ╠═══════════════════════════════════════════════════════════════════╣
@@ -748,6 +764,7 @@ export class GhostwriterAgent extends BaseAgent {
     ║                                                                   ║
     ╚═══════════════════════════════════════════════════════════════════╝
     `;
+    }
 
     if (input.extendedGuideContent) {
       prompt += `

@@ -1,0 +1,133 @@
+15:31:50
+i
+[INFO]
+Notas editoriales procesadas: 1 capítulos modificados, 4 preservados, 0 omitidos.
+16:00:03
+i
+[INFO]
+Analizando notas editoriales para vista previa (3621 caracteres).
+16:00:25
+i
+[INFO]
+Vista previa generada: 2 instrucciones extraídas para revisión del usuario.
+16:00:31
+i
+[INFO]
+Aplicando 2 instrucciones editoriales pre-revisadas por el usuario.
+16:00:31
+i
+[INFO]
+Detectadas 1 instrucciones multi-capítulo (arcos). Se coordinarán las reescrituras de los capítulos hermanos: - [TRAMA] caps 33, 34, 35: ✓ con plan distributivo
+16:00:31
+i
+[INFO]
+Notas editoriales analizadas: 2 instrucciones para 4 capítulos.
+16:00:31
+[COMPLETADO]
+Notas editoriales convertidas en 2 instrucciones quirúrgicas para los capítulos: 0, 33, 34, 35.
+16:00:31
+[EDITANDO]
+Reescritura editorial 1/4: Prólogo: El crepúsculo de una era - Aplicando notas del editor (1 instrucciones)
+16:00:31
+Pr
+i
+[INFO]
+Cirugía de texto en el Capítulo 0: aplicando 1 corrección(es) puntual(es) sin tocar el resto...
+16:00:49
+Pr
+[COMPLETADO]
+el Capítulo 0: cirugía aplicada — 1/1 operaciones puntuales (14091→14277 caracteres, 1.3% de cambio).
+16:00:49
+Pr
+[COMPLETADO]
+el Capítulo 0: notas editoriales aplicadas (1 puntual(es) por cirugía). Snapshot anterior guardado para comparación.
+16:00:49
+C33
+[EDITANDO]
+Reescritura editorial 2/4: el Capítulo 33 - Aplicando notas del editor (1 instrucciones)
+16:00:49
+C33
+i
+[INFO]
+Reescritura quirúrgica de el Capítulo 33 por Editor Humano (preservando texto sano)...
+16:01:31
+C33
+i
+[INFO]
+el Capítulo 33: longitud incorrecta (4473/3329). Reintentando con preservación estricta...
+16:02:09
+C33
+i
+[INFO]
+Verificando reescritura de el Capítulo 33 antes de aplicarla...
+16:02:42
+C33
+i
+[INFO]
+el Capítulo 33: la reescritura introdujo nuevos errores críticos (9/10). Conservando original.
+16:02:42
+C33
+[EDITANDO]
+el Capítulo 33: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+16:02:42
+C34
+[EDITANDO]
+Reescritura editorial 3/4: el Capítulo 34 - Aplicando notas del editor (1 instrucciones)
+16:02:42
+C34
+i
+[INFO]
+Reescritura quirúrgica de el Capítulo 34 por Editor Humano (preservando texto sano)...
+16:03:20
+C34
+i
+[INFO]
+el Capítulo 34: longitud incorrecta (3043/1915). Reintentando con preservación estricta...
+16:03:53
+C34
+i
+[INFO]
+el Capítulo 34: reescritura cambió demasiado la longitud (2817/1915). Conservando original para evitar regresiones.
+16:03:53
+C34
+[EDITANDO]
+el Capítulo 34: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+16:03:53
+C35
+[EDITANDO]
+Reescritura editorial 4/4: el Capítulo 35 - Aplicando notas del editor (1 instrucciones)
+16:03:54
+C35
+i
+[INFO]
+Reescritura quirúrgica de el Capítulo 35 por Editor Humano (preservando texto sano)...
+16:04:22
+C35
+i
+[INFO]
+el Capítulo 35: longitud incorrecta (2174/1514). Reintentando con preservación estricta...
+16:04:51
+C35
+i
+[INFO]
+el Capítulo 35: reescritura cambió demasiado la longitud (2117/1514). Conservando original para evitar regresiones.
+16:04:51
+C35
+[EDITANDO]
+el Capítulo 35: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+16:04:51
+[COMPLETADO]
+Notas editoriales completadas: 1 aplicadas, 3 revertidas (red de seguridad), 0 omitidas.
+16:04:51
+i
+[INFO]
+Recalculando puntuación global tras aplicar las notas editoriales...
+16:05:30
+[COMPLETADO]
+Puntuación global tras notas editoriales: 8/10 → 9/10 ⬆️ (+1.0)
+16:05:30
+[COMPLETADO]
+¡Manuscrito completado!
+16:05:30
+[COMPLETADO]
+Notas editoriales procesadas: 1 capítulos modificados, 3 preservados, 0 omitidos.
