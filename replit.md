@@ -8,6 +8,18 @@ LitAgents is a Node.js application that orchestrates autonomous AI literary agen
 
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+### v6.6 — Two-Step Editorial Notes Flow (Apr 2026)
+- **Multi-chapter arc support in editorial notes**: `EditorialNotesParser` now emits `plan_por_capitulo` distributing a single instruction across multiple chapters with per-chapter roles. The orchestrator injects each chapter's role and its sibling roles into the surgical rewrite prompt.
+- **Two-step preview UI**: New `POST /api/projects/:id/parse-editorial-notes` endpoint parses notes without applying. Dashboard shows extracted instructions with checkboxes (all selected by default), arc badges and distributive plans. User filters and clicks apply.
+- **Refactored `POST /api/projects/:id/apply-editorial-notes`**: Accepts either `{ notes }` (legacy one-shot) or `{ instructions }` (pre-parsed selection). `Orchestrator.applyEditorialNotes()` takes optional `preParsedInstructions` to skip re-parsing.
+- **Pre-edit snapshots**: `chapters.preEditContent` and `chapters.preEditAt` columns added. Snapshot saved before each successful rewrite (skipped on revert) so the user can compare before/after.
+- **Word-level diff dialog**: "Ver cambios" button (eye icon) on chapters with a snapshot opens a dialog rendering `diffWords(preEditContent, content)` from the `diff` library — red strikethrough = removed, green = added.
+- **File upload for notes**: Dashboard accepts `.txt` and `.md` directly into the editorial-notes textarea.
+- **Auto post-edit Final Review**: After rewrites complete (and not cancelled), `FinalReviewerAgent` is relaunched to recalculate the global score. UI shows before→after with delta + arrow indicator (improvement/regression).
+- **Cancellation between chapters**: AbortController registered per project; `isProjectCancelledFromDb` check at the start of every chapter loop iteration AND right before the post-edit Final Review (prevents the final-review phase from overwriting a user-issued cancellation with `status="completed"`).
+
 ## System Architecture
 
 ### Frontend
