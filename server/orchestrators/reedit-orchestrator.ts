@@ -12,6 +12,9 @@ import {
   type FinalReviewerResult, 
   type FinalReviewIssue 
 } from "../agents/final-reviewer";
+import { ContinuitySentinelAgent as CanonicalContinuitySentinelAgent } from "../agents/continuity-sentinel";
+import { VoiceRhythmAuditorAgent as CanonicalVoiceRhythmAuditorAgent } from "../agents/voice-rhythm-auditor";
+import { SemanticRepetitionDetectorAgent as CanonicalSemanticRepetitionDetectorAgent } from "../agents/semantic-repetition-detector";
 import { ensureChapterNumbers } from "../utils/extract-chapters";
 
 function getChapterSortOrder(chapterNumber: number): number {
@@ -320,321 +323,200 @@ RESPONDE EN JSON.`;
   }
 }
 
-// QA Agent 1: Continuity Sentinel - runs every 5 chapters
-class ContinuitySentinelAgent extends BaseAgent {
-  constructor() {
-    super({
-      name: "Continuity Sentinel",
-      role: "qa_continuity",
-      systemPrompt: `Eres un AUDITOR FORENSE de continuidad narrativa. Tu trabajo es detectar TODOS los errores de coherencia, por sutiles que sean.
+// ═══════════════════════════════════════════════════════════════════════════
+// QA Adapter classes (Continuity / Voice / Semantic)
+// ───────────────────────────────────────────────────────────────────────────
+// These three classes used to contain their own prompts and parsers. They were
+// drifting from the canonical agents in `server/agents/` (different prompts,
+// different result schemas, missing improvements like the world-bible-aware
+// continuity checks). They are now THIN ADAPTERS that:
+//   1. Delegate the LLM call to the canonical agent in `server/agents/`.
+//   2. Translate the canonical result back into the legacy field names that
+//      the rest of this orchestrator consumes (erroresContinuidad, problemasTono,
+//      repeticionesSemanticas, single `puntuacion`, etc.).
+// This keeps every existing call site in this file unchanged while ensuring
+// any future improvement to the canonical agents propagates here too.
+// ═══════════════════════════════════════════════════════════════════════════
 
-ERES EXTREMADAMENTE ESTRICTO. No perdones errores por "contexto". Si algo no está narrado explícitamente, NO pasó.
-
-TIPOS DE ERRORES A DETECTAR (revisa CADA UNO con rigor):
-
-1. TEMPORALES: 
-   - Inconsistencias en el paso del tiempo ("amaneció" pero luego "la luna brillaba")
-   - Saltos temporales sin transición ("ayer" → de repente "tres semanas después" sin narrar)
-   - Acciones que requieren más tiempo del disponible
-
-2. ESPACIALES:
-   - Personajes que aparecen en lugares imposibles sin transición
-   - Desplazamientos instantáneos sin narrar el viaje
-   - Cambios de escenario sin explicación
-
-3. DE ESTADO FÍSICO (CRÍTICO — revisar contra la World Bible si se proporciona):
-   - Heridas/lesiones que desaparecen o se ignoran
-   - Personaje con brazo roto que usa ambos brazos normalmente después
-   - Objetos perdidos/destruidos que reaparecen
-   - Ropa/aspecto que cambia sin explicación
-   - Si la World Bible dice que un personaje tiene una lesión/limitación, VERIFICAR que se respeta en CADA capítulo
-
-4. DE CONOCIMIENTO:
-   - Personajes que saben cosas que NO deberían saber
-   - Información revelada en capítulo X que un personaje usa en capítulo X-N (antes de saberlo)
-   - Personaje A sabe algo que solo se dijo en presencia de personaje B
-
-5. DEUS EX MACHINA:
-   - Resoluciones convenientes sin preparación previa
-   - Personajes que aparecen "justo a tiempo" sin justificación narrativa
-   - Habilidades/recursos usados que nunca se establecieron
-
-REGLA FUNDAMENTAL: Si algo NO está narrado, NO pasó. No inventes justificaciones para el autor.
-Si un personaje tiene una herida grave, DEBE afectar sus acciones en capítulos posteriores.
-
-RESPONDE SOLO EN JSON:
-{
-  "erroresContinuidad": [
-    {
-      "tipo": "temporal|espacial|estado|conocimiento|deus_ex_machina",
-      "severidad": "critica|mayor|menor",
-      "capitulo": 5,
-      "descripcion": "Descripción CONCRETA del error con cita textual",
-      "contexto": "Fragmento EXACTO del texto que contiene el error",
-      "correccion": "Sugerencia de corrección específica"
-    }
-  ],
-  "resumen": "Resumen general de la continuidad",
-  "puntuacion": 8
+function _firstChapter(arr: number[] | undefined): number {
+  return Array.isArray(arr) && arr.length > 0 ? arr[0] : 0;
 }
 
-IMPORTANTE: NO des puntuación 9 o 10 a menos que hayas verificado EXHAUSTIVAMENTE cada tipo de error.
-Si encuentras CUALQUIER inconsistencia de estado físico, la puntuación NO puede superar 7.
-Si un personaje herido usa su extremidad herida sin mención de dolor/limitación, es error CRÍTICO.`,
-      model: "gemini-2.5-flash",
-      useThinking: false,
-      maxOutputTokens: 8192,
-    });
-  }
+function _semanticAccionFromTipo(tipo: string): string {
+  if (tipo === "foreshadowing_sin_payoff") return "resolver";
+  if (tipo === "payoff_sin_foreshadowing") return "sembrar";
+  return "variar";
+}
+
+// QA Agent 1: Continuity Sentinel - runs every 5 chapters (adapter)
+class ContinuitySentinelAgent {
+  private inner = new CanonicalContinuitySentinelAgent();
 
   async execute(input: any): Promise<any> {
     return this.auditContinuity(input.chapters, input.startChapter, input.endChapter, input.worldBibleContext);
   }
 
   async auditContinuity(chapterContents: string[], startChapter: number, endChapter: number, worldBibleContext?: string): Promise<any> {
-    const combinedContent = chapterContents.map((c, i) => 
-      `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 15000)}`
-    ).join("\n\n");
+    const chaptersInScope = chapterContents.map((c, i) => ({
+      numero: startChapter + i,
+      titulo: "",
+      contenido: c,
+      continuityState: null,
+    }));
 
-    let worldBibleSection = "";
-    if (worldBibleContext) {
-      worldBibleSection = `
-═══════════════════════════════════════════
-WORLD BIBLE — FUENTE DE VERDAD CANÓNICA
-═══════════════════════════════════════════
-Usa esta información como REFERENCIA OBLIGATORIA para verificar estados físicos,
-rasgos de personajes, lesiones, objetos y ubicaciones:
+    const response = await this.inner.execute({
+      projectTitle: "Manuscrito en re-edición",
+      checkpointNumber: startChapter,
+      chaptersInScope,
+      worldBible: worldBibleContext ? { rawText: worldBibleContext } : {},
+    });
 
-${worldBibleContext}
+    const canonical = response.result;
+    const issues = canonical?.issues || [];
 
-CUALQUIER contradicción entre el texto y la World Bible es un error de continuidad.
-═══════════════════════════════════════════
-
-`;
+    // Expand each canonical issue (which can affect multiple chapters) into one
+    // legacy entry per affected chapter so collectQaFindings sees them all.
+    // If capitulos_afectados is empty/missing we SKIP the issue rather than
+    // defaulting to chapter 0 (which the legacy code would interpret as Prólogo).
+    const erroresContinuidad: any[] = [];
+    for (const issue of issues) {
+      const chapters: number[] = Array.isArray(issue.capitulos_afectados) ? issue.capitulos_afectados.filter((n: any) => typeof n === "number") : [];
+      if (chapters.length === 0) {
+        console.warn(`[ContinuitySentinel adapter] Dropping issue with no capitulos_afectados: ${issue.descripcion?.substring(0, 80)}`);
+        continue;
+      }
+      for (const cap of chapters) {
+        erroresContinuidad.push({
+          tipo: issue.tipo,
+          severidad: issue.severidad,
+          capitulo: cap,
+          descripcion: issue.descripcion,
+          contexto: issue.evidencia_textual,
+          correccion: issue.fix_sugerido,
+        });
+      }
     }
 
-    const prompt = `${worldBibleSection}Analiza la continuidad narrativa de los capítulos ${startChapter} a ${endChapter} con RIGOR FORENSE:
-
-${combinedContent}
-
-Detecta TODOS los errores de continuidad: temporal, espacial, de estado físico, de conocimiento y deus ex machina.
-Verifica especialmente: heridas/lesiones, objetos, ubicaciones y conocimiento de personajes.
-NO perdones errores. Si algo no está narrado, NO pasó.
-RESPONDE EN JSON.`;
-
-    const response = await this.generateContent(prompt);
-    let result: any = { erroresContinuidad: [], resumen: "Sin problemas detectados", puntuacion: 9 };
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) result = JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      console.error("[ContinuitySentinel] Failed to parse:", e);
-    }
-    result.tokenUsage = response.tokenUsage;
-    return result;
+    return {
+      erroresContinuidad,
+      resumen: canonical?.resumen || "",
+      puntuacion: canonical?.puntuacion ?? 8,
+      tokenUsage: response.tokenUsage,
+    };
   }
 }
 
-// QA Agent 2: Voice & Rhythm Auditor - runs every 10 chapters
-class VoiceRhythmAuditorAgent extends BaseAgent {
-  constructor() {
-    super({
-      name: "Voice Rhythm Auditor",
-      role: "qa_voice",
-      systemPrompt: `Eres un experto en voz narrativa y ritmo literario. Analizas consistencia tonal y ritmo.
-
-ASPECTOS A EVALUAR:
-1. CONSISTENCIA DE VOZ: ¿El narrador mantiene su tono? ¿Los personajes hablan de forma consistente?
-2. RITMO NARRATIVO: ¿Hay secciones demasiado lentas o apresuradas?
-3. CADENCIA: ¿La longitud de oraciones varía apropiadamente?
-4. TENSIÓN: ¿La tensión narrativa escala correctamente?
-
-RESPONDE SOLO EN JSON:
-{
-  "problemasTono": [
-    {
-      "tipo": "voz_inconsistente|ritmo_lento|ritmo_apresurado|cadencia_monotona|tension_plana",
-      "severidad": "mayor|menor",
-      "capitulos": [5, 6],
-      "descripcion": "Descripción del problema",
-      "ejemplo": "Fragmento de ejemplo",
-      "correccion": "Sugerencia"
-    }
-  ],
-  "analisisRitmo": {
-    "capitulLentos": [],
-    "capitulosApresurados": [],
-    "climaxBienMedidos": true
-  },
-  "puntuacion": 8
-}`,
-      model: "gemini-2.5-flash",
-      useThinking: false,
-      maxOutputTokens: 4096,
-    });
-  }
+// QA Agent 2: Voice & Rhythm Auditor - runs every 10 chapters (adapter)
+class VoiceRhythmAuditorAgent {
+  private inner = new CanonicalVoiceRhythmAuditorAgent();
 
   async execute(input: any): Promise<any> {
     return this.auditVoiceRhythm(input.chapters, input.startChapter, input.endChapter);
   }
 
   async auditVoiceRhythm(chapterContents: string[], startChapter: number, endChapter: number): Promise<any> {
-    const combinedContent = chapterContents.map((c, i) => 
-      `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 10000)}`
-    ).join("\n\n");
+    const chaptersInScope = chapterContents.map((c, i) => ({
+      numero: startChapter + i,
+      titulo: "",
+      contenido: c,
+    }));
 
-    const prompt = `Analiza la voz narrativa y el ritmo de los capítulos ${startChapter} a ${endChapter}:
-
-${combinedContent}
-
-Evalúa consistencia de voz, ritmo y tensión narrativa. RESPONDE EN JSON.`;
-
-    const response = await this.generateContent(prompt);
-    let result: any = { problemasTono: [], analisisRitmo: {}, puntuacion: 9 };
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) result = JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      console.error("[VoiceRhythmAuditor] Failed to parse:", e);
-    }
-    result.tokenUsage = response.tokenUsage;
-    return result;
-  }
-}
-
-// QA Agent 3: Semantic Repetition Detector - runs on full manuscript
-class SemanticRepetitionDetectorAgent extends BaseAgent {
-  constructor() {
-    super({
-      name: "Semantic Repetition Detector",
-      role: "qa_semantic",
-      systemPrompt: `Eres el "Detector de Repetición Semántica", experto en análisis de patrones narrativos.
-Tu misión es encontrar REPETICIONES DE IDEAS (no solo palabras) y verificar el sistema de FORESHADOWING/PAYOFF.
-
-═══════════════════════════════════════════════════════════════════
-QUÉ DEBES DETECTAR
-═══════════════════════════════════════════════════════════════════
-
-1. REPETICIÓN DE IDEAS (Semántica):
-   - El mismo CONCEPTO expresado con palabras diferentes en múltiples capítulos
-   - Ejemplo: "sintió un escalofrío" (cap 2) / "un estremecimiento la recorrió" (cap 5) / "su cuerpo tembló involuntariamente" (cap 8)
-   - Esto es MÁS SUTIL que repetición léxica - buscas la IDEA, no las palabras
-
-2. METÁFORAS REPETIDAS:
-   - La misma imagen/comparación usada múltiples veces
-   - Ejemplo: "ojos como el mar" aparece en caps 1, 4, y 9
-   - Cada metáfora debería ser única o usarse con intención
-
-3. ESTRUCTURAS NARRATIVAS REPETIDAS:
-   - Escenas que siguen el mismo patrón: llegada-descubrimiento-huida
-   - Diálogos que empiezan igual: "—¿Qué está pasando? —preguntó..."
-   - Finales de capítulo similares: siempre terminando en cliffhanger
-
-4. FORESHADOWING SIN PAYOFF:
-   - Pistas sembradas que nunca se resuelven
-   - Misterios planteados y olvidados
-   - Chekhov's gun que nunca dispara
-
-5. PAYOFF SIN FORESHADOWING:
-   - Revelaciones que aparecen sin preparación
-   - Soluciones que no fueron sembradas
-   - Deus ex machina disfrazados
-
-═══════════════════════════════════════════════════════════════════
-CÓMO ANALIZAR
-═══════════════════════════════════════════════════════════════════
-
-1. Lee el manuscrito completo buscando PATRONES SEMÁNTICOS
-2. Agrupa ideas similares aunque usen palabras diferentes
-3. Identifica SETUPS (foreshadowing) y busca sus PAYOFFS
-4. Marca setups sin payoff y payoffs sin setup
-5. Solo reporta clusters con 3+ ocurrencias (o foreshadowing crítico)
-
-PUNTUACIÓN (1-10):
-- 10/10: CERO repeticiones semánticas y sistema foreshadowing perfecto
-- 9/10: Solo 1 cluster menor de repetición
-- 8/10: 2 clusters menores
-- 7/10: 1 cluster mayor o 3+ menores
-- 6/10 o menos: Múltiples clusters mayores o patrones muy repetitivos
-
-RESPONDE SOLO EN JSON:
-{
-  "repeticionesSemanticas": [
-    {
-      "tipo": "idea_repetida|metafora_repetida|estructura_repetida|foreshadowing_sin_resolver|elemento_sin_usar",
-      "severidad": "mayor|menor",
-      "ocurrencias": [2, 5, 8, 12],
-      "descripcion": "Qué se repite y por qué es problemático",
-      "ejemplo": "Cap 2: 'sintió un escalofrío'; Cap 5: 'un estremecimiento la sacudió'",
-      "accion": "eliminar|variar|resolver",
-      "fix_sugerido": "Sugerencias ESPECÍFICAS de corrección para cada capítulo afectado"
-    }
-  ],
-  "foreshadowingTracking": [
-    {
-      "plantado": 3,
-      "resuelto": 25,
-      "elemento": "La carta misteriosa",
-      "estado": "resuelto|pendiente|sin_payoff"
-    }
-  ],
-  "puntuacion": 8
-}
-
-NO des puntuación 9 o 10 si encuentras clusters con 3+ ocurrencias.
-Cada repetición semántica debe incluir CITAS TEXTUALES del manuscrito.`,
-      model: "gemini-2.5-flash",
-      useThinking: false,
-      maxOutputTokens: 8192,
+    const response = await this.inner.execute({
+      projectTitle: "Manuscrito en re-edición",
+      trancheNumber: startChapter,
+      genre: "general",
+      tone: "consistente con el género",
+      chaptersInScope,
     });
+
+    const canonical = response.result;
+    const issues = canonical?.issues || [];
+
+    const problemasTono = issues.map((issue: any) => ({
+      tipo: issue.tipo,
+      severidad: issue.severidad,
+      capitulos: issue.capitulos_afectados || [],
+      descripcion: issue.descripcion,
+      ejemplo: issue.evidencia_textual,
+      correccion: issue.fix_sugerido,
+    }));
+
+    const puntuacion = Math.min(
+      canonical?.puntuacion_voz ?? 8,
+      canonical?.puntuacion_ritmo ?? 8,
+    );
+
+    return {
+      problemasTono,
+      analisisRitmo: { perfil: canonical?.perfil_tonal_detectado || "" },
+      puntuacion,
+      tokenUsage: response.tokenUsage,
+    };
   }
+}
+
+// QA Agent 3: Semantic Repetition Detector - runs on full manuscript (adapter)
+class SemanticRepetitionDetectorAgent {
+  private inner = new CanonicalSemanticRepetitionDetectorAgent();
 
   async execute(input: any): Promise<any> {
     return this.detectRepetitions(input.chapters, input.totalChapters, input.worldBibleContext);
   }
 
   async detectRepetitions(chapterContents: string[], totalChapters: number, worldBibleContext?: string): Promise<any> {
-    let worldBibleSection = "";
-    if (worldBibleContext) {
-      worldBibleSection = `
-WORLD BIBLE (para verificar foreshadowing y arcos):
-${worldBibleContext}
+    // Legacy callers pass already-formatted strings like "=== CAPÍTULO 3: title ===\n<content>".
+    // Try to recover chapter numbers from that header; fall back to sequential numbering.
+    const chapters = chapterContents.map((raw, i) => {
+      const headerMatch = raw.match(/===\s*CAP[IÍ]TULO\s+(-?\d+)\s*:?\s*([^=]*?)\s*===/i);
+      const numero = headerMatch ? parseInt(headerMatch[1], 10) : i + 1;
+      const titulo = headerMatch ? (headerMatch[2] || "").trim() : "";
+      const contenido = headerMatch ? raw.replace(headerMatch[0], "").trim() : raw;
+      return { numero, titulo, contenido };
+    });
 
-`;
-    }
+    const response = await this.inner.execute({
+      projectTitle: "Manuscrito en re-edición",
+      chapters,
+      worldBible: worldBibleContext ? { rawText: worldBibleContext } : {},
+    });
 
-    const prompt = `${worldBibleSection}Analiza el manuscrito completo (${totalChapters} capítulos) buscando repeticiones semánticas y verificando el sistema de foreshadowing:
+    const canonical = response.result;
+    const clusters = canonical?.clusters || [];
 
-${chapterContents.join("\n\n")}
+    const repeticionesSemanticas = clusters.map((cluster: any) => ({
+      tipo: cluster.tipo,
+      severidad: cluster.severidad,
+      ocurrencias: cluster.capitulos_afectados || [],
+      descripcion: cluster.descripcion,
+      ejemplo: Array.isArray(cluster.ejemplos) ? cluster.ejemplos.join(" | ") : (cluster.ejemplos || ""),
+      accion: _semanticAccionFromTipo(cluster.tipo),
+      fix_sugerido: cluster.fix_sugerido || "",
+    }));
 
-INSTRUCCIONES:
-1. Lee el manuscrito completo buscando PATRONES DE IDEAS (no solo palabras)
-2. Identifica conceptos que se repiten con diferentes palabras
-3. Busca metáforas y estructuras narrativas repetidas
-4. Rastrea cada SETUP y busca su PAYOFF
-5. Marca foreshadowing sin resolver y revelaciones sin preparación
-6. Solo reporta clusters con 3+ ocurrencias o foreshadowing crítico
-7. Incluye CITAS TEXTUALES del manuscrito para cada problema
+    const puntuacion = Math.min(
+      canonical?.puntuacion_originalidad ?? 8,
+      canonical?.puntuacion_foreshadowing ?? 8,
+    );
 
-RESPONDE EN JSON.`;
+    // Translate canonical foreshadowing schema → legacy schema consumed at
+    // lines ~2157 (collectQaFindings reads fs.plantado, fs.elemento, fs.estado).
+    const foreshadowingTracking = (canonical?.foreshadowing_detectado || []).map((fs: any) => ({
+      plantado: fs.capitulo_setup,
+      resuelto: fs.capitulo_payoff,
+      elemento: fs.setup,
+      estado: fs.estado,
+    }));
 
-    const response = await this.generateContent(prompt);
-    let result: any = { repeticionesSemanticas: [], foreshadowingTracking: [], puntuacion: 9 };
-    try {
-      const { repairJson } = await import("../utils/json-repair");
-      result = repairJson(response.content);
-    } catch (e) {
-      try {
-        const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) result = JSON.parse(jsonMatch[0]);
-      } catch (e2) {
-        console.error("[SemanticRepetitionDetector] Failed to parse:", e2);
-      }
-    }
-    result.tokenUsage = response.tokenUsage;
-    return result;
+    return {
+      repeticionesSemanticas,
+      foreshadowingTracking,
+      puntuacion,
+      tokenUsage: response.tokenUsage,
+    };
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
 
 // QA Agent 4: Anachronism Detector - detects historical inaccuracies in ANY novel
 // Note: Any novel set in the past (even 50+ years ago) can have anachronisms
