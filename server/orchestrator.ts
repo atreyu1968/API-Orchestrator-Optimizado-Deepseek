@@ -6889,9 +6889,99 @@ Responde SOLO con un JSON válido con la estructura:
     });
 
     this.callbacks.onChapterStatusChange(chapter.chapterNumber, "revision");
-    
-    this.callbacks.onAgentStatus("ghostwriter", "writing", 
-      `Reescritura quirúrgica de ${sectionLabel} por ${qaLabels[qaSource]} (preservando texto sano)...`
+
+    // ════════════════════════════════════════════════════════════════
+    // PASO 1 — CIRUGÍA DETERMINISTA (find/replace)
+    // Antes de dejar que el Narrador reescriba libremente (con el riesgo sistemático
+    // de expandir +30/+70%), intentamos resolver la corrección con operaciones
+    // find_exact/replace_with aplicadas de forma determinista. Si el cirujano produce
+    // al menos una operación aplicable, terminamos aquí — sin Editor, sin Estilista,
+    // sin red de seguridad de longitud (garantizada por construcción).
+    // Si declara la instrucción como no-puntual ("operations": []), caemos al flujo
+    // de reescritura completa del Ghostwriter con las redes de seguridad existentes.
+    // ════════════════════════════════════════════════════════════════
+    this.callbacks.onAgentStatus("surgical-patcher", "editing",
+      `Cirugía determinista en ${sectionLabel} por ${qaLabels[qaSource]}: intentando parches localizados antes de reescritura completa...`
+    );
+
+    try {
+      const patchResult = await this.surgicalPatcher.execute({
+        chapterNumber: sectionData.numero,
+        chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
+        originalContent,
+        instructions: correctionInstructions,
+      });
+
+      await this.trackTokenUsage(project.id, patchResult.tokenUsage, "Cirujano de Texto", "gemini-2.5-flash", sectionData.numero, `qa_surgical_${qaSource}`);
+
+      const operations = patchResult.result?.operations || [];
+
+      if (operations.length > 0) {
+        const report = this.surgicalPatcher.applyOperations(originalContent, operations);
+
+        if (report.applied.length > 0) {
+          const newWc = report.finalContent.split(/\s+/).filter(w => w.length > 0).length;
+
+          await storage.updateChapter(chapter.id, {
+            content: report.finalContent,
+            wordCount: newWc,
+            status: "completed",
+            needsRevision: false,
+            revisionReason: null,
+          });
+
+          this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+
+          const pctChange = ((Math.abs(report.finalLength - report.originalLength) / Math.max(report.originalLength, 1)) * 100).toFixed(1);
+          const failedNote = report.failed.length > 0
+            ? ` ${report.failed.length} operación(es) descartada(s) por no encontrar el texto literal.`
+            : "";
+
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "success",
+            message: `${sectionLabel}: cirugía aplicada — ${report.applied.length}/${operations.length} operaciones puntuales (${report.originalLength}→${report.finalLength} caracteres, ${pctChange}% de cambio).${failedNote}`,
+            agentRole: "surgical-patcher",
+          });
+
+          this.callbacks.onAgentStatus("surgical-patcher", "completed",
+            `${sectionLabel}: cirugía aplicada (${report.applied.length} operaciones, ${pctChange}% de cambio).`
+          );
+          return;
+        }
+
+        // Operaciones generadas pero ninguna encontró el texto literal → cae al reescritura.
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `${sectionLabel}: las ${operations.length} operaciones del cirujano no encontraron texto literal. Cayendo a reescritura completa.`,
+          agentRole: "surgical-patcher",
+        });
+      } else {
+        const reason = patchResult.result?.not_applicable_reason || "El cirujano clasificó la instrucción como estructural.";
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `${sectionLabel}: cirugía no aplicable (${reason}). Cayendo a reescritura completa con Narrador.`,
+          agentRole: "surgical-patcher",
+        });
+      }
+    } catch (patchErr) {
+      console.error(`[QA-Rewrite] SurgicalPatcher error on ${sectionLabel}:`, patchErr);
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        message: `${sectionLabel}: error en cirugía determinista (${patchErr instanceof Error ? patchErr.message : "desconocido"}). Cayendo a reescritura completa.`,
+        agentRole: "surgical-patcher",
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // PASO 2 — REESCRITURA COMPLETA DEL GHOSTWRITER (fallback)
+    // Solo si la cirugía determinista no fue aplicable.
+    // ════════════════════════════════════════════════════════════════
+    this.callbacks.onAgentStatus("ghostwriter", "writing",
+      `Reescritura de ${sectionLabel} por ${qaLabels[qaSource]} (cirugía no aplicable, fallback a narrador)...`
     );
 
     const allChapters = await storage.getChaptersByProject(project.id);
