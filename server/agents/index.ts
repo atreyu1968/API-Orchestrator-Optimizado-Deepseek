@@ -12,3 +12,4 @@ export { ArcValidatorAgent, type ArcValidatorResult, type MilestoneVerification,
 export { SeriesThreadFixerAgent, type ThreadFixerResult, type ThreadFix } from "./series-thread-fixer";
 export { ItalianReviewerAgent, type ItalianReviewResult } from "./italian-reviewer";
 export { ProofreaderAgent, type ProofreaderResult, type ProofreaderChange } from "./proofreader";
+export { EditorialNotesParser, type EditorialInstruction, type EditorialNotesParseResult } from "./editorial-notes-parser";

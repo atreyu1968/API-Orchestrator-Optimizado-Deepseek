@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
@@ -325,6 +325,30 @@ export default function Dashboard() {
     },
     onError: () => {
       toast({ title: "Error", description: "No se pudo iniciar la resolución de issues", variant: "destructive" });
+    },
+  });
+
+  const [editorialNotes, setEditorialNotes] = useState("");
+  const [editorialNotesOpen, setEditorialNotesOpen] = useState(false);
+
+  const applyEditorialNotesMutation = useMutation({
+    mutationFn: async ({ id, notes }: { id: number; notes: string }) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/apply-editorial-notes`, { notes });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Aplicando notas del editor", description: "Analizando notas y aplicando correcciones quirúrgicas..." });
+      addLog("thinking", "Aplicando notas del editor humano al manuscrito...", "editor");
+      setEditorialNotes("");
+      setEditorialNotesOpen(false);
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Error",
+        description: err?.message || "No se pudieron aplicar las notas editoriales",
+        variant: "destructive"
+      });
     },
   });
 
@@ -777,6 +801,86 @@ export default function Dashboard() {
                             <Wrench className="h-4 w-4 mr-2" />
                             {resolveIssuesMutation.isPending ? "Resolviendo..." : `Resolver ${(fullProjectDetail.finalReviewResult as any).issues.length} Issues`}
                           </Button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Notas del Editor Humano — corrección quirúrgica a partir de texto libre */}
+                    {currentProject.status === "completed" && (
+                      <div className="mt-4 pt-4 border-t border-border/50">
+                        <button
+                          type="button"
+                          onClick={() => setEditorialNotesOpen(v => !v)}
+                          className="w-full flex items-center justify-between gap-2 text-sm font-medium hover-elevate p-2 rounded-md"
+                          data-testid="button-toggle-editorial-notes"
+                        >
+                          <span className="flex items-center gap-2">
+                            <FilePen className="h-4 w-4 text-primary" />
+                            Notas del Editor Humano
+                          </span>
+                          {editorialNotesOpen
+                            ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                            : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                        </button>
+
+                        {editorialNotesOpen && (
+                          <div className="mt-3 space-y-3">
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              Pega aquí las notas que te ha dado tu editor (texto libre, veredicto editorial, instrucciones quirúrgicas, etc.).
+                              El sistema las analizará, las convertirá en instrucciones por capítulo y aplicará correcciones quirúrgicas
+                              preservando el 90%+ del texto. Si una reescritura empeora el capítulo, se revierte automáticamente al original.
+                            </p>
+                            <Label htmlFor="editorial-notes-textarea" className="text-xs">
+                              Notas editoriales (máx. 50.000 caracteres)
+                            </Label>
+                            <Textarea
+                              id="editorial-notes-textarea"
+                              value={editorialNotes}
+                              onChange={(e) => setEditorialNotes(e.target.value)}
+                              placeholder="Ej: '1. Veredicto Editorial Riguroso. El manuscrito presenta una premisa de alto impacto... ⚠️ Debilidades críticas: La aparición de Vasco Carballo en la cripta de Guadalupe resulta demasiado providencial...'"
+                              className="min-h-[200px] text-xs font-mono resize-y"
+                              maxLength={50000}
+                              data-testid="textarea-editorial-notes"
+                            />
+                            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                              <span>{editorialNotes.length.toLocaleString()} / 50.000 caracteres</span>
+                              {editorialNotes.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditorialNotes("")}
+                                  className="hover:text-foreground"
+                                  data-testid="button-clear-editorial-notes"
+                                >
+                                  Limpiar
+                                </button>
+                              )}
+                            </div>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => applyEditorialNotesMutation.mutate({
+                                id: currentProject.id,
+                                notes: editorialNotes.trim()
+                              })}
+                              disabled={
+                                !editorialNotes.trim() ||
+                                applyEditorialNotesMutation.isPending ||
+                                currentProject.status !== "completed"
+                              }
+                              data-testid="button-apply-editorial-notes"
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                              <FilePen className="h-4 w-4 mr-2" />
+                              {applyEditorialNotesMutation.isPending
+                                ? "Procesando notas..."
+                                : "Aplicar Notas del Editor (Reescritura Quirúrgica)"}
+                            </Button>
+                            <p className="text-[10px] text-muted-foreground italic">
+                              ⓘ El proceso: 1) un agente analiza tus notas y extrae instrucciones por capítulo,
+                              2) cada capítulo afectado se reescribe quirúrgicamente preservando longitud y estructura,
+                              3) el Editor verifica la nueva versión y revierte si introduce nuevos errores críticos.
+                            </p>
+                          </div>
                         )}
                       </div>
                     )}

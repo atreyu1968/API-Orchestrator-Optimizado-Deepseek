@@ -1076,6 +1076,84 @@ export async function registerRoutes(
     }
   });
 
+  // Apply free-form editorial notes from a human editor with surgical safety net
+  app.post("/api/projects/:id/apply-editorial-notes", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { notes } = req.body || {};
+      const project = await storage.getProject(id);
+
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      if (project.status !== "completed") {
+        return res.status(400).json({ error: "Solo se pueden aplicar notas editoriales a proyectos completados" });
+      }
+      if (!notes || typeof notes !== "string" || !notes.trim()) {
+        return res.status(400).json({ error: "Debes proporcionar las notas editoriales en el campo 'notes'" });
+      }
+      if (notes.length > 50000) {
+        return res.status(400).json({ error: "Las notas son demasiado largas (máximo 50.000 caracteres)" });
+      }
+
+      await storage.updateProject(id, { status: "generating" });
+
+      res.json({ message: "Aplicación de notas editoriales iniciada", projectId: id, length: notes.length });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => {
+            try {
+              stream.write(message);
+            } catch (e) {
+              console.error("Error writing to stream:", e);
+            }
+          });
+        }
+      };
+
+      const orchestrator = new Orchestrator({
+        onAgentStatus: async (role, status, message) => {
+          await storage.updateAgentStatus(id, role, { status, currentTask: message });
+          sendToStreams({ type: "agent_status", role, status, message });
+          if (message) await persistActivityLog(id, "info", message, role);
+        },
+        onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
+          const label = getSectionLabel(chapterNumber, chapterTitle);
+          await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter");
+        },
+        onChapterRewrite: async (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
+          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
+          const label = getSectionLabel(chapterNumber, chapterTitle);
+          await persistActivityLog(id, "warning", `Reescritura editorial ${currentIndex}/${totalToRewrite}: ${label} - ${reason}`, "editor");
+        },
+        onChapterStatusChange: (chapterNumber, status) => {
+          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
+        },
+        onProjectComplete: async () => {
+          sendToStreams({ type: "project_complete" });
+          await persistActivityLog(id, "success", "Notas editoriales aplicadas", "ghostwriter");
+        },
+        onError: async (error) => {
+          sendToStreams({ type: "error", message: error });
+          await persistActivityLog(id, "error", error, "orchestrator");
+        },
+      });
+
+      orchestrator.applyEditorialNotes(project, notes).catch(async (err) => {
+        console.error("Background apply editorial notes failed:", err);
+        await storage.updateProject(id, { status: "completed" });
+        await persistActivityLog(id, "error", `Error fatal aplicando notas editoriales: ${err instanceof Error ? err.message : String(err)}`, "orchestrator");
+      });
+    } catch (error) {
+      console.error("Error starting editorial notes:", error);
+      res.status(500).json({ error: "Failed to start editorial notes application" });
+    }
+  });
+
   // Extend project - continue generating additional chapters for incomplete projects
   app.post("/api/projects/:id/extend", async (req: Request, res: Response) => {
     try {

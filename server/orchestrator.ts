@@ -9,6 +9,8 @@ import {
   VoiceRhythmAuditorAgent,
   SemanticRepetitionDetectorAgent,
   ProofreaderAgent,
+  EditorialNotesParser,
+  type EditorialInstruction,
   isProjectCancelledFromDb,
   type EditorResult, 
   type FinalReviewerResult,
@@ -103,6 +105,7 @@ export class Orchestrator {
   private proofreader = new ProofreaderAgent();
   private voiceRhythmAuditor = new VoiceRhythmAuditorAgent();
   private semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
+  private editorialNotesParser = new EditorialNotesParser();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
@@ -3531,6 +3534,196 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     }
   }
 
+  async applyEditorialNotes(project: Project, notesText: string): Promise<void> {
+    try {
+      this.cumulativeTokens = {
+        inputTokens: project.totalInputTokens || 0,
+        outputTokens: project.totalOutputTokens || 0,
+        thinkingTokens: project.totalThinkingTokens || 0,
+      };
+
+      if (!notesText || !notesText.trim()) {
+        this.callbacks.onError("Las notas editoriales están vacías.");
+        await storage.updateProject(project.id, { status: "completed" });
+        return;
+      }
+
+      let styleGuideContent = "";
+      let authorName = "";
+      if (project.styleGuideId) {
+        const sg = await storage.getStyleGuide(project.styleGuideId);
+        if (sg) styleGuideContent = sg.content;
+      }
+      if (project.pseudonymId) {
+        const pseudonym = await storage.getPseudonym(project.pseudonymId);
+        if (pseudonym) authorName = pseudonym.name;
+      }
+      void authorName;
+
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (!worldBible) {
+        this.callbacks.onError("No se encontró la biblia del mundo para este proyecto");
+        await storage.updateProject(project.id, { status: "completed" });
+        return;
+      }
+
+      const worldBibleData: ParsedWorldBible = {
+        world_bible: {
+          personajes: worldBible.characters as any[] || [],
+          lugares: [],
+          reglas_lore: worldBible.worldRules as any[] || [],
+        },
+        escaleta_capitulos: worldBible.plotOutline as any[] || [],
+      };
+
+      const allChapters = await storage.getChaptersByProject(project.id);
+      const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
+      const guiaEstilo = styleGuideContent
+        ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+        : `Género: ${project.genre}, Tono: ${project.tone}`;
+
+      this.callbacks.onAgentStatus("editor", "thinking",
+        "Analizando notas del editor humano y extrayendo instrucciones quirúrgicas..."
+      );
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "info",
+        message: `Aplicando notas editoriales del editor humano (${notesText.length} caracteres).`,
+        agentRole: "editor",
+      });
+
+      const chapterIndex = allSections.map(s => ({ numero: s.numero, titulo: s.titulo || "" }));
+
+      const parseResult = await this.editorialNotesParser.execute({
+        notas: notesText,
+        chapterIndex,
+        projectTitle: project.title,
+      });
+
+      await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "gemini-2.5-flash", undefined, "editorial_parse");
+
+      const instructions: EditorialInstruction[] = parseResult.result?.instrucciones || [];
+
+      if (instructions.length === 0) {
+        const summary = parseResult.result?.resumen_general || "El sistema no encontró instrucciones procesables en las notas.";
+        this.callbacks.onError(`No se extrajeron instrucciones aplicables. ${summary}`);
+        await storage.updateProject(project.id, { status: "completed" });
+        return;
+      }
+
+      // Group instructions by chapter so we make one surgical pass per chapter with all its issues combined
+      const byChapter = new Map<number, EditorialInstruction[]>();
+      instructions.forEach(ins => {
+        (ins.capitulos_afectados || []).forEach(num => {
+          if (!byChapter.has(num)) byChapter.set(num, []);
+          byChapter.get(num)!.push(ins);
+        });
+      });
+
+      const sortedChapters = Array.from(byChapter.keys()).sort((a, b) => {
+        const orderA = a === 0 ? -1000 : a === -1 ? 1000 : a === -2 ? 1001 : a;
+        const orderB = b === 0 ? -1000 : b === -1 ? 1000 : b === -2 ? 1001 : b;
+        return orderA - orderB;
+      });
+
+      this.callbacks.onAgentStatus("editor", "completed",
+        `Notas editoriales analizadas: ${instructions.length} instrucciones para ${sortedChapters.length} capítulos.`
+      );
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "success",
+        message: `Notas editoriales convertidas en ${instructions.length} instrucciones quirúrgicas para los capítulos: ${sortedChapters.join(", ")}.`,
+        agentRole: "editor",
+      });
+
+      let appliedCount = 0;
+      let revertedCount = 0;
+      let skippedCount = 0;
+
+      for (let i = 0; i < sortedChapters.length; i++) {
+        const chapterNum = sortedChapters[i];
+        const chapter = allChapters.find(c => c.chapterNumber === chapterNum);
+        const sectionData = allSections.find(s => s.numero === chapterNum);
+
+        if (!chapter || !sectionData || !chapter.content) {
+          console.warn(`[ApplyEditorialNotes] Chapter ${chapterNum} not found or empty, skipping.`);
+          skippedCount++;
+          continue;
+        }
+
+        const chapterInstructions = byChapter.get(chapterNum) || [];
+        const formatted = chapterInstructions.map((ins, idx) => {
+          const preserve = ins.elementos_a_preservar
+            ? `\n   ⚠️ PRESERVAR (NO MODIFICAR): ${ins.elementos_a_preservar}`
+            : "";
+          const priority = ins.prioridad ? ` [${ins.prioridad.toUpperCase()}]` : "";
+          return `${idx + 1}. [${(ins.categoria || "otro").toUpperCase()}]${priority} ${ins.descripcion}\n   ✏️ INSTRUCCIÓN: ${ins.instrucciones_correccion}${preserve}`;
+        }).join("\n\n");
+
+        const sectionLabel = this.getSectionLabel(sectionData);
+
+        this.callbacks.onChapterRewrite(
+          chapterNum, sectionData.titulo, i + 1, sortedChapters.length,
+          `Aplicando notas del editor (${chapterInstructions.length} instrucciones)`
+        );
+
+        const beforeContent = chapter.content;
+
+        await this.rewriteChapterForQA(
+          project,
+          chapter,
+          sectionData,
+          worldBibleData,
+          guiaEstilo,
+          "editorial",
+          formatted
+        );
+
+        // Detect whether the rewrite was applied or reverted
+        const refreshedChapters = await storage.getChaptersByProject(project.id);
+        const refreshedChapter = refreshedChapters.find(c => c.id === chapter.id);
+        if (refreshedChapter && refreshedChapter.content && refreshedChapter.content !== beforeContent) {
+          appliedCount++;
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "success",
+            message: `${sectionLabel}: notas editoriales aplicadas (${chapterInstructions.length} instrucciones).`,
+            agentRole: "ghostwriter",
+          });
+        } else {
+          revertedCount++;
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `${sectionLabel}: la reescritura quirúrgica fue revertida automáticamente para preservar el original.`,
+            agentRole: "ghostwriter",
+          });
+        }
+      }
+
+      await storage.updateProject(project.id, { status: "completed" });
+
+      this.callbacks.onAgentStatus("ghostwriter", "completed",
+        `Notas editoriales procesadas: ${appliedCount} capítulos modificados, ${revertedCount} preservados, ${skippedCount} omitidos.`
+      );
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "success",
+        message: `Notas editoriales completadas: ${appliedCount} aplicadas, ${revertedCount} revertidas (red de seguridad), ${skippedCount} omitidas. Total: ${sortedChapters.length} capítulos evaluados.`,
+        agentRole: "ghostwriter",
+      });
+
+      this.callbacks.onProjectComplete();
+    } catch (error) {
+      console.error("[Orchestrator] applyEditorialNotes error:", error);
+      await storage.updateProject(project.id, { status: "completed" });
+      this.callbacks.onError(`Error aplicando notas editoriales: ${error instanceof Error ? error.message : "Error desconocido"}`);
+    }
+  }
+
   async extendNovel(project: Project, fromChapter: number, toChapter: number): Promise<void> {
     try {
       console.log(`[Orchestrator:Extend] Extending project ${project.id} from chapter ${fromChapter + 1} to ${toChapter}`);
@@ -6070,13 +6263,14 @@ Responde SOLO con un JSON válido con la estructura:
     sectionData: any,
     worldBibleData: ParsedWorldBible,
     guiaEstilo: string,
-    qaSource: "continuity" | "voice" | "semantic",
+    qaSource: "continuity" | "voice" | "semantic" | "editorial",
     correctionInstructions: string
   ): Promise<void> {
     const qaLabels = {
       continuity: "Centinela de Continuidad",
       voice: "Auditor de Voz",
-      semantic: "Detector Semántico"
+      semantic: "Detector Semántico",
+      editorial: "Editor Humano"
     };
 
     const originalContent = chapter.content || "";
