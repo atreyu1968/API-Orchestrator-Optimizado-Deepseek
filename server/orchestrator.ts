@@ -3672,17 +3672,113 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
     await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "gemini-2.5-flash", undefined, "editorial_parse");
 
-    const instructions: EditorialInstruction[] = parseResult.result?.instrucciones || [];
+    const draftInstructions: EditorialInstruction[] = parseResult.result?.instrucciones || [];
     const summary = parseResult.result?.resumen_general;
+
+    // ── SEGUNDA PASADA: anclaje contra contenido real + canon ───────
+    const refinedInstructions = await this.groundEditorialInstructions(
+      project,
+      notesText,
+      draftInstructions,
+      worldBibleData,
+      allChapters,
+    );
 
     await storage.createActivityLog({
       projectId: project.id,
       level: "info",
-      message: `Vista previa generada: ${instructions.length} instrucciones extraídas para revisión del usuario.`,
+      message: `Vista previa generada: ${refinedInstructions.length} instrucciones ancladas en el texto y la canon (de ${draftInstructions.length} borradores).`,
       agentRole: "editor",
     });
 
-    return { resumen_general: summary, instrucciones: instructions, instructions };
+    return { resumen_general: summary, instrucciones: refinedInstructions, instructions: refinedInstructions };
+  }
+
+  /**
+   * Toma los borradores del primer parser (que solo vio título de capítulos) y los pasa
+   * por una segunda pasada con: (1) contenido real de los capítulos afectados, (2) World
+   * Bible. Devuelve solo las instrucciones que están ancladas en el texto y son
+   * compatibles con la canon. Las descartadas se loguean con motivo.
+   */
+  private async groundEditorialInstructions(
+    project: Project,
+    originalNotes: string,
+    draftInstructions: EditorialInstruction[],
+    worldBibleData: ParsedWorldBible,
+    allChapters: Chapter[],
+  ): Promise<EditorialInstruction[]> {
+    if (draftInstructions.length === 0) return [];
+
+    // Recopilamos los números de capítulo afectados por al menos una instrucción del borrador.
+    const affectedNumbers = new Set<number>();
+    draftInstructions.forEach(ins => (ins.capitulos_afectados || []).forEach(n => affectedNumbers.add(n)));
+
+    const chapterContents = Array.from(affectedNumbers).map(num => {
+      const ch = allChapters.find(c => c.chapterNumber === num);
+      if (!ch || !ch.content) return null;
+      return {
+        numero: num,
+        titulo: ch.title || `Capítulo ${num}`,
+        content: ch.content,
+      };
+    }).filter(Boolean) as Array<{ numero: number; titulo: string; content: string }>;
+
+    if (chapterContents.length === 0) {
+      // No tenemos contenido para anclar — devolvemos los borradores tal cual.
+      return draftInstructions;
+    }
+
+    let worldBibleContext = "";
+    try {
+      const enrichedWB = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
+      worldBibleContext = this.serializeWorldBibleForSurgery(enrichedWB);
+    } catch {
+      try {
+        worldBibleContext = this.serializeWorldBibleForSurgery(worldBibleData.world_bible);
+      } catch {
+        worldBibleContext = "";
+      }
+    }
+
+    try {
+      const refineResp = await this.editorialNotesParser.refineWithContext({
+        projectTitle: project.title,
+        originalNotes,
+        draftInstructions,
+        chapterContents,
+        worldBibleContext,
+      });
+
+      await this.trackTokenUsage(project.id, refineResp.tokenUsage, "Analista de Notas Editoriales", "gemini-2.5-flash", undefined, "editorial_refine");
+
+      const refined = refineResp.result?.refined || [];
+      const dropped = refineResp.result?.dropped || [];
+
+      if (dropped.length > 0) {
+        const droppedSummary = dropped.map(d => {
+          const caps = (d.capitulos_afectados || []).join(", ");
+          return `  • [caps ${caps}] ${d.descripcion} — Motivo: ${d.motivo}`;
+        }).join("\n");
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `Anclaje: ${dropped.length} instrucción(es) descartada(s) por no encontrar referencia real o contradecir la canon:\n${droppedSummary}`,
+          agentRole: "editor",
+        });
+      }
+
+      return refined.length > 0 ? refined : draftInstructions;
+    } catch (e) {
+      console.error("[Orchestrator] groundEditorialInstructions error:", e);
+      // En caso de error de refinamiento, no bloqueamos: usamos los borradores.
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        message: `Anclaje editorial falló (${e instanceof Error ? e.message : "desconocido"}). Usando borradores sin anclar.`,
+        agentRole: "editor",
+      });
+      return draftInstructions;
+    }
   }
 
   async applyEditorialNotes(
@@ -3774,11 +3870,20 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
         await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "gemini-2.5-flash", undefined, "editorial_parse");
 
-        instructions = parseResult.result?.instrucciones || [];
+        const draftInstructions = parseResult.result?.instrucciones || [];
+
+        // ── SEGUNDA PASADA: anclaje contra contenido real + canon ───────
+        instructions = await this.groundEditorialInstructions(
+          project,
+          notesText,
+          draftInstructions,
+          worldBibleData,
+          allChapters,
+        );
 
         if (instructions.length === 0) {
           const summary = parseResult.result?.resumen_general || "El sistema no encontró instrucciones procesables en las notas.";
-          this.callbacks.onError(`No se extrajeron instrucciones aplicables. ${summary}`);
+          this.callbacks.onError(`No se extrajeron instrucciones aplicables tras anclar contra el texto y la canon. ${summary}`);
           await storage.updateProject(project.id, { status: "completed" });
           return;
         }

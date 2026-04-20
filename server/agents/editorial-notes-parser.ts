@@ -20,6 +20,17 @@ export interface EditorialNotesParseResult {
   instrucciones: EditorialInstruction[];
 }
 
+export interface DroppedInstruction {
+  descripcion: string;
+  capitulos_afectados: number[];
+  motivo: string;
+}
+
+export interface RefineResult {
+  refined: EditorialInstruction[];
+  dropped: DroppedInstruction[];
+}
+
 interface ChapterIndexEntry {
   numero: number;
   titulo: string;
@@ -29,6 +40,14 @@ interface ParserInput {
   notas: string;
   chapterIndex: ChapterIndexEntry[];
   projectTitle: string;
+}
+
+interface RefinerInput {
+  projectTitle: string;
+  originalNotes: string;
+  draftInstructions: EditorialInstruction[];
+  chapterContents: Array<{ numero: number; titulo: string; content: string }>;
+  worldBibleContext: string;
 }
 
 export class EditorialNotesParser extends BaseAgent {
@@ -136,6 +155,110 @@ Extrae las instrucciones de corrección estructuradas. Responde ÚNICAMENTE con 
     } catch (e) {
       console.error("[EditorialNotesParser] Failed to parse JSON response", e);
       return { ...response, result: { instrucciones: [] } };
+    }
+  }
+
+  /**
+   * SEGUNDA PASADA — Anclaje contra contenido real y canon.
+   *
+   * El primer parser (execute) trabaja solo con las notas + el índice de capítulos.
+   * Eso permite que invente citas, frases o personajes que no existen ("modifica
+   * la frase X" cuando X no aparece, "introduce a Clara Rojas" cuando no está en
+   * el World Bible). Este método toma esos borradores y los anclaje contra el
+   * texto real de los capítulos afectados y la canon. Devuelve:
+   *  - refined: instrucciones con citas reales del texto y compatibles con la canon.
+   *  - dropped: instrucciones que se descartan porque no se pueden anclar (con motivo).
+   */
+  async refineWithContext(input: RefinerInput): Promise<AgentResponse & { result?: RefineResult }> {
+    if (!input.draftInstructions || input.draftInstructions.length === 0) {
+      return { content: "", result: { refined: [], dropped: [] } };
+    }
+
+    const chapterBlocks = input.chapterContents.map(c => {
+      const label = c.numero === 0 ? "Prólogo (0)"
+        : c.numero === -1 ? "Epílogo (-1)"
+        : c.numero === -2 ? "Nota del autor (-2)"
+        : `Capítulo ${c.numero}`;
+      return `─── ${label} — "${c.titulo}" ───\n${c.content}\n─── FIN ${label} ───`;
+    }).join("\n\n");
+
+    const draftJson = JSON.stringify(input.draftInstructions, null, 2);
+
+    const wbBlock = input.worldBibleContext && input.worldBibleContext.trim().length > 0
+      ? `\n═══════════════════════════════════════════════════════════════════\nWORLD BIBLE — CANON INVIOLABLE:\n═══════════════════════════════════════════════════════════════════\n${input.worldBibleContext}\n═══════════════════════════════════════════════════════════════════\n`
+      : "";
+
+    const refinerSystemPrompt = `Eres un editor jefe que VERIFICA Y AFINA instrucciones de corrección antes de pasarlas a los narradores. Recibes:
+  (a) las notas LIBRES del editor humano,
+  (b) un BORRADOR de instrucciones quirúrgicas extraído por un primer analista,
+  (c) el TEXTO REAL de los capítulos afectados,
+  (d) el WORLD BIBLE (canon inviolable).
+
+Tu tarea: producir instrucciones GROUNDED — ancladas en lo que el texto realmente dice y en lo que la canon permite. El primer analista trabajó solo con el índice de títulos y puede haber inventado frases o pedido cosas que contradicen la canon. Tú tienes el texto delante. Corrige, refina, descarta.
+
+REGLAS DE REFINAMIENTO:
+1. Para cada instrucción del borrador, COMPRUEBA contra el texto real del capítulo o capítulos:
+   - Si cita una frase concreta a modificar y esa frase NO aparece literal en el capítulo → REESCRIBE la instrucción para que cite una frase real (busca el equivalente más cercano en el texto), o si la situación que se quiere corregir directamente no existe en el capítulo → DESCARTA la instrucción.
+   - Si pide añadir un evento que ya está en el texto → DESCARTA (ya cumplido).
+   - Si pide modificar algo que el texto resuelve de otra forma → REESCRIBE la instrucción para que sea coherente con lo que está escrito.
+2. CONTRA EL WORLD BIBLE:
+   - Si la instrucción exige introducir un personaje, lugar, evento, regla o relación que NO aparece en el World Bible y NO aparece en el texto → DESCARTA con motivo "violaría la canon: [hecho]".
+   - Si la instrucción pide cambiar un dato que el World Bible fija como canónico (nombre, edad, parentesco, regla del mundo, motivación de personaje, cronología) → DESCARTA.
+   - Si solo una parte de la instrucción es incompatible → REESCRIBE conservando lo viable y eliminando la parte canon-rompedora.
+3. AFINAMIENTO POSITIVO: cuando una instrucción sí es viable, mejórala incluyendo:
+   - Citas literales del texto (entre comillas) cuando ayuden a localizar el cambio.
+   - Indicación clara de elementos a preservar tomada del propio capítulo.
+   - Reclasificación tipo "puntual" / "estructural" según lo que ahora ves en el texto (si es un retoque a una frase, es puntual; si requiere reescribir varias escenas, es estructural).
+4. NO añadas instrucciones nuevas que el editor humano no pidió. Solo refinas o descartas las del borrador.
+5. Conserva los campos: capitulos_afectados, categoria, descripcion, instrucciones_correccion, elementos_a_preservar (mejorado), prioridad, tipo, plan_por_capitulo (si aplica).
+6. Para cada instrucción descartada, registra: descripcion (breve), capitulos_afectados, motivo (frase concreta del porqué).
+
+FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
+{
+  "refined": [ { ...instrucción afinada... } ],
+  "dropped": [ { "descripcion": "...", "capitulos_afectados": [n], "motivo": "..." } ]
+}`;
+
+    const refinerPrompt = `MANUSCRITO: "${input.projectTitle}"
+${wbBlock}
+═══════════════════════════════════════════════════════════════════
+NOTAS DEL EDITOR HUMANO (para contexto):
+═══════════════════════════════════════════════════════════════════
+${input.originalNotes}
+═══════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════
+BORRADOR DE INSTRUCCIONES A VERIFICAR/AFINAR:
+═══════════════════════════════════════════════════════════════════
+${draftJson}
+═══════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════
+TEXTO REAL DE LOS CAPÍTULOS AFECTADOS (anclaje obligatorio):
+═══════════════════════════════════════════════════════════════════
+${chapterBlocks}
+═══════════════════════════════════════════════════════════════════
+
+Devuelve ÚNICAMENTE el JSON con "refined" y "dropped".`;
+
+    // Reutilizamos el modelo del propio analista pero con un system prompt distinto:
+    // hacemos una llamada one-off insertando el system prompt al inicio del user prompt.
+    const fullPrompt = `${refinerSystemPrompt}\n\n${refinerPrompt}`;
+    const response = await this.generateContent(fullPrompt);
+
+    try {
+      const parsed = repairJson(response.content) as RefineResult;
+      const refined = Array.isArray(parsed?.refined) ? parsed.refined.filter(
+        (i: any) => Array.isArray(i.capitulos_afectados) && i.capitulos_afectados.length > 0 && (i.instrucciones_correccion || i.descripcion)
+      ) : [];
+      const dropped = Array.isArray(parsed?.dropped) ? parsed.dropped.filter(
+        (d: any) => d && typeof d === "object" && d.motivo
+      ) : [];
+      return { ...response, result: { refined, dropped } };
+    } catch (e) {
+      console.error("[EditorialNotesParser.refineWithContext] Failed to parse JSON response", e);
+      // Si el refinamiento falla, devolvemos los borradores tal cual para no bloquear.
+      return { ...response, result: { refined: input.draftInstructions, dropped: [] } };
     }
   }
 }
