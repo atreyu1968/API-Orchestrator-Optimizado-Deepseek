@@ -3270,7 +3270,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       }
 
       const rawIssues = finalReviewResult.issues as any[];
-      const issues: FinalReviewIssue[] = rawIssues.map((issue: any) => {
+      const normalizedIssues: FinalReviewIssue[] = rawIssues.map((issue: any) => {
         let caps = issue.capitulos_afectados;
         if (!caps || !Array.isArray(caps) || caps.length === 0) {
           if (issue.capitulo != null && typeof issue.capitulo === "number") {
@@ -3289,6 +3289,86 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           categoria: issue.categoria || issue.severidad || "otro",
         } as FinalReviewIssue;
       });
+
+      // ════════════════════════════════════════════════════════════════
+      // DEFENSA ANTI-FALSOS-POSITIVOS (espejo del filtro de runFinalReview)
+      // El usuario pulsa "Resolver issues documentados" partiendo de los
+      // issues guardados en project.finalReviewResult. Sin este filtro, un
+      // único issue de repetición léxica que el modelo extiende a TODOS los
+      // capítulos genera 30+ reescrituras innecesarias y costosas.
+      // ════════════════════════════════════════════════════════════════
+      const HIGH_FP_CATEGORIES = new Set(["trama", "repeticion_lexica", "identidad_confusa"]);
+      const beforeFilterCount = normalizedIssues.length;
+      const filterReasons: string[] = [];
+
+      const issues: FinalReviewIssue[] = normalizedIssues.filter((issue) => {
+        // Regla 1: HIGH_FP exigen evidencia textual + corrección específica + preservación
+        if (HIGH_FP_CATEGORIES.has(issue.categoria as string)) {
+          const desc = issue.descripcion || "";
+          const hasTextualEvidence =
+            desc.length > 40 &&
+            (desc.includes("Cap") || desc.includes("cap") ||
+             desc.includes("Capítulo") || desc.includes("capítulo"));
+          const hasSpecificCorrection =
+            (issue.instrucciones_correccion || "").length > 30;
+          const hasPreservation =
+            ((issue as any).elementos_a_preservar || "").length > 10;
+
+          if (!hasTextualEvidence || !hasSpecificCorrection || !hasPreservation) {
+            filterReasons.push(`${issue.categoria} vago: "${desc.slice(0, 60)}..."`);
+            return false;
+          }
+        }
+
+        // Regla 2: repeticion_lexica solo es válida en ≤2 capítulos contiguos
+        // (lo dice el propio prompt del Revisor Final). Si abarca más, es hallucinación.
+        if (issue.categoria === "repeticion_lexica") {
+          const caps = (issue.capitulos_afectados || [])
+            .filter((c: number) => typeof c === "number" && c > 0)
+            .sort((a: number, b: number) => a - b);
+          if (caps.length > 2) {
+            filterReasons.push(
+              `repeticion_lexica abarca ${caps.length} capítulos (máx 2 contiguos): "${(issue.descripcion || "").slice(0, 60)}..."`
+            );
+            return false;
+          }
+          if (caps.length === 2 && caps[1] - caps[0] !== 1) {
+            filterReasons.push(
+              `repeticion_lexica en capítulos no contiguos ${caps.join(",")}: "${(issue.descripcion || "").slice(0, 60)}..."`
+            );
+            return false;
+          }
+          // Regla 3: si severidad no es "critica", también se descarta (mismo criterio que runFinalReview)
+          if ((issue as any).severidad !== "critica") {
+            filterReasons.push(`repeticion_lexica no crítica: "${(issue.descripcion || "").slice(0, 60)}..."`);
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      if (filterReasons.length > 0) {
+        const filteredCount = beforeFilterCount - issues.length;
+        console.log(`[ResolveIssues] Filtered ${filteredCount}/${beforeFilterCount} hallucinated/vague issues:`);
+        filterReasons.forEach(r => console.log(`  - ${r}`));
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `${filteredCount} issues descartados por ser vagos o de alcance excesivo (false positives). ${issues.length} issues válidos restantes.`,
+          agentRole: "final-reviewer",
+        });
+      }
+
+      if (issues.length === 0) {
+        this.callbacks.onError(
+          beforeFilterCount > 0
+            ? "Todos los issues documentados fueron descartados por ser vagos o de alcance excesivo (false positives del Revisor Final). Considera regenerar la revisión."
+            : "No hay issues documentados para resolver."
+        );
+        await storage.updateProject(project.id, { status: "completed" });
+        return;
+      }
       
       let styleGuideContent = "";
       let authorName = "";
