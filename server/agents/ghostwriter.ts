@@ -57,6 +57,7 @@ interface GhostwriterInput {
   extendedGuideContent?: string;
   previousChapterContent?: string;
   kindleUnlimitedOptimized?: boolean;
+  surgicalEdit?: boolean;
 }
 
 const SYSTEM_PROMPT = `
@@ -802,7 +803,25 @@ export class GhostwriterAgent extends BaseAgent {
     }
 
     if (input.refinementInstructions) {
-      prompt += `
+      if (input.surgicalEdit) {
+        prompt += `
+    
+    ========================================
+    🔧 EDICIÓN QUIRÚRGICA POST-FINALIZACIÓN — PRESERVACIÓN MÁXIMA 🔧
+    ========================================
+    ${input.refinementInstructions}
+    
+    ⚠️ REGLAS INVIOLABLES (modo quirúrgico):
+    1. PRESERVA INTACTO el 90%+ del borrador anterior. Solo toca los pasajes con el problema señalado.
+    2. MANTÉN LA MISMA LONGITUD que el borrador anterior (±10% como máximo). NO expandas, NO acortes.
+    3. NO añadas escenas, eventos, personajes ni detalles que no estuvieran ya.
+    4. NO cambies el inicio, el cierre, ni los giros narrativos.
+    5. NO "mejores" prosa de paso — solo corrige lo señalado.
+    6. Mantén el tono, voz y registro originales — el cambio debe ser invisible al lector.
+    ========================================
+    `;
+      } else {
+        prompt += `
     
     ========================================
     INSTRUCCIONES DE REESCRITURA (PLAN QUIRÚRGICO DEL EDITOR):
@@ -817,6 +836,7 @@ export class GhostwriterAgent extends BaseAgent {
     5. Si algo funcionaba bien, MANTENLO INTACTO
     ========================================
     `;
+      }
 
       if (input.previousChapterContent) {
         const truncatedPrevious = input.previousChapterContent.length > 20000 
@@ -829,7 +849,7 @@ export class GhostwriterAgent extends BaseAgent {
     ${truncatedPrevious}
     ========================================
     
-    INSTRUCCIÓN: Usa este borrador como BASE. Modifica SOLO lo que indican las instrucciones de corrección.
+    INSTRUCCIÓN: Usa este borrador como BASE. Modifica SOLO lo que indican las instrucciones de corrección.${input.surgicalEdit ? " La salida debe parecerse al 90%+ a este borrador, con cambios localizados solo en los puntos problemáticos." : ""}
     `;
       }
     }

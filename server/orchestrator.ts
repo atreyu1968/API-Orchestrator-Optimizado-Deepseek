@@ -1144,7 +1144,8 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         let extractedContinuityState: any = null;
         
         let bestVersion = { content: "", score: 0, continuityState: null as any };
-        
+        let attemptsSinceBestImprovement = 0;
+
         while (!approved && refinementAttempts < this.maxRefinementLoops) {
           const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
           const fullStyleGuide = styleGuideContent 
@@ -1344,9 +1345,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               continuityState: currentContinuityState,
               hardReject: currentHardReject,
             } as any;
+            attemptsSinceBestImprovement = 0;
             console.log(`[Orchestrator] New best version for ${sectionLabel}: ${currentScore}/10${currentHardReject ? " (con hard-reject)" : " (limpio)"}`);
           } else {
-            console.log(`[Orchestrator] Keeping previous best version (${bestVersion.score}/10) over current (${currentScore}/10)`);
+            attemptsSinceBestImprovement++;
+            console.log(`[Orchestrator] Keeping previous best version (${bestVersion.score}/10) over current (${currentScore}/10) — sin mejora desde hace ${attemptsSinceBestImprovement} intento(s)`);
           }
 
           if (editorResult.result?.aprobado) {
@@ -1355,10 +1358,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           } else {
             refinementAttempts++;
 
-            if (refinementAttempts >= 2 && currentScore <= bestVersion.score && currentHardReject === ((bestVersion as any).hardReject ?? false)) {
-              console.log(`[Orchestrator] Anti-stagnation: ${sectionLabel} scored ${currentScore}/10 ≤ best ${bestVersion.score}/10 after ${refinementAttempts} attempts. Stopping rewrites.`);
+            if (attemptsSinceBestImprovement >= 2) {
+              console.log(`[Orchestrator] Anti-stagnation: ${sectionLabel} sin mejorar la mejor versión (${bestVersion.score}/10) tras ${attemptsSinceBestImprovement} intentos. Stopping rewrites.`);
               this.callbacks.onAgentStatus("editor", "editing",
-                `${sectionLabel} sin mejora (${currentScore}/10 ≤ mejor ${bestVersion.score}/10). Usando mejor versión.`
+                `${sectionLabel} sin mejora tras ${attemptsSinceBestImprovement} intentos (mejor: ${bestVersion.score}/10). Usando mejor versión.`
               );
               break;
             }
@@ -1801,6 +1804,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         let extractedContinuityState: any = null;
         
         let bestVersion = { content: "", score: 0, continuityState: null as any };
+        let attemptsSinceBestImprovement = 0;
 
         while (!approved && refinementAttempts < this.maxRefinementLoops) {
           const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
@@ -1997,9 +2001,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               continuityState: currentContinuityState,
               hardReject: currentHardReject,
             } as any;
+            attemptsSinceBestImprovement = 0;
             console.log(`[Orchestrator Resume] New best version for ${sectionLabel}: ${currentScore}/10${currentHardReject ? " (con hard-reject)" : " (limpio)"}`);
           } else {
-            console.log(`[Orchestrator Resume] Keeping previous best version (${bestVersion.score}/10) over current (${currentScore}/10)`);
+            attemptsSinceBestImprovement++;
+            console.log(`[Orchestrator Resume] Keeping previous best version (${bestVersion.score}/10) over current (${currentScore}/10) — sin mejora desde hace ${attemptsSinceBestImprovement} intento(s)`);
           }
 
           if (editorResult.result?.aprobado) {
@@ -2008,10 +2014,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           } else {
             refinementAttempts++;
 
-            if (refinementAttempts >= 2 && currentScore <= bestVersion.score && currentHardReject === ((bestVersion as any).hardReject ?? false)) {
-              console.log(`[Orchestrator Resume] Anti-stagnation: ${sectionLabel} scored ${currentScore}/10 ≤ best ${bestVersion.score}/10 after ${refinementAttempts} attempts. Stopping rewrites.`);
+            if (attemptsSinceBestImprovement >= 2) {
+              console.log(`[Orchestrator Resume] Anti-stagnation: ${sectionLabel} sin mejorar la mejor versión (${bestVersion.score}/10) tras ${attemptsSinceBestImprovement} intentos. Stopping rewrites.`);
               this.callbacks.onAgentStatus("editor", "editing",
-                `${sectionLabel} sin mejora (${currentScore}/10 ≤ mejor ${bestVersion.score}/10). Usando mejor versión.`
+                `${sectionLabel} sin mejora tras ${attemptsSinceBestImprovement} intentos (mejor: ${bestVersion.score}/10). Usando mejor versión.`
               );
               break;
             }
@@ -3735,6 +3741,7 @@ Responde SOLO con un JSON válido con la estructura:
         let extractedContinuityState: any = null;
         
         let bestVersion = { content: "", score: 0, continuityState: null as any };
+        let attemptsSinceBestImprovement = 0;
 
         while (!approved && refinementAttempts < this.maxRefinementLoops) {
           const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
@@ -6135,7 +6142,12 @@ PROHIBIDO ABSOLUTAMENTE:
 
 Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del texto idéntico al original.`;
 
-    const writerResult = await this.ghostwriter.execute({
+    const surgicalMin = Math.round(originalWordCount * 0.92);
+    const surgicalMax = Math.round(originalWordCount * 1.08);
+    void perChapterMinRewrite;
+    void perChapterMaxRewrite;
+
+    let writerResult = await this.ghostwriter.execute({
       chapterNumber: sectionData.numero,
       chapterData: sectionData,
       worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreadsRewrite, seriesEventsRewrite),
@@ -6143,12 +6155,42 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       previousContinuity,
       refinementInstructions: surgicalInstructions,
       previousChapterContent: originalContent,
-      minWordCount: Math.max(Math.round(originalWordCount * 0.9), perChapterMinRewrite),
-      maxWordCount: Math.max(Math.round(originalWordCount * 1.1), perChapterMaxRewrite),
-      kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+      minWordCount: surgicalMin,
+      maxWordCount: surgicalMax,
+      kindleUnlimitedOptimized: false,
+      surgicalEdit: true,
     } as any);
 
     await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite");
+
+    const checkLengthOk = (content: string): boolean => {
+      const wc = content.split(/\s+/).filter(w => w.length > 0).length;
+      const ratio = wc / Math.max(originalWordCount, 1);
+      return ratio >= 0.80 && ratio <= 1.25;
+    };
+
+    if (writerResult.content && !checkLengthOk(writerResult.content)) {
+      const firstWc = writerResult.content.split(/\s+/).filter(w => w.length > 0).length;
+      console.warn(`[QA-Rewrite] ${sectionLabel}: primer intento fuera de rango (${firstWc}/${originalWordCount}). Reintentando con presión de longitud reforzada...`);
+      this.callbacks.onAgentStatus("ghostwriter", "writing",
+        `${sectionLabel}: longitud incorrecta (${firstWc}/${originalWordCount}). Reintentando con preservación estricta...`
+      );
+      const retryInstructions = surgicalInstructions + `\n\n🚨 REINTENTO — TU INTENTO ANTERIOR TUVO ${firstWc} PALABRAS Y EL ORIGINAL TIENE ${originalWordCount}. ESTO ES INACEPTABLE. Devuelve el capítulo con EXACTAMENTE entre ${surgicalMin} y ${surgicalMax} palabras. Copia el original verbatim y modifica SOLO las frases con el issue señalado.`;
+      writerResult = await this.ghostwriter.execute({
+        chapterNumber: sectionData.numero,
+        chapterData: sectionData,
+        worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreadsRewrite, seriesEventsRewrite),
+        guiaEstilo,
+        previousContinuity,
+        refinementInstructions: retryInstructions,
+        previousChapterContent: originalContent,
+        minWordCount: surgicalMin,
+        maxWordCount: surgicalMax,
+        kindleUnlimitedOptimized: false,
+        surgicalEdit: true,
+      } as any);
+      await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite_retry");
+    }
 
     if (!writerResult.content || !writerResult.content.trim()) {
       console.warn(`[QA-Rewrite] ${sectionLabel}: writer returned empty content. Reverting to original.`);
