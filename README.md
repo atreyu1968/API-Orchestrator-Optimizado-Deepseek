@@ -1,4 +1,4 @@
-# LitAgents v6.1 — Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v6.5 — Sistema de Orquestacion de Agentes Literarios IA
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando Google Gemini.
 
@@ -546,6 +546,15 @@ sudo systemctl restart nginx
 - **Idioma**: Interfaz en espanol (`lang="es"`)
 
 ## Changelog
+
+### v6.5
+- **Politica de aprobacion 9/10**: Capitulos con puntuacion >= 9 se aprueban siempre, incluso si el Editor detecta hard-rejects (continuidad, filtraciones, repeticiones de trama, inconsistencias de objetos). Las violaciones se anotan para que el Centinela de Continuidad o la auditoria final las traten con reescritura quirurgica. Evita destruir prosa de calidad alta por correcciones marginales.
+- **Modo `surgicalEdit` del Narrador**: Nuevo flag que cambia las reglas de reescritura del Ghostwriter para preservar 90%+ del borrador anterior y mantener la longitud (±10%). Sustituye la regla "no reduzcas la extension" (toxica para correcciones post-finalizacion) por "manten la misma longitud". Reintento automatico con presion reforzada si la primera salida cae fuera de rango. Solo si el reintento sigue desbordado, se revierte al original.
+- **Reescritura quirurgica con red de seguridad**: `rewriteChapterForQA()` ahora hace backup del contenido original, valida la longitud de la nueva version (80-125% del original o reintento), verifica con el Editor que no se introduzcan nuevas violaciones criticas, y revierte automaticamente al original si la reescritura empeora algo. Aplica a las correcciones del Centinela de Continuidad, Auditor de Voz y Detector Semantico.
+- **Anti-estancamiento por intentos sin mejora**: El bucle de refinamiento Editor ahora cuenta `attemptsSinceBestImprovement`. Si pasan 2 intentos consecutivos sin superar la mejor version (independientemente del estado de hard-reject), se detiene y se usa la mejor version. Cubre tanto el plateau perfecto (7,7,7) como el oscilante (7-clean → 7-hardreject → 7-clean) que antes agotaba los 4 intentos en vano.
+- **Mejor seleccion de "best version"**: La eleccion entre intentos ahora prioriza versiones limpias sobre versiones con hard-reject, aunque tengan menor puntuacion. Una version 7/10 sin violaciones criticas se prefiere sobre una 9/10 con error de continuidad. Empate se resuelve por puntuacion estricta (`>` en lugar de `>=`) preservando la primera version buena.
+- **Centinela de Continuidad — fallback de capitulos**: Cuando ni el modelo ni el regex consiguen identificar capitulos especificos para corregir, se usa el ultimo capitulo del scope del checkpoint como fallback en lugar de dejar el aviso colgado. Garantiza que cada issue detectado tenga un destinatario.
+- **Naturalidad de audiolibros mejorada**: Parametros de Fish Audio ajustados (temperature 0.7→0.65, top_p 0.8→0.7, repetition_penalty 1.5→1.2, chunk_length 200) para entonacion mas humana. `prepareTtsText()` ampliado con normalizacion de comillas (« » → "), abreviaturas espanolas (Sr./Sra./Dr./Av./Nº/etc./EE.UU./s.XX), conversion de em-dash a coma para pausas, deduplicacion de puntuacion (!! → !, …) y refuerzo de puntuacion final por parrafo.
 
 ### v6.1
 - **Corrector Ortotipografico**: Nuevo agente de post-produccion para correccion profesional adaptada a genero y estilo del autor. Detecta glitches de IA (parrafos clonados, dialogos rotos, bucles de accion). Soporta las 4 fuentes: proyectos, re-ediciones, importados y traducciones. Aplica correcciones directamente al manuscrito original.
