@@ -11,7 +11,10 @@ import {
   ProofreaderAgent,
   EditorialNotesParser,
   type EditorialInstruction,
+  type EditorialNotesParseResult,
   isProjectCancelledFromDb,
+  registerProjectAbortController,
+  clearProjectAbortController,
   type EditorResult, 
   type FinalReviewerResult,
   type ContinuitySentinelResult,
@@ -3534,7 +3537,73 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     }
   }
 
-  async applyEditorialNotes(project: Project, notesText: string): Promise<void> {
+  /**
+   * PARSE-ONLY: extract structured editorial instructions from free-form notes WITHOUT applying anything.
+   * Returns the parsed result so the user can preview / filter before triggering the rewrite phase.
+   * Does NOT change project status. Token usage IS tracked.
+   */
+  async parseEditorialNotesOnly(
+    project: Project,
+    notesText: string
+  ): Promise<EditorialNotesParseResult & { instructions: EditorialInstruction[] }> {
+    if (!notesText || !notesText.trim()) {
+      throw new Error("Las notas editoriales están vacías.");
+    }
+
+    const worldBible = await storage.getWorldBibleByProject(project.id);
+    if (!worldBible) {
+      throw new Error("No se encontró la biblia del mundo para este proyecto.");
+    }
+
+    const worldBibleData: ParsedWorldBible = {
+      world_bible: {
+        personajes: worldBible.characters as any[] || [],
+        lugares: [],
+        reglas_lore: worldBible.worldRules as any[] || [],
+      },
+      escaleta_capitulos: worldBible.plotOutline as any[] || [],
+    };
+
+    const allChapters = await storage.getChaptersByProject(project.id);
+    const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
+    const chapterIndex = allSections.map(s => ({ numero: s.numero, titulo: s.titulo || "" }));
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "info",
+      message: `Analizando notas editoriales para vista previa (${notesText.length} caracteres).`,
+      agentRole: "editor",
+    });
+
+    const parseResult = await this.editorialNotesParser.execute({
+      notas: notesText,
+      chapterIndex,
+      projectTitle: project.title,
+    });
+
+    await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "gemini-2.5-flash", undefined, "editorial_parse");
+
+    const instructions: EditorialInstruction[] = parseResult.result?.instrucciones || [];
+    const summary = parseResult.result?.resumen_general;
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "info",
+      message: `Vista previa generada: ${instructions.length} instrucciones extraídas para revisión del usuario.`,
+      agentRole: "editor",
+    });
+
+    return { resumen_general: summary, instrucciones: instructions, instructions };
+  }
+
+  async applyEditorialNotes(
+    project: Project,
+    notesText: string,
+    preParsedInstructions?: EditorialInstruction[]
+  ): Promise<void> {
+    // Register cancellation controller so the user can abort mid-process.
+    registerProjectAbortController(project.id);
+
     try {
       this.cumulativeTokens = {
         inputTokens: project.totalInputTokens || 0,
@@ -3542,7 +3611,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         thinkingTokens: project.totalThinkingTokens || 0,
       };
 
-      if (!notesText || !notesText.trim()) {
+      const usingPreParsed = Array.isArray(preParsedInstructions) && preParsedInstructions.length > 0;
+
+      if (!usingPreParsed && (!notesText || !notesText.trim())) {
         this.callbacks.onError("Las notas editoriales están vacías.");
         await storage.updateProject(project.id, { status: "completed" });
         return;
@@ -3582,34 +3653,46 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
         : `Género: ${project.genre}, Tono: ${project.tone}`;
 
-      this.callbacks.onAgentStatus("editor", "thinking",
-        "Analizando notas del editor humano y extrayendo instrucciones quirúrgicas..."
-      );
+      let instructions: EditorialInstruction[];
 
-      await storage.createActivityLog({
-        projectId: project.id,
-        level: "info",
-        message: `Aplicando notas editoriales del editor humano (${notesText.length} caracteres).`,
-        agentRole: "editor",
-      });
+      if (usingPreParsed) {
+        instructions = preParsedInstructions!;
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `Aplicando ${instructions.length} instrucciones editoriales pre-revisadas por el usuario.`,
+          agentRole: "editor",
+        });
+      } else {
+        this.callbacks.onAgentStatus("editor", "thinking",
+          "Analizando notas del editor humano y extrayendo instrucciones quirúrgicas..."
+        );
 
-      const chapterIndex = allSections.map(s => ({ numero: s.numero, titulo: s.titulo || "" }));
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `Aplicando notas editoriales del editor humano (${notesText.length} caracteres).`,
+          agentRole: "editor",
+        });
 
-      const parseResult = await this.editorialNotesParser.execute({
-        notas: notesText,
-        chapterIndex,
-        projectTitle: project.title,
-      });
+        const chapterIndex = allSections.map(s => ({ numero: s.numero, titulo: s.titulo || "" }));
 
-      await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "gemini-2.5-flash", undefined, "editorial_parse");
+        const parseResult = await this.editorialNotesParser.execute({
+          notas: notesText,
+          chapterIndex,
+          projectTitle: project.title,
+        });
 
-      const instructions: EditorialInstruction[] = parseResult.result?.instrucciones || [];
+        await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "gemini-2.5-flash", undefined, "editorial_parse");
 
-      if (instructions.length === 0) {
-        const summary = parseResult.result?.resumen_general || "El sistema no encontró instrucciones procesables en las notas.";
-        this.callbacks.onError(`No se extrajeron instrucciones aplicables. ${summary}`);
-        await storage.updateProject(project.id, { status: "completed" });
-        return;
+        instructions = parseResult.result?.instrucciones || [];
+
+        if (instructions.length === 0) {
+          const summary = parseResult.result?.resumen_general || "El sistema no encontró instrucciones procesables en las notas.";
+          this.callbacks.onError(`No se extrajeron instrucciones aplicables. ${summary}`);
+          await storage.updateProject(project.id, { status: "completed" });
+          return;
+        }
       }
 
       // Group instructions by chapter so we make one surgical pass per chapter with all its issues combined.
@@ -3663,8 +3746,24 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       let appliedCount = 0;
       let revertedCount = 0;
       let skippedCount = 0;
+      let cancelled = false;
+
+      // Snapshot the global score BEFORE applying so we can compare later.
+      const previousFinalScore = project.finalScore ?? null;
 
       for (let i = 0; i < sortedChapters.length; i++) {
+        // Cancellation check between chapters — allows the user to abort mid-process.
+        if (await isProjectCancelledFromDb(project.id)) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `Aplicación de notas editoriales CANCELADA por el usuario tras procesar ${i}/${sortedChapters.length} capítulos.`,
+            agentRole: "editor",
+          });
+          cancelled = true;
+          break;
+        }
+
         const chapterNum = sortedChapters[i];
         const chapter = allChapters.find(c => c.chapterNumber === chapterNum);
         const sectionData = allSections.find(s => s.numero === chapterNum);
@@ -3740,10 +3839,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         const refreshedChapter = refreshedChapters.find(c => c.id === chapter.id);
         if (refreshedChapter && refreshedChapter.content && refreshedChapter.content !== beforeContent) {
           appliedCount++;
+          // Save snapshot for diff/undo (only when the rewrite actually landed).
+          await storage.updateChapter(chapter.id, {
+            preEditContent: beforeContent,
+            preEditAt: new Date() as any,
+          });
           await storage.createActivityLog({
             projectId: project.id,
             level: "success",
-            message: `${sectionLabel}: notas editoriales aplicadas (${chapterInstructions.length} instrucciones).`,
+            message: `${sectionLabel}: notas editoriales aplicadas (${chapterInstructions.length} instrucciones). Snapshot anterior guardado para comparación.`,
             agentRole: "ghostwriter",
           });
         } else {
@@ -3757,24 +3861,117 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
       }
 
-      await storage.updateProject(project.id, { status: "completed" });
-
-      this.callbacks.onAgentStatus("ghostwriter", "completed",
-        `Notas editoriales procesadas: ${appliedCount} capítulos modificados, ${revertedCount} preservados, ${skippedCount} omitidos.`
-      );
-
       await storage.createActivityLog({
         projectId: project.id,
-        level: "success",
-        message: `Notas editoriales completadas: ${appliedCount} aplicadas, ${revertedCount} revertidas (red de seguridad), ${skippedCount} omitidas. Total: ${sortedChapters.length} capítulos evaluados.`,
+        level: cancelled ? "warning" : "success",
+        message: `Notas editoriales ${cancelled ? "interrumpidas" : "completadas"}: ${appliedCount} aplicadas, ${revertedCount} revertidas (red de seguridad), ${skippedCount} omitidas.`,
         agentRole: "ghostwriter",
       });
+
+      // ════════════════════════════════════════════════════════════════
+      // REVISIÓN FINAL POST-EDITORIAL: relanzar el Revisor Final para recalcular
+      // la puntuación global y permitir al usuario ver el impacto neto.
+      // Solo se ejecuta si: (1) hubo al menos un capítulo modificado y (2) el proceso no fue cancelado.
+      // ════════════════════════════════════════════════════════════════
+      // Re-check cancellation in case user cancelled between the loop ending and the final review starting.
+      if (await isProjectCancelledFromDb(project.id)) {
+        cancelled = true;
+      }
+
+      if (appliedCount > 0 && !cancelled) {
+        try {
+          this.callbacks.onAgentStatus("final-reviewer", "reviewing",
+            "Recalculando puntuación global tras aplicar las notas editoriales..."
+          );
+
+          const updatedChaptersForReview = await storage.getChaptersByProject(project.id);
+          const chaptersForReview = updatedChaptersForReview
+            .filter(c => c.content)
+            .sort((a, b) => a.chapterNumber - b.chapterNumber)
+            .map(c => ({
+              numero: c.chapterNumber,
+              titulo: c.title || `Capítulo ${c.chapterNumber}`,
+              contenido: c.content || "",
+            }));
+
+          const reviewResult = await this.finalReviewer.execute({
+            projectTitle: project.title,
+            chapters: chaptersForReview,
+            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+            guiaEstilo,
+            pasadaNumero: (project.revisionCycle || 0) + 1,
+            issuesPreviosCorregidos: [],
+            capitulosConLimitaciones: [],
+            seriesContext: undefined,
+          });
+
+          await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "gemini-2.5-flash", undefined, "final_review");
+
+          const newResult = reviewResult.result;
+          const newScoreRaw = newResult?.puntuacion_global ?? null;
+          const newScoreForDb = newScoreRaw != null ? Math.round(newScoreRaw) : null;
+
+          await storage.updateProject(project.id, {
+            finalReviewResult: newResult as any,
+            finalScore: newScoreForDb,
+          });
+
+          if (newScoreRaw != null) {
+            const delta = previousFinalScore != null ? (newScoreRaw - previousFinalScore) : null;
+            const arrow = delta == null ? "" : delta > 0 ? " ⬆️" : delta < 0 ? " ⬇️" : " =";
+            const beforeLabel = previousFinalScore != null ? `${previousFinalScore}/10` : "sin puntuación previa";
+            const summaryMsg = `Puntuación global tras notas editoriales: ${beforeLabel} → ${newScoreRaw}/10${arrow}${delta != null ? ` (${delta > 0 ? "+" : ""}${delta.toFixed(1)})` : ""}`;
+
+            const level = delta != null && delta < -0.5
+              ? "warning"
+              : (delta != null && delta > 0 ? "success" : "info");
+
+            await storage.createActivityLog({
+              projectId: project.id,
+              level,
+              message: summaryMsg + (delta != null && delta < -0.5
+                ? " ⚠️ La puntuación ha bajado tras las correcciones. Revisa los cambios y considera revertir capítulos sensibles desde el botón 'Ver cambios'."
+                : ""),
+              agentRole: "final-reviewer",
+            });
+
+            this.callbacks.onAgentStatus("final-reviewer", "completed", summaryMsg);
+          } else {
+            this.callbacks.onAgentStatus("final-reviewer", "completed",
+              "Revisión final completada (sin puntuación)."
+            );
+          }
+        } catch (reviewErr) {
+          console.error("[ApplyEditorialNotes] Error en revisión final post-editorial:", reviewErr);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `No se pudo recalcular la puntuación global: ${reviewErr instanceof Error ? reviewErr.message : "Error desconocido"}. Las correcciones SÍ se aplicaron.`,
+            agentRole: "final-reviewer",
+          });
+        }
+      } else if (appliedCount === 0 && !cancelled) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: "No se ejecuta la revisión final post-editorial porque ningún capítulo fue modificado.",
+          agentRole: "final-reviewer",
+        });
+      }
+
+      await storage.updateProject(project.id, { status: cancelled ? "cancelled" : "completed" });
+
+      this.callbacks.onAgentStatus("ghostwriter", "completed",
+        `Notas editoriales ${cancelled ? "canceladas" : "procesadas"}: ${appliedCount} capítulos modificados, ${revertedCount} preservados, ${skippedCount} omitidos.`
+      );
 
       this.callbacks.onProjectComplete();
     } catch (error) {
       console.error("[Orchestrator] applyEditorialNotes error:", error);
       await storage.updateProject(project.id, { status: "completed" });
       this.callbacks.onError(`Error aplicando notas editoriales: ${error instanceof Error ? error.message : "Error desconocido"}`);
+    } finally {
+      clearProjectAbortController(project.id);
     }
   }
 

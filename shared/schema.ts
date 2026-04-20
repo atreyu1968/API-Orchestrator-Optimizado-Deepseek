@@ -125,6 +125,9 @@ export const chapters = pgTable("chapters", {
   needsRevision: boolean("needs_revision").default(false),
   revisionReason: text("revision_reason"),
   continuityState: jsonb("continuity_state"),
+  // Snapshot of chapter content right before the last applied editorial-notes rewrite (for diff/undo UI).
+  preEditContent: text("pre_edit_content"),
+  preEditAt: timestamp("pre_edit_at"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

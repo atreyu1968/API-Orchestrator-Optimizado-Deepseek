@@ -11,9 +11,11 @@ import { DuplicateManager } from "@/components/duplicate-manager";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp, Eye, ArrowLeft, FileUp } from "lucide-react";
+import { diffWords } from "diff";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
@@ -331,17 +333,108 @@ export default function Dashboard() {
   const [editorialNotes, setEditorialNotes] = useState("");
   const [editorialNotesOpen, setEditorialNotesOpen] = useState(false);
 
-  const applyEditorialNotesMutation = useMutation({
+  // Two-step preview/apply for editorial notes
+  type EditorialInstructionPreview = {
+    capitulos_afectados: number[];
+    categoria: string;
+    descripcion: string;
+    instrucciones_correccion: string;
+    elementos_a_preservar?: string;
+    prioridad?: "alta" | "media" | "baja";
+    plan_por_capitulo?: Record<string, string>;
+  };
+  const [editorialPreview, setEditorialPreview] = useState<{
+    resumen_general: string | null;
+    instrucciones: EditorialInstructionPreview[];
+  } | null>(null);
+  const [selectedInstructionIdxs, setSelectedInstructionIdxs] = useState<Set<number>>(new Set());
+
+  // Diff dialog state for "Ver cambios" per chapter
+  const [diffChapter, setDiffChapter] = useState<Chapter | null>(null);
+
+  const sectionLabel = (n: number) =>
+    n === 0 ? "Prólogo" : n === -1 ? "Epílogo" : n === -2 ? "Nota del autor" : `Cap. ${n}`;
+
+  const handleNotesFileUpload = async (file: File) => {
+    const okExt = /\.(txt|md|markdown)$/i.test(file.name);
+    if (!okExt) {
+      toast({
+        title: "Formato no soportado",
+        description: "Sube un archivo .txt, .md o .markdown (PDFs y docx no se procesan).",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const text = await file.text();
+      if (text.length > 50000) {
+        toast({
+          title: "Archivo demasiado largo",
+          description: `El archivo tiene ${text.length.toLocaleString()} caracteres (máximo 50.000). Recorta el contenido.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      setEditorialNotes(text);
+      toast({ title: "Notas cargadas", description: `${text.length.toLocaleString()} caracteres importados desde "${file.name}"` });
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.message || "No se pudo leer el archivo", variant: "destructive" });
+    }
+  };
+
+  const parseEditorialNotesMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: number; notes: string }) => {
-      const response = await apiRequest("POST", `/api/projects/${id}/apply-editorial-notes`, { notes });
+      const response = await apiRequest("POST", `/api/projects/${id}/parse-editorial-notes`, { notes });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      const instrucciones: EditorialInstructionPreview[] = data.instrucciones || [];
+      setEditorialPreview({
+        resumen_general: data.resumen_general || null,
+        instrucciones,
+      });
+      // Default: all selected.
+      setSelectedInstructionIdxs(new Set(instrucciones.map((_, i) => i)));
+      if (instrucciones.length === 0) {
+        toast({
+          title: "No se extrajeron instrucciones",
+          description: data.resumen_general || "El sistema no encontró instrucciones aplicables en las notas.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Vista previa lista",
+          description: `${instrucciones.length} instrucciones extraídas. Revisa, desmarca las que no quieras y aplica.`,
+        });
+      }
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Error analizando notas",
+        description: err?.message || "No se pudieron analizar las notas editoriales",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const applyEditorialNotesMutation = useMutation({
+    mutationFn: async (
+      args:
+        | { id: number; notes: string }
+        | { id: number; instructions: EditorialInstructionPreview[] }
+    ) => {
+      const body: any = "instructions" in args ? { instructions: args.instructions } : { notes: args.notes };
+      const response = await apiRequest("POST", `/api/projects/${args.id}/apply-editorial-notes`, body);
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Aplicando notas del editor", description: "Analizando notas y aplicando correcciones quirúrgicas..." });
+      toast({ title: "Aplicando notas del editor", description: "Reescribiendo capítulos y recalculando puntuación al final..." });
       addLog("thinking", "Aplicando notas del editor humano al manuscrito...", "editor");
       setEditorialNotes("");
       setEditorialNotesOpen(false);
+      setEditorialPreview(null);
+      setSelectedInstructionIdxs(new Set());
     },
     onError: (err: any) => {
       toast({
@@ -702,6 +795,24 @@ export default function Dashboard() {
                             {chapter.wordCount.toLocaleString()} palabras
                           </span>
                         )}
+                        {(chapter as any).preEditContent && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => setDiffChapter(chapter)}
+                                className="text-xs flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-500/20"
+                                data-testid={`button-view-diff-${chapter.chapterNumber}`}
+                              >
+                                <Eye className="h-3 w-3" />
+                                Ver cambios
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Ver qué cambió en este capítulo tras las últimas notas editoriales
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                         <Badge 
                           variant={chapter.status === "completed" ? "default" : chapter.status === "revision" ? "destructive" : "secondary"}
                           className="text-xs"
@@ -823,16 +934,34 @@ export default function Dashboard() {
                             : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                         </button>
 
-                        {editorialNotesOpen && (
+                        {editorialNotesOpen && !editorialPreview && (
                           <div className="mt-3 space-y-3">
                             <p className="text-xs text-muted-foreground leading-relaxed">
-                              Pega aquí las notas que te ha dado tu editor (texto libre, veredicto editorial, instrucciones quirúrgicas, etc.).
-                              El sistema las analizará, las convertirá en instrucciones por capítulo y aplicará correcciones quirúrgicas
-                              preservando el 90%+ del texto. Si una reescritura empeora el capítulo, se revierte automáticamente al original.
+                              Pega o sube las notas de tu editor. <strong>Paso 1:</strong> el sistema las analiza y te muestra
+                              una vista previa de las instrucciones extraídas, agrupadas por capítulo. <strong>Paso 2:</strong> tú
+                              revisas, desmarcas las que no quieras y aplicas. Cada capítulo se reescribe quirúrgicamente,
+                              y al final se recalcula la puntuación global para ver el impacto neto.
                             </p>
-                            <Label htmlFor="editorial-notes-textarea" className="text-xs">
-                              Notas editoriales (máx. 50.000 caracteres)
-                            </Label>
+                            <div className="flex items-center justify-between gap-2">
+                              <Label htmlFor="editorial-notes-textarea" className="text-xs">
+                                Notas editoriales (máx. 50.000 caracteres)
+                              </Label>
+                              <label className="text-[11px] text-primary hover:underline cursor-pointer flex items-center gap-1" data-testid="label-upload-editorial-notes">
+                                <FileUp className="h-3 w-3" />
+                                Subir archivo (.txt/.md)
+                                <input
+                                  type="file"
+                                  accept=".txt,.md,.markdown,text/plain,text/markdown"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) handleNotesFileUpload(f);
+                                    e.target.value = "";
+                                  }}
+                                  data-testid="input-upload-editorial-notes"
+                                />
+                              </label>
+                            </div>
                             <Textarea
                               id="editorial-notes-textarea"
                               value={editorialNotes}
@@ -858,27 +987,178 @@ export default function Dashboard() {
                             <Button
                               variant="default"
                               size="sm"
-                              onClick={() => applyEditorialNotesMutation.mutate({
+                              onClick={() => parseEditorialNotesMutation.mutate({
                                 id: currentProject.id,
                                 notes: editorialNotes.trim()
                               })}
                               disabled={
                                 !editorialNotes.trim() ||
+                                parseEditorialNotesMutation.isPending ||
                                 applyEditorialNotesMutation.isPending ||
                                 currentProject.status !== "completed"
                               }
-                              data-testid="button-apply-editorial-notes"
+                              data-testid="button-parse-editorial-notes"
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                              <Eye className="h-4 w-4 mr-2" />
+                              {parseEditorialNotesMutation.isPending
+                                ? "Analizando notas..."
+                                : "Analizar notas y mostrar vista previa"}
+                            </Button>
+                            <p className="text-[10px] text-muted-foreground italic">
+                              ⓘ Antes de tocar el manuscrito verás cada instrucción extraída. Si algo no te cuadra, lo desmarcas.
+                              Los arcos multi-capítulo muestran su plan distributivo. Al terminar, se recalcula la puntuación global.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* PASO 2: Vista previa de instrucciones extraídas */}
+                        {editorialNotesOpen && editorialPreview && (
+                          <div className="mt-3 space-y-3" data-testid="container-editorial-preview">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold">
+                                Vista previa: {editorialPreview.instrucciones.length} instrucciones extraídas
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditorialPreview(null);
+                                  setSelectedInstructionIdxs(new Set());
+                                }}
+                                className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+                                data-testid="button-back-to-editorial-notes"
+                              >
+                                <ArrowLeft className="h-3 w-3" /> Volver a editar las notas
+                              </button>
+                            </div>
+
+                            {editorialPreview.resumen_general && (
+                              <p className="text-[11px] text-muted-foreground italic border-l-2 border-primary/40 pl-2">
+                                {editorialPreview.resumen_general}
+                              </p>
+                            )}
+
+                            {editorialPreview.instrucciones.length > 0 && (
+                              <div className="flex items-center gap-3 text-[11px]">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedInstructionIdxs(new Set(editorialPreview.instrucciones.map((_, i) => i)))}
+                                  className="text-primary hover:underline"
+                                  data-testid="button-select-all-instructions"
+                                >
+                                  Marcar todas
+                                </button>
+                                <span className="text-muted-foreground">·</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedInstructionIdxs(new Set())}
+                                  className="text-primary hover:underline"
+                                  data-testid="button-deselect-all-instructions"
+                                >
+                                  Desmarcar todas
+                                </button>
+                                <span className="ml-auto text-muted-foreground">
+                                  {selectedInstructionIdxs.size} / {editorialPreview.instrucciones.length} seleccionadas
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="max-h-[400px] overflow-y-auto space-y-2 border rounded-md p-2 bg-muted/30">
+                              {editorialPreview.instrucciones.map((ins, idx) => {
+                                const isArc = (ins.capitulos_afectados || []).length > 1;
+                                const checked = selectedInstructionIdxs.has(idx);
+                                const priorityColor =
+                                  ins.prioridad === "alta" ? "bg-red-500/20 text-red-700 dark:text-red-300"
+                                  : ins.prioridad === "media" ? "bg-yellow-500/20 text-yellow-700 dark:text-yellow-300"
+                                  : "bg-zinc-500/20 text-zinc-700 dark:text-zinc-300";
+                                return (
+                                  <div
+                                    key={idx}
+                                    className={`p-2 rounded-md border text-[11px] space-y-1 ${checked ? "bg-background" : "bg-muted/50 opacity-60"}`}
+                                    data-testid={`instruction-preview-${idx}`}
+                                  >
+                                    <div className="flex items-start gap-2">
+                                      <Checkbox
+                                        id={`ins-${idx}`}
+                                        checked={checked}
+                                        onCheckedChange={(v) => {
+                                          setSelectedInstructionIdxs(prev => {
+                                            const next = new Set(prev);
+                                            if (v) next.add(idx); else next.delete(idx);
+                                            return next;
+                                          });
+                                        }}
+                                        className="mt-0.5"
+                                        data-testid={`checkbox-instruction-${idx}`}
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex flex-wrap items-center gap-1">
+                                          <Badge variant="outline" className="text-[10px] uppercase">{ins.categoria || "otro"}</Badge>
+                                          {ins.prioridad && (
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${priorityColor}`}>{ins.prioridad}</span>
+                                          )}
+                                          {isArc && (
+                                            <Badge variant="default" className="text-[10px] bg-purple-600 hover:bg-purple-700">
+                                              ARCO {ins.capitulos_afectados.length} caps
+                                            </Badge>
+                                          )}
+                                          <span className="text-muted-foreground">
+                                            {(ins.capitulos_afectados || []).map(sectionLabel).join(", ")}
+                                          </span>
+                                        </div>
+                                        <p className="font-medium mt-1">{ins.descripcion}</p>
+                                        <p className="text-muted-foreground italic mt-1">✏️ {ins.instrucciones_correccion}</p>
+                                        {ins.elementos_a_preservar && (
+                                          <p className="text-amber-700 dark:text-amber-400 mt-1">⚠️ Preservar: {ins.elementos_a_preservar}</p>
+                                        )}
+                                        {isArc && ins.plan_por_capitulo && Object.keys(ins.plan_por_capitulo).length > 0 && (
+                                          <details className="mt-1">
+                                            <summary className="cursor-pointer text-purple-700 dark:text-purple-300 text-[10px]">
+                                              Ver plan distributivo del arco
+                                            </summary>
+                                            <ul className="mt-1 ml-3 space-y-0.5 text-[10px]">
+                                              {Object.entries(ins.plan_por_capitulo).map(([k, v]) => (
+                                                <li key={k}><span className="font-semibold">{sectionLabel(parseInt(k))}:</span> {v}</li>
+                                              ))}
+                                            </ul>
+                                          </details>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => {
+                                const selected = Array.from(selectedInstructionIdxs)
+                                  .sort((a, b) => a - b)
+                                  .map(i => editorialPreview.instrucciones[i]);
+                                applyEditorialNotesMutation.mutate({
+                                  id: currentProject.id,
+                                  instructions: selected,
+                                });
+                              }}
+                              disabled={
+                                selectedInstructionIdxs.size === 0 ||
+                                applyEditorialNotesMutation.isPending ||
+                                currentProject.status !== "completed"
+                              }
+                              data-testid="button-apply-selected-instructions"
                               className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                             >
                               <FilePen className="h-4 w-4 mr-2" />
                               {applyEditorialNotesMutation.isPending
-                                ? "Procesando notas..."
-                                : "Aplicar Notas del Editor (Reescritura Quirúrgica)"}
+                                ? "Procesando..."
+                                : `Aplicar ${selectedInstructionIdxs.size} instrucciones seleccionadas`}
                             </Button>
                             <p className="text-[10px] text-muted-foreground italic">
-                              ⓘ El proceso: 1) un agente analiza tus notas y extrae instrucciones por capítulo,
-                              2) cada capítulo afectado se reescribe quirúrgicamente preservando longitud y estructura,
-                              3) el Editor verifica la nueva versión y revierte si introduce nuevos errores críticos.
+                              ⓘ Tras aplicar: cada capítulo se reescribe quirúrgicamente, se guarda un snapshot del original
+                              (botón "Ver cambios" en la lista de capítulos) y al final se recalcula la puntuación global.
+                              Puedes cancelar en cualquier momento durante el proceso.
                             </p>
                           </div>
                         )}
@@ -1342,6 +1622,49 @@ export default function Dashboard() {
                   Extender Proyecto
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diff dialog: muestra qué cambió entre el preEditContent (snapshot anterior) y el content actual */}
+      <Dialog open={!!diffChapter} onOpenChange={(open) => { if (!open) setDiffChapter(null); }}>
+        <DialogContent className="max-w-5xl max-h-[85vh] overflow-hidden flex flex-col" data-testid="dialog-chapter-diff">
+          <DialogHeader>
+            <DialogTitle>
+              Cambios en {diffChapter ? sectionLabel(diffChapter.chapterNumber) : ""}
+              {diffChapter?.title && ` — ${diffChapter.title}`}
+            </DialogTitle>
+            <DialogDescription>
+              Comparación entre la versión anterior (antes de las últimas notas editoriales) y la versión actual.
+              <span className="text-red-600 dark:text-red-400 ml-1 font-medium">Rojo tachado</span> = eliminado,{" "}
+              <span className="text-green-600 dark:text-green-400 font-medium">verde</span> = añadido.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto border rounded-md p-4 bg-muted/20 text-sm leading-relaxed whitespace-pre-wrap font-serif">
+            {diffChapter && (() => {
+              const before = (diffChapter as any).preEditContent || "";
+              const after = diffChapter.content || "";
+              const parts = diffWords(before, after);
+              return parts.map((p: any, i: number) => {
+                if (p.added) {
+                  return <span key={i} className="bg-green-500/20 text-green-900 dark:text-green-200 px-0.5 rounded">{p.value}</span>;
+                }
+                if (p.removed) {
+                  return <span key={i} className="bg-red-500/20 text-red-900 dark:text-red-200 line-through px-0.5 rounded">{p.value}</span>;
+                }
+                return <span key={i}>{p.value}</span>;
+              });
+            })()}
+          </div>
+          <DialogFooter className="flex-row items-center justify-between gap-2">
+            {diffChapter && (diffChapter as any).preEditAt && (
+              <span className="text-[11px] text-muted-foreground">
+                Snapshot guardado el {new Date((diffChapter as any).preEditAt).toLocaleString()}
+              </span>
+            )}
+            <Button variant="outline" onClick={() => setDiffChapter(null)} data-testid="button-close-diff">
+              Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>

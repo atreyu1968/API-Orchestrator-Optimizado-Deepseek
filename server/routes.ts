@@ -1076,8 +1076,9 @@ export async function registerRoutes(
     }
   });
 
-  // Apply free-form editorial notes from a human editor with surgical safety net
-  app.post("/api/projects/:id/apply-editorial-notes", async (req: Request, res: Response) => {
+  // STEP 1 (preview): parse free-form editorial notes into structured instructions WITHOUT applying anything.
+  // Returns the parsed instructions so the user can review/filter them before triggering the rewrite.
+  app.post("/api/projects/:id/parse-editorial-notes", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const { notes } = req.body || {};
@@ -1087,7 +1088,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
       if (project.status !== "completed") {
-        return res.status(400).json({ error: "Solo se pueden aplicar notas editoriales a proyectos completados" });
+        return res.status(400).json({ error: "Solo se pueden analizar notas en proyectos completados" });
       }
       if (!notes || typeof notes !== "string" || !notes.trim()) {
         return res.status(400).json({ error: "Debes proporcionar las notas editoriales en el campo 'notes'" });
@@ -1096,9 +1097,68 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Las notas son demasiado largas (máximo 50.000 caracteres)" });
       }
 
+      const orchestrator = new Orchestrator({
+        onAgentStatus: async () => {},
+        onChapterComplete: async () => {},
+        onChapterRewrite: async () => {},
+        onChapterStatusChange: () => {},
+        onProjectComplete: async () => {},
+        onError: async () => {},
+      });
+
+      const parsed = await orchestrator.parseEditorialNotesOnly(project, notes);
+      return res.json({
+        resumen_general: parsed.resumen_general || null,
+        instrucciones: parsed.instrucciones,
+        count: parsed.instrucciones.length,
+      });
+    } catch (error) {
+      console.error("Error parsing editorial notes:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to parse editorial notes" });
+    }
+  });
+
+  // STEP 2 (apply): apply editorial notes. Accepts EITHER:
+  //  - { notes }                     → legacy mode: parse + apply in one shot
+  //  - { instructions: [...] }       → preview mode: apply pre-parsed instructions filtered by the user
+  app.post("/api/projects/:id/apply-editorial-notes", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { notes, instructions } = req.body || {};
+      const project = await storage.getProject(id);
+
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      if (project.status !== "completed") {
+        return res.status(400).json({ error: "Solo se pueden aplicar notas editoriales a proyectos completados" });
+      }
+
+      const usingPreParsed = Array.isArray(instructions) && instructions.length > 0;
+
+      if (!usingPreParsed) {
+        if (!notes || typeof notes !== "string" || !notes.trim()) {
+          return res.status(400).json({ error: "Debes proporcionar 'notes' o un array 'instructions'" });
+        }
+        if (notes.length > 50000) {
+          return res.status(400).json({ error: "Las notas son demasiado largas (máximo 50.000 caracteres)" });
+        }
+      } else {
+        if (instructions.length > 200) {
+          return res.status(400).json({ error: "Demasiadas instrucciones (máximo 200)" });
+        }
+      }
+
       await storage.updateProject(id, { status: "generating" });
 
-      res.json({ message: "Aplicación de notas editoriales iniciada", projectId: id, length: notes.length });
+      res.json({
+        message: usingPreParsed
+          ? `Aplicando ${instructions.length} instrucciones editoriales pre-revisadas`
+          : "Aplicación de notas editoriales iniciada",
+        projectId: id,
+        length: usingPreParsed ? instructions.length : (notes?.length || 0),
+        mode: usingPreParsed ? "preParsed" : "fullParse",
+      });
 
       const sendToStreams = (data: any) => {
         const streams = activeStreams.get(id);
@@ -1143,7 +1203,11 @@ export async function registerRoutes(
         },
       });
 
-      orchestrator.applyEditorialNotes(project, notes).catch(async (err) => {
+      orchestrator.applyEditorialNotes(
+        project,
+        usingPreParsed ? "" : notes,
+        usingPreParsed ? instructions : undefined
+      ).catch(async (err) => {
         console.error("Background apply editorial notes failed:", err);
         await storage.updateProject(id, { status: "completed" });
         await persistActivityLog(id, "error", `Error fatal aplicando notas editoriales: ${err instanceof Error ? err.message : String(err)}`, "orchestrator");
