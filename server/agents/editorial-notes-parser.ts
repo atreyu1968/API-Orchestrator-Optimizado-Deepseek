@@ -8,6 +8,9 @@ export interface EditorialInstruction {
   instrucciones_correccion: string;
   elementos_a_preservar?: string;
   prioridad?: "alta" | "media" | "baja";
+  // "puntual": resoluble con find/replace localizados (cirugía de texto sin tocar el resto).
+  // "estructural": requiere reescribir párrafos/escenas enteras (cae en el flujo de reescritura completa).
+  tipo?: "puntual" | "estructural";
   // Cuando capitulos_afectados.length > 1: rol específico de cada capítulo en el arco multi-capítulo
   plan_por_capitulo?: Record<string, string>;
 }
@@ -49,6 +52,10 @@ REGLAS:
 7. Categoría: usa una de estas etiquetas en minúscula: "continuidad", "verosimilitud", "personaje", "ritmo", "dialogo", "estilo", "trama", "descripcion", "otro".
 8. Prioridad: "alta" para defectos estructurales o de credibilidad, "media" para problemas de ejecución, "baja" para mejoras opcionales.
 9. Si una sola nota contiene varios problemas distintos, divídelos en instrucciones separadas.
+10. TIPO (CAMPO CRÍTICO): clasifica cada instrucción como:
+   - "puntual": se resuelve modificando frases o párrafos concretos sin alterar la arquitectura del capítulo. Ejemplos: "añadir 1-2 párrafos justificando la aparición", "eliminar la mención al cuchillo", "corregir el color de los ojos", "reformular el diálogo del minuto 3 para que no parezca casual".
+   - "estructural": requiere reescribir escenas enteras, reordenar la secuencia, cambiar el tono global del clímax o redistribuir material entre capítulos. Ejemplos: "haz que el desenlace sea menos idealista", "el segundo acto necesita otro ritmo", "el final debe ser fruto de una negociación, no de armonía espontánea".
+   Sé RIGUROSO: si dudas, marca como "estructural". Las puntuales se aplican como cirugía determinista; las estructurales requieren reescritura completa del capítulo (más caras y arriesgadas).
 
 🔑 CASO ESPECIAL — INSTRUCCIONES MULTI-CAPÍTULO (arcos):
 Cuando una corrección se desarrolla A LO LARGO DE VARIOS CAPÍTULOS (ej: "redistribuye la pérdida del cuaderno entre caps 8-10 para que no sea abrupta", "el villano debe aparecer mencionado en caps 3, 5 y 7 antes del encuentro del 9", "acelera el ritmo del segundo acto, caps 7 a 12"), DEBES además rellenar el campo "plan_por_capitulo" con un mini-plan específico por capítulo:
@@ -67,7 +74,8 @@ FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
       "descripcion": "Aparición demasiado providencial de Vasco Carballo en la cripta de Guadalupe.",
       "instrucciones_correccion": "Añade una causa sólida previa: en el capítulo 8, antes de la aparición, intercala 1-2 párrafos donde se justifique cómo Vasco ha llegado hasta allí (pista, intercepción de comunicación, mandato externo). NO cambies la escena del encuentro en sí, solo añade la justificación causal antes.",
       "elementos_a_preservar": "El diálogo del encuentro, la atmósfera de la cripta, las acciones de Lara.",
-      "prioridad": "alta"
+      "prioridad": "alta",
+      "tipo": "puntual"
     },
     {
       "capitulos_afectados": [8, 9, 10],
@@ -76,6 +84,7 @@ FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
       "instrucciones_correccion": "Suaviza la transición distribuyendo la pérdida del cuaderno y la profundización del 'reloj de piedra' a lo largo del arco 8-10, manteniendo intactos los beats narrativos principales.",
       "elementos_a_preservar": "El arco general, los personajes presentes, los giros estructurales mayores.",
       "prioridad": "alta",
+      "tipo": "estructural",
       "plan_por_capitulo": {
         "8": "Mantén la pérdida del cuaderno como evento central pero añade que Lara ha fotografiado o transcrito 2-3 páginas clave antes de perderlo. Termina el capítulo con la sensación de que aún tiene 'algo' del cifrado.",
         "9": "Aprovecha esas notas/fotos parciales para que Lara avance en el descifrado del 'reloj de piedra' a partir de fragmentos. La frustración por lo perdido sigue ahí pero hay impulso narrativo.",

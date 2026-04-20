@@ -13,3 +13,4 @@ export { SeriesThreadFixerAgent, type ThreadFixerResult, type ThreadFix } from "
 export { ItalianReviewerAgent, type ItalianReviewResult } from "./italian-reviewer";
 export { ProofreaderAgent, type ProofreaderResult, type ProofreaderChange } from "./proofreader";
 export { EditorialNotesParser, type EditorialInstruction, type EditorialNotesParseResult } from "./editorial-notes-parser";
+export { SurgicalPatcherAgent, type PatchOperation, type SurgicalPatchResult, type AppliedPatchReport } from "./surgical-patcher";

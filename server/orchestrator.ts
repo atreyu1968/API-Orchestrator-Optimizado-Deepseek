@@ -10,6 +10,7 @@ import {
   SemanticRepetitionDetectorAgent,
   ProofreaderAgent,
   EditorialNotesParser,
+  SurgicalPatcherAgent,
   type EditorialInstruction,
   type EditorialNotesParseResult,
   isProjectCancelledFromDb,
@@ -109,6 +110,7 @@ export class Orchestrator {
   private voiceRhythmAuditor = new VoiceRhythmAuditorAgent();
   private semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
   private editorialNotesParser = new EditorialNotesParser();
+  private surgicalPatcher = new SurgicalPatcherAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
@@ -3911,30 +3913,186 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
         const beforeContent = chapter.content;
 
-        await this.rewriteChapterForQA(
-          project,
-          chapter,
-          sectionData,
-          worldBibleData,
-          guiaEstilo,
-          "editorial",
-          formatted
-        );
+        // Separa instrucciones puntuales (cirugía determinista find/replace)
+        // de las estructurales (reescritura completa del capítulo).
+        const puntuales = chapterInstructions.filter(ins => (ins.tipo || "estructural") === "puntual");
+        const estructurales = chapterInstructions.filter(ins => (ins.tipo || "estructural") === "estructural");
 
-        // Detect whether the rewrite was applied or reverted
-        const refreshedChapters = await storage.getChaptersByProject(project.id);
-        const refreshedChapter = refreshedChapters.find(c => c.id === chapter.id);
-        if (refreshedChapter && refreshedChapter.content && refreshedChapter.content !== beforeContent) {
+        let chapterModified = false;
+        let workingContent = beforeContent;
+
+        // ─── FLUJO 1: CIRUGÍA DETERMINISTA PARA INSTRUCCIONES PUNTUALES ───
+        if (puntuales.length > 0) {
+          const puntualesFormatted = puntuales.map((ins, idx) => {
+            const preserve = ins.elementos_a_preservar
+              ? `\n   PRESERVAR (NO TOCAR): ${ins.elementos_a_preservar}`
+              : "";
+            return `${idx + 1}. [${(ins.categoria || "otro").toUpperCase()}] ${ins.descripcion}\n   INSTRUCCIÓN: ${ins.instrucciones_correccion}${preserve}`;
+          }).join("\n\n");
+
+          this.callbacks.onAgentStatus("ghostwriter", "writing",
+            `Cirugía de texto en ${sectionLabel}: aplicando ${puntuales.length} corrección(es) puntual(es) sin tocar el resto...`
+          );
+
+          try {
+            const patchResult = await this.surgicalPatcher.execute({
+              chapterNumber: sectionData.numero,
+              chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
+              originalContent: workingContent,
+              instructions: puntualesFormatted,
+            });
+
+            await this.trackTokenUsage(project.id, patchResult.tokenUsage, "Cirujano de Texto", "gemini-2.5-flash", sectionData.numero, "surgical_patch");
+
+            const operations = patchResult.result?.operations || [];
+
+            if (operations.length === 0) {
+              // El cirujano declaró las puntuales como no aplicables → reclasificar como estructurales.
+              const reason = patchResult.result?.not_applicable_reason || "El cirujano no encontró operaciones puntuales aplicables.";
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "info",
+                message: `${sectionLabel}: cirugía no aplicable (${reason}). Las ${puntuales.length} instrucciones puntuales se reclasifican como estructurales.`,
+                agentRole: "surgical-patcher",
+              });
+              estructurales.push(...puntuales);
+            } else {
+              const report = this.surgicalPatcher.applyOperations(workingContent, operations);
+
+              if (report.applied.length > 0) {
+                workingContent = report.finalContent;
+                chapterModified = true;
+                const newWc = workingContent.split(/\s+/).filter(w => w.length > 0).length;
+
+                await storage.updateChapter(chapter.id, {
+                  content: workingContent,
+                  wordCount: newWc,
+                });
+
+                const failedNote = report.failed.length > 0
+                  ? ` ${report.failed.length} operación(es) descartada(s) por no encontrar el texto literal.`
+                  : "";
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "success",
+                  message: `${sectionLabel}: cirugía aplicada — ${report.applied.length}/${operations.length} operaciones puntuales (${report.originalLength}→${report.finalLength} caracteres, ${((Math.abs(report.finalLength - report.originalLength) / report.originalLength) * 100).toFixed(1)}% de cambio).${failedNote}`,
+                  agentRole: "surgical-patcher",
+                });
+
+                if (report.failed.length > 0) {
+                  for (const f of report.failed.slice(0, 3)) {
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "warning",
+                      message: `${sectionLabel}: operación descartada — "${f.op.find_exact.slice(0, 80)}..." → ${f.reason}`,
+                      agentRole: "surgical-patcher",
+                    });
+                  }
+                }
+              } else {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warning",
+                  message: `${sectionLabel}: cirugía falló — ninguna de las ${operations.length} operaciones encontró el texto literal. Reclasificando puntuales como estructurales.`,
+                  agentRole: "surgical-patcher",
+                });
+                estructurales.push(...puntuales);
+              }
+            }
+          } catch (patchErr) {
+            console.error(`[ApplyEditorialNotes] SurgicalPatcher error on ${sectionLabel}:`, patchErr);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              message: `${sectionLabel}: error en cirugía (${patchErr instanceof Error ? patchErr.message : "desconocido"}). Reclasificando puntuales como estructurales.`,
+              agentRole: "surgical-patcher",
+            });
+            estructurales.push(...puntuales);
+          }
+        }
+
+        // ─── FLUJO 2: REESCRITURA COMPLETA PARA INSTRUCCIONES ESTRUCTURALES ───
+        if (estructurales.length > 0) {
+          const estructuralesFormatted = estructurales.map((ins, idx) => {
+            const preserve = ins.elementos_a_preservar
+              ? `\n   ⚠️ PRESERVAR (NO MODIFICAR): ${ins.elementos_a_preservar}`
+              : "";
+            const priority = ins.prioridad ? ` [${ins.prioridad.toUpperCase()}]` : "";
+            const isArc = (ins.capitulos_afectados || []).length > 1;
+
+            let arcBlock = "";
+            if (isArc) {
+              const siblings = (ins.capitulos_afectados || []).filter(n => n !== chapterNum);
+              const sectionLabelFor = (n: number) => {
+                if (n === 0) return "Prólogo";
+                if (n === -1) return "Epílogo";
+                if (n === -2) return "Nota del autor";
+                return `Capítulo ${n}`;
+              };
+              const myLabel = sectionLabelFor(chapterNum);
+              const myRole = ins.plan_por_capitulo?.[String(chapterNum)] || null;
+              const siblingRoles = siblings
+                .map(n => {
+                  const role = ins.plan_por_capitulo?.[String(n)] || "(sin plan específico)";
+                  return `      • ${sectionLabelFor(n)}: ${role}`;
+                })
+                .join("\n");
+
+              arcBlock = `\n   🔗 ARCO MULTI-CAPÍTULO (${ins.capitulos_afectados.join(", ")}): esta corrección se desarrolla a lo largo de varios capítulos.`;
+              if (myRole) {
+                arcBlock += `\n   🎯 TU ROL EN ${myLabel}: ${myRole}`;
+              } else {
+                arcBlock += `\n   🎯 TU ROL EN ${myLabel}: el plan distributivo no especifica este capítulo. Aplica la instrucción de forma proporcional (este capítulo es uno de ${ins.capitulos_afectados.length} del arco).`;
+              }
+              if (siblings.length > 0 && siblingRoles) {
+                arcBlock += `\n   📍 ROLES DE LOS CAPÍTULOS HERMANOS (NO los reescribes tú, pero coordina con ellos):\n${siblingRoles}`;
+                arcBlock += `\n   ⚙️ COORDINACIÓN: ejecuta SOLO tu rol. NO dupliques lo que hacen los hermanos. NO contradigas lo que se sembrará/cerrará en ellos. El lector debe percibir el arco como un todo coherente.`;
+              }
+            }
+
+            return `${idx + 1}. [${(ins.categoria || "otro").toUpperCase()}]${priority} ${ins.descripcion}\n   ✏️ INSTRUCCIÓN: ${ins.instrucciones_correccion}${preserve}${arcBlock}`;
+          }).join("\n\n");
+
+          // Si la cirugía ya modificó el capítulo, el rewrite debe partir del contenido actualizado.
+          if (chapterModified) {
+            chapter.content = workingContent;
+            chapter.wordCount = workingContent.split(/\s+/).filter(w => w.length > 0).length;
+          }
+
+          await this.rewriteChapterForQA(
+            project,
+            chapter,
+            sectionData,
+            worldBibleData,
+            guiaEstilo,
+            "editorial",
+            estructuralesFormatted
+          );
+
+          const refreshedChapters = await storage.getChaptersByProject(project.id);
+          const refreshedChapter = refreshedChapters.find(c => c.id === chapter.id);
+          if (refreshedChapter && refreshedChapter.content && refreshedChapter.content !== workingContent) {
+            chapterModified = true;
+            workingContent = refreshedChapter.content;
+          }
+        }
+
+        // Contabilidad y snapshot final del capítulo
+        if (chapterModified) {
           appliedCount++;
-          // Save snapshot for diff/undo (only when the rewrite actually landed).
           await storage.updateChapter(chapter.id, {
             preEditContent: beforeContent,
             preEditAt: new Date() as any,
           });
+          const tipoMsg = puntuales.length > 0 && estructurales.length > 0
+            ? `${puntuales.length} puntual(es) + ${estructurales.length} estructural(es)`
+            : puntuales.length > 0
+              ? `${puntuales.length} puntual(es) por cirugía`
+              : `${estructurales.length} estructural(es) por reescritura`;
           await storage.createActivityLog({
             projectId: project.id,
             level: "success",
-            message: `${sectionLabel}: notas editoriales aplicadas (${chapterInstructions.length} instrucciones). Snapshot anterior guardado para comparación.`,
+            message: `${sectionLabel}: notas editoriales aplicadas (${tipoMsg}). Snapshot anterior guardado para comparación.`,
             agentRole: "ghostwriter",
           });
         } else {
@@ -3942,7 +4100,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           await storage.createActivityLog({
             projectId: project.id,
             level: "warning",
-            message: `${sectionLabel}: la reescritura quirúrgica fue revertida automáticamente para preservar el original.`,
+            message: `${sectionLabel}: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).`,
             agentRole: "ghostwriter",
           });
         }
