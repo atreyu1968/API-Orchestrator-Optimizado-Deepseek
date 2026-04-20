@@ -8,6 +8,8 @@ export interface EditorialInstruction {
   instrucciones_correccion: string;
   elementos_a_preservar?: string;
   prioridad?: "alta" | "media" | "baja";
+  // Cuando capitulos_afectados.length > 1: rol específico de cada capítulo en el arco multi-capítulo
+  plan_por_capitulo?: Record<string, string>;
 }
 
 export interface EditorialNotesParseResult {
@@ -48,6 +50,13 @@ REGLAS:
 8. Prioridad: "alta" para defectos estructurales o de credibilidad, "media" para problemas de ejecución, "baja" para mejoras opcionales.
 9. Si una sola nota contiene varios problemas distintos, divídelos en instrucciones separadas.
 
+🔑 CASO ESPECIAL — INSTRUCCIONES MULTI-CAPÍTULO (arcos):
+Cuando una corrección se desarrolla A LO LARGO DE VARIOS CAPÍTULOS (ej: "redistribuye la pérdida del cuaderno entre caps 8-10 para que no sea abrupta", "el villano debe aparecer mencionado en caps 3, 5 y 7 antes del encuentro del 9", "acelera el ritmo del segundo acto, caps 7 a 12"), DEBES además rellenar el campo "plan_por_capitulo" con un mini-plan específico por capítulo:
+  - La clave es el número del capítulo (como string).
+  - El valor describe el ROL CONCRETO que ese capítulo tiene en la corrección global (qué planta, qué desarrolla, qué cierra).
+  - Cada capítulo debe tener su propia función — NO repitas la misma instrucción para todos.
+  - Esto es OBLIGATORIO siempre que capitulos_afectados.length > 1. Sin "plan_por_capitulo", el sistema NO puede coordinar la reescritura del arco y la corrección fallará.
+
 FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
 {
   "resumen_general": "2-3 frases describiendo el veredicto global del editor",
@@ -59,6 +68,19 @@ FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
       "instrucciones_correccion": "Añade una causa sólida previa: en el capítulo 8, antes de la aparición, intercala 1-2 párrafos donde se justifique cómo Vasco ha llegado hasta allí (pista, intercepción de comunicación, mandato externo). NO cambies la escena del encuentro en sí, solo añade la justificación causal antes.",
       "elementos_a_preservar": "El diálogo del encuentro, la atmósfera de la cripta, las acciones de Lara.",
       "prioridad": "alta"
+    },
+    {
+      "capitulos_afectados": [8, 9, 10],
+      "categoria": "ritmo",
+      "descripcion": "El paso de la investigación académica al thriller de persecución es abrupto. La pérdida del cuaderno en el cap 8 frustra al lector justo cuando empieza a entender el cifrado.",
+      "instrucciones_correccion": "Suaviza la transición distribuyendo la pérdida del cuaderno y la profundización del 'reloj de piedra' a lo largo del arco 8-10, manteniendo intactos los beats narrativos principales.",
+      "elementos_a_preservar": "El arco general, los personajes presentes, los giros estructurales mayores.",
+      "prioridad": "alta",
+      "plan_por_capitulo": {
+        "8": "Mantén la pérdida del cuaderno como evento central pero añade que Lara ha fotografiado o transcrito 2-3 páginas clave antes de perderlo. Termina el capítulo con la sensación de que aún tiene 'algo' del cifrado.",
+        "9": "Aprovecha esas notas/fotos parciales para que Lara avance en el descifrado del 'reloj de piedra' a partir de fragmentos. La frustración por lo perdido sigue ahí pero hay impulso narrativo.",
+        "10": "Llega aquí la complicación real (intuición incompleta, interpretación errónea o pieza faltante crítica). Aquí es donde el arco bascula al thriller, pero ya con el lector enganchado al descifrado parcial."
+      }
     }
   ]
 }

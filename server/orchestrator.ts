@@ -3612,14 +3612,36 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         return;
       }
 
-      // Group instructions by chapter so we make one surgical pass per chapter with all its issues combined
+      // Group instructions by chapter so we make one surgical pass per chapter with all its issues combined.
+      // Multi-chapter (arc) instructions: each chapter receives the same instruction but with its own role
+      // from plan_por_capitulo plus the roles of the sibling chapters as coordination context.
       const byChapter = new Map<number, EditorialInstruction[]>();
+      const arcInstructions: EditorialInstruction[] = [];
+
       instructions.forEach(ins => {
-        (ins.capitulos_afectados || []).forEach(num => {
+        const chapters = ins.capitulos_afectados || [];
+        chapters.forEach(num => {
           if (!byChapter.has(num)) byChapter.set(num, []);
           byChapter.get(num)!.push(ins);
         });
+        if (chapters.length > 1) {
+          arcInstructions.push(ins);
+        }
       });
+
+      if (arcInstructions.length > 0) {
+        const arcSummaries = arcInstructions.map(ins => {
+          const hasPlan = ins.plan_por_capitulo && Object.keys(ins.plan_por_capitulo).length > 0;
+          const planMark = hasPlan ? "✓ con plan distributivo" : "⚠️ SIN plan distributivo (coordinación limitada)";
+          return `  - [${(ins.categoria || "otro").toUpperCase()}] caps ${ins.capitulos_afectados.join(", ")}: ${planMark}`;
+        }).join("\n");
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `Detectadas ${arcInstructions.length} instrucciones multi-capítulo (arcos). Se coordinarán las reescrituras de los capítulos hermanos:\n${arcSummaries}`,
+          agentRole: "editor",
+        });
+      }
 
       const sortedChapters = Array.from(byChapter.keys()).sort((a, b) => {
         const orderA = a === 0 ? -1000 : a === -1 ? 1000 : a === -2 ? 1001 : a;
@@ -3659,7 +3681,39 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             ? `\n   ⚠️ PRESERVAR (NO MODIFICAR): ${ins.elementos_a_preservar}`
             : "";
           const priority = ins.prioridad ? ` [${ins.prioridad.toUpperCase()}]` : "";
-          return `${idx + 1}. [${(ins.categoria || "otro").toUpperCase()}]${priority} ${ins.descripcion}\n   ✏️ INSTRUCCIÓN: ${ins.instrucciones_correccion}${preserve}`;
+          const isArc = (ins.capitulos_afectados || []).length > 1;
+
+          let arcBlock = "";
+          if (isArc) {
+            const siblings = (ins.capitulos_afectados || []).filter(n => n !== chapterNum);
+            const sectionLabelFor = (n: number) => {
+              if (n === 0) return "Prólogo";
+              if (n === -1) return "Epílogo";
+              if (n === -2) return "Nota del autor";
+              return `Capítulo ${n}`;
+            };
+            const myLabel = sectionLabelFor(chapterNum);
+            const myRole = ins.plan_por_capitulo?.[String(chapterNum)] || null;
+            const siblingRoles = siblings
+              .map(n => {
+                const role = ins.plan_por_capitulo?.[String(n)] || "(sin plan específico)";
+                return `      • ${sectionLabelFor(n)}: ${role}`;
+              })
+              .join("\n");
+
+            arcBlock = `\n   🔗 ARCO MULTI-CAPÍTULO (${ins.capitulos_afectados.join(", ")}): esta corrección se desarrolla a lo largo de varios capítulos.`;
+            if (myRole) {
+              arcBlock += `\n   🎯 TU ROL EN ${myLabel}: ${myRole}`;
+            } else {
+              arcBlock += `\n   🎯 TU ROL EN ${myLabel}: el plan distributivo no especifica este capítulo. Aplica la instrucción de forma proporcional (este capítulo es uno de ${ins.capitulos_afectados.length} del arco).`;
+            }
+            if (siblings.length > 0 && siblingRoles) {
+              arcBlock += `\n   📍 ROLES DE LOS CAPÍTULOS HERMANOS (NO los reescribes tú, pero coordina con ellos):\n${siblingRoles}`;
+              arcBlock += `\n   ⚙️ COORDINACIÓN: ejecuta SOLO tu rol. NO dupliques lo que hacen los hermanos. NO contradigas lo que se sembrará/cerrará en ellos. El lector debe percibir el arco como un todo coherente.`;
+            }
+          }
+
+          return `${idx + 1}. [${(ins.categoria || "otro").toUpperCase()}]${priority} ${ins.descripcion}\n   ✏️ INSTRUCCIÓN: ${ins.instrucciones_correccion}${preserve}${arcBlock}`;
         }).join("\n\n");
 
         const sectionLabel = this.getSectionLabel(sectionData);
