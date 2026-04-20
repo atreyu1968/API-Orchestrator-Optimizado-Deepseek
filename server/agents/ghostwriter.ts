@@ -732,14 +732,20 @@ export class GhostwriterAgent extends BaseAgent {
       // El objetivo es mantener la longitud del borrador base, no alcanzar un mínimo.
       prompt += `
     ═══════════════════════════════════════════════════════════════════
-    🔧 RANGO DE LONGITUD (MODO QUIRÚRGICO — PRESERVACIÓN)
+    🔧 RANGO DE LONGITUD PERMITIDO (MODO QUIRÚRGICO)
     ═══════════════════════════════════════════════════════════════════
-    Este capítulo ya existe y estás aplicando correcciones localizadas.
-    Devuelve el capítulo con una extensión ESTRICTAMENTE entre ${minWords} y ${maxWords} palabras
-    (≈ la longitud del borrador base ±8%). NO lo alargues con descripciones nuevas,
-    monólogos añadidos ni desarrollo extra de beats. NO lo acortes eliminando pasajes.
-    Cualquier salida fuera de ese rango será descartada por la red de seguridad y
-    el capítulo se revertirá a su versión anterior (los cambios se perderán).
+    Rango válido: entre ${minWords} y ${maxWords} palabras.
+
+    Estrategia por defecto: MANTÉN la longitud del borrador base.
+    El rango puede parecer amplio porque contempla el caso en que el borrador original
+    esté fuera del tamaño saludable del proyecto. Si la instrucción editorial justifica
+    expandir (siembra, desarrollo de arco, redistribución) o contraer (eliminar pasajes
+    redundantes), tienes margen DENTRO de ese rango. Pero cualquier cambio de longitud
+    debe estar motivado por la instrucción — NO añadas descripciones, monólogos ni
+    beats nuevos que la instrucción no pida; NO elimines pasajes no relacionados.
+
+    Salirse del rango ${minWords}-${maxWords} hará que la red de seguridad descarte
+    el capítulo y los cambios se pierdan.
     ═══════════════════════════════════════════════════════════════════
     `;
     } else {

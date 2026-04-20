@@ -6918,6 +6918,24 @@ Responde SOLO con un JSON válido con la estructura:
     const perChapterMinRewrite = (project as any).minWordsPerChapter || calculatedTargetRewrite;
     const perChapterMaxRewrite = (project as any).maxWordsPerChapter || Math.round(perChapterMinRewrite * 1.15);
 
+    // ─── Rango de longitud permitido ────────────────────────────────────
+    // Preservamos el original (±8%) PERO si el capítulo está fuera del rango saludable
+    // del proyecto (caps cortos o largos respecto al target), permitimos que la edición
+    // mueva la longitud hacia ese rango. Esto evita que la red de seguridad descarte
+    // expansiones/contracciones legítimas cuando el original ya es anómalo.
+    const originalLower = Math.round(originalWordCount * 0.92);
+    const originalUpper = Math.round(originalWordCount * 1.08);
+    const allowedLower = Math.min(originalLower, perChapterMinRewrite);
+    const allowedUpper = Math.max(originalUpper, perChapterMaxRewrite);
+    const originalBelowTarget = originalWordCount < perChapterMinRewrite;
+    const originalAboveTarget = originalWordCount > perChapterMaxRewrite;
+
+    const lengthContextNote = originalBelowTarget
+      ? `NOTA DE LONGITUD: este capítulo original tiene ${originalWordCount} palabras y el rango saludable del proyecto es ${perChapterMinRewrite}-${perChapterMaxRewrite}. Está POR DEBAJO del rango. Si la instrucción editorial lo justifica (p.ej. siembra, desarrollo, redistribución de arco), tienes permiso para EXPANDIR hacia el rango del proyecto — pero solo con material que la instrucción demande, no con descripciones o monólogos gratuitos.`
+      : originalAboveTarget
+        ? `NOTA DE LONGITUD: este capítulo original tiene ${originalWordCount} palabras y el rango saludable del proyecto es ${perChapterMinRewrite}-${perChapterMaxRewrite}. Está POR ENCIMA del rango. Si la instrucción editorial lo justifica, puedes CONTRAER pasajes no esenciales para acercarlo al rango del proyecto.`
+        : `NOTA DE LONGITUD: este capítulo original tiene ${originalWordCount} palabras, dentro del rango saludable del proyecto (${perChapterMinRewrite}-${perChapterMaxRewrite}). Mantén la longitud original (±8%).`;
+
     const surgicalInstructions = `🔧 CORRECCIÓN QUIRÚRGICA — MÁXIMA PRUDENCIA 🔧
 
 Contexto: La novela ya está finalizada. Estás corrigiendo issues detectados en una auditoría posterior. CADA cambio innecesario es un riesgo de introducir nuevos problemas. Tu objetivo NO es reescribir el capítulo, sino aplicar correcciones MÍNIMAS y LOCALIZADAS.
@@ -6935,19 +6953,19 @@ REGLAS INVIOLABLES:
 ISSUES A CORREGIR (origen: ${qaLabels[qaSource]}):
 ${correctionInstructions}
 
+${lengthContextNote}
+
 PROHIBIDO ABSOLUTAMENTE:
 - Reescribir desde cero.
 - Cambiar el inicio, el cierre o los giros narrativos.
-- Añadir foreshadowing, simbolismo o subtramas que no estuvieran ya.
+- Añadir foreshadowing, simbolismo o subtramas que no estuvieran ya (salvo que la instrucción editorial lo pida explícitamente).
 - Eliminar pasajes que no estén directamente relacionados con el issue.
 - "Mejorar" la prosa de paso (eso ya lo hizo el Estilista).
 
 Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del texto idéntico al original.`;
 
-    const surgicalMin = Math.round(originalWordCount * 0.92);
-    const surgicalMax = Math.round(originalWordCount * 1.08);
-    void perChapterMinRewrite;
-    void perChapterMaxRewrite;
+    const surgicalMin = allowedLower;
+    const surgicalMax = allowedUpper;
 
     let writerResult = await this.ghostwriter.execute({
       chapterNumber: sectionData.numero,
@@ -6965,19 +6983,21 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
 
     await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite");
 
+    // Primera red (permisiva): aceptamos cualquier cosa dentro del rango permitido con 5% de holgura.
+    const firstTryLower = Math.round(surgicalMin * 0.95);
+    const firstTryUpper = Math.round(surgicalMax * 1.05);
     const checkLengthOk = (content: string): boolean => {
       const wc = content.split(/\s+/).filter(w => w.length > 0).length;
-      const ratio = wc / Math.max(originalWordCount, 1);
-      return ratio >= 0.80 && ratio <= 1.25;
+      return wc >= firstTryLower && wc <= firstTryUpper;
     };
 
     if (writerResult.content && !checkLengthOk(writerResult.content)) {
       const firstWc = writerResult.content.split(/\s+/).filter(w => w.length > 0).length;
-      console.warn(`[QA-Rewrite] ${sectionLabel}: primer intento fuera de rango (${firstWc}/${originalWordCount}). Reintentando con presión de longitud reforzada...`);
+      console.warn(`[QA-Rewrite] ${sectionLabel}: primer intento fuera de rango (${firstWc}, permitido ${firstTryLower}-${firstTryUpper}, original ${originalWordCount}). Reintentando...`);
       this.callbacks.onAgentStatus("ghostwriter", "writing",
-        `${sectionLabel}: longitud incorrecta (${firstWc}/${originalWordCount}). Reintentando con preservación estricta...`
+        `${sectionLabel}: longitud ${firstWc} fuera de rango ${firstTryLower}-${firstTryUpper}. Reintentando...`
       );
-      const retryInstructions = surgicalInstructions + `\n\n🚨 REINTENTO — TU INTENTO ANTERIOR TUVO ${firstWc} PALABRAS Y EL ORIGINAL TIENE ${originalWordCount}. ESTO ES INACEPTABLE. Devuelve el capítulo con EXACTAMENTE entre ${surgicalMin} y ${surgicalMax} palabras. Copia el original verbatim y modifica SOLO las frases con el issue señalado.`;
+      const retryInstructions = surgicalInstructions + `\n\n🚨 REINTENTO — TU INTENTO ANTERIOR TUVO ${firstWc} PALABRAS Y EL RANGO PERMITIDO ES ${firstTryLower}-${firstTryUpper}. Devuelve el capítulo con una extensión ESTRICTAMENTE dentro de ese rango. Copia el original verbatim y modifica SOLO los pasajes que la instrucción editorial requiere.`;
       writerResult = await this.ghostwriter.execute({
         chapterNumber: sectionData.numero,
         chapterData: sectionData,
@@ -7013,9 +7033,11 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
     let candidateContent = writerResult.content;
     const candidateWordCount = candidateContent.split(/\s+/).filter(w => w.length > 0).length;
 
-    const lengthRatio = candidateWordCount / Math.max(originalWordCount, 1);
-    if (lengthRatio < 0.75 || lengthRatio > 1.30) {
-      console.warn(`[QA-Rewrite] ${sectionLabel}: longitud sospechosa (${candidateWordCount} vs original ${originalWordCount}, ratio ${lengthRatio.toFixed(2)}). Conservando original.`);
+    // Segunda red (hard reject): 10% de holgura adicional sobre el rango permitido.
+    const hardLower = Math.round(surgicalMin * 0.90);
+    const hardUpper = Math.round(surgicalMax * 1.10);
+    if (candidateWordCount < hardLower || candidateWordCount > hardUpper) {
+      console.warn(`[QA-Rewrite] ${sectionLabel}: longitud fuera del rango permitido (${candidateWordCount}, permitido ${hardLower}-${hardUpper}, original ${originalWordCount}). Conservando original.`);
       await storage.updateChapter(chapter.id, {
         content: originalContent,
         status: "completed",
@@ -7025,7 +7047,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       });
       this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
       this.callbacks.onAgentStatus("ghostwriter", "warning",
-        `${sectionLabel}: reescritura cambió demasiado la longitud (${candidateWordCount}/${originalWordCount}). Conservando original para evitar regresiones.`
+        `${sectionLabel}: reescritura ${candidateWordCount} palabras fuera del rango permitido (${hardLower}-${hardUpper}, original ${originalWordCount}). Conservando original.`
       );
       return;
     }
