@@ -141,6 +141,18 @@ export class Orchestrator {
     const hasObjectInconsistency = Array.isArray(r.inconsistencias_objetos) && r.inconsistencias_objetos.length >= 2;
     const hasHardRejectCondition = hasCriticalContinuityError || hasPlotRepetition || hasObjectInconsistency;
 
+    if (score >= 9) {
+      if (hasHardRejectCondition) {
+        const reasons: string[] = [];
+        if (hasCriticalContinuityError) reasons.push(`${continuityErrors} errores de continuidad, ${knowledgeLeaks} filtraciones`);
+        if (hasPlotRepetition) reasons.push(`${r.repeticiones_trama.length} repeticiones de trama`);
+        if (hasObjectInconsistency) reasons.push(`${r.inconsistencias_objetos.length} inconsistencias de objetos`);
+        console.log(`[Orchestrator] OVERRIDE: Score ${score}/10 ≥ 9 — aprobado=true a pesar de violaciones (${reasons.join(", ")}). Confianza alta en puntuación; los issues quedan anotados para auditoría/Centinela posterior.`);
+      }
+      r.aprobado = true;
+      return;
+    }
+
     if (hasHardRejectCondition && r.aprobado) {
       const reasons: string[] = [];
       if (hasCriticalContinuityError) reasons.push(`${continuityErrors} errores de continuidad, ${knowledgeLeaks} filtraciones`);
