@@ -3291,18 +3291,19 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       });
 
       // ════════════════════════════════════════════════════════════════
-      // DEFENSA ANTI-FALSOS-POSITIVOS (espejo del filtro de runFinalReview)
-      // El usuario pulsa "Resolver issues documentados" partiendo de los
-      // issues guardados en project.finalReviewResult. Sin este filtro, un
-      // único issue de repetición léxica que el modelo extiende a TODOS los
-      // capítulos genera 30+ reescrituras innecesarias y costosas.
+      // DEFENSA ANTI-VAGUEDAD (espejo exacto del filtro de runFinalReview)
+      // Solo descartamos issues VAGOS (sin evidencia, sin instrucción concreta,
+      // sin elementos a preservar). NO se descartan por número de capítulos:
+      // el Revisor Final es precisamente el agente diseñado para captar
+      // patrones globales (muletillas distribuidas, tics narrativos cross-capítulo)
+      // que el Editor por-capítulo NO PUEDE ver. Cap. amplios son legítimos.
       // ════════════════════════════════════════════════════════════════
       const HIGH_FP_CATEGORIES = new Set(["trama", "repeticion_lexica", "identidad_confusa"]);
       const beforeFilterCount = normalizedIssues.length;
       const filterReasons: string[] = [];
+      const wideScopeWarnings: string[] = [];
 
       const issues: FinalReviewIssue[] = normalizedIssues.filter((issue) => {
-        // Regla 1: HIGH_FP exigen evidencia textual + corrección específica + preservación
         if (HIGH_FP_CATEGORIES.has(issue.categoria as string)) {
           const desc = issue.descripcion || "";
           const hasTextualEvidence =
@@ -3320,29 +3321,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
         }
 
-        // Regla 2: repeticion_lexica solo es válida en ≤2 capítulos contiguos
-        // (lo dice el propio prompt del Revisor Final). Si abarca más, es hallucinación.
-        if (issue.categoria === "repeticion_lexica") {
-          const caps = (issue.capitulos_afectados || [])
-            .filter((c: number) => typeof c === "number" && c > 0)
-            .sort((a: number, b: number) => a - b);
-          if (caps.length > 2) {
-            filterReasons.push(
-              `repeticion_lexica abarca ${caps.length} capítulos (máx 2 contiguos): "${(issue.descripcion || "").slice(0, 60)}..."`
-            );
-            return false;
-          }
-          if (caps.length === 2 && caps[1] - caps[0] !== 1) {
-            filterReasons.push(
-              `repeticion_lexica en capítulos no contiguos ${caps.join(",")}: "${(issue.descripcion || "").slice(0, 60)}..."`
-            );
-            return false;
-          }
-          // Regla 3: si severidad no es "critica", también se descarta (mismo criterio que runFinalReview)
-          if ((issue as any).severidad !== "critica") {
-            filterReasons.push(`repeticion_lexica no crítica: "${(issue.descripcion || "").slice(0, 60)}..."`);
-            return false;
-          }
+        // Aviso (NO filtro) cuando un issue cubre muchos capítulos: legítimo
+        // pero conviene avisar al usuario del alcance/coste antes de lanzar.
+        const capsCount = (issue.capitulos_afectados || []).filter(
+          (c: number) => typeof c === "number" && c > 0
+        ).length;
+        if (capsCount >= 10) {
+          wideScopeWarnings.push(
+            `[${(issue.categoria || "otro").toUpperCase()}] cubre ${capsCount} capítulos: "${(issue.descripcion || "").slice(0, 80)}..."`
+          );
         }
 
         return true;
@@ -3350,12 +3337,23 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
       if (filterReasons.length > 0) {
         const filteredCount = beforeFilterCount - issues.length;
-        console.log(`[ResolveIssues] Filtered ${filteredCount}/${beforeFilterCount} hallucinated/vague issues:`);
+        console.log(`[ResolveIssues] Filtered ${filteredCount}/${beforeFilterCount} vague issues:`);
         filterReasons.forEach(r => console.log(`  - ${r}`));
         await storage.createActivityLog({
           projectId: project.id,
           level: "info",
-          message: `${filteredCount} issues descartados por ser vagos o de alcance excesivo (false positives). ${issues.length} issues válidos restantes.`,
+          message: `${filteredCount} issues vagos descartados (sin evidencia textual, instrucción específica o elementos a preservar). ${issues.length} issues válidos restantes.`,
+          agentRole: "final-reviewer",
+        });
+      }
+
+      if (wideScopeWarnings.length > 0) {
+        console.log(`[ResolveIssues] Issues de alcance amplio (≥10 capítulos):`);
+        wideScopeWarnings.forEach(w => console.log(`  - ${w}`));
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `${wideScopeWarnings.length} issue(s) de alcance amplio detectados (≥10 capítulos). Son legítimos para patrones globales (muletillas, tics narrativos), pero implican muchas reescrituras. Detalles: ${wideScopeWarnings.join(" | ")}`,
           agentRole: "final-reviewer",
         });
       }
@@ -3363,7 +3361,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       if (issues.length === 0) {
         this.callbacks.onError(
           beforeFilterCount > 0
-            ? "Todos los issues documentados fueron descartados por ser vagos o de alcance excesivo (false positives del Revisor Final). Considera regenerar la revisión."
+            ? "Todos los issues documentados fueron descartados por ser vagos. Considera regenerar la revisión final."
             : "No hay issues documentados para resolver."
         );
         await storage.updateProject(project.id, { status: "completed" });
