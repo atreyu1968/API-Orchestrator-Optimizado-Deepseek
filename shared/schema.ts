@@ -97,6 +97,8 @@ export const projects = pgTable("projects", {
   maxWordsPerChapter: integer("max_words_per_chapter").default(3500),
   kindleUnlimitedOptimized: boolean("kindle_unlimited_optimized").notNull().default(false),
   architectInstructions: text("architect_instructions"),
+  antiRepetitionGuidance: text("anti_repetition_guidance"),
+  antiRepetitionUpdatedAt: timestamp("anti_repetition_updated_at"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

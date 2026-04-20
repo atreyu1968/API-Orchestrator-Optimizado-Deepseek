@@ -50,6 +50,7 @@ interface GhostwriterInput {
   guiaEstilo: string;
   previousContinuity?: string;
   refinementInstructions?: string;
+  antiRepetitionGuidance?: string;
   authorName?: string;
   isRewrite?: boolean;
   minWordCount?: number;
@@ -852,6 +853,24 @@ export class GhostwriterAgent extends BaseAgent {
     INSTRUCCIÓN: Usa este borrador como BASE. Modifica SOLO lo que indican las instrucciones de corrección.${input.surgicalEdit ? " La salida debe parecerse al 90%+ a este borrador, con cambios localizados solo en los puntos problemáticos." : ""}
     `;
       }
+    }
+
+    if (input.antiRepetitionGuidance && input.antiRepetitionGuidance.trim().length > 0) {
+      prompt += `
+
+    ═══════════════════════════════════════════════════════════════════
+    🚫 PATRONES PROHIBIDOS DETECTADOS EN CAPÍTULOS ANTERIORES (ALTA PRIORIDAD)
+    ═══════════════════════════════════════════════════════════════════
+    El Detector Semántico ha analizado los capítulos ya escritos y ha identificado
+    los siguientes patrones repetidos. NO los reutilices en este capítulo:
+
+    ${input.antiRepetitionGuidance}
+
+    Estas prohibiciones son OBLIGATORIAS. Si necesitas expresar una idea o reacción
+    similar, usa una formulación COMPLETAMENTE NUEVA (otras palabras, otra imagen,
+    otra estructura). El objetivo es que cada capítulo tenga textura propia.
+    ═══════════════════════════════════════════════════════════════════
+    `;
     }
 
     const chapterData = input.chapterData;

@@ -1194,6 +1194,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             guiaEstilo: fullStyleGuide,
             previousContinuity: optimizedContinuity,
             refinementInstructions: refinementInstructions + stalledEscalation,
+            antiRepetitionGuidance: (project as any).antiRepetitionGuidance || undefined,
             authorName,
             isRewrite: isRewrite || isStalled,
             minWordCount: perChapterTarget,
@@ -1468,6 +1469,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
         await this.enrichWorldBibleFromChapter(project.id, sectionData.numero, extractedContinuityState, finalContent);
         await this.updateWorldBibleTimeline(project.id, worldBible.id, sectionData.numero, sectionData);
+
+        // PREVENTIVO: cada 5 capítulos completados, escanear patrones repetidos para
+        // alimentar al Ghostwriter en los próximos capítulos (evitar muletillas globales).
+        await this.runProactiveSemanticScan(project, i + 1, allSections.length, worldBibleData);
         
         const completedChaptersCount = i + 1;
         if (completedChaptersCount > 0 && completedChaptersCount % this.continuityCheckpointInterval === 0) {
@@ -1850,6 +1855,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             guiaEstilo: fullStyleGuide,
             previousContinuity,
             refinementInstructions: refinementInstructions + stalledEscalationResume,
+            antiRepetitionGuidance: (project as any).antiRepetitionGuidance || undefined,
             authorName,
             isRewrite: isRewrite || isStalledResume,
             minWordCount: perChapterMinResume,
@@ -2097,6 +2103,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         this.callbacks.onAgentStatus("copyeditor", "completed", `${sectionLabel} finalizado (${wordCount} palabras)`);
 
         await this.enrichWorldBibleFromChapter(project.id, sectionData.numero, extractedContinuityState, finalContent);
+
+        // PREVENTIVO: cada 5 capítulos completados, alimentar al Ghostwriter con patrones a evitar.
+        await this.runProactiveSemanticScan(project, completedCount, existingChapters.length || project.chapterCount || 0, worldBibleData);
 
         // QA: Continuity Sentinel checkpoint every 5 chapters
         if (completedCount > 0 && completedCount % this.continuityCheckpointInterval === 0) {
@@ -6584,6 +6593,106 @@ Responde SOLO con un JSON válido con la estructura:
       foreshadowingStatus: analysisResult?.foreshadowing_detectado || [],
       chaptersToRevise: passed ? [] : (analysisResult?.capitulos_para_revision || [])
     };
+  }
+
+  /**
+   * Escaneo semántico PROACTIVO: cada 5 capítulos completados (en novelas ≥10 caps),
+   * analiza lo escrito hasta el momento y guarda una "hoja de prohibiciones vivas"
+   * en `project.antiRepetitionGuidance` para que el Ghostwriter la consuma en los
+   * capítulos siguientes y EVITE repeticiones antes de cometerlas.
+   *
+   * No bloquea ni reescribe — es una capa preventiva ligera que se suma al
+   * SemanticRepetitionDetector forense que sigue corriendo al final.
+   */
+  private async runProactiveSemanticScan(
+    project: Project,
+    completedCount: number,
+    totalChapters: number,
+    worldBibleData: ParsedWorldBible
+  ): Promise<void> {
+    try {
+      // Solo en novelas largas y solo si quedan capítulos por escribir
+      if (totalChapters < 10) return;
+      if (completedCount <= 0) return;
+      if (completedCount % 5 !== 0) return;
+      if (completedCount >= totalChapters) return;
+
+      const chapters = await storage.getChaptersByProject(project.id);
+      const completedChapters = chapters
+        .filter(c => c.status === "completed" && c.chapterNumber > 0 && c.content)
+        .sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+      if (completedChapters.length < 5) return;
+
+      this.callbacks.onAgentStatus("semantic-detector", "analyzing",
+        `Escaneo preventivo tras ${completedCount} capítulos: detectando patrones a evitar en próximos capítulos...`
+      );
+
+      const result = await this.runSemanticRepetitionAnalysis(project, completedChapters, worldBibleData);
+
+      const guidance = this.buildAntiRepetitionGuidanceFromClusters(result.clusters);
+
+      if (guidance && guidance.trim().length > 0) {
+        await storage.updateProject(project.id, {
+          antiRepetitionGuidance: guidance,
+          antiRepetitionUpdatedAt: new Date(),
+        } as any);
+        (project as any).antiRepetitionGuidance = guidance;
+
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `Hoja de prohibiciones actualizada (escaneo preventivo tras cap. ${completedCount}): ${result.clusters.length} patrones detectados → se inyectarán en próximos capítulos para evitar repeticiones.`,
+          agentRole: "semantic-detector",
+        });
+      } else {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `Escaneo preventivo tras cap. ${completedCount}: sin patrones repetidos detectados. Manuscrito limpio hasta ahora.`,
+          agentRole: "semantic-detector",
+        });
+      }
+    } catch (error) {
+      // No fallar el flujo principal si el escaneo preventivo da error
+      console.error("[ProactiveSemanticScan] Non-fatal error:", error);
+    }
+  }
+
+  /**
+   * Convierte los clusters del SemanticRepetitionDetector en una hoja de
+   * prohibiciones compacta y accionable para el Ghostwriter (≤2000 chars).
+   */
+  private buildAntiRepetitionGuidanceFromClusters(clusters: any[]): string {
+    if (!clusters || clusters.length === 0) return "";
+
+    // Priorizar mayores primero, luego menores. Top 7.
+    const sorted = [...clusters].sort((a, b) => {
+      const sa = a.severidad === "mayor" ? 0 : 1;
+      const sb = b.severidad === "mayor" ? 0 : 1;
+      return sa - sb;
+    }).slice(0, 7);
+
+    const lines = sorted.map((c) => {
+      const tipoLabel: Record<string, string> = {
+        idea_repetida: "Idea/reacción repetida",
+        metafora_repetida: "Metáfora repetida",
+        estructura_repetida: "Estructura narrativa repetida",
+      };
+      const tipo = tipoLabel[c.tipo] || "Patrón repetido";
+      const caps = Array.isArray(c.capitulos_afectados) && c.capitulos_afectados.length > 0
+        ? ` (caps. ${c.capitulos_afectados.join(", ")})`
+        : "";
+      const ejemplos = Array.isArray(c.ejemplos) && c.ejemplos.length > 0
+        ? ` Ejemplos a NO repetir: ${c.ejemplos.slice(0, 2).map((e: string) => `"${e.slice(0, 80)}"`).join("; ")}.`
+        : "";
+      const fix = c.fix_sugerido ? ` Alternativa: ${c.fix_sugerido.slice(0, 120)}` : "";
+      return `• [${tipo}${caps}] ${(c.descripcion || "").slice(0, 200)}${ejemplos}${fix}`;
+    });
+
+    let guidance = lines.join("\n");
+    if (guidance.length > 2000) guidance = guidance.slice(0, 2000) + "\n[...truncado]";
+    return guidance;
   }
 
   private async rewriteChapterForQA(
