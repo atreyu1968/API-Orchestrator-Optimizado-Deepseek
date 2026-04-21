@@ -28,7 +28,7 @@ interface FinalReviewerInput {
 
 export interface FinalReviewIssue {
   capitulos_afectados: number[];
-  categoria: "enganche" | "personajes" | "trama" | "atmosfera" | "ritmo" | "continuidad_fisica" | "timeline" | "ubicacion" | "repeticion_lexica" | "arco_incompleto" | "tension_insuficiente" | "giro_predecible" | "hook_debil" | "identidad_confusa" | "capitulo_huerfano" | "otro";
+  categoria: "enganche" | "personajes" | "trama" | "atmosfera" | "ritmo" | "continuidad_fisica" | "timeline" | "ubicacion" | "repeticion_lexica" | "arco_incompleto" | "tension_insuficiente" | "giro_predecible" | "hook_debil" | "identidad_confusa" | "capitulo_huerfano" | "meta_referencia" | "otro";
   descripcion: string;
   severidad: "critica" | "mayor" | "menor";
   elementos_a_preservar: string;
@@ -277,6 +277,28 @@ CRÍTICOS (Rompen la inmersión):
 - Contradicciones flagrantes que confunden (personaje muerto que aparece vivo)
 - Resoluciones que no se ganan (el villano muere de un infarto conveniente)
 - Personajes que actúan contra su naturaleza establecida sin justificación
+- META-REFERENCIAS A LA ESTRUCTURA DEL LIBRO: Cualquier mención DENTRO DE LA PROSA a "el Capítulo X", "el cap. N", "el prólogo", "el epílogo", "la primera parte", "la segunda parte", "este capítulo", "el capítulo anterior", "más adelante", "en páginas anteriores" o cualquier referencia explícita a la estructura/divisiones del manuscrito. La novela NO sabe que es una novela. Estas referencias rompen brutalmente la inmersión y deben reportarse SIEMPRE como CRÍTICAS, con categoría "meta_referencia".
+
+═══════════════════════════════════════════════════════════════════
+🔍 BARRIDO OBLIGATORIO DE META-REFERENCIAS
+═══════════════════════════════════════════════════════════════════
+
+En cada pasada, BARRE el manuscrito buscando estas marcas exactas DENTRO DE LA PROSA (excluye títulos de capítulo y encabezados — solo cuenta lo que está en el cuerpo narrativo):
+  - "Capítulo" / "capítulo" seguido de número o adjetivo ordinal ("Capítulo 3", "el capítulo anterior", "este capítulo")
+  - "Cap." / "cap." seguido de número
+  - "Prólogo" / "prólogo" mencionado como sección
+  - "Epílogo" / "epílogo" mencionado como sección
+  - "Primera parte", "Segunda parte", "tercera parte", etc., como divisiones del libro
+  - "más adelante en el libro", "en páginas anteriores", "como veremos", "como vimos"
+
+Por cada hallazgo:
+  - severidad: "critica"
+  - categoria: "meta_referencia"
+  - descripcion: cita la frase exacta donde aparece y el capítulo donde la encontraste.
+  - elementos_a_preservar: el resto del párrafo y del capítulo.
+  - instrucciones_correccion: ordena sustituir la mención por una referencia diegética interna a la ficción (lugar, personaje, fecha, suceso concreto). EJEMPLO: en lugar de "como ya vimos en el Capítulo 3", escribir "como aquella noche en la cripta" o "como cuando descubrió la nota de Plasencia". NUNCA dejar una sola mención al número de capítulo en el texto narrativo.
+
+EXCEPCIÓN ÚNICA: si un personaje está leyendo en voz alta un libro real DENTRO de la ficción y cita un capítulo de ese libro interno, eso es legítimo (no es meta-referencia al manuscrito). En cualquier otro caso es defecto crítico.
 
 MAYORES (Molestan pero no destruyen):
 - Repeticiones léxicas muy evidentes que distraen
@@ -374,7 +396,7 @@ SALIDA OBLIGATORIA (JSON):
   "issues": [
     {
       "capitulos_afectados": [1, 5],
-      "categoria": "enganche" | "personajes" | "trama" | "atmosfera" | "ritmo" | "continuidad_fisica" | "timeline" | "repeticion_lexica" | "arco_incompleto" | "tension_insuficiente" | "giro_predecible" | "identidad_confusa" | "capitulo_huerfano" | "otro",
+      "categoria": "enganche" | "personajes" | "trama" | "atmosfera" | "ritmo" | "continuidad_fisica" | "timeline" | "repeticion_lexica" | "arco_incompleto" | "tension_insuficiente" | "giro_predecible" | "identidad_confusa" | "capitulo_huerfano" | "meta_referencia" | "otro",
       "descripcion": "Lo que me sacó de la historia como lector. SIEMPRE incluir número(s) de capítulo en la descripción (ej: 'En el Capítulo 29, ...')",
       "severidad": "critica" | "mayor" | "menor",
       "elementos_a_preservar": "Lista ESPECÍFICA de escenas, diálogos y elementos del capítulo que funcionan bien y NO deben modificarse",
