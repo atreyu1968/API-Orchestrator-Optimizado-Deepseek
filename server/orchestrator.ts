@@ -2756,16 +2756,39 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       if (currentScore >= this.minAcceptableScore) {
         consecutiveHighScores++;
       } else {
+        // Oscilación entre 8 y 9 (sin issues graves): NO aprobamos pronto.
+        // Damos al sistema oportunidades reales de estabilizar la puntuación
+        // procesando los issues del ciclo actual (incluso si son menores).
+        // Sólo después de varios ciclos de oscilación persistente concedemos
+        // el voto de "calidad confirmada por el mejor ciclo".
         if (consecutiveHighScores > 0 && currentScore >= 8) {
           const hasCurrentCritical = result?.issues?.some(i => i.severidad === "critica" || i.severidad === "mayor");
-          if (!hasCurrentCritical) {
-            console.log(`[Orchestrator] Score oscillation detected: had ${consecutiveHighScores} consecutive 9+, now ${currentScore}/10. No critical/mayor issues. Model is oscillating — treating as acceptable.`);
-            this.callbacks.onAgentStatus("final-reviewer", "completed", 
-              `Puntuación oscilante (${previousScores.slice(-3).join(", ")}/10) — modelo inestable. Mejor puntuación ${Math.max(...previousScores)}/10 ya confirmó calidad. Sin defectos graves. APROBADO.`
-            );
-            return true;
+          const bestOverall = Math.max(...previousScores);
+          const cyclesElapsed = previousScores.length;
+          // Sólo nos rendimos a la oscilación si:
+          //  • llevamos al menos 5 ciclos
+          //  • el mejor ciclo fue >= 9
+          //  • no hay issues graves en el ciclo actual
+          //  • la diferencia entre máximo y mínimo reciente es ≤ 1 (oscilación 8↔9)
+          if (!hasCurrentCritical && cyclesElapsed >= 5 && bestOverall >= 9) {
+            const recent = previousScores.slice(-4);
+            const recentSpread = Math.max(...recent) - Math.min(...recent);
+            if (recentSpread <= 1) {
+              console.log(`[Orchestrator] Persistent 8↔9 oscillation over ${cyclesElapsed} cycles (best ${bestOverall}). Approving via best-score rule.`);
+              const scoreForDb = Math.round(bestOverall);
+              await storage.updateProject(project.id, { finalScore: scoreForDb });
+              this.callbacks.onAgentStatus("final-reviewer", "completed",
+                `Oscilación persistente (${recent.join(", ")}/10) tras ${cyclesElapsed} ciclos. Mejor puntuación ${bestOverall}/10 confirmó calidad. Sin defectos graves. APROBADO.`
+              );
+              return true;
+            }
           }
-          console.log(`[Orchestrator] Score oscillation (${consecutiveHighScores} × 9+ → ${currentScore}) but ${result?.issues?.filter(i => i.severidad === "critica" || i.severidad === "mayor").length} critical/mayor issues found. Continuing revision.`);
+          console.log(`[Orchestrator] Score dropped to ${currentScore} after ${consecutiveHighScores} × 9+ (cycle ${cyclesElapsed}, best ${bestOverall}, hasCritical=${hasCurrentCritical}). Continuing revision to stabilise.`);
+          // Si el revisor marcó APROBADO pero bajó, lo reclasificamos para que
+          // entre por la rama de refinamiento (línea ~2802) en vez de aprobar.
+          if (result && (result.veredicto === "APROBADO" || result.veredicto === "APROBADO_CON_RESERVAS")) {
+            result.veredicto = "REQUIERE_REVISION";
+          }
         }
         consecutiveHighScores = 0;
       }
