@@ -3078,105 +3078,30 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           issuesSummary
         );
         
-        this.callbacks.onAgentStatus("ghostwriter", "writing", 
-          `Reescribiendo ${sectionLabel} (${rewriteIndex + 1}/${chaptersToRewrite.length}): ${issuesSummary}`
-        );
-
-        const previousChapter = updatedChapters.find(c => c.chapterNumber === chapterNum - 1);
-        const previousContinuity = previousChapter?.content 
-          ? `Continuidad del capítulo anterior disponible.` 
-          : "";
-
-        // Use project's per-chapter settings, fallback to calculated from total
-        const totalChaptersQA = updatedChapters.length || project.chapterCount || 1;
-        const calculatedTargetQA = this.calculatePerChapterTarget((project as any).minWordCount, totalChaptersQA);
-        const perChapterMinQA = (project as any).minWordsPerChapter || calculatedTargetQA;
-        const perChapterMaxQA = (project as any).maxWordsPerChapter || Math.round(perChapterMinQA * 1.15);
-        const originalChapterContent = chapter.content || "";
-        const writerResult = await this.ghostwriter.execute({
-          chapterNumber: sectionData.numero,
-          chapterData: sectionData,
-          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsQA, seriesKeyEventsQA),
+        // ──────────────────────────────────────────────────────────────
+        // Pipeline quirúrgico unificado: SurgicalPatcher determinista primero
+        // (find/replace exacto, World-Bible-aware, sin tocar nada más); si la
+        // instrucción no es puntual, fallback a Narrador con red de seguridad
+        // de longitud + verificación del Editor + revert si introduce regresiones.
+        // Además, deja `preEditContent` poblado para el diff "Ver cambios" en el dashboard.
+        // ──────────────────────────────────────────────────────────────
+        await this.rewriteChapterForQA(
+          project,
+          chapter,
+          sectionData,
+          worldBibleData,
           guiaEstilo,
-          previousContinuity,
-          refinementInstructions: `CORRECCIONES DEL REVISOR FINAL:\n${revisionInstructions}`,
-          authorName,
-          minWordCount: perChapterMinQA,
-          maxWordCount: perChapterMaxQA,
-          extendedGuideContent: styleGuideContent || undefined,
-          previousChapterContent: originalChapterContent,
-          kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
-        });
-
-        let chapterContent = writerResult.content;
-        await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite");
-
-        this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
-
-        const qaEditorChaptersCtx = await storage.getChaptersByProject(project.id);
-        const qaEditorGuia = styleGuideContent
-          ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
-          : `Género: ${project.genre}, Tono: ${project.tone}`;
-        const editorResult = await this.editor.execute({
-          chapterNumber: sectionData.numero,
-          chapterContent,
-          chapterData: sectionData,
-          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
-          guiaEstilo: qaEditorGuia,
-          previousChaptersContext: this.buildPreviousChaptersContextForEditor(qaEditorChaptersCtx, sectionData.numero),
-        });
-
-        await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "qa_edit");
-
-        this.enforceApprovalLogic(editorResult);
-        if (!editorResult.result?.aprobado) {
-          const refinementInstructions = this.buildRefinementInstructions(editorResult.result);
-          const rewriteResult = await this.ghostwriter.execute({
-            chapterNumber: sectionData.numero,
-            chapterData: sectionData,
-            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsQA, seriesKeyEventsQA),
-            guiaEstilo,
-            previousContinuity,
-            refinementInstructions,
-            authorName,
-            isRewrite: true,
-            minWordCount: perChapterMinQA,
-            maxWordCount: perChapterMaxQA,
-            extendedGuideContent: styleGuideContent || undefined,
-            previousChapterContent: chapterContent,
-            kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
-          });
-          chapterContent = rewriteResult.content;
-          await this.trackTokenUsage(project.id, rewriteResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite");
-        }
-
-        this.callbacks.onAgentStatus("copyeditor", "polishing", `El Estilista está puliendo ${sectionLabel}...`);
-
-        const polishResult = await this.copyeditor.execute({
-          chapterContent,
-          chapterNumber: sectionData.numero,
-          chapterTitle: sectionData.titulo,
-          guiaEstilo: styleGuideContent || undefined,
-        });
-        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "qa_polish");
-
-        const finalContent = polishResult.result?.texto_final || chapterContent;
-        const wordCount = finalContent.split(/\s+/).length;
-
-        await storage.updateChapter(chapter.id, {
-          content: finalContent,
-          wordCount,
-          status: "completed",
-          needsRevision: false,
-          revisionReason: null,
-        });
-
-        this.chaptersRewrittenInCurrentCycle++;
-        this.callbacks.onChapterComplete(chapterNum, wordCount, sectionData.titulo);
-        this.callbacks.onAgentStatus("copyeditor", "completed", 
-          `${sectionLabel} corregido y finalizado (${wordCount} palabras)`
+          "editorial",
+          `CORRECCIONES DEL REVISOR FINAL:\n${revisionInstructions}`
         );
+
+        const refreshedChapter = (await storage.getChaptersByProject(project.id))
+          .find(c => c.chapterNumber === chapterNum);
+        const finalWc = refreshedChapter?.wordCount || 0;
+        this.callbacks.onChapterComplete(chapterNum, finalWc, sectionData.titulo);
       }
+      // Mantener referencia (vars usadas dentro de rewriteChapterForQA via instancia/storage).
+      void seriesUnresolvedThreadsQA; void seriesKeyEventsQA; void styleGuideContent; void authorName;
 
       // Acumular los issues corregidos para informar al revisor en la siguiente pasada
       if (result?.issues) {
@@ -3476,94 +3401,29 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           `Corrección de issues: ${issuesSummary}`
         );
 
-        this.callbacks.onAgentStatus("ghostwriter", "writing",
-          `Reescribiendo ${sectionLabel} (${i + 1}/${sortedChapters.length}): ${issuesSummary}`
+        // ──────────────────────────────────────────────────────────────
+        // Pipeline quirúrgico unificado: cirugía determinista (find/replace
+        // World-Bible-aware) → fallback a Narrador con red de seguridad de
+        // longitud + verificación del Editor + revert si introduce regresiones.
+        // Snapshot `preEditContent` se persiste automáticamente para el diff.
+        // ──────────────────────────────────────────────────────────────
+        await this.rewriteChapterForQA(
+          project,
+          chapter,
+          sectionData,
+          worldBibleData,
+          guiaEstilo,
+          "editorial",
+          `CORRECCIONES DE ISSUES DOCUMENTADOS:\n${revisionInstructions}`
         );
 
-        const totalChapters = allChapters.length || project.chapterCount || 1;
-        const calculatedTarget = this.calculatePerChapterTarget((project as any).minWordCount, totalChapters);
-        const perChapterMin = (project as any).minWordsPerChapter || calculatedTarget;
-        const perChapterMax = (project as any).maxWordsPerChapter || Math.round(perChapterMin * 1.15);
-
-        const writerResult = await this.ghostwriter.execute({
-          chapterNumber: sectionData.numero,
-          chapterData: sectionData,
-          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
-          guiaEstilo,
-          previousContinuity: "",
-          refinementInstructions: `CORRECCIONES DE ISSUES DOCUMENTADOS:\n${revisionInstructions}`,
-          authorName,
-          isRewrite: true,
-          minWordCount: perChapterMin,
-          maxWordCount: perChapterMax,
-          extendedGuideContent: styleGuideContent || undefined,
-          previousChapterContent: chapter.content,
-          kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
-        });
-
-        let chapterContent = writerResult.content;
-        await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "resolve_issues");
-
-        this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
-
-        const editorChapters = await storage.getChaptersByProject(project.id);
-        const editorResult = await this.editor.execute({
-          chapterNumber: sectionData.numero,
-          chapterContent,
-          chapterData: sectionData,
-          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
-          guiaEstilo,
-          previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChapters, sectionData.numero),
-        });
-        await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "resolve_issues_edit");
-
-        this.enforceApprovalLogic(editorResult);
-        if (!editorResult.result?.aprobado) {
-          const refinementInstructions = this.buildRefinementInstructions(editorResult.result);
-          const rewriteResult = await this.ghostwriter.execute({
-            chapterNumber: sectionData.numero,
-            chapterData: sectionData,
-            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
-            guiaEstilo,
-            previousContinuity: "",
-            refinementInstructions,
-            authorName,
-            isRewrite: true,
-            minWordCount: perChapterMin,
-            maxWordCount: perChapterMax,
-            extendedGuideContent: styleGuideContent || undefined,
-            previousChapterContent: chapterContent,
-            kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
-          });
-          chapterContent = rewriteResult.content;
-          await this.trackTokenUsage(project.id, rewriteResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "resolve_issues_rewrite");
-        }
-
-        this.callbacks.onAgentStatus("copyeditor", "polishing", `El Estilista está puliendo ${sectionLabel}...`);
-
-        const polishResult = await this.copyeditor.execute({
-          chapterContent,
-          chapterNumber: sectionData.numero,
-          chapterTitle: sectionData.titulo,
-          guiaEstilo: styleGuideContent || undefined,
-        });
-        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "resolve_issues_polish");
-
-        const finalContent = polishResult.result?.texto_final || chapterContent;
-        const wordCount = finalContent.split(/\s+/).length;
-
-        await storage.updateChapter(chapter.id, {
-          content: finalContent,
-          wordCount,
-          status: "completed",
-        });
-
+        const refreshedChapter = (await storage.getChaptersByProject(project.id))
+          .find(c => c.chapterNumber === chapterNum);
+        const finalWc = refreshedChapter?.wordCount || 0;
         resolvedCount++;
-        this.callbacks.onChapterComplete(chapterNum, wordCount, sectionData.titulo);
-        this.callbacks.onAgentStatus("copyeditor", "completed",
-          `${sectionLabel} corregido y finalizado (${wordCount} palabras)`
-        );
+        this.callbacks.onChapterComplete(chapterNum, finalWc, sectionData.titulo);
       }
+      void styleGuideContent; void authorName;
 
       if (resolvedCount === 0) {
         this.callbacks.onError("No se pudo corregir ningún capítulo — los issues no apuntan a capítulos válidos.");
@@ -7124,6 +6984,8 @@ Responde SOLO con un JSON válido con la estructura:
             status: "completed",
             needsRevision: false,
             revisionReason: null,
+            preEditContent: originalContent,
+            preEditAt: new Date() as any,
           });
 
           this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
@@ -7423,6 +7285,8 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       wordCount: finalWordCount,
       needsRevision: false,
       revisionReason: null,
+      preEditContent: originalContent,
+      preEditAt: new Date() as any,
     });
 
     this.chaptersRewrittenInCurrentCycle++;
