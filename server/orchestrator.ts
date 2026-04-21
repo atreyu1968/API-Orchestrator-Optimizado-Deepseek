@@ -11,8 +11,10 @@ import {
   ProofreaderAgent,
   EditorialNotesParser,
   SurgicalPatcherAgent,
+  WorldBibleArbiterAgent,
   type EditorialInstruction,
   type EditorialNotesParseResult,
+  type WorldBiblePatch,
   isProjectCancelledFromDb,
   registerProjectAbortController,
   clearProjectAbortController,
@@ -111,6 +113,7 @@ export class Orchestrator {
   private semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
   private editorialNotesParser = new EditorialNotesParser();
   private surgicalPatcher = new SurgicalPatcherAgent();
+  private wbArbiter = new WorldBibleArbiterAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
@@ -3079,6 +3082,39 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         );
         
         // ──────────────────────────────────────────────────────────────
+        // Paso 0: ÁRBITRO DEL WORLD BIBLE
+        // Antes de tocar el capítulo, comprobamos si alguno de estos issues se
+        // resuelve mejor actualizando el WB (cuando la novela es coherente y
+        // el WB tiene un dato puntual obsoleto). Esto preserva la prosa y
+        // ahorra reescrituras innecesarias.
+        // ──────────────────────────────────────────────────────────────
+        const arbitration = await this.arbitrateWorldBibleForIssues(
+          project, chapter, sectionData, issuesForChapter, worldBibleData, updatedChapters
+        );
+
+        let activeIssues = issuesForChapter;
+        if (arbitration.appliedPatches.length > 0) {
+          activeIssues = issuesForChapter.filter((_, idx) => !arbitration.handledIssueIndices.has(idx));
+          this.callbacks.onAgentStatus("wb-arbiter", "completed",
+            `${sectionLabel}: ${arbitration.appliedPatches.length} dato(s) del World Bible actualizados; ${activeIssues.length} issue(s) restantes para reescritura.`
+          );
+        }
+
+        if (activeIssues.length === 0) {
+          await storage.updateChapter(chapter.id, { status: "completed", needsRevision: false, revisionReason: null });
+          this.callbacks.onChapterStatusChange(chapterNum, "completed");
+          this.callbacks.onChapterComplete(chapterNum, chapter.wordCount || 0, sectionData.titulo);
+          continue;
+        }
+
+        const activeRevisionInstructions = activeIssues.map(issue => {
+          const preservar = (issue as any).elementos_a_preservar
+            ? `\n⚠️ PRESERVAR (NO MODIFICAR): ${(issue as any).elementos_a_preservar}`
+            : "";
+          return `[${issue.categoria.toUpperCase()}] ${issue.descripcion}${preservar}\n✏️ CORRECCIÓN QUIRÚRGICA: ${issue.instrucciones_correccion}`;
+        }).join("\n\n");
+
+        // ──────────────────────────────────────────────────────────────
         // Pipeline quirúrgico unificado: SurgicalPatcher determinista primero
         // (find/replace exacto, World-Bible-aware, sin tocar nada más); si la
         // instrucción no es puntual, fallback a Narrador con red de seguridad
@@ -3092,7 +3128,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           worldBibleData,
           guiaEstilo,
           "editorial",
-          `CORRECCIONES DEL REVISOR FINAL:\n${revisionInstructions}`
+          `CORRECCIONES DEL REVISOR FINAL:\n${activeRevisionInstructions}`
         );
 
         const refreshedChapter = (await storage.getChaptersByProject(project.id))
@@ -3402,6 +3438,36 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         );
 
         // ──────────────────────────────────────────────────────────────
+        // Paso 0: Árbitro del World Bible (preserva prosa cuando el WB está obsoleto).
+        // ──────────────────────────────────────────────────────────────
+        const arbitration = await this.arbitrateWorldBibleForIssues(
+          project, chapter, sectionData, issuesForChapter, worldBibleData, allChapters
+        );
+
+        let activeIssues = issuesForChapter;
+        if (arbitration.appliedPatches.length > 0) {
+          activeIssues = issuesForChapter.filter((_, idx) => !arbitration.handledIssueIndices.has(idx));
+          this.callbacks.onAgentStatus("wb-arbiter", "completed",
+            `${sectionLabel}: ${arbitration.appliedPatches.length} dato(s) del World Bible actualizados; ${activeIssues.length} issue(s) restantes.`
+          );
+        }
+
+        if (activeIssues.length === 0) {
+          await storage.updateChapter(chapter.id, { status: "completed", needsRevision: false, revisionReason: null });
+          this.callbacks.onChapterStatusChange(chapterNum, "completed");
+          this.callbacks.onChapterComplete(chapterNum, chapter.wordCount || 0, sectionData.titulo);
+          resolvedCount++;
+          continue;
+        }
+
+        const activeRevisionInstructions = activeIssues.map(issue => {
+          const preservar = (issue as any).elementos_a_preservar
+            ? `\n⚠️ PRESERVAR (NO MODIFICAR): ${(issue as any).elementos_a_preservar}`
+            : "";
+          return `[${(issue.categoria || "otro").toUpperCase()}] ${issue.descripcion}${preservar}\n✏️ CORRECCIÓN QUIRÚRGICA: ${issue.instrucciones_correccion}`;
+        }).join("\n\n");
+
+        // ──────────────────────────────────────────────────────────────
         // Pipeline quirúrgico unificado: cirugía determinista (find/replace
         // World-Bible-aware) → fallback a Narrador con red de seguridad de
         // longitud + verificación del Editor + revert si introduce regresiones.
@@ -3414,7 +3480,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           worldBibleData,
           guiaEstilo,
           "editorial",
-          `CORRECCIONES DE ISSUES DOCUMENTADOS:\n${revisionInstructions}`
+          `CORRECCIONES DE ISSUES DOCUMENTADOS:\n${activeRevisionInstructions}`
         );
 
         const refreshedChapter = (await storage.getChaptersByProject(project.id))
@@ -7295,6 +7361,245 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       `${sectionLabel} corregido quirúrgicamente${editorScoreCandidate ? ` (verificado ${editorScoreCandidate}/10)` : ""} — ${finalWordCount} palabras (original ${originalWordCount}).`
     );
     void originalContinuityState;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // Árbitro del World Bible: ante issues del Revisor Final, decide si la novela
+  // tiene razón y debe actualizarse el WB en lugar de reescribir el capítulo.
+  // SOLO actualiza datos puntuales aislados; nunca trama, arcos, decisiones.
+  // Devuelve { handledIssueIndices, appliedPatches } — el caller filtra los
+  // issues "handled" antes de mandar el resto al cirujano/narrador.
+  // ════════════════════════════════════════════════════════════════
+  private async arbitrateWorldBibleForIssues(
+    project: Project,
+    chapter: Chapter,
+    sectionData: any,
+    issuesForChapter: FinalReviewIssue[],
+    worldBibleData: ParsedWorldBible,
+    allChapters: Chapter[]
+  ): Promise<{ handledIssueIndices: Set<number>; appliedPatches: WorldBiblePatch[] }> {
+    const empty = { handledIssueIndices: new Set<number>(), appliedPatches: [] as WorldBiblePatch[] };
+
+    if (!issuesForChapter || issuesForChapter.length === 0) return empty;
+    if (!chapter.content || !chapter.content.trim()) return empty;
+
+    // Las únicas categorías que tienen sentido arbitrar contra el WB son las que
+    // describen datos canónicos puntuales. Las demás (trama, ritmo, hook, etc.)
+    // jamás deben modificar el WB — siempre reescritura del capítulo.
+    const ARBITRABLE_CATS = new Set([
+      "continuidad_fisica", "timeline", "ubicacion", "personajes", "otro"
+    ]);
+    const arbitrable = issuesForChapter
+      .map((iss, idx) => ({ iss, idx }))
+      .filter(x => ARBITRABLE_CATS.has(String(x.iss.categoria || "otro")));
+    if (arbitrable.length === 0) return empty;
+
+    const wbRecord = await storage.getWorldBibleByProject(project.id);
+    if (!wbRecord) return empty;
+
+    const wbSnapshot = {
+      characters: wbRecord.characters || [],
+      worldRules: wbRecord.worldRules || [],
+      timeline: wbRecord.timeline || [],
+      plotOutline: wbRecord.plotOutline || {},
+    };
+
+    // Concordancia: para cada nombre de personaje (de los que aparecen en
+    // los issues o en el WB), contamos en cuántos capítulos aparecen y con
+    // qué frecuencia. El árbitro lo usa para verificar la condición (b).
+    const concordanceLines: string[] = [];
+    const characters = (wbRecord.characters as any[]) || [];
+
+    // Recolectar nombres mencionados en los issues
+    const issueText = arbitrable.map(x =>
+      `${x.iss.descripcion || ""} ${x.iss.instrucciones_correccion || ""}`
+    ).join(" ").toLowerCase();
+
+    const relevantNames = new Set<string>();
+    for (const c of characters) {
+      const fullName = String(c?.nombre || c?.name || "").trim();
+      if (!fullName) continue;
+      const firstName = fullName.split(/\s+/)[0];
+      if (issueText.includes(fullName.toLowerCase()) || (firstName && issueText.includes(firstName.toLowerCase()))) {
+        relevantNames.add(fullName);
+      }
+    }
+
+    // Si no detectamos nombres explícitos en los issues, no merece la pena
+    // pasar concordancia (el árbitro decidirá con WB + capítulo solo).
+    if (relevantNames.size > 0) {
+      const sortedChapters = [...allChapters].sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0));
+      for (const name of Array.from(relevantNames).slice(0, 8)) {
+        const firstName = name.split(/\s+/)[0];
+        const re = new RegExp(`\\b${firstName.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\b`, "gi");
+        const perChapter: string[] = [];
+        for (const ch of sortedChapters) {
+          const content = ch.content || "";
+          if (!content) continue;
+          const matches = content.match(re);
+          if (matches && matches.length > 0) {
+            perChapter.push(`cap${ch.chapterNumber}=${matches.length}`);
+          }
+        }
+        if (perChapter.length > 0) {
+          concordanceLines.push(`• ${name}: aparece en ${perChapter.length} capítulos → ${perChapter.join(", ")}`);
+        } else {
+          concordanceLines.push(`• ${name}: SIN apariciones literales en la novela.`);
+        }
+      }
+    }
+
+    let arbiterResult;
+    try {
+      const response = await this.wbArbiter.execute({
+        chapterNumber: sectionData.numero,
+        chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
+        chapterContent: chapter.content || "",
+        issues: arbitrable.map(x => ({
+          index: x.idx,
+          categoria: String(x.iss.categoria || "otro"),
+          descripcion: x.iss.descripcion || "",
+          instrucciones_correccion: x.iss.instrucciones_correccion || "",
+          capitulos_afectados: x.iss.capitulos_afectados || [],
+        })),
+        worldBibleJson: JSON.stringify(wbSnapshot, null, 2).slice(0, 40000),
+        concordance: concordanceLines.join("\n"),
+      });
+      await this.trackTokenUsage(project.id, response.tokenUsage, "Árbitro del World Bible", "gemini-2.5-flash", sectionData.numero, "wb_arbitration");
+      arbiterResult = response.result;
+    } catch (err) {
+      console.warn(`[WBArbiter] Error en cap ${sectionData.numero}:`, err);
+      return empty;
+    }
+
+    if (!arbiterResult || !Array.isArray(arbiterResult.wb_patches) || arbiterResult.wb_patches.length === 0) {
+      return empty;
+    }
+
+    // Aplicar parches al WB de forma segura (validando que la entidad+campo existen
+    // y que el "before" coincide con el valor actual; si no, descartamos el parche).
+    // Sólo se aceptan parches cuyo `resolves_issue_index` esté en el set enviado:
+    // evita que el modelo "marque resuelto" un issue que en realidad no abordó.
+    const submittedIndices = new Set(arbitrable.map(x => x.idx));
+    const appliedPatches: WorldBiblePatch[] = [];
+    const rejectedLogs: string[] = [];
+    const handledIssueIndices = new Set<number>();
+    const updatedSnapshot = JSON.parse(JSON.stringify(wbSnapshot));
+
+    for (const patch of arbiterResult.wb_patches) {
+      if (typeof patch.resolves_issue_index !== "number" || !submittedIndices.has(patch.resolves_issue_index)) {
+        rejectedLogs.push(`Parche descartado: resolves_issue_index inválido (${patch.resolves_issue_index}) — no estaba en los issues enviados.`);
+        continue;
+      }
+      const ok = this.applyWorldBiblePatch(updatedSnapshot, patch);
+      if (ok) {
+        appliedPatches.push(patch);
+        handledIssueIndices.add(patch.resolves_issue_index);
+      } else {
+        rejectedLogs.push(`Parche rechazado (entidad/campo no encontrados, ruta no existe, o "before" no coincide): ${patch.section}/${patch.entity_id_or_name}/${patch.field}.`);
+      }
+    }
+
+    if (appliedPatches.length === 0) {
+      // Si hubo rechazos, dejamos rastro para auditoría.
+      for (const msg of rejectedLogs) {
+        await storage.createActivityLog({ projectId: project.id, level: "warning", message: msg, agentRole: "wb-arbiter" });
+      }
+      return empty;
+    }
+
+    // Persistir PRIMERO; logs de éxito SOLO si la persistencia funciona.
+    try {
+      await storage.updateWorldBible(wbRecord.id, {
+        characters: updatedSnapshot.characters,
+        worldRules: updatedSnapshot.worldRules,
+        timeline: updatedSnapshot.timeline,
+        plotOutline: updatedSnapshot.plotOutline,
+      });
+    } catch (err) {
+      console.error(`[WBArbiter] Error persistiendo WB actualizado:`, err);
+      await storage.createActivityLog({
+        projectId: project.id, level: "error", agentRole: "wb-arbiter",
+        message: `Fallo al persistir parches del WB: ${(err as Error)?.message || err}. Ningún cambio aplicado; los issues seguirán por reescritura.`,
+      });
+      return empty;
+    }
+
+    for (const patch of appliedPatches) {
+      await storage.createActivityLog({
+        projectId: project.id, level: "success", agentRole: "wb-arbiter",
+        message: `World Bible actualizado: ${patch.section}/${patch.entity_id_or_name}/${patch.field}: "${patch.before}" → "${patch.after}". Razón: ${patch.justification}`,
+      });
+    }
+    for (const msg of rejectedLogs) {
+      await storage.createActivityLog({ projectId: project.id, level: "warning", message: msg, agentRole: "wb-arbiter" });
+    }
+
+    return { handledIssueIndices, appliedPatches };
+  }
+
+  // Aplica UN parche al snapshot mutable. Estricto: solo modifica si la entidad
+  // existe, el campo ya existe en ella, y el "before" coincide con el valor actual.
+  // Solo acepta secciones tipo array (characters/worldRules/timeline). plotOutline
+  // se rechaza por seguridad (estructura compleja, alto riesgo de corrupción).
+  private applyWorldBiblePatch(snapshot: any, patch: WorldBiblePatch): boolean {
+    const ALLOWED_SECTIONS = new Set(["characters", "worldRules", "timeline"]);
+    if (!ALLOWED_SECTIONS.has(patch.section)) return false;
+
+    if (typeof patch.before !== "string" || typeof patch.after !== "string") return false;
+    if (!patch.entity_id_or_name?.trim() || !patch.field?.trim()) return false;
+
+    const list = snapshot[patch.section];
+    if (!Array.isArray(list)) return false;
+
+    const entity = list.find((e: any) => {
+      const nm = e?.nombre || e?.name || e?.id || e?.titulo || e?.evento;
+      return typeof nm === "string" && nm.trim() === patch.entity_id_or_name.trim();
+    });
+    if (!entity) return false;
+
+    return this.setByPath(entity, patch.field, patch.before, patch.after);
+  }
+
+  // Setter por path "a.b.c" o "a.b[2]". REQUIERE que la ruta y el campo final
+  // ya existan, y que el valor previo coincida con `before` (laxo: trim+lowercase).
+  // Bloquea tokens peligrosos (__proto__, prototype, constructor) para evitar
+  // prototype pollution vía paths controlados por el modelo.
+  private setByPath(obj: any, path: string, before: string, after: string): boolean {
+    const FORBIDDEN = new Set(["__proto__", "prototype", "constructor"]);
+    const tokens = path.split(/\.|\[|\]/).filter(t => t.length > 0);
+    if (tokens.length === 0) return false;
+    if (tokens.some(t => FORBIDDEN.has(t))) return false;
+
+    let cursor: any = obj;
+    for (let i = 0; i < tokens.length - 1; i++) {
+      const k = tokens[i];
+      if (cursor === null || typeof cursor !== "object") return false;
+      // Si el siguiente token es índice numérico, el cursor actual debe ser array
+      const next = tokens[i + 1];
+      const nextIsIndex = /^\d+$/.test(next);
+      if (nextIsIndex && !Array.isArray(cursor[k])) return false;
+      if (!Object.prototype.hasOwnProperty.call(cursor, k)) return false;
+      cursor = cursor[k];
+    }
+    const lastKey = tokens[tokens.length - 1];
+    if (cursor === null || typeof cursor !== "object") return false;
+
+    // Para arrays, lastKey numérico debe estar dentro de bounds
+    if (Array.isArray(cursor)) {
+      if (!/^\d+$/.test(lastKey)) return false;
+      const idx = Number(lastKey);
+      if (idx < 0 || idx >= cursor.length) return false;
+    } else {
+      if (!Object.prototype.hasOwnProperty.call(cursor, lastKey)) return false;
+    }
+
+    const current = cursor[lastKey];
+    const norm = (v: any) => String(v ?? "").trim().toLowerCase();
+    if (norm(current) !== norm(before)) return false;
+
+    cursor[lastKey] = after;
+    return true;
   }
 
   private async polishChapterForVoice(

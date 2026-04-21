@@ -14,3 +14,4 @@ export { ItalianReviewerAgent, type ItalianReviewResult } from "./italian-review
 export { ProofreaderAgent, type ProofreaderResult, type ProofreaderChange } from "./proofreader";
 export { EditorialNotesParser, type EditorialInstruction, type EditorialNotesParseResult } from "./editorial-notes-parser";
 export { SurgicalPatcherAgent, type PatchOperation, type SurgicalPatchResult, type AppliedPatchReport } from "./surgical-patcher";
+export { WorldBibleArbiterAgent, type WorldBiblePatch, type WorldBibleArbiterResult, type WorldBibleSection } from "./world-bible-arbiter";
