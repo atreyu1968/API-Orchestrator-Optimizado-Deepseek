@@ -122,6 +122,8 @@ REGLAS DE ORO INVIOLABLES
    - Prohibido incluir notas [entre corchetes]
    - Prohibido comentarios de autor o meta-referencias
    - Solo literatura inmersiva
+   - PROHIBIDO ABSOLUTO mencionar la estructura del libro dentro de la prosa: la novela NO sabe que es una novela. NUNCA escribas "como ocurrió en el Capítulo 3", "ya vimos en el prólogo", "tal y como se contó antes en el capítulo X", "en el epílogo", "en la primera parte", "en el cap. 7", ni ninguna referencia a números de capítulo, partes, secciones, escenas o cualquier división del manuscrito. Tampoco frases del tipo "más adelante" o "en páginas anteriores" referidas al libro.
+   - Cuando un personaje o el narrador necesite recordar algo que el lector ya leyó en otro capítulo, hazlo SOLO con referencias narrativas/temporales internas a la ficción: "aquella noche en la cripta", "tres días antes, cuando llegó la carta", "lo que descubrió en Plasencia", "desde la última conversación con Vasco". El lector debe poder ubicar el recuerdo por el contenido, jamás por el número de capítulo.
 
 3. MOSTRAR, NUNCA CONTAR:
    - Emociones → acciones, gestos, decisiones. NO reacciones fisiológicas de catálogo.

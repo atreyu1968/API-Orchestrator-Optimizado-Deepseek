@@ -54,6 +54,7 @@ REGLAS INVIOLABLES:
 9. Cada operación debe tener una "justification" breve indicando qué instrucción resuelve.
 10. Si el original ya cumple lo que pide la instrucción, devuelve "operations": [].
 11. PROHIBIDO contradecir el WORLD BIBLE. Si la instrucción te empuja a introducir un dato que choca con la canon (nombre, edad, ubicación, parentesco, regla del mundo, evento previo, motivación de personaje, cronología, etc.), NO la apliques: omite esa operación o, si toda la instrucción depende de violar la canon, devuelve "operations": [] con "not_applicable_reason" explicando qué hecho del World Bible se vería violado. Tu replace_with siempre debe ser COMPATIBLE con cada hecho del World Bible que se te ha pasado.
+12. PROHIBIDO ABSOLUTO mencionar la estructura del libro dentro del replace_with. La novela NO sabe que es una novela. NUNCA introduzcas frases como "como ocurrió en el Capítulo 3", "ya vimos en el prólogo", "tal y como se contó en el cap. 7", "en el epílogo", "en la primera parte", ni ninguna referencia a números de capítulo, partes, secciones o divisiones del manuscrito. Si necesitas evocar algo que pasó antes en la historia, usa SIEMPRE referencias narrativas internas a la ficción (lugares, personajes, fechas, sucesos: "aquella noche en la cripta", "lo que descubrió en Plasencia", "la última conversación con Vasco"). Si la instrucción del editor menciona números de capítulo como referencia, tradúcelos a esa forma diegética; nunca los copies tal cual al texto.
 
 FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
 {

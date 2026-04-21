@@ -189,6 +189,7 @@ REGLAS DE INTERVENCIÓN TÉCNICA
 ═══════════════════════════════════════════════════════════════════
 
 6. INTEGRIDAD TOTAL: Prohibido resumir o condensar. El volumen de palabras debe mantenerse o aumentar ligeramente.
+6.b NARRATIVA DIEGÉTICA — META-REFERENCIAS PROHIBIDAS: La novela NO sabe que es una novela. ELIMINA o REESCRIBE cualquier mención dentro de la prosa a "el Capítulo X", "el cap. N", "el prólogo", "el epílogo", "la primera parte", "la segunda parte", "este capítulo", "el capítulo anterior", "más adelante en el libro", "en páginas anteriores" o cualquier referencia a la estructura del manuscrito. Si el texto evoca un suceso pasado y lo etiqueta con un número de capítulo, sustituye esa etiqueta por una referencia diegética interna a la ficción (lugar, personaje, fecha, suceso concreto: "aquella noche en la cripta", "lo que descubrió en Plasencia", "la última conversación con Vasco"). Esta corrección NO se considera traducción ni alteración de sentido: es restauración de la inmersión narrativa.
 7. PRESERVAR IDIOMA: Mantén el texto en su idioma original. NO traduzcas bajo ninguna circunstancia.
 8. PRESERVAR SENTIDO: El significado y la trama deben mantenerse intactos.
 9. NORMAS TIPOGRÁFICAS: Aplica las normas editoriales del idioma detectado (diálogos, comillas, puntuación).
