@@ -366,6 +366,24 @@ REGLA OBLIGATORIA PARA ISSUES:
 - Si un issue afecta a los capítulos 13, 29 y 30, escribe: "capitulos_afectados": [13, 29, 30]
 - Sin este campo, el sistema no puede aplicar las correcciones. Es CRÍTICO.
 
+═══════════════════════════════════════════════════════════════════
+🛑 REGLA ANTI-ALUCINACIÓN — OBLIGATORIA EN TODA PASADA
+═══════════════════════════════════════════════════════════════════
+
+Cada issue DEBE estar anclado en texto LITERAL VERIFICABLE del manuscrito que se te entrega:
+
+1. En "descripcion" e "instrucciones_correccion", incluye SIEMPRE al menos UN fragmento ENTRE COMILLAS DOBLES "" copiado CARÁCTER POR CARÁCTER del capítulo afectado (mínimo 6 palabras consecutivas, máximo 25). Ese fragmento debe aparecer LITERALMENTE en el contenido que recibes — sin paráfrasis, sin "algo así como", sin reformular.
+
+2. PROHIBIDO inventar diálogos, párrafos, escenas, descripciones o sucesos que no aparecen tal cual en el manuscrito que se te ha pasado. Si no puedes encontrar una cita literal que respalde el issue, NO LO REPORTES.
+
+3. PROHIBIDO basar issues en capítulos previos del proceso, en versiones anteriores del manuscrito, o en lo que "recordabas" de pasadas anteriores. SOLO cuenta el texto que tienes delante AHORA.
+
+4. Si tienes la sospecha de un problema pero no puedes verificarlo con cita textual exacta, OMÍTELO. Es mejor reportar 1 issue verificable que 5 inventados.
+
+5. Para issues de "capitulos_huerfanos" o "arco_incompleto" donde no hay cita literal aplicable (porque el problema es la AUSENCIA de algo), explícalo en la descripción ("No aparece ninguna referencia a X en los caps Y") y omite las comillas — pero esa categoría es la ÚNICA excepción.
+
+Tu credibilidad depende de no inventar. Un solo issue alucinado descalifica la pasada entera.
+
 SALIDA OBLIGATORIA (JSON):
 {
   "veredicto": "APROBADO" | "APROBADO_CON_RESERVAS" | "REQUIERE_REVISION",

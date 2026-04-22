@@ -7130,6 +7130,28 @@ Responde SOLO con un JSON válido con la estructura:
           );
           return;
         }
+        // Detectar instrucciones basadas en contenido INEXISTENTE en el capítulo
+        // (versión obsoleta de la nota / referencia alucinada) o instrucciones
+        // que el capítulo YA SATISFACE. En ambos casos la reescritura completa
+        // suele EMPEORAR el texto (caso visto: 5/10, revertido). Cancelamos.
+        if (this.isInstructionStaleOrAlreadySatisfied(reason)) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `${sectionLabel}: la instrucción cita contenido que NO existe en el capítulo actual (referencia obsoleta o alucinada), o el capítulo YA cumple lo pedido. Reescritura cancelada para no introducir regresiones. Razón del cirujano: ${reason}`,
+            agentRole: "surgical-patcher",
+          });
+          await storage.updateChapter(chapter.id, {
+            status: "completed",
+            needsRevision: false,
+            revisionReason: null,
+          });
+          this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+          this.callbacks.onAgentStatus("surgical-patcher", "completed",
+            `${sectionLabel}: instrucción obsoleta o ya satisfecha; capítulo no tocado.`
+          );
+          return;
+        }
         await storage.createActivityLog({
           projectId: project.id,
           level: "info",
@@ -7651,6 +7673,40 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
     const mentionsWBFields = wbFieldTokens.some(t => i.includes(t));
 
     return mentionsWBFields;
+  }
+
+  // Heurística: la razón del cirujano deja claro que la instrucción está basada
+  // en contenido que NO existe en el capítulo actual (típico de notas obsoletas
+  // que se refieren a una versión anterior del texto, o de issues alucinados
+  // por el revisor) o que el capítulo YA cumple lo que la instrucción pide.
+  // En ambos casos, dejar al Narrador reescribir suele EMPEORAR el texto: o
+  // mete contenido inventado para "encajar" con la nota, o destroza una versión
+  // que ya estaba bien. La opción correcta es dejar el capítulo intacto.
+  private isInstructionStaleOrAlreadySatisfied(surgeonReason: string): boolean {
+    const r = (surgeonReason || "").toLowerCase().trim();
+    if (!r) return false;
+
+    // Patrones de "no existe en el capítulo"
+    const noExistencePatterns = [
+      /no\s+contiene\s+(ning[uú]n|ninguna)/,
+      /no\s+contiene\s+(referencia|mención|menci[oó]n|elemento|pasaje|fragmento|párrafo|parrafo)/,
+      /no\s+(incluye|menciona|hace\s+referencia|aparece|encuentra|existe)/,
+      /no\s+hay\s+(ning[uú]n|elemento|menci[oó]n|referencia|fragmento|texto)/,
+      /sin\s+embargo,?\s+el\s+texto/,
+      /el\s+texto\s+(proporcionado|del\s+cap[ií]tulo)\s+(no|tampoco)/,
+      /no\s+se\s+encuentr[ae]n?\s+(en|dentro)/,
+    ];
+
+    // Patrones de "el capítulo ya satisface la instrucción"
+    const alreadySatisfiedPatterns = [
+      /ya\s+(proporciona|cumple|satisface|incluye|tiene|presenta|refleja|expresa|contiene)/,
+      /el\s+cap[ií]tulo,?\s+tal\s+como\s+est[aá]/,
+      /no\s+hay\s+(elementos?|nada)\s+(que\s+(eliminar|corregir|modificar|cambiar|añadir|agregar|reescribir))/,
+      /la\s+correcci[oó]n\s+ya\s+est[aá]\s+aplicada/,
+      /el\s+texto\s+ya\s+/,
+    ];
+
+    return [...noExistencePatterns, ...alreadySatisfiedPatterns].some(re => re.test(r));
   }
 
   // Versión instrumentada: devuelve un objeto con `ok` y la razón de fallo
