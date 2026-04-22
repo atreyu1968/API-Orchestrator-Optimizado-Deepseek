@@ -7106,6 +7106,30 @@ Responde SOLO con un JSON válido con la estructura:
         });
       } else {
         const reason = patchResult.result?.not_applicable_reason || "El cirujano clasificó la instrucción como estructural.";
+        // Detectar instrucciones que SOLO afectan al World Bible (no al texto del
+        // capítulo): si el cirujano refusa porque la nota habla de modificar
+        // entradas del WB (activeInjuries, persistentInjuries, plotDecisions,
+        // characters, worldRules, timeline...), reescribir el capítulo NO va a
+        // arreglar nada — sólo gasta tokens y arriesga corromper prosa correcta.
+        // En su lugar, dejamos el capítulo intacto y levantamos un log explícito.
+        if (this.isWorldBibleOnlyInstruction(reason, correctionInstructions)) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `${sectionLabel}: instrucción identificada como modificación SOLO del World Bible (no afecta a la prosa del capítulo). Reescritura cancelada para no corromper texto correcto. Revisar/actualizar el WB manualmente o esperar a que el árbitro lo resuelva en el siguiente ciclo. Razón del cirujano: ${reason}`,
+            agentRole: "surgical-patcher",
+          });
+          await storage.updateChapter(chapter.id, {
+            status: "completed",
+            needsRevision: false,
+            revisionReason: null,
+          });
+          this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+          this.callbacks.onAgentStatus("surgical-patcher", "completed",
+            `${sectionLabel}: instrucción solo afecta al WB; capítulo no tocado.`
+          );
+          return;
+        }
         await storage.createActivityLog({
           projectId: project.id,
           level: "info",
@@ -7592,6 +7616,41 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
   // se rechaza por seguridad (estructura compleja, alto riesgo de corrupción).
   private applyWorldBiblePatch(snapshot: any, patch: WorldBiblePatch): boolean {
     return this.applyWorldBiblePatchWithDiag(snapshot, patch).ok;
+  }
+
+  // Heurística: la instrucción de corrección habla SOLO de actualizar el World
+  // Bible (no la prosa del capítulo). En ese caso, ni cirugía ni reescritura del
+  // capítulo van a "arreglar" nada — la solución es tocar el WB. Detectamos:
+  //   • La razón del cirujano menciona explícitamente WB / world bible.
+  //   • La instrucción menciona campos canónicos del WB (activeInjuries,
+  //     persistentInjuries, plotDecisions, characters/personajes, worldRules,
+  //     timeline, etc.) y verbos de "actualizar entrada / añadir registro".
+  // Si SOLO uno de los dos lados lo menciona y la instrucción ALSO describe
+  // cambios concretos al texto, devolvemos false para no perdernos correcciones
+  // mixtas. Por eso pedimos señal en la razón del cirujano (que ya analizó
+  // ambos lados).
+  private isWorldBibleOnlyInstruction(surgeonReason: string, originalInstructions: string): boolean {
+    const r = (surgeonReason || "").toLowerCase();
+    const i = (originalInstructions || "").toLowerCase();
+
+    // Señal primaria: el cirujano dice explícitamente que la nota es para el WB,
+    // no para el texto del capítulo. Es el indicador más fiable.
+    const surgeonFlagsWB =
+      /world bible|world\s*bible|wb\b|gestionar la world bible|modificación en la world bible|modificacion en la world bible|no en el texto/.test(r);
+
+    if (!surgeonFlagsWB) return false;
+
+    // Confirmación secundaria: la instrucción menciona campos canónicos del WB.
+    const wbFieldTokens = [
+      "activeinjuries", "active_injuries", "heridas_activas",
+      "persistentinjuries", "persistent_injuries", "lesiones persistentes", "lesiones_persistentes",
+      "plotdecisions", "plot_decisions", "decisiones de trama",
+      "world bible", "worldbible", "world_bible",
+      "entrada de", "entry of", "registro en",
+    ];
+    const mentionsWBFields = wbFieldTokens.some(t => i.includes(t));
+
+    return mentionsWBFields;
   }
 
   // Versión instrumentada: devuelve un objeto con `ok` y la razón de fallo
