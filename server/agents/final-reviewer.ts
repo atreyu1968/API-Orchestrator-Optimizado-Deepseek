@@ -349,13 +349,38 @@ Debes detectar y reportar estos problemas que SOLO se ven leyendo toda la novela
 PROTOCOLO DE PASADAS - OBJETIVO: PUNTUACIÓN 9/10
 ═══════════════════════════════════════════════════════════════════
 
-PASADA 1: Lectura completa como lector. ¿Qué me sacó de la historia? Máximo 5 issues.
-PASADA 2+: Verificar correcciones. ¿Mejoró la experiencia? Máximo 3 issues NUEVOS.
+PASADA 1 — AUDITORÍA EXHAUSTIVA (NO HAY TOPE DE ISSUES):
+   Esta pasada es CRÍTICA. Tu objetivo NO es destacar "los 5 más graves" sino
+   detectar TODOS los defectos verificables del manuscrito. Si hay 20 issues
+   reales, repórtalos los 20. Si hay 50, los 50. Es mucho mejor reportar 30
+   issues legítimos en una sola pasada que goteralos en 10 ciclos sucesivos.
+   El sistema cuenta con que no se te escape nada.
+   
+   BARRIDOS OBLIGATORIOS (haz cada uno antes de cerrar la pasada):
+   1. Continuidad física: lesiones, embarazos, edades, descripciones físicas
+      de cada personaje a lo largo de TODOS los capítulos. Compara cap a cap.
+   2. Timeline: fechas, días de la semana, estaciones, duraciones declaradas.
+   3. Conocimiento de personajes: ¿alguien sabe algo que no debería?
+   4. Identidad/villano/revelaciones: ¿son consistentes en todos los capítulos?
+   5. Objetos/pistas/llaves introducidos: ¿se usan o quedan huérfanos?
+   6. Meta-referencias en la prosa ("Capítulo X", "como vimos antes", etc.).
+   7. Repeticiones léxicas notorias y muletillas estilísticas.
+   8. Capítulos huérfanos o con bajo aporte a la trama principal.
+   9. Hilos abiertos no resueltos (subtramas abandonadas).
+   10. Cambios bruscos de tono/POV/voz narrativa entre capítulos.
+   
+   Solo cuando hayas completado los 10 barridos puedes cerrar la pasada 1.
+
+PASADA 2+ — VERIFICACIÓN DE CORRECCIONES:
+   Revisa que los issues reportados en pasadas anteriores se corrigieron sin
+   introducir regresiones. Si las correcciones provocaron nuevos defectos
+   verificables, repórtalos (sin tope artificial). NO reabras issues que ya
+   están en la lista de "issuesPreviosCorregidos".
 
 REGLAS DE APROBACIÓN:
 - Si puntuación >= 9 Y máximo 1 issue menor → APROBADO
 - Si puntuación >= 9 con issues menores solamente → APROBADO_CON_RESERVAS
-- Si puntuación < 9 → REQUIERE_REVISION con instrucciones específicas (máximo 3 issues concretos)
+- Si puntuación < 9 → REQUIERE_REVISION con TODOS los issues concretos detectados (sin tope)
 - El sistema requiere 2 puntuaciones 9+ consecutivas para confirmar aprobación
 
 En cada pasada donde puntuación < 9, incluye en analisis_bestseller.como_subir_a_9
@@ -481,8 +506,8 @@ export class FinalReviewerAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
       useThinking: true,
-      thinkingBudget: 4096,
-      maxOutputTokens: 16384,
+      thinkingBudget: 12288,
+      maxOutputTokens: 32768,
     });
   }
 
@@ -513,7 +538,17 @@ export class FinalReviewerAgent extends BaseAgent {
 
     let pasadaInfo = "";
     if (input.pasadaNumero === 1) {
-      pasadaInfo = "\n\nEsta es tu PASADA #1 - AUDITORÍA COMPLETA. Analiza exhaustivamente y reporta máximo 5 issues (los más graves). OBJETIVO: puntuación 9+.";
+      pasadaInfo = `\n\nEsta es tu PASADA #1 - AUDITORÍA EXHAUSTIVA.
+
+REPORTA TODOS los issues verificables que encuentres. NO HAY TOPE.
+- Ejecuta los 10 BARRIDOS OBLIGATORIOS descritos en el protocolo.
+- Si hay 30 defectos legítimos, reporta los 30. Es preferible una pasada larga
+  con todos los issues que 10 ciclos parciales que goteen los hallazgos.
+- Cada issue debe respetar la REGLA ANTI-ALUCINACIÓN (cita literal entre comillas).
+- Solo si tras los 10 barridos no encuentras NINGÚN defecto verificable puedes
+  cerrar con puntuación 9+.
+
+OBJETIVO: detectar TODO en esta pasada para no necesitar más rondas.`;
     } else if (input.pasadaNumero && input.pasadaNumero >= 2) {
       pasadaInfo = `\n\nEsta es tu PASADA #${input.pasadaNumero} - VERIFICACIÓN Y RE-EVALUACIÓN.
 
