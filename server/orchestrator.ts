@@ -7415,10 +7415,27 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
     const arbitrable = issuesForChapter
       .map((iss, idx) => ({ iss, idx }))
       .filter(x => ARBITRABLE_CATS.has(String(x.iss.categoria || "otro")));
-    if (arbitrable.length === 0) return empty;
+    if (arbitrable.length === 0) {
+      const cats = Array.from(new Set(issuesForChapter.map(i => String(i.categoria || "otro"))));
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "wb-arbiter",
+        message: `Cap ${sectionData.numero}: ${issuesForChapter.length} issue(s) NO arbitrables (categorías: ${cats.join(", ")}). Pasan directos a reescritura.`,
+      });
+      return empty;
+    }
 
     const wbRecord = await storage.getWorldBibleByProject(project.id);
-    if (!wbRecord) return empty;
+    if (!wbRecord) {
+      await storage.createActivityLog({
+        projectId: project.id, level: "warning", agentRole: "wb-arbiter",
+        message: `Cap ${sectionData.numero}: No se encontró registro de World Bible para el proyecto. Imposible arbitrar.`,
+      });
+      return empty;
+    }
+    await storage.createActivityLog({
+      projectId: project.id, level: "info", agentRole: "wb-arbiter",
+      message: `Cap ${sectionData.numero}: árbitro evaluando ${arbitrable.length} issue(s) potencialmente resoluble(s) por canon del WB...`,
+    });
 
     const wbSnapshot = {
       characters: wbRecord.characters || [],
@@ -7496,6 +7513,11 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
     }
 
     if (!arbiterResult || !Array.isArray(arbiterResult.wb_patches) || arbiterResult.wb_patches.length === 0) {
+      const reason = (arbiterResult?.reasoning || "").toString().slice(0, 400) || "(sin razonamiento devuelto)";
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "wb-arbiter",
+        message: `Cap ${sectionData.numero}: árbitro decidió NO modificar el WB (0 parches). Razón: ${reason}`,
+      });
       return empty;
     }
 
@@ -7514,12 +7536,15 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         rejectedLogs.push(`Parche descartado: resolves_issue_index inválido (${patch.resolves_issue_index}) — no estaba en los issues enviados.`);
         continue;
       }
-      const ok = this.applyWorldBiblePatch(updatedSnapshot, patch);
-      if (ok) {
+      const diag = this.applyWorldBiblePatchWithDiag(updatedSnapshot, patch);
+      if (diag.ok) {
         appliedPatches.push(patch);
         handledIssueIndices.add(patch.resolves_issue_index);
       } else {
-        rejectedLogs.push(`Parche rechazado (entidad/campo no encontrados, ruta no existe, o "before" no coincide): ${patch.section}/${patch.entity_id_or_name}/${patch.field}.`);
+        rejectedLogs.push(
+          `Parche rechazado [${patch.section}/${patch.entity_id_or_name}/${patch.field}]: ${diag.reason}` +
+          (diag.foundValue !== undefined ? ` — valor real en WB: "${String(diag.foundValue).slice(0, 120)}"; before declarado: "${String(patch.before).slice(0, 120)}"` : "")
+        );
       }
     }
 
@@ -7566,20 +7591,40 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
   // Solo acepta secciones tipo array (characters/worldRules/timeline). plotOutline
   // se rechaza por seguridad (estructura compleja, alto riesgo de corrupción).
   private applyWorldBiblePatch(snapshot: any, patch: WorldBiblePatch): boolean {
-    const ALLOWED_SECTIONS = new Set(["characters", "worldRules", "timeline"]);
-    if (!ALLOWED_SECTIONS.has(patch.section)) return false;
+    return this.applyWorldBiblePatchWithDiag(snapshot, patch).ok;
+  }
 
-    if (typeof patch.before !== "string" || typeof patch.after !== "string") return false;
-    if (!patch.entity_id_or_name?.trim() || !patch.field?.trim()) return false;
+  // Versión instrumentada: devuelve un objeto con `ok` y la razón de fallo
+  // (más el valor real encontrado en la ruta, si llegamos hasta él) para que
+  // la capa superior pueda dejar rastros útiles de auditoría.
+  private applyWorldBiblePatchWithDiag(snapshot: any, patch: WorldBiblePatch): { ok: boolean; reason: string; foundValue?: any } {
+    const ALLOWED_SECTIONS = new Set(["characters", "worldRules", "timeline"]);
+    if (!ALLOWED_SECTIONS.has(patch.section)) {
+      return { ok: false, reason: `sección "${patch.section}" no permitida (sólo characters/worldRules/timeline)` };
+    }
+    if (typeof patch.before !== "string" || typeof patch.after !== "string") {
+      return { ok: false, reason: `before/after deben ser strings` };
+    }
+    if (!patch.entity_id_or_name?.trim() || !patch.field?.trim()) {
+      return { ok: false, reason: `entity_id_or_name o field vacíos` };
+    }
 
     const list = snapshot[patch.section];
-    if (!Array.isArray(list)) return false;
+    if (!Array.isArray(list)) {
+      return { ok: false, reason: `sección "${patch.section}" no es un array en el WB` };
+    }
 
+    const target = patch.entity_id_or_name.trim().toLowerCase();
     const entity = list.find((e: any) => {
-      const nm = e?.nombre || e?.name || e?.id || e?.titulo || e?.evento;
-      return typeof nm === "string" && nm.trim() === patch.entity_id_or_name.trim();
+      const candidates = [e?.nombre, e?.name, e?.id, e?.titulo, e?.evento]
+        .filter(v => typeof v === "string")
+        .map(v => v.trim().toLowerCase());
+      return candidates.includes(target);
     });
-    if (!entity) return false;
+    if (!entity) {
+      const available = list.map((e: any) => e?.nombre || e?.name || e?.id || e?.titulo || e?.evento).filter(Boolean).slice(0, 6);
+      return { ok: false, reason: `entidad "${patch.entity_id_or_name}" no encontrada en ${patch.section}. Disponibles: ${available.join(", ") || "(vacío)"}` };
+    }
 
     return this.setByPath(entity, patch.field, patch.before, patch.after);
   }
@@ -7588,41 +7633,80 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
   // ya existan, y que el valor previo coincida con `before` (laxo: trim+lowercase).
   // Bloquea tokens peligrosos (__proto__, prototype, constructor) para evitar
   // prototype pollution vía paths controlados por el modelo.
-  private setByPath(obj: any, path: string, before: string, after: string): boolean {
+  // Si el campo final es un array de strings, busca el `before` dentro del array
+  // y reemplaza ese elemento concreto (caso típico: rasgos_distintivos[]).
+  private setByPath(obj: any, path: string, before: string, after: string): { ok: boolean; reason: string; foundValue?: any } {
     const FORBIDDEN = new Set(["__proto__", "prototype", "constructor"]);
     const tokens = path.split(/\.|\[|\]/).filter(t => t.length > 0);
-    if (tokens.length === 0) return false;
-    if (tokens.some(t => FORBIDDEN.has(t))) return false;
+    if (tokens.length === 0) return { ok: false, reason: `path vacío` };
+    if (tokens.some(t => FORBIDDEN.has(t))) return { ok: false, reason: `path contiene tokens prohibidos` };
 
     let cursor: any = obj;
     for (let i = 0; i < tokens.length - 1; i++) {
       const k = tokens[i];
-      if (cursor === null || typeof cursor !== "object") return false;
-      // Si el siguiente token es índice numérico, el cursor actual debe ser array
+      if (cursor === null || typeof cursor !== "object") {
+        return { ok: false, reason: `tramo "${tokens.slice(0, i + 1).join(".")}" no es objeto navegable` };
+      }
       const next = tokens[i + 1];
       const nextIsIndex = /^\d+$/.test(next);
-      if (nextIsIndex && !Array.isArray(cursor[k])) return false;
-      if (!Object.prototype.hasOwnProperty.call(cursor, k)) return false;
+      if (nextIsIndex && !Array.isArray(cursor[k])) {
+        return { ok: false, reason: `"${k}" no es array, no admite índice [${next}]` };
+      }
+      if (!Object.prototype.hasOwnProperty.call(cursor, k)) {
+        const keys = Object.keys(cursor).slice(0, 8);
+        return { ok: false, reason: `campo "${k}" no existe en la entidad. Campos disponibles: ${keys.join(", ")}` };
+      }
       cursor = cursor[k];
     }
     const lastKey = tokens[tokens.length - 1];
-    if (cursor === null || typeof cursor !== "object") return false;
+    if (cursor === null || typeof cursor !== "object") {
+      return { ok: false, reason: `padre del campo final no es objeto navegable` };
+    }
 
-    // Para arrays, lastKey numérico debe estar dentro de bounds
+    const norm = (v: any) => String(v ?? "").trim().toLowerCase();
+
     if (Array.isArray(cursor)) {
-      if (!/^\d+$/.test(lastKey)) return false;
-      const idx = Number(lastKey);
-      if (idx < 0 || idx >= cursor.length) return false;
-    } else {
-      if (!Object.prototype.hasOwnProperty.call(cursor, lastKey)) return false;
+      // Si lastKey es índice numérico, validar bounds y exactitud
+      if (/^\d+$/.test(lastKey)) {
+        const idx = Number(lastKey);
+        if (idx < 0 || idx >= cursor.length) {
+          return { ok: false, reason: `índice [${idx}] fuera de bounds (longitud ${cursor.length})`, foundValue: cursor.slice(0, 6).join(" | ") };
+        }
+        if (norm(cursor[idx]) !== norm(before)) {
+          return { ok: false, reason: `"before" no coincide con valor en índice [${idx}]`, foundValue: cursor[idx] };
+        }
+        cursor[idx] = after;
+        return { ok: true, reason: "ok" };
+      }
+      return { ok: false, reason: `cursor es array pero lastKey "${lastKey}" no es índice numérico` };
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(cursor, lastKey)) {
+      const keys = Object.keys(cursor).slice(0, 8);
+      return { ok: false, reason: `campo final "${lastKey}" no existe. Campos disponibles: ${keys.join(", ")}` };
     }
 
     const current = cursor[lastKey];
-    const norm = (v: any) => String(v ?? "").trim().toLowerCase();
-    if (norm(current) !== norm(before)) return false;
+
+    // Caso especial: el campo final ES un array de strings y el modelo
+    // declaró un `before` que es UNO de los elementos (no un índice). Buscamos
+    // el elemento por contenido y lo reemplazamos. Ej.: rasgos_distintivos.
+    if (Array.isArray(current) && current.every(v => typeof v === "string")) {
+      const idx = current.findIndex(v => norm(v) === norm(before));
+      if (idx === -1) {
+        return { ok: false, reason: `"before" no aparece en el array "${lastKey}"`, foundValue: current.slice(0, 6).join(" | ") };
+      }
+      current[idx] = after;
+      return { ok: true, reason: "ok (array string match)" };
+    }
+
+    // Caso normal: campo escalar string.
+    if (norm(current) !== norm(before)) {
+      return { ok: false, reason: `"before" no coincide con valor actual del campo`, foundValue: current };
+    }
 
     cursor[lastKey] = after;
-    return true;
+    return { ok: true, reason: "ok" };
   }
 
   private async polishChapterForVoice(

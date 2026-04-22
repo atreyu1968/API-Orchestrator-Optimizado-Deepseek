@@ -97,12 +97,14 @@ REGLAS DE OUTPUT
 ═══════════════════════════════════════════════════════════════════
 
 - Sé CONSERVADOR: ante la duda, deja el issue como unresolved. Es preferible reescribir un pasaje a corromper el canon.
-- Cada parche debe identificar la entidad por NOMBRE EXACTO tal como aparece en el WB (ej.: "Lara Domínguez", no "Lara").
-- "before" es el valor actual exacto del WB; "after" es el nuevo valor que la novela respalda.
-- "field" es el nombre del campo dentro de la entidad (ej.: "color_ojos", "edad", "profesion", "rasgos_distintivos[2]"). Usa la ruta tal cual la verías en el JSON del WB.
-- "resolves_issue_index" es el índice (0-based) del issue que se resuelve con este parche.
+- Cada parche debe identificar la entidad por NOMBRE EXACTO tal como aparece en el WB (ej.: "Lara Domínguez", no "Lara"). Cópialo literalmente del JSON del WB.
+- "before" debe ser el valor LITERAL EXACTO que ves en el JSON del WB (cópialo carácter por carácter, sin reformular ni sintetizar). Si el campo es un array de strings, "before" debe ser uno de los elementos del array, también literal.
+- "after" es el valor nuevo que la novela respalda.
+- "field" es la RUTA REAL tal y como aparece en el JSON del WB que recibes. NO INVENTES SUBOBJETOS NI NOMBRES DE CAMPOS. Si la entidad tiene "color_ojos" en la raíz, usa "color_ojos" — NO "apariencia.color_ojos" ni "apariencia_inmutable.color_ojos". Si el dato vive dentro de un array, usa "rasgos_distintivos[2]" o nombra el elemento literal en "before" y dirige "field" al array padre.
+- "resolves_issue_index" es el índice (0-based) del issue que se resuelve con este parche, según la lista de issues que te pasaron.
+- ANTES de proponer cualquier parche: verifica que el "field" existe literalmente en el JSON del WB para esa entidad y que el "before" coincide exactamente con lo que está ahí. Si no puedes verificarlo, devuelve unresolved.
 - NUNCA inventes parches que no resuelvan un issue específico.
-- Devuelve "wb_patches": [] si ningún issue se puede resolver actualizando el WB.
+- Devuelve "wb_patches": [] si ningún issue se puede resolver actualizando el WB, y explica brevemente por qué en "reasoning".
 
 FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
 {
