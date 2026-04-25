@@ -104,24 +104,47 @@ E. SHOW, DON'T TELL:
    - Detecta narraciones "asépticas" o de "crónica externa".
 
 ═══════════════════════════════════════════════════════════════════
-DETECCIÓN DE ANACRONISMOS (CRÍTICO para ficción histórica)
+DETECCIÓN DE ANACRONISMOS (BASADA EN LA ÉPOCA DECLARADA EN EL WORLD BIBLE)
 ═══════════════════════════════════════════════════════════════════
 
-Los anacronismos son importantes en novela histórica. Reporta cada uno encontrado como debilidad.
+PASO 0 — LEE LA ÉPOCA: Antes de detectar nada, lee el campo
+"world_bible.lexico_historico.epoca". Es la fuente única de verdad.
 
-Detecta TODOS los anacronismos:
-- OBJETOS: Tecnología, armas, herramientas que no existían en la época
-- VOCABULARIO: Expresiones modernas ("OK", "estrés", "ADN", "impactante", "genial", "flipar")
-- COSTUMBRES: Comportamientos sociales anacrónicos (tuteo indebido, roles de género modernos)
-- CONOCIMIENTOS: Personajes que saben cosas no descubiertas en su época
-- REFERENCIAS: Alusiones a eventos posteriores a la época narrada
+REGLAS DE ACTIVACIÓN:
+- Si "epoca" comienza con "Contemporánea" / "Actualidad" / "Presente" o describe
+  una fecha en los últimos 30 años → la detección de anacronismos NO APLICA.
+  Salta esta sección entera. NO reportes anacronismos en novela contemporánea.
+- Si "epoca" describe una época histórica concreta (año, siglo, período histórico),
+  o un futuro alternativo, o un mundo secundario con tecnología equivalente declarada
+  → ACTIVA la detección con los criterios siguientes.
+- Si "epoca" está VACÍA o no parseable → reporta UNA debilidad informativa pidiendo
+  al arquitecto que la complete, y NO marques anacronismos (no tienes referencia).
 
-Ejemplos de anacronismos a detectar:
-- Un romano usando un reloj de bolsillo
-- Un personaje medieval hablando de "psicología"
-- Un soldado napoleónico usando antibióticos
-- Expresiones modernas en cualquier período histórico
-- Conocimiento científico posterior a la época
+CUANDO LA DETECCIÓN ESTÁ ACTIVA:
+
+1. Usa como ÚNICA fuente de palabras prohibidas el campo
+   "world_bible.lexico_historico.terminos_anacronicos_prohibidos". NO inventes
+   listas propias. Si el ghostwriter usó cualquiera de esos términos → anacronismo.
+2. Detecta también anacronismos de razonamiento que el WB pueda no haber listado,
+   pero solo si son INEQUÍVOCOS para la época declarada (ej: un romano del s.I
+   hablando de "minutos exactos" o "bacterias"; un personaje de 1800 mencionando
+   "ADN" o "internet").
+3. DISTINCIÓN NARRADOR vs DIÁLOGO:
+   - En diálogos: aplicar la regla con máximo rigor (los personajes solo conocen
+     su época).
+   - En narración con voz contemporánea declarada en el WB: mayor tolerancia léxica
+     (un narrador moderno puede decir "psicología" al describir un personaje
+     medieval). Solo marca como anacronismo si el narrador atribuye conocimiento
+     moderno al personaje.
+4. EXCEPCIÓN POR DISEÑO: si el WB declara "anacronismo deliberado" en
+   "registro_linguistico" o "notas_voz_historica" (steampunk, ucronía, viaje en
+   el tiempo, narrador omnisciente moderno), respeta esa decisión.
+
+REPORTE OBLIGATORIO (REGLA ANTI-ALUCINACIÓN):
+Cada anacronismo reportado DEBE incluir CITA LITERAL entre comillas dobles del
+fragmento del capítulo donde aparece (mínimo 6 palabras consecutivas, máximo 25),
+copiada carácter por carácter. Si no puedes encontrar la cita literal, NO REPORTES
+el anacronismo.
 
 ═══════════════════════════════════════════════════════════════════
 PROTOCOLO DE EVALUACIÓN INTEGRADO

@@ -7,6 +7,16 @@ interface CopyEditorInput {
   chapterTitle: string;
   guiaEstilo?: string;
   targetLanguage?: string;
+  // Sección "lexico_historico" del World Bible. Se usa para activar/desactivar
+  // la corrección de anacronismos y para conocer la lista de términos
+  // prohibidos específicos de la época declarada por el arquitecto.
+  lexicoHistorico?: {
+    epoca?: string;
+    terminos_anacronicos_prohibidos?: string[];
+    vocabulario_epoca_autorizado?: string[];
+    registro_linguistico?: string;
+    notas_voz_historica?: string;
+  } | null;
 }
 
 export interface CopyEditorResult {
@@ -207,24 +217,50 @@ MEJORA DE FLUIDEZ NATURAL:
 17. EVITAR REDUNDANCIAS: "archivados en archivos", "dijo diciendo" son errores a corregir.
 
 ═══════════════════════════════════════════════════════════════════
-DETECCIÓN Y CORRECCIÓN DE ANACRONISMOS (FICCIÓN HISTÓRICA)
+CORRECCIÓN DE ANACRONISMOS (BASADA EN LA ÉPOCA DECLARADA EN EL WORLD BIBLE)
 ═══════════════════════════════════════════════════════════════════
 
-18. OBJETOS ANACRÓNICOS: Detecta y corrige referencias a tecnología, armas o herramientas que no existían en la época del relato.
-    - Ejemplos: relojes de bolsillo antes del s.XVI, antibióticos antes de 1928, electricidad antes de 1880.
+PASO 0 — LEE LA SECCIÓN "LÉXICO HISTÓRICO" QUE SE TE PASA EN EL CONTEXTO.
+La época declarada por el arquitecto es la única referencia válida. NO uses
+listas genéricas de tu propio criterio.
 
-19. VOCABULARIO ANACRÓNICO: Sustituye expresiones modernas por equivalentes de época.
-    - Prohibidos en histórica: "OK", "estrés", "ADN", "psicología", "impactante", "genial", "flipar", "mola", "rollo".
-    - Sustituir por: expresiones apropiadas al período histórico.
+REGLAS DE ACTIVACIÓN:
+- Si "epoca" comienza con "Contemporánea" / "Actualidad" / "Presente" o describe
+  los últimos 30 años → NO TOQUES NADA por anacronismos. Devuelve la lista
+  "anacronismos_corregidos" como [] y no hagas sustituciones léxicas de época.
+- Si "epoca" describe un período histórico, futuro alternativo o mundo secundario
+  con tecnología equivalente → ACTIVA la corrección con las reglas siguientes.
+- Si "lexico_historico" no se te pasa o "epoca" está vacía → NO hagas
+  correcciones de anacronismos (no tienes referencia segura). Limítate a las
+  correcciones de estilo/fluidez.
 
-20. COSTUMBRES ANACRÓNICAS: Detecta comportamientos sociales que no corresponden a la época.
-    - Tuteo donde debería haber tratamiento formal.
-    - Roles de género o libertades anacrónicos.
-    - Actitudes modernas en personajes de otra época.
+CUANDO LA CORRECCIÓN ESTÁ ACTIVA:
 
-21. CONOCIMIENTOS ANACRÓNICOS: Detecta personajes que saben cosas no descubiertas en su época.
-    - Un médico medieval hablando de bacterias.
-    - Un personaje del s.XVIII entendiendo la evolución.
+18. TÉRMINOS PROHIBIDOS DECLARADOS: Si encuentras en el capítulo cualquiera
+    de los términos de "terminos_anacronicos_prohibidos", sustitúyelos por la
+    alternativa más cercana del "vocabulario_epoca_autorizado" o por una
+    perífrasis natural de época. Documenta cada sustitución en
+    "anacronismos_corregidos".
+
+19. ANACRONISMOS INEQUÍVOCOS NO LISTADOS: Corrige también términos modernos
+    obvios que el WB no haya listado pero que sean claramente posteriores a la
+    época (ej: "ordenador" en una novela del s.XIX). Aplica solo cuando el
+    anacronismo sea INDISCUTIBLE para esa época concreta.
+
+20. NO TOQUES PALABRAS DUDOSAS: ante la duda, NO sustituyas. Mejor preservar
+    una palabra cuestionable que introducir una corrección que rompa el sentido.
+    Términos como "minuto", "reloj", "carbono" pueden ser válidos según la época;
+    consúltalo con "epoca" antes de actuar.
+
+21. NARRADOR vs DIÁLOGO:
+    - En diálogos: rigor máximo. Los personajes solo hablan con su léxico.
+    - En narración: si "registro_linguistico" o "notas_voz_historica" del WB
+      sugieren un narrador moderno o voz contemporánea, mantén su léxico
+      moderno cuando NO atribuya conocimiento moderno al personaje.
+
+22. EXCEPCIÓN POR DISEÑO: si el WB declara explícitamente anacronismo
+    deliberado (steampunk, ucronía, viaje en el tiempo, narrador omnisciente
+    moderno), respeta esa decisión y NO corrijas.
 
 SALIDA REQUERIDA (JSON):
 {
@@ -260,6 +296,35 @@ export class CopyEditorAgent extends BaseAgent {
     const languageRules = LANGUAGE_EDITORIAL_RULES[detectedLang] || LANGUAGE_EDITORIAL_RULES["en"] || "";
     const fluencyRules = LANGUAGE_FLUENCY_RULES[detectedLang] || LANGUAGE_FLUENCY_RULES["en"] || "";
 
+    // Bloque de léxico histórico: solo se incluye si el arquitecto declaró
+    // una época. Si está vacío o ausente, el copyeditor sabe (por las reglas
+    // del prompt) que no debe tocar nada por anacronismos.
+    let lexicoSection = "";
+    const lh = input.lexicoHistorico;
+    if (lh && (lh.epoca || (lh.terminos_anacronicos_prohibidos && lh.terminos_anacronicos_prohibidos.length > 0))) {
+      const epoca = lh.epoca?.trim() || "(no declarada)";
+      const prohibidos = lh.terminos_anacronicos_prohibidos || [];
+      const autorizados = lh.vocabulario_epoca_autorizado || [];
+      const registro = lh.registro_linguistico?.trim() || "";
+      const notas = lh.notas_voz_historica?.trim() || "";
+
+      lexicoSection = `
+    ═══════════════════════════════════════════════════════════════════
+    LÉXICO HISTÓRICO DEL PROYECTO (FUENTE ÚNICA DE VERDAD PARA ANACRONISMOS)
+    ═══════════════════════════════════════════════════════════════════
+    ÉPOCA DECLARADA: ${epoca}
+    ${prohibidos.length > 0 ? `\n    TÉRMINOS ANACRÓNICOS PROHIBIDOS (sustituir si aparecen):\n    ${prohibidos.map(t => `- ${t}`).join("\n    ")}` : ""}
+    ${autorizados.length > 0 ? `\n    VOCABULARIO DE ÉPOCA AUTORIZADO (preferir como sustituto):\n    ${autorizados.slice(0, 30).join(", ")}` : ""}
+    ${registro ? `\n    REGISTRO LINGÜÍSTICO: ${registro}` : ""}
+    ${notas ? `\n    NOTAS DE VOZ HISTÓRICA: ${notas}` : ""}
+
+    Aplica las reglas de "CORRECCIÓN DE ANACRONISMOS" del system prompt usando
+    EXCLUSIVAMENTE los datos de arriba. Si la época indica "Contemporánea" /
+    "Actualidad" / los últimos 30 años → NO toques nada por anacronismos.
+    ═══════════════════════════════════════════════════════════════════
+`;
+    }
+
     const prompt = `
     ⚠️ INSTRUCCIÓN CRÍTICA: NO TRADUCIR. Mantén el texto en su idioma original.
     
@@ -268,7 +333,7 @@ export class CopyEditorAgent extends BaseAgent {
     ${languageRules}
     
     ${fluencyRules}
-    
+    ${lexicoSection}
     Por favor, toma el siguiente texto y aplícale el protocolo de Corrección de Élite, Maquetado para Ebook y MEJORA DE FLUIDEZ NATURAL.
     
     IMPORTANTE: 

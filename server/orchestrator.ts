@@ -43,6 +43,14 @@ interface ParsedWorldBible {
     personajes: any[];
     lugares: any[];
     reglas_lore: any[];
+    lexico_historico?: {
+      epoca?: string;
+      registro_linguistico?: string;
+      vocabulario_epoca_autorizado?: string[];
+      terminos_anacronicos_prohibidos?: string[];
+      notas_voz_historica?: string;
+    } | null;
+    [key: string]: any;
   };
   escaleta_capitulos: any[];
   premisa?: string;
@@ -204,91 +212,14 @@ export class Orchestrator {
     return Math.max(calculated, 1500);
   }
 
-  private static readonly HISTORICAL_VOCABULARY: Record<string, { valid: string[], forbidden: string[], alternatives: Record<string, string> }> = {
-    historical_thriller: {
-      valid: [
-        "veneno", "pócima", "brebaje", "ungüento", "cataplasma",
-        "hierba venenosa", "extracto letal", "sustancia mortífera",
-        "el hongo del centeno", "el cornezuelo", "la cicuta", "el acónito",
-        "humores", "miasma", "putrefacción", "gangrena",
-        "médico", "galeno", "sanador", "boticario", "herbolario",
-        "bisturí", "escalpelo", "lanceta", "cauterio", "sanguijuela",
-        "pergamino", "códice", "tablilla", "estilete", "cálamo",
-        "denario", "sestercio", "as", "áureo",
-        "toga", "túnica", "estola", "palla", "calcei",
-        "ínsula", "domus", "villa", "thermae", "foro",
-        "legado", "pretor", "edil", "cuestor", "tribuno"
-      ],
-      forbidden: [
-        "formol", "formaldehído", "metrónomo", "Claviceps purpurea",
-        "bacteria", "virus", "célula", "microscopio", "antibiótico",
-        "ADN", "gen", "cromosoma", "proteína", "enzima",
-        "oxígeno", "hidrógeno", "nitrógeno", "carbono", "molécula",
-        "parálisis de análisis", "estrés", "trauma", "psicología",
-        "kilómetro", "metro", "centímetro", "gramo", "litro",
-        "reloj", "minuto", "segundo", "hora exacta",
-        "electricidad", "voltaje", "batería", "motor",
-        "nomenclatura binomial", "taxonomía científica moderna"
-      ],
-      alternatives: {
-        "Claviceps purpurea": "el hongo del centeno / cornezuelo",
-        "formol": "ungüento de conservación / aceites aromáticos",
-        "bacteria": "miasma / corrupción del aire / humores pútridos",
-        "virus": "pestilencia / mal invisible / aire corrupto",
-        "estrés": "agotamiento / tensión del ánimo / fatiga nerviosa",
-        "trauma": "herida del alma / cicatriz interior / shock",
-        "minutos": "el tiempo de un rezo / un suspiro / un instante",
-        "microscopio": "lupa / cristal de aumento",
-        "análisis": "examen / escrutinio / inspección minuciosa"
-      }
-    },
-    historical: {
-      valid: [
-        "carta", "misiva", "telegrama", "telégrafo",
-        "automóvil", "carruaje", "tranvía", "ferrocarril",
-        "peseta", "real", "duro", "céntimo",
-        "fonógrafo", "gramófono", "cinematógrafo",
-        "corsé", "polisón", "levita", "chistera", "bombín"
-      ],
-      forbidden: [
-        "internet", "ordenador", "teléfono móvil", "smartphone",
-        "avión comercial", "helicóptero", "televisión",
-        "plástico", "nylon", "poliéster", "sintético",
-        "antibiótico", "penicilina", "vacuna moderna",
-        "psicoanálisis", "inconsciente", "complejo de Edipo"
-      ],
-      alternatives: {
-        "estrés": "nerviosismo / agitación / desasosiego",
-        "trauma": "conmoción / impresión terrible",
-        "email": "carta / telegrama urgente"
-      }
-    },
-    thriller: {
-      valid: [],
-      forbidden: [],
-      alternatives: {}
-    },
-    mystery: {
-      valid: [],
-      forbidden: [],
-      alternatives: {}
-    },
-    romance: {
-      valid: [],
-      forbidden: [],
-      alternatives: {}
-    },
-    fantasy: {
-      valid: [],
-      forbidden: [],
-      alternatives: {}
-    },
-    scifi: {
-      valid: [],
-      forbidden: [],
-      alternatives: {}
-    }
-  };
+  // NOTA: La antigua tabla HISTORICAL_VOCABULARY (hardcoded por género) se
+  // eliminó en v6.6 porque generaba falsos positivos masivos: marcaba como
+  // anacrónicas palabras universales como "reloj", "minuto", "segundo",
+  // "carbono", "metrónomo", "estrés", etc., independientemente de la época
+  // real del proyecto. La fuente única de verdad ahora es
+  // worldBibleData.world_bible.lexico_historico, que el arquitecto define
+  // explícitamente al inicio de cada novela y se propaga a todos los agentes
+  // (editor, copyeditor, ghostwriter, surgeon, final reviewer).
 
   constructor(callbacks: OrchestratorCallbacks) {
     this.callbacks = callbacks;
@@ -1428,6 +1359,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           chapterNumber: sectionData.numero,
           chapterTitle: sectionData.titulo,
           guiaEstilo: styleGuideContent || undefined,
+          lexicoHistorico: worldBibleData.world_bible?.lexico_historico || null,
         });
 
         await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "polish");
@@ -2069,6 +2001,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           chapterNumber: sectionData.numero,
           chapterTitle: sectionData.titulo,
           guiaEstilo: styleGuideContent || undefined,
+          lexicoHistorico: worldBibleData.world_bible?.lexico_historico || null,
         });
 
         await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "polish");
@@ -2397,6 +2330,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         personajes: (worldBible.characters as Character[]) || [],
         lugares: lugares,
         reglas_lore: (worldBible.worldRules as WorldRule[]) || [],
+        lexico_historico: plotOutlineData?.lexico_historico || null,
       },
       escaleta_capitulos,
       premisa: plotOutlineData?.premise || project.premise || "",
@@ -5329,49 +5263,18 @@ Responde SOLO con un JSON válido con la estructura:
       parts.push(`\n✅ FORTALEZAS A MANTENER:\n${editorResult.fortalezas.map(f => `  + ${f}`).join("\n")}`);
     }
     
-    const vocab = this.getHistoricalVocabularySection();
-    if (vocab) {
-      parts.push(vocab);
-    }
+    // El vocabulario de época viene ahora directamente del lexico_historico
+    // de la World Bible y se pasa al editor/copyeditor/ghostwriter por sus
+    // propios canales. No se inyecta aquí en el plan del cirujano para evitar
+    // duplicación y falsos positivos por género hardcoded.
 
     parts.push(`\n═══════════════════════════════════════════════════════════════════`);
     parts.push(`INSTRUCCIÓN FINAL: CORRIGE los problemas listados arriba SIN reescribir desde cero.`);
     parts.push(`CONSERVA TODO el texto que funciona bien. Solo MODIFICA los pasajes con problemas.`);
     parts.push(`Prioriza errores de continuidad y verosimilitud.`);
-    parts.push(`USA SOLO el vocabulario de época permitido. EVITA términos prohibidos.`);
+    parts.push(`Si la World Bible declara una época histórica, respeta el léxico declarado allí. Si no, no apliques restricciones de vocabulario por época.`);
     parts.push(`NO reduzcas la extensión del capítulo — mantén o aumenta el número de palabras.`);
     parts.push(`═══════════════════════════════════════════════════════════════════`);
-
-    return parts.join("\n");
-  }
-
-  private getHistoricalVocabularySection(): string | null {
-    const vocab = Orchestrator.HISTORICAL_VOCABULARY[this.currentProjectGenre];
-    if (!vocab || (vocab.valid.length === 0 && vocab.forbidden.length === 0)) {
-      return null;
-    }
-
-    const parts: string[] = [];
-    parts.push(`\n═══════════════════════════════════════════════════════════════════`);
-    parts.push(`VOCABULARIO DE ÉPOCA (CRÍTICO PARA EVITAR ANACRONISMOS)`);
-    parts.push(`═══════════════════════════════════════════════════════════════════`);
-
-    if (vocab.forbidden.length > 0) {
-      parts.push(`\n🚫 TÉRMINOS PROHIBIDOS (NUNCA USAR):`);
-      parts.push(vocab.forbidden.map(t => `  ❌ "${t}"`).join("\n"));
-    }
-
-    if (Object.keys(vocab.alternatives).length > 0) {
-      parts.push(`\n🔄 ALTERNATIVAS VÁLIDAS:`);
-      for (const [forbidden, valid] of Object.entries(vocab.alternatives)) {
-        parts.push(`  "${forbidden}" → usar: ${valid}`);
-      }
-    }
-
-    if (vocab.valid.length > 0) {
-      parts.push(`\n✅ VOCABULARIO DE ÉPOCA VÁLIDO (PREFERIR):`);
-      parts.push(`  ${vocab.valid.slice(0, 20).join(", ")}${vocab.valid.length > 20 ? "..." : ""}`);
-    }
 
     return parts.join("\n");
   }
@@ -5594,6 +5497,7 @@ Responde SOLO con un JSON válido con la estructura:
           resolution: acts.acto3?.resolucion || "",
         },
       },
+      lexico_historico: data.world_bible?.lexico_historico || null,
       chapterOutlines: (data.escaleta_capitulos || []).map((c: any) => ({
         number: c.numero,
         summary: c.objetivo_narrativo || "",
@@ -7395,6 +7299,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         chapterNumber: sectionData.numero,
         chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
         guiaEstilo: styleGuideContent || undefined,
+        lexicoHistorico: worldBibleData.world_bible?.lexico_historico || null,
       });
 
       await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "qa_polish");
@@ -7837,11 +7742,21 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       `Puliendo voz y ritmo del capítulo ${chapter.chapterNumber}`
     );
 
+    let lexicoHistorico: any = null;
+    try {
+      const wb = await storage.getWorldBibleByProject(project.id);
+      const plotOutline = wb?.plotOutline as any;
+      lexicoHistorico = plotOutline?.lexico_historico || null;
+    } catch (e) {
+      lexicoHistorico = null;
+    }
+
     const copyEditResult = await this.copyeditor.execute({
       chapterNumber: chapter.chapterNumber,
       chapterTitle: chapter.title || `Capítulo ${chapter.chapterNumber}`,
       chapterContent: chapter.content || "",
       guiaEstilo: `${styleGuideContent || "Tone: literary, professional"}\n\nCORRECCIONES DEL AUDITOR DE VOZ:\n${voiceIssues}\n\nAjusta el tono y ritmo según las indicaciones manteniendo el contenido narrativo.`,
+      lexicoHistorico,
     });
 
     await this.trackTokenUsage(project.id, copyEditResult.tokenUsage, "El Estilista", "gemini-2.5-flash", chapter.chapterNumber, "voice_polish");
