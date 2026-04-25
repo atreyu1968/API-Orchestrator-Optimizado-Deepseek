@@ -178,11 +178,41 @@ La guía debe cubrir TODOS estos apartados:
    - Figuras retóricas que encajan con el tono
    - Longitud de oraciones y párrafos recomendada
 
-9. **REGLAS DE ESCRITURA** (10-15 mandamientos específicos)
-   - Directrices concretas para el ghostwriter
-   - Qué hacer y qué NO hacer
+9. **ÉPOCA(S) HISTÓRICA(S) DE LA NARRACIÓN** ⚠️ OBLIGATORIO
+   Esta sección es CRÍTICA: el arquitecto la usará para fijar el "lexico_historico" del World Bible y prevenir anacronismos. Debe quedar inequívoca.
 
-10. **EJEMPLO DE ESCENA MODELO**
+   9.1 **Época principal de la novela** (OBLIGATORIO):
+       - Formato exacto: "Año(s) + Lugar geográfico". Ejemplos válidos:
+         · "1888, Londres victoriano"
+         · "Verano de 79 d.C., Pompeya"
+         · "1936-1939, España (Guerra Civil)"
+         · "Contemporánea, Madrid (2024)"
+         · "Futuro cercano (~2070), Tokio"
+         · "Mundo secundario, equivalente cultural a Europa del s. XV"
+       - Si la idea sugiere ambigüedad temporal, ELIGE UNA ÉPOCA Y JUSTÍFICALA brevemente.
+
+   9.2 **¿Tiene líneas temporales paralelas?** (OBLIGATORIO responder Sí/No):
+       - Si NO: deja claro que toda la novela transcurre en la época principal.
+       - Si SÍ: declara cada época paralela con un identificador único y la siguiente ficha por cada una:
+         · id: slug corto y único (ej. "presente_2024", "pasado_1888", "linea_a")
+         · epoca: "Año(s) + Lugar"
+         · registro_linguistico: 1-2 frases sobre tono/registro propios de esa época
+         · vocabulario_epoca_autorizado: 8-15 términos representativos de esa época que el ghostwriter PUEDE usar
+         · terminos_anacronicos_prohibidos: 8-15 términos modernos prohibidos en esa época (omitir si la época ES la actual)
+         · notas_voz_historica: 2-4 frases con el matiz histórico/cultural a mantener
+       - Indica también qué capítulos (rangos o lista) corresponden a cada época, para que el arquitecto asigne "epoca_id" a cada capítulo.
+
+   9.3 **Vocabulario y registro de la época principal** (OBLIGATORIO):
+       - registro_linguistico: descripción concisa
+       - vocabulario_epoca_autorizado: 10-20 términos
+       - terminos_anacronicos_prohibidos: 10-20 términos modernos prohibidos (omitir sólo si la novela es estrictamente contemporánea)
+       - notas_voz_historica: 2-4 frases
+
+10. **REGLAS DE ESCRITURA** (10-15 mandamientos específicos)
+    - Directrices concretas para el ghostwriter
+    - Qué hacer y qué NO hacer
+
+11. **EJEMPLO DE ESCENA MODELO**
     - Una escena breve original que ejemplifique el tono y estilo ideales
     - Anotaciones sobre las técnicas empleadas
 
@@ -336,6 +366,38 @@ Crea una guía EXHAUSTIVA para mantener la coherencia y calidad a lo largo de to
     - En qué volumen se introduce cada uno
     - En qué volumen se resuelve
     - Estado intermedio en cada libro
+
+11. **ÉPOCA(S) HISTÓRICA(S) DE LA SERIE** ⚠️ OBLIGATORIO
+    Esta sección es CRÍTICA: el arquitecto la usará para fijar el "lexico_historico" del World Bible de cada volumen y prevenir anacronismos. Debe quedar inequívoca.
+
+    11.1 **Época principal de la serie** (OBLIGATORIO):
+         - Formato exacto: "Año(s) + Lugar geográfico". Ejemplos:
+           · "1888-1895, Londres victoriano"
+           · "Siglo XXI, Madrid contemporáneo"
+           · "Mundo secundario, equivalente cultural a Europa del s. XV"
+         - Si la serie cubre un periodo largo, indica el rango global y luego cómo evoluciona.
+
+    11.2 **Evolución temporal entre volúmenes** (OBLIGATORIO):
+         - Para cada volumen planificado, indica la época concreta en que transcurre.
+         - Si la serie avanza en el tiempo (ej. cada libro = una década), descríbelo explícitamente.
+         - Si todos los volúmenes están en la misma época, indícalo.
+
+    11.3 **¿Tienen los volúmenes líneas temporales paralelas?** (OBLIGATORIO Sí/No):
+         - Si NO: deja claro que cada volumen tiene una sola época.
+         - Si SÍ (ej. dual-timeline pasado/presente): declara cada época paralela con:
+           · id: slug corto y único (ej. "presente_2024", "pasado_1888")
+           · epoca: "Año(s) + Lugar"
+           · registro_linguistico: 1-2 frases
+           · vocabulario_epoca_autorizado: 8-15 términos representativos
+           · terminos_anacronicos_prohibidos: 8-15 términos prohibidos en esa época
+           · notas_voz_historica: 2-4 frases
+         - Indica para cada volumen qué capítulos pertenecen a cada época, para que el arquitecto asigne "epoca_id" a cada capítulo.
+
+    11.4 **Vocabulario y registro de la época principal** (OBLIGATORIO):
+         - registro_linguistico: descripción concisa
+         - vocabulario_epoca_autorizado: 10-20 términos
+         - terminos_anacronicos_prohibidos: 10-20 términos modernos prohibidos (omitir sólo si la serie es estrictamente contemporánea)
+         - notas_voz_historica: 2-4 frases
 
 ${langInstructions}
 Sé exhaustivo y práctico. Esta guía será usada para mantener la coherencia de una serie literaria completa generada por IA.`;

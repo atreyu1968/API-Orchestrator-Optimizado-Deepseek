@@ -117,6 +117,25 @@ ANTES de escribir nada del JSON, define mentalmente la ÉPOCA EXACTA en la
 que ocurre la acción. Sin esto es IMPOSIBLE evitar anacronismos en los
 capítulos generados después.
 
+🔎 FUENTE DE VERDAD PRIORITARIA — LA GUÍA DE ESTILO:
+La "Guía de Estilo" recibida puede contener una sección titulada
+"ÉPOCA(S) HISTÓRICA(S) DE LA NARRACIÓN" / "ÉPOCA(S) HISTÓRICA(S) DE LA
+SERIE" con la época principal, el listado de épocas paralelas (si las
+hay), el vocabulario autorizado/prohibido, el registro lingüístico y
+las notas de voz histórica.
+
+→ Si esa sección EXISTE en la guía, COPIA ESA INFORMACIÓN tal cual al
+  campo "world_bible.lexico_historico" (incluyendo "epocas_paralelas"
+  y los slugs/ids declarados en la guía). NO la reinventes ni la
+  contradigas. Puedes ENRIQUECERLA con más términos prohibidos/
+  autorizados específicos, pero NO cambies la época ni los ids.
+→ Si la guía declara qué capítulos pertenecen a cada época paralela,
+  asigna el campo "epoca_id" en cada capítulo de "escaleta_capitulos"
+  respetando esa asignación.
+→ Si la guía NO incluye sección de época (guías antiguas), DEDÚCELA
+  tú mismo a partir de la idea/título/género siguiendo las reglas
+  de abajo.
+
 DEBES rellenar OBLIGATORIAMENTE el campo "world_bible.lexico_historico.epoca"
 con formato preciso:
   - Si es novela histórica con período concreto: "Año(s) + Lugar geográfico".
@@ -126,7 +145,10 @@ con formato preciso:
   - Si es futuro/sci-fi: "Futuro cercano (~2070), Tokio" / "Año 3024, colonia marciana".
   - Si es fantasía con mundo secundario: "Mundo secundario, equivalente a [siglo X / cultura Y]".
 
-A partir de esa época concreta, RELLENA ADEMÁS:
+A partir de esa época concreta, RELLENA ADEMÁS (estos mínimos APLICAN SOLO si la
+guía NO trae la sección de época; si la trae, copia LITERALMENTE las listas de
+la guía y, opcionalmente, AÑADE entradas ADICIONALES sin eliminar ni modificar
+ninguna de las originales):
   - "terminos_anacronicos_prohibidos": lista de palabras/conceptos que NO existían
     en esa época y que el ghostwriter NUNCA debe usar. Sé específico para la época
     declarada (ej: para 1888 prohíbe "ordenador", "psicología clínica", "antibiótico";
@@ -137,8 +159,10 @@ A partir de esa época concreta, RELLENA ADEMÁS:
     expresiones de época). Vacío solo para contemporáneas.
   - "registro_linguistico": tipo de habla (formal cortesano / coloquial popular /
     técnico jurídico / militar de campo / etc.) acorde a la época y los personajes.
+    Si la guía ya lo declara, COPIA literalmente; no lo reescribas.
   - "notas_voz_historica": 2-4 frases con el matiz que el narrador debe mantener
     para sonar de la época (sin caer en arcaísmo forzado).
+    Si la guía ya las declara, COPIA literalmente; no las reescribas.
 
 Si la novela es CONTEMPORÁNEA o FUTURISTA SIN restricciones de época, las listas
 pueden ir vacías PERO "epoca" debe estar declarada explícitamente para que los
