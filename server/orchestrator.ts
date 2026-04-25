@@ -1126,7 +1126,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
-            worldBible: enrichedWB,
+            worldBible: this.worldBibleWithResolvedLexico(enrichedWB, this.resolveLexicoForChapter(worldBibleData, sectionData.numero)),
             guiaEstilo: fullStyleGuide,
             previousContinuity: optimizedContinuity,
             refinementInstructions: refinementInstructions + stalledEscalation,
@@ -1262,11 +1262,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
 
           const editorChaptersCtx = await storage.getChaptersByProject(project.id);
+          const enrichedWBForEditor = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
+          const resolvedLexicoForEditor = this.resolveLexicoForChapter(worldBibleData, sectionData.numero);
           const editorResult = await this.editor.execute({
             chapterNumber: sectionData.numero,
             chapterContent: currentContent,
             chapterData: sectionData,
-            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+            worldBible: this.worldBibleWithResolvedLexico(enrichedWBForEditor, resolvedLexicoForEditor),
             guiaEstilo: styleGuideContent
               ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
               : `Género: ${project.genre}, Tono: ${project.tone}`,
@@ -1359,7 +1361,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           chapterNumber: sectionData.numero,
           chapterTitle: sectionData.titulo,
           guiaEstilo: styleGuideContent || undefined,
-          lexicoHistorico: worldBibleData.world_bible?.lexico_historico || null,
+          lexicoHistorico: this.resolveLexicoForChapter(worldBibleData, sectionData.numero),
         });
 
         await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "polish");
@@ -1788,7 +1790,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
-            worldBible: enrichedWBResume,
+            worldBible: this.worldBibleWithResolvedLexico(enrichedWBResume, this.resolveLexicoForChapter(worldBibleData, sectionData.numero)),
             guiaEstilo: fullStyleGuide,
             previousContinuity,
             refinementInstructions: refinementInstructions + stalledEscalationResume,
@@ -1924,11 +1926,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
 
           const editorChaptersCtx = await storage.getChaptersByProject(project.id);
+          const enrichedWBForEditor = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
+          const resolvedLexicoForEditor = this.resolveLexicoForChapter(worldBibleData, sectionData.numero);
           const editorResult = await this.editor.execute({
             chapterNumber: sectionData.numero,
             chapterContent: currentContent,
             chapterData: sectionData,
-            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+            worldBible: this.worldBibleWithResolvedLexico(enrichedWBForEditor, resolvedLexicoForEditor),
             guiaEstilo: styleGuideContent
               ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
               : `Género: ${project.genre}, Tono: ${project.tone}`,
@@ -2001,7 +2005,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           chapterNumber: sectionData.numero,
           chapterTitle: sectionData.titulo,
           guiaEstilo: styleGuideContent || undefined,
-          lexicoHistorico: worldBibleData.world_bible?.lexico_historico || null,
+          lexicoHistorico: this.resolveLexicoForChapter(worldBibleData, sectionData.numero),
         });
 
         await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "polish");
@@ -2293,6 +2297,60 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     }
   }
 
+  /**
+   * Resuelve el bloque de léxico histórico que aplica a un capítulo concreto.
+   * - Si el capítulo declara `epoca_id` y la WB tiene `lexico_historico.epocas_paralelas`,
+   *   devuelve el objeto de esa época paralela (con epoca/listas/registro/notas) más los
+   *   campos auxiliares útiles para el prompt.
+   * - Si no hay match o el capítulo no declara `epoca_id`, devuelve el bloque raíz.
+   * - Si la WB no tiene `lexico_historico` en absoluto, devuelve null (sin restricciones).
+   */
+  private resolveLexicoForChapter(
+    worldBibleData: ParsedWorldBible | null | undefined,
+    chapterNumber: number,
+  ): any {
+    const root = worldBibleData?.world_bible?.lexico_historico;
+    if (!root) return null;
+
+    const cap = (worldBibleData?.escaleta_capitulos as any[])?.find(
+      (c: any) => Number(c?.numero) === Number(chapterNumber),
+    );
+    const epocaId: string | null | undefined = cap?.epoca_id;
+    const epocasParalelas: any[] = (root as any)?.epocas_paralelas || [];
+
+    if (epocaId && Array.isArray(epocasParalelas) && epocasParalelas.length > 0) {
+      const match = epocasParalelas.find((e: any) => e?.id === epocaId);
+      if (match) {
+        return {
+          epoca: match.epoca || root.epoca || "",
+          registro_linguistico: match.registro_linguistico || root.registro_linguistico || "",
+          vocabulario_epoca_autorizado: match.vocabulario_epoca_autorizado || [],
+          terminos_anacronicos_prohibidos: match.terminos_anacronicos_prohibidos || [],
+          notas_voz_historica: match.notas_voz_historica || root.notas_voz_historica || "",
+          _resolved_from: `epocas_paralelas[id=${epocaId}]`,
+        };
+      }
+      console.warn(`[Orchestrator] Capítulo ${chapterNumber} declara epoca_id="${epocaId}" pero no existe en epocas_paralelas. Usando lexico raíz.`);
+    }
+
+    return root;
+  }
+
+  /**
+   * Devuelve un clon superficial de la WB en el que `lexico_historico` queda
+   * sustituido por el bloque resuelto para el capítulo. Esto permite que el
+   * editor (que lee `worldBible.lexico_historico.epoca`) trabaje con la época
+   * correcta sin cambiar su lógica interna.
+   */
+  private worldBibleWithResolvedLexico(worldBible: any, resolvedLexico: any): any {
+    if (!worldBible) return worldBible;
+    if (!resolvedLexico) return worldBible;
+    return {
+      ...worldBible,
+      lexico_historico: resolvedLexico,
+    };
+  }
+
   private reconstructWorldBibleData(worldBible: WorldBible, project: Project): ParsedWorldBible {
     const plotOutlineData = worldBible.plotOutline as any;
     const timeline = (worldBible.timeline as TimelineEvent[]) || [];
@@ -2306,6 +2364,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     const escaleta_capitulos = (plotOutlineData?.chapterOutlines || []).map((c: any) => ({
       numero: c.number,
       titulo: c.titulo || c.summary || `Capítulo ${c.number}`,
+      epoca_id: c.epoca_id ?? null,
       cronologia: c.cronologia || "",
       ubicacion: c.ubicacion || "",
       elenco_presente: c.elenco_presente || [],
@@ -2336,6 +2395,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       premisa: plotOutlineData?.premise || project.premise || "",
     };
   }
+
+  // helper: incluye epoca_id al mapear chapterOutlines en reconstrucción
 
   private buildSectionDataFromChapter(chapter: Chapter, worldBibleData: ParsedWorldBible): SectionData {
     const plotItem = (worldBibleData.escaleta_capitulos as any[])?.find(
@@ -4447,10 +4508,11 @@ Responde SOLO con un JSON válido con la estructura:
             ? `\n\n⚠️ PERSPECTIVA FRESCA REQUERIDA: Los intentos anteriores se estancaron en 7/10. El editor detecta los mismos problemas repetidamente. NO sigas la misma estructura — reimagina las escenas desde un ángulo completamente diferente. Cambia las aperturas de escena, los patrones de diálogo, la distribución sensorial. Sorpréndeme.`
             : "";
 
+          const enrichedWBExt = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsExt, seriesKeyEventsExt);
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
-            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsExt, seriesKeyEventsExt),
+            worldBible: this.worldBibleWithResolvedLexico(enrichedWBExt, this.resolveLexicoForChapter(worldBibleData, sectionData.numero)),
             guiaEstilo: fullStyleGuide,
             previousContinuity,
             refinementInstructions: refinementInstructions + stalledEscalationExt,
@@ -4475,11 +4537,13 @@ Responde SOLO con un JSON válido con la estructura:
           this.callbacks.onAgentStatus("editor", "reviewing", `El Editor está revisando ${sectionLabel}...`);
           
           const extEditorChaptersCtx = await storage.getChaptersByProject(project.id);
+          const enrichedWBForExtEditor = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
+          const resolvedLexicoForExtEditor = this.resolveLexicoForChapter(worldBibleData, sectionData.numero);
           const editorResult = await this.editor.execute({
             chapterNumber: sectionData.numero,
             chapterContent: currentContent,
             chapterData: sectionData,
-            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+            worldBible: this.worldBibleWithResolvedLexico(enrichedWBForExtEditor, resolvedLexicoForExtEditor),
             previousContinuityState: previousContinuityStateForEditor,
             guiaEstilo: fullStyleGuide,
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(extEditorChaptersCtx, sectionData.numero),
@@ -4765,10 +4829,11 @@ Responde SOLO con un JSON válido con la estructura:
         while (regenerationAttempt < MAX_REGEN_WORD_RETRIES) {
           regenerationAttempt++;
           
+          const enrichedWBRegen = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsRegen, seriesKeyEventsRegen);
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: chapter.chapterNumber,
             chapterData: sectionData,
-            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsRegen, seriesKeyEventsRegen),
+            worldBible: this.worldBibleWithResolvedLexico(enrichedWBRegen, this.resolveLexicoForChapter(worldBibleData, chapter.chapterNumber)),
             guiaEstilo,
             previousContinuity,
             refinementInstructions: regenerationAttempt > 1 
@@ -5504,6 +5569,7 @@ Responde SOLO con un JSON válido con la estructura:
         keyEvents: c.beats || [],
         // Datos adicionales para propagación completa en reanudaciones
         titulo: c.titulo,
+        epoca_id: c.epoca_id ?? null,
         cronologia: c.cronologia,
         ubicacion: c.ubicacion,
         elenco_presente: c.elenco_presente,
@@ -7154,10 +7220,12 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
     const surgicalMin = allowedLower;
     const surgicalMax = allowedUpper;
 
+    const enrichedWBSurgical = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreadsRewrite, seriesEventsRewrite);
+    const resolvedLexicoSurgical = this.resolveLexicoForChapter(worldBibleData, sectionData.numero);
     let writerResult = await this.ghostwriter.execute({
       chapterNumber: sectionData.numero,
       chapterData: sectionData,
-      worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreadsRewrite, seriesEventsRewrite),
+      worldBible: this.worldBibleWithResolvedLexico(enrichedWBSurgical, resolvedLexicoSurgical),
       guiaEstilo,
       previousContinuity,
       refinementInstructions: surgicalInstructions,
@@ -7185,10 +7253,11 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         `${sectionLabel}: longitud ${firstWc} fuera de rango ${firstTryLower}-${firstTryUpper}. Reintentando...`
       );
       const retryInstructions = surgicalInstructions + `\n\n🚨 REINTENTO — TU INTENTO ANTERIOR TUVO ${firstWc} PALABRAS Y EL RANGO PERMITIDO ES ${firstTryLower}-${firstTryUpper}. Devuelve el capítulo con una extensión ESTRICTAMENTE dentro de ese rango. Copia el original verbatim y modifica SOLO los pasajes que la instrucción editorial requiere.`;
+      const enrichedWBSurgicalRetry = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreadsRewrite, seriesEventsRewrite);
       writerResult = await this.ghostwriter.execute({
         chapterNumber: sectionData.numero,
         chapterData: sectionData,
-        worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreadsRewrite, seriesEventsRewrite),
+        worldBible: this.worldBibleWithResolvedLexico(enrichedWBSurgicalRetry, resolvedLexicoSurgical),
         guiaEstilo,
         previousContinuity,
         refinementInstructions: retryInstructions,
@@ -7246,11 +7315,13 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         `Verificando reescritura de ${sectionLabel} antes de aplicarla...`
       );
       const editorChaptersCtx = await storage.getChaptersByProject(project.id);
+      const enrichedWBForVerify = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
+      const resolvedLexicoForVerify = this.resolveLexicoForChapter(worldBibleData, sectionData.numero);
       const verifyResult = await this.editor.execute({
         chapterNumber: sectionData.numero,
         chapterContent: candidateContent,
         chapterData: sectionData,
-        worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+        worldBible: this.worldBibleWithResolvedLexico(enrichedWBForVerify, resolvedLexicoForVerify),
         guiaEstilo,
         previousContinuityState: previousChapter?.continuityState as any,
         previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
@@ -7299,7 +7370,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         chapterNumber: sectionData.numero,
         chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
         guiaEstilo: styleGuideContent || undefined,
-        lexicoHistorico: worldBibleData.world_bible?.lexico_historico || null,
+        lexicoHistorico: this.resolveLexicoForChapter(worldBibleData, sectionData.numero),
       });
 
       await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "qa_polish");
@@ -7742,11 +7813,15 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       `Puliendo voz y ritmo del capítulo ${chapter.chapterNumber}`
     );
 
+    // Reconstruir WB completa para poder resolver la época correcta del capítulo
+    // (puede ser una de varias épocas paralelas si la novela tiene timeline dual).
     let lexicoHistorico: any = null;
     try {
       const wb = await storage.getWorldBibleByProject(project.id);
-      const plotOutline = wb?.plotOutline as any;
-      lexicoHistorico = plotOutline?.lexico_historico || null;
+      if (wb) {
+        const reconstructed = this.reconstructWorldBibleData(wb, project);
+        lexicoHistorico = this.resolveLexicoForChapter(reconstructed, chapter.chapterNumber);
+      }
     } catch (e) {
       lexicoHistorico = null;
     }

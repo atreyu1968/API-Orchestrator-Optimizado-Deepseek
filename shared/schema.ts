@@ -362,6 +362,14 @@ export const plotOutlineSchema = z.object({
     vocabulario_epoca_autorizado: z.array(z.string()).optional(),
     terminos_anacronicos_prohibidos: z.array(z.string()).optional(),
     notas_voz_historica: z.string().optional(),
+    epocas_paralelas: z.array(z.object({
+      id: z.string(),
+      epoca: z.string().optional(),
+      registro_linguistico: z.string().optional(),
+      vocabulario_epoca_autorizado: z.array(z.string()).optional(),
+      terminos_anacronicos_prohibidos: z.array(z.string()).optional(),
+      notas_voz_historica: z.string().optional(),
+    }).passthrough()).optional(),
   }).nullable().optional(),
 }).passthrough();
 

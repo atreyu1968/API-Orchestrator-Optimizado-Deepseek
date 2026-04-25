@@ -145,6 +145,43 @@ pueden ir vacías PERO "epoca" debe estar declarada explícitamente para que los
 agentes posteriores sepan que NO hay restricciones (no es lo mismo que olvidarlo).
 
 ═══════════════════════════════════════════════════════════════════
+🕰️🕰️ NOVELAS CON LÍNEAS TEMPORALES PARALELAS (DUAL TIMELINE / MULTI-ÉPOCA)
+═══════════════════════════════════════════════════════════════════
+Si la novela tiene capítulos en MÁS DE UNA época (p.ej. capítulos en 2024 que
+alternan con flashbacks a 1936; o tres líneas temporales: pasado, presente,
+futuro), DEBES declarar TODAS las épocas en el array
+"world_bible.lexico_historico.epocas_paralelas" con esta estructura:
+
+  "epocas_paralelas": [
+    {
+      "id": "presente",        // identificador corto SIN espacios; será referenciado por cada capítulo
+      "epoca": "Contemporánea, Madrid 2024",
+      "terminos_anacronicos_prohibidos": [],
+      "vocabulario_epoca_autorizado": [],
+      "registro_linguistico": "coloquial urbano contemporáneo",
+      "notas_voz_historica": "..."
+    },
+    {
+      "id": "guerra_civil",
+      "epoca": "1936-1939, España (Guerra Civil)",
+      "terminos_anacronicos_prohibidos": ["móvil", "internet", "antibiótico moderno", ...],
+      "vocabulario_epoca_autorizado": ["camisa azul", "alpargata", "zaguán", ...],
+      "registro_linguistico": "español peninsular de los años 30, registros campesino y urbano de la época",
+      "notas_voz_historica": "..."
+    }
+  ]
+
+REGLAS:
+- Cuando uses "epocas_paralelas", el campo "epoca" raíz puede contener la época
+  PRINCIPAL/marco de la novela (la del presente narrativo o la dominante).
+- Cada capítulo en "escaleta_capitulos" DEBE incluir el campo "epoca_id" con el
+  identificador exacto de la época que le corresponde (debe coincidir con un
+  "id" del array epocas_paralelas). Si el capítulo pertenece a la época
+  principal raíz, puedes omitir "epoca_id" o ponerlo a null.
+- Si la novela tiene UNA SOLA época, NO uses "epocas_paralelas" — déjalo vacío
+  o ausente, y rellena solo el bloque raíz como se explicó arriba.
+
+═══════════════════════════════════════════════════════════════════
 FASE 1: WORLD BIBLE + ESTRUCTURA GLOBAL
 ═══════════════════════════════════════════════════════════════════
 En esta fase, genera SOLO la base de la novela: personajes, mundo, arcos y estructura de actos.
@@ -193,11 +230,12 @@ Genera un JSON con estas claves:
   "motivos_literarios": ["Símbolos recurrentes"],
   "vocabulario_prohibido": ["Palabras/frases cliché a EVITAR"],
   "lexico_historico": {
-    "epoca": "OBLIGATORIO. Formato exacto: 'Año(s) + Lugar geográfico'. Ejemplos válidos: '1888, Londres victoriano', 'Verano de 79 d.C., Pompeya', '1936-1939, España (Guerra Civil)', '2024, Madrid contemporáneo', 'Futuro cercano (~2070), Tokio'. Si la novela es contemporánea, escribe 'Contemporánea' o 'Actualidad' + ciudad/país. Si es fantasía/sci-fi sin equivalente histórico, escribe 'Mundo secundario, equivalente tecnológico/cultural a [siglo X / época Y]'. NUNCA dejes este campo vacío — es la base para detectar anacronismos.",
+    "epoca": "OBLIGATORIO. Formato exacto: 'Año(s) + Lugar geográfico'. Ejemplos válidos: '1888, Londres victoriano', 'Verano de 79 d.C., Pompeya', '1936-1939, España (Guerra Civil)', '2024, Madrid contemporáneo', 'Futuro cercano (~2070), Tokio'. Si la novela es contemporánea, escribe 'Contemporánea' o 'Actualidad' + ciudad/país. Si es fantasía/sci-fi sin equivalente histórico, escribe 'Mundo secundario, equivalente tecnológico/cultural a [siglo X / época Y]'. Si la novela tiene varias épocas paralelas (timeline dual), pon aquí la PRINCIPAL/marco y rellena además 'epocas_paralelas'. NUNCA dejes este campo vacío.",
     "terminos_anacronicos_prohibidos": [],
     "vocabulario_epoca_autorizado": [],
     "registro_linguistico": "",
-    "notas_voz_historica": ""
+    "notas_voz_historica": "",
+    "epocas_paralelas": []
   },
   "paleta_sensorial_global": {
     "sentidos_dominantes": [],
@@ -279,6 +317,7 @@ FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
       "numero": 1,
       "titulo": "Título evocador",
       "acto": "1",
+      "epoca_id": "presente_o_id_que_corresponda_o_null_si_novela_mono_epoca",
       "cronologia": "Momento temporal",
       "ubicacion": "Lugar con detalles sensoriales",
       "elenco_presente": ["Personaje1", "Personaje2"],
