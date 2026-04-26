@@ -475,7 +475,10 @@ export class GhostwriterAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "deepseek-v4-flash",
       useThinking: true,
-      thinkingBudget: 16384,
+      // Bajado de 16384 → 8000: pasa de reasoning_effort="max" a "high".
+      // El umbral en base-agent.ts es >=8192 → "max". Ahorra 3-5 min por intento
+      // de escritura sin merma perceptible en calidad de prosa publicable.
+      thinkingBudget: 8000,
       maxOutputTokens: 65536,
     });
   }

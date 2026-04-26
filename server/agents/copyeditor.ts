@@ -282,7 +282,11 @@ export class CopyEditorAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "deepseek-v4-flash",
       useThinking: true,
-      thinkingBudget: 8192,
+      // Bajado de 8192 → 4096: pasa de reasoning_effort="max" a "high".
+      // El umbral en base-agent.ts es >=8192 → "max". El Estilista solo pule
+      // (comas, repeticiones, ritmo, ortotipografía) — pensar exhaustivamente
+      // para correcciones mecánicas era desperdicio. Ahorra 3-5 min/cap garantizados.
+      thinkingBudget: 4096,
       maxOutputTokens: 65536,
     });
   }
