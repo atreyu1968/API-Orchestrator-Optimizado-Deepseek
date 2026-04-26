@@ -1600,6 +1600,7 @@ export async function registerRoutes(
 
       await storage.updateChapter(chapter.id, {
         content: cleanContent,
+        wordCount,
         status: "completed"
       });
 
