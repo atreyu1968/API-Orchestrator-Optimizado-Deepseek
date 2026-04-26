@@ -861,6 +861,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             architectInstructions: project.architectInstructions || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
             forbiddenNames,
+            projectId: project.id,
           });
 
           // Architect call may take up to 5 minutes; if a heartbeat watchdog
@@ -4463,6 +4464,7 @@ Responde SOLO con un JSON válido con la estructura:
         hasEpilogue: false,
         hasAuthorNote: false,
         tone: project.tone,
+        projectId: project.id,
       });
 
       if (this.aborted) {

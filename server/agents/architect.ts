@@ -15,6 +15,7 @@ interface ArchitectInput {
   architectInstructions?: string;
   kindleUnlimitedOptimized?: boolean;
   forbiddenNames?: string[];
+  projectId?: number;
 }
 
 const PHASE1_SYSTEM_PROMPT = `
@@ -317,9 +318,10 @@ export class ArchitectAgent extends BaseAgent {
       includeThoughts: false,      // el thoughtSignature solo se loguea, no lo usamos. Quitarlo reduce el tamaño de respuesta y baja el riesgo de drop a media generación.
     });
     // Override timeout: el Arquitecto genera JSON estructurado (no prosa larga).
-    // Bajamos de 12 min → 5 min para que cuelgues de la API fallen rápido y los
-    // 3 reintentos del orquestador quepan dentro del watchdog de 15 min.
-    this.timeoutMs = 5 * 60 * 1000;
+    // 8 min por fase: la Fase 2 (escaleta detallada de N capítulos, hasta 65k
+    // tokens de salida) chocaba contra los 5 min en novelas largas (>20 caps).
+    // Sigue cabiendo dentro del watchdog de 15 min: 8 min × 1 fase activa + holgura.
+    this.timeoutMs = 8 * 60 * 1000;
   }
 
   async execute(input: ArchitectInput): Promise<AgentResponse> {
@@ -377,6 +379,20 @@ export class ArchitectAgent extends BaseAgent {
 
     console.log(`[El Arquitecto] === FASE 1: Generando World Bible y estructura global ===`);
 
+    if (input.projectId) {
+      try {
+        await storage.createActivityLog({
+          projectId: input.projectId,
+          level: "info",
+          agentRole: "architect",
+          message: `📐 El Arquitecto — Fase 1/2: generando World Bible (personajes, lugares, arcos, estructura). Timeout: 8 min.`,
+        });
+      } catch (e) {
+        console.warn(`[El Arquitecto] No se pudo escribir activity log Fase 1 inicio: ${(e as Error).message}`);
+      }
+    }
+    const phase1StartedAt = Date.now();
+
     const phase1Prompt = `
     ${commonContext}
     
@@ -424,9 +440,39 @@ export class ArchitectAgent extends BaseAgent {
       };
     }
 
-    console.log(`[El Arquitecto] Fase 1 completada. Personajes: ${phase1Json.world_bible?.personajes?.length || 0}, Arcos: ${phase1Json.matriz_arcos?.subtramas?.length || 0}`);
+    const phase1ElapsedSec = Math.round((Date.now() - phase1StartedAt) / 1000);
+    const personajesCount = phase1Json.world_bible?.personajes?.length || 0;
+    const arcosCount = phase1Json.matriz_arcos?.subtramas?.length || 0;
+    console.log(`[El Arquitecto] Fase 1 completada en ${phase1ElapsedSec}s. Personajes: ${personajesCount}, Arcos: ${arcosCount}`);
+
+    if (input.projectId) {
+      try {
+        await storage.createActivityLog({
+          projectId: input.projectId,
+          level: "info",
+          agentRole: "architect",
+          message: `✅ El Arquitecto — Fase 1/2 completada en ${phase1ElapsedSec}s. ${personajesCount} personajes, ${arcosCount} arcos.`,
+        });
+      } catch (e) {
+        console.warn(`[El Arquitecto] No se pudo escribir activity log Fase 1 fin: ${(e as Error).message}`);
+      }
+    }
 
     console.log(`[El Arquitecto] === FASE 2: Generando escaleta de ${input.chapterCount} capítulos ===`);
+
+    if (input.projectId) {
+      try {
+        await storage.createActivityLog({
+          projectId: input.projectId,
+          level: "info",
+          agentRole: "architect",
+          message: `📐 El Arquitecto — Fase 2/2: generando escaleta detallada de ${input.chapterCount} capítulos. Timeout: 8 min.`,
+        });
+      } catch (e) {
+        console.warn(`[El Arquitecto] No se pudo escribir activity log Fase 2 inicio: ${(e as Error).message}`);
+      }
+    }
+    const phase2StartedAt = Date.now();
 
     const phase1Summary = JSON.stringify({
       premisa: phase1Json.premisa,
@@ -503,7 +549,20 @@ export class ArchitectAgent extends BaseAgent {
     console.log(`[El Arquitecto] Fase 2 API respondió: ${phase2Response.content?.length || 0} chars, tokens: in=${phase2Response.tokenUsage?.inputTokens || 0} out=${phase2Response.tokenUsage?.outputTokens || 0}, error=${phase2Response.error || "none"}, timedOut=${phase2Response.timedOut}`);
 
     if (phase2Response.error || phase2Response.timedOut || !phase2Response.content?.trim()) {
-      console.error(`[El Arquitecto] Fase 2 falló: ${phase2Response.error || "timeout/vacío"}`);
+      const phase2ElapsedSec = Math.round((Date.now() - phase2StartedAt) / 1000);
+      console.error(`[El Arquitecto] Fase 2 falló tras ${phase2ElapsedSec}s: ${phase2Response.error || "timeout/vacío"}`);
+      if (input.projectId) {
+        try {
+          await storage.createActivityLog({
+            projectId: input.projectId,
+            level: "warning",
+            agentRole: "architect",
+            message: `⚠️ El Arquitecto — Fase 2/2 falló tras ${phase2ElapsedSec}s: ${phase2Response.timedOut ? "timeout (8 min)" : (phase2Response.error || "respuesta vacía")}.`,
+          });
+        } catch (e) {
+          console.warn(`[El Arquitecto] No se pudo escribir activity log Fase 2 fallo: ${(e as Error).message}`);
+        }
+      }
       return phase2Response;
     }
 
@@ -523,7 +582,21 @@ export class ArchitectAgent extends BaseAgent {
     }
 
     const chaptersCount = phase2Json.escaleta_capitulos?.length || 0;
-    console.log(`[El Arquitecto] Fase 2 completada. Capítulos generados: ${chaptersCount}`);
+    const phase2ElapsedSec = Math.round((Date.now() - phase2StartedAt) / 1000);
+    console.log(`[El Arquitecto] Fase 2 completada en ${phase2ElapsedSec}s. Capítulos generados: ${chaptersCount}`);
+
+    if (input.projectId) {
+      try {
+        await storage.createActivityLog({
+          projectId: input.projectId,
+          level: "info",
+          agentRole: "architect",
+          message: `✅ El Arquitecto — Fase 2/2 completada en ${phase2ElapsedSec}s. ${chaptersCount} capítulos en la escaleta.`,
+        });
+      } catch (e) {
+        console.warn(`[El Arquitecto] No se pudo escribir activity log Fase 2 fin: ${(e as Error).message}`);
+      }
+    }
 
     const mergedResult = {
       ...phase1Json,
