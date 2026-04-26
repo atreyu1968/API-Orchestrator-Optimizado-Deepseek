@@ -312,8 +312,9 @@ export class ArchitectAgent extends BaseAgent {
       systemPrompt: PHASE1_SYSTEM_PROMPT,
       model: "gemini-2.5-flash",
       useThinking: true,
-      thinkingBudget: 8192,
+      thinkingBudget: 4096,        // bajado de 8192: menos cómputo interno = menos tiempo expuesto a drops del flash.
       maxOutputTokens: 32768,
+      includeThoughts: false,      // el thoughtSignature solo se loguea, no lo usamos. Quitarlo reduce el tamaño de respuesta y baja el riesgo de drop a media generación.
     });
     // Override timeout: el Arquitecto genera JSON estructurado (no prosa larga).
     // Bajamos de 12 min → 5 min para que cuelgues de Gemini fallen rápido y los

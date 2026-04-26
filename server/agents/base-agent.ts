@@ -30,6 +30,7 @@ export interface AgentConfig {
   useThinking?: boolean;
   thinkingBudget?: number;
   maxOutputTokens?: number;
+  includeThoughts?: boolean; // si false, Gemini no devuelve los thoughts en la respuesta (más pequeña/rápida). Default true.
 }
 
 const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000; // 12 min: agentes como ghostwriter/copyeditor generan capítulos enteros (maxOutputTokens=65536) y necesitan margen. Agentes con respuestas más cortas (architect) deben sobrescribir `this.timeoutMs` en su constructor.
@@ -186,20 +187,21 @@ export abstract class BaseAgent {
           : modelToUse === "gemini-3-flash-preview" ? 16384 
           : 4096;
         
+        const includeThoughts = this.config.includeThoughts !== false; // default true
         let thinkingConfigObj: any = {};
         if (useThinking) {
           if (modelsWithThinkingLevel.includes(modelToUse)) {
             thinkingConfigObj = {
               thinkingConfig: {
                 thinkingLevel: "high",
-                includeThoughts: true,
+                includeThoughts,
               },
             };
           } else if (modelsWithThinkingBudget.includes(modelToUse)) {
             thinkingConfigObj = {
               thinkingConfig: {
                 thinkingBudget: this.config.thinkingBudget || defaultThinkingBudget,
-                includeThoughts: true,
+                includeThoughts,
               },
             };
           }
