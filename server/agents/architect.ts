@@ -145,65 +145,41 @@ con formato preciso:
   - Si es futuro/sci-fi: "Futuro cercano (~2070), Tokio" / "Año 3024, colonia marciana".
   - Si es fantasía con mundo secundario: "Mundo secundario, equivalente a [siglo X / cultura Y]".
 
-A partir de esa época concreta, RELLENA ADEMÁS (estos mínimos APLICAN SOLO si la
-guía NO trae la sección de época; si la trae, copia LITERALMENTE las listas de
-la guía y, opcionalmente, AÑADE entradas ADICIONALES sin eliminar ni modificar
-ninguna de las originales):
-  - "terminos_anacronicos_prohibidos": lista de palabras/conceptos que NO existían
-    en esa época y que el ghostwriter NUNCA debe usar. Sé específico para la época
-    declarada (ej: para 1888 prohíbe "ordenador", "psicología clínica", "antibiótico";
-    para Roma 79 d.C. prohíbe "minuto exacto", "bacteria", "pólvora", "imprenta").
-    Mínimo 15 entradas para épocas históricas; vacío solo para contemporáneas.
-  - "vocabulario_epoca_autorizado": 15-30 términos auténticos del período que el
-    ghostwriter debería preferir (oficios, monedas, indumentaria, instituciones,
-    expresiones de época). Vacío solo para contemporáneas.
+A partir de esa época concreta, RELLENA ADEMÁS los siguientes campos. IMPORTANTE:
+si la guía YA trae la sección de época, COPIA LITERALMENTE sus listas (no las
+reinventes ni recortes); estos mínimos APLICAN SOLO cuando la guía no las trae.
+  - "terminos_anacronicos_prohibidos": palabras/conceptos que NO existían en esa
+    época. Específicos: "ordenador" / "antibiótico" para 1888; "minuto exacto" /
+    "pólvora" para Roma 79 d.C. Mínimo 12 entradas (8 si hay multi-época); vacío
+    solo si es contemporánea.
+  - "vocabulario_epoca_autorizado": 12-20 términos auténticos (oficios, monedas,
+    indumentaria, instituciones). 8-12 si hay multi-época; vacío solo si es
+    contemporánea.
   - "registro_linguistico": tipo de habla (formal cortesano / coloquial popular /
-    técnico jurídico / militar de campo / etc.) acorde a la época y los personajes.
-    Si la guía ya lo declara, COPIA literalmente; no lo reescribas.
-  - "notas_voz_historica": 2-4 frases con el matiz que el narrador debe mantener
-    para sonar de la época (sin caer en arcaísmo forzado).
-    Si la guía ya las declara, COPIA literalmente; no las reescribas.
+    técnico jurídico / etc.). UNA línea.
+  - "notas_voz_historica": 1-2 frases breves con el matiz que el narrador debe
+    mantener.
 
 Si la novela es CONTEMPORÁNEA o FUTURISTA SIN restricciones de época, las listas
 pueden ir vacías PERO "epoca" debe estar declarada explícitamente para que los
 agentes posteriores sepan que NO hay restricciones (no es lo mismo que olvidarlo).
 
 ═══════════════════════════════════════════════════════════════════
-🕰️🕰️ NOVELAS CON LÍNEAS TEMPORALES PARALELAS (DUAL TIMELINE / MULTI-ÉPOCA)
+🕰️🕰️ MULTI-ÉPOCA / DUAL TIMELINE
 ═══════════════════════════════════════════════════════════════════
-Si la novela tiene capítulos en MÁS DE UNA época (p.ej. capítulos en 2024 que
-alternan con flashbacks a 1936; o tres líneas temporales: pasado, presente,
-futuro), DEBES declarar TODAS las épocas en el array
-"world_bible.lexico_historico.epocas_paralelas" con esta estructura:
-
-  "epocas_paralelas": [
-    {
-      "id": "presente",        // identificador corto SIN espacios; será referenciado por cada capítulo
-      "epoca": "Contemporánea, Madrid 2024",
-      "terminos_anacronicos_prohibidos": [],
-      "vocabulario_epoca_autorizado": [],
-      "registro_linguistico": "coloquial urbano contemporáneo",
-      "notas_voz_historica": "..."
-    },
-    {
-      "id": "guerra_civil",
-      "epoca": "1936-1939, España (Guerra Civil)",
-      "terminos_anacronicos_prohibidos": ["móvil", "internet", "antibiótico moderno", ...],
-      "vocabulario_epoca_autorizado": ["camisa azul", "alpargata", "zaguán", ...],
-      "registro_linguistico": "español peninsular de los años 30, registros campesino y urbano de la época",
-      "notas_voz_historica": "..."
-    }
-  ]
+Si la novela tiene capítulos en MÁS de una época (p.ej. presente + flashbacks),
+declara TODAS las épocas en "world_bible.lexico_historico.epocas_paralelas"
+como array de objetos con campos: "id" (slug corto sin espacios), "epoca",
+"terminos_anacronicos_prohibidos" (array, mín. 8 si histórica), 
+"vocabulario_epoca_autorizado" (array, 8-12 si histórica), 
+"registro_linguistico" (1 línea), "notas_voz_historica" (1-2 frases).
 
 REGLAS:
-- Cuando uses "epocas_paralelas", el campo "epoca" raíz puede contener la época
-  PRINCIPAL/marco de la novela (la del presente narrativo o la dominante).
-- Cada capítulo en "escaleta_capitulos" DEBE incluir el campo "epoca_id" con el
-  identificador exacto de la época que le corresponde (debe coincidir con un
-  "id" del array epocas_paralelas). Si el capítulo pertenece a la época
-  principal raíz, puedes omitir "epoca_id" o ponerlo a null.
-- Si la novela tiene UNA SOLA época, NO uses "epocas_paralelas" — déjalo vacío
-  o ausente, y rellena solo el bloque raíz como se explicó arriba.
+- "epoca" raíz contiene la época MARCO/principal; "epocas_paralelas" añade el resto.
+- Cada capítulo en "escaleta_capitulos" DEBE traer "epoca_id" coincidiendo con un
+  "id" del array (o null si pertenece a la época raíz).
+- Si la novela es MONO-ÉPOCA, deja "epocas_paralelas" como [] y rellena solo el
+  bloque raíz.
 
 ═══════════════════════════════════════════════════════════════════
 FASE 1: WORLD BIBLE + ESTRUCTURA GLOBAL
@@ -383,7 +359,7 @@ export class ArchitectAgent extends BaseAgent {
       model: "gemini-2.5-flash",
       useThinking: true,
       thinkingBudget: 8192,
-      maxOutputTokens: 65536,
+      maxOutputTokens: 32768,
     });
   }
 
@@ -449,6 +425,18 @@ export class ArchitectAgent extends BaseAgent {
     
     La novela tendrá ${input.chapterCount} capítulos${input.hasPrologue ? " + prólogo" : ""}${input.hasEpilogue ? " + epílogo" : ""}${input.hasAuthorNote ? " + nota del autor" : ""}.
     Diseña los arcos, giros y tensión para exactamente esa cantidad de capítulos.
+    
+    ⚡ BREVEDAD OBLIGATORIA — el JSON Fase 1 tiene cap de 32K tokens de salida. Para
+    no truncar la respuesta:
+    - Campos de prosa (perfil_psicologico, descripcion_sensorial, atmosfera, eventos_clave,
+      notas_voz_historica, etc.): MÁX. 2 frases concisas, NO párrafos largos.
+    - "linea_temporal": MÁX. 8 entradas de momentos clave, no una por capítulo.
+    - "personajes": describe a fondo solo a protagonistas y antagonistas (perfil ≤ 3 frases);
+      secundarios con 1-2 frases de perfil + contra_cliche obligatorio.
+    - "lexico_historico": respeta los mínimos compactos definidos arriba (8-12 entradas
+      en multi-época, 12-20 en mono-época). NO infles.
+    - Termina el JSON limpiamente: si te quedas corto de tokens, recorta entradas
+      opcionales antes que dejar el JSON truncado a media frase.
     
     Responde ÚNICAMENTE con el JSON estructurado según las instrucciones.
     `;
@@ -537,7 +525,16 @@ export class ArchitectAgent extends BaseAgent {
     `;
 
     this.config.systemPrompt = PHASE2_SYSTEM_PROMPT;
-    const phase2Response = await this.generateContent(phase2Prompt);
+    // La escaleta puede ser muy larga (60+ capítulos). Subimos el cap para Fase 2,
+    // mientras Fase 1 (constructor) se queda en 32K para forzar concisión en la WB.
+    const previousMaxOut = this.config.maxOutputTokens;
+    this.config.maxOutputTokens = 65536;
+    let phase2Response;
+    try {
+      phase2Response = await this.generateContent(phase2Prompt);
+    } finally {
+      this.config.maxOutputTokens = previousMaxOut;
+    }
 
     console.log(`[El Arquitecto] Fase 2 API respondió: ${phase2Response.content?.length || 0} chars, tokens: in=${phase2Response.tokenUsage?.inputTokens || 0} out=${phase2Response.tokenUsage?.outputTokens || 0}, error=${phase2Response.error || "none"}, timedOut=${phase2Response.timedOut}`);
 
