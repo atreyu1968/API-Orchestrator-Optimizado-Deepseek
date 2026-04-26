@@ -1416,7 +1416,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           previousContinuityStateForEditor = null;
         }
 
-        this.callbacks.onChapterComplete(i + 1, wordCount, sectionData.titulo);
+        this.callbacks.onChapterComplete(sectionData.numero, wordCount, sectionData.titulo);
         this.callbacks.onAgentStatus("copyeditor", "completed", `${sectionLabel} finalizado (${wordCount} palabras)`);
 
         await this.enrichWorldBibleFromChapter(project.id, sectionData.numero, extractedContinuityState, finalContent);
@@ -2054,7 +2054,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
         const freshChapters = await storage.getChaptersByProject(project.id);
         const completedCount = freshChapters.filter(c => c.status === "completed").length;
-        this.callbacks.onChapterComplete(completedCount, wordCount, sectionData.titulo);
+        this.callbacks.onChapterComplete(sectionData.numero, wordCount, sectionData.titulo);
         this.callbacks.onAgentStatus("copyeditor", "completed", `${sectionLabel} finalizado (${wordCount} palabras)`);
 
         await this.enrichWorldBibleFromChapter(project.id, sectionData.numero, extractedContinuityState, finalContent);
