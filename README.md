@@ -294,8 +294,8 @@ sudo apt install -y curl git wget build-essential
 
 ```bash
 # Clonar repositorio
-git clone https://github.com/atreyu1968/escritorasdgemini.git
-cd escritorasdgemini
+git clone https://github.com/atreyu1968/API-Orchestrator-Optimizado-Deepseek.git
+cd API-Orchestrator-Optimizado-Deepseek
 
 # Ejecutar instalador (te pedira las configuraciones)
 sudo bash install.sh
@@ -305,8 +305,8 @@ sudo bash install.sh
 
 ```bash
 # Clonar repositorio
-git clone https://github.com/atreyu1968/escritorasdgemini.git
-cd escritorasdgemini
+git clone https://github.com/atreyu1968/API-Orchestrator-Optimizado-Deepseek.git
+cd API-Orchestrator-Optimizado-Deepseek
 
 # Instalacion minima
 sudo DEEPSEEK_API_KEY="tu-api-key-aqui" bash install.sh --unattended
@@ -630,4 +630,4 @@ MIT License
 ## Soporte
 
 Para reportar problemas o solicitar funciones, abre un issue en el repositorio de GitHub:
-https://github.com/atreyu1968/escritorasdgemini
+https://github.com/atreyu1968/API-Orchestrator-Optimizado-Deepseek
