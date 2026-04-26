@@ -80,6 +80,49 @@ export class QueueManager {
     
     console.log(`[QueueManager] Auto-recovery attempt #${this.autoRecoveryCount} for project ${projectId}`);
     
+    // SAFETY CAP — same logic as the DB-watchdog: count auto-recovery events for this
+    // project in the last 6 hours (across both heartbeat and global watchdog paths).
+    // If we already retried ≥3 times without progress, escalate to "failed" and bail.
+    try {
+      const recentLogs = await storage.getActivityLogsByProject(projectId, 200);
+      const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
+      const recentRecoveries = recentLogs.filter(l =>
+        l.createdAt && l.createdAt.getTime() > sixHoursAgo &&
+        typeof l.message === "string" && /^Auto-recovery/.test(l.message)
+      ).length;
+      
+      if (recentRecoveries >= 3 || this.autoRecoveryCount >= 3) {
+        console.error(`[QueueManager] Heartbeat auto-recovery cap reached for project ${projectId} (DB:${recentRecoveries} mem:${this.autoRecoveryCount}). Marking as FAILED.`);
+        await storage.createActivityLog({
+          projectId,
+          level: "error",
+          message: `Auto-recovery cancelado: ${recentRecoveries} reintentos en 6h sin progreso. Proyecto marcado como FALLIDO. Reanúdalo manualmente cuando estés listo.`,
+          agentRole: "system",
+          metadata: { recoveriesIn6h: recentRecoveries, memRecoveries: this.autoRecoveryCount, terminal: true },
+        });
+        await storage.updateProject(projectId, { status: "failed" });
+        
+        const queueItemFail = await storage.getQueueItemByProject(projectId);
+        if (queueItemFail && queueItemFail.status !== "failed") {
+          await storage.updateQueueItem(queueItemFail.id, {
+            status: "failed",
+            completedAt: new Date(),
+            errorMessage: `Heartbeat auto-recovery cap reached (${recentRecoveries} retries in 6h)`,
+          });
+        }
+        
+        // Free queue and stop heartbeat. Reset memory counter so next project starts fresh.
+        await storage.updateQueueState({ currentProjectId: null });
+        this.currentOrchestrator = null;
+        this.currentProjectId = null;
+        this.autoRecoveryCount = 0;
+        this.stopHeartbeatMonitor();
+        return;
+      }
+    } catch (e) {
+      console.error(`[QueueManager] Failed to check heartbeat recovery cap for project ${projectId}:`, e);
+    }
+    
     // Log the recovery event
     try {
       await storage.createActivityLog({
@@ -271,7 +314,7 @@ export class QueueManager {
               const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
               const recentRecoveries = recentLogs.filter(l =>
                 l.createdAt && l.createdAt.getTime() > sixHoursAgo &&
-                typeof l.message === "string" && l.message.startsWith("Auto-recovery:")
+                typeof l.message === "string" && /^Auto-recovery/.test(l.message)
               ).length;
               
               const MAX_AUTO_RECOVERIES_PER_6H = 3;
