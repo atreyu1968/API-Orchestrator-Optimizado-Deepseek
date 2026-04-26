@@ -263,6 +263,52 @@ export class QueueManager {
           if (timeSinceActivity > HEARTBEAT_TIMEOUT_MS) {
             console.log(`[QueueManager] FROZEN PROJECT DETECTED: "${project.title}" (ID: ${project.id}) - no activity for ${Math.round(timeSinceActivity / 60000)} minutes`);
             
+            // SAFETY CAP: count how many auto-recovery attempts have happened in the
+            // last 6 hours by scanning recent activity logs. If we already retried
+            // ≥3 times without progress, escalate to "failed" instead of looping forever.
+            try {
+              const recentLogs = await storage.getActivityLogsByProject(project.id, 200);
+              const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
+              const recentRecoveries = recentLogs.filter(l =>
+                l.createdAt && l.createdAt.getTime() > sixHoursAgo &&
+                typeof l.message === "string" && l.message.startsWith("Auto-recovery:")
+              ).length;
+              
+              const MAX_AUTO_RECOVERIES_PER_6H = 3;
+              if (recentRecoveries >= MAX_AUTO_RECOVERIES_PER_6H) {
+                console.error(`[QueueManager] Project ${project.id} "${project.title}" exceeded auto-recovery cap (${recentRecoveries}/${MAX_AUTO_RECOVERIES_PER_6H} in 6h). Marking as FAILED.`);
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "error",
+                  message: `Auto-recovery cancelado: ${recentRecoveries} reintentos en 6h sin progreso. Proyecto marcado como FALLIDO. Reanúdalo manualmente cuando estés listo.`,
+                  agentRole: "system",
+                  metadata: { recoveriesIn6h: recentRecoveries, terminal: true },
+                });
+                await storage.updateProject(project.id, { status: "failed" });
+                
+                const queueItem = await storage.getQueueItemByProject(project.id);
+                if (queueItem && queueItem.status !== "failed") {
+                  await storage.updateQueueItem(queueItem.id, {
+                    status: "failed",
+                    completedAt: new Date(),
+                    errorMessage: `Auto-recovery cap reached (${recentRecoveries} retries in 6h)`,
+                  });
+                }
+                
+                // If this was the active project, free the queue.
+                const state = await storage.getQueueState();
+                if (state?.currentProjectId === project.id) {
+                  await storage.updateQueueState({ currentProjectId: null });
+                  this.currentOrchestrator = null;
+                  this.currentProjectId = null;
+                }
+                
+                continue; // skip to next project, don't break the loop
+              }
+            } catch (e) {
+              console.error(`[QueueManager] Failed to check recovery cap for project ${project.id}:`, e);
+            }
+            
             // Log the recovery event
             await storage.createActivityLog({
               projectId: project.id,

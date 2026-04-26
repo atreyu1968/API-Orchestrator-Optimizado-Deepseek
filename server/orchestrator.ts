@@ -951,7 +951,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       }
 
       if (!worldBibleData || !worldBibleData.world_bible?.personajes?.length || !worldBibleData.escaleta_capitulos?.length) {
-        const errorMsg = `El Arquitecto falló después de ${MAX_ARCHITECT_RETRIES} intentos: ${lastArchitectError}. El proyecto se pausará para permitir reintento manual.`;
+        const errorMsg = `El Arquitecto falló después de ${MAX_ARCHITECT_RETRIES} intentos: ${lastArchitectError}. El proyecto se ha marcado como FALLIDO; reanúdalo manualmente desde el dashboard cuando quieras volver a intentarlo.`;
         console.error(`[Orchestrator] CRITICAL: ${errorMsg}`);
         this.callbacks.onAgentStatus("architect", "error", errorMsg);
         this.callbacks.onError(errorMsg);
@@ -959,12 +959,30 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         await storage.createActivityLog({
           projectId: project.id,
           level: "error",
-          message: `Arquitecto falló tras ${MAX_ARCHITECT_RETRIES} intentos. Proyecto pausado para reintento manual.`,
+          message: `Arquitecto falló tras ${MAX_ARCHITECT_RETRIES} intentos. Proyecto marcado como FALLIDO (no auto-recoverable). Reintento manual requerido.`,
           agentRole: "architect",
-          metadata: { lastError: lastArchitectError },
+          metadata: { lastError: lastArchitectError, terminal: true },
         });
         
-        await storage.updateProject(project.id, { status: "paused" });
+        // CRITICAL: use "failed" (not "paused") so the auto-recovery watchdog does NOT
+        // wake this project up every 15 min and burn tokens forever. The user can
+        // manually flip the status back to retry.
+        await storage.updateProject(project.id, { status: "failed" });
+        
+        // Also mark the queue item as failed so processing advances to the next project.
+        try {
+          const queueItem = await storage.getQueueItemByProject(project.id);
+          if (queueItem) {
+            await storage.updateQueueItem(queueItem.id, {
+              status: "failed",
+              completedAt: new Date(),
+              errorMessage: `Arquitecto falló tras ${MAX_ARCHITECT_RETRIES} intentos: ${lastArchitectError}`,
+            });
+          }
+        } catch (e) {
+          console.error(`[Orchestrator] Failed to mark queue item as failed:`, e);
+        }
+        
         return;
       }
       
