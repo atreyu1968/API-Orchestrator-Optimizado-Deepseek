@@ -1311,7 +1311,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               this.callbacks.onAgentStatus("ghostwriter", "warning", 
                 `${sectionLabel} tiene ${continuityCheck.violations.length} violación(es) de continuidad. Corrigiendo...`
               );
-              
+
+              const currentBestWords = bestVersion.content.split(/\s+/).filter((w: string) => w.length > 0).length;
+              if (contentWordCount > currentBestWords) {
+                bestVersion.content = currentContent;
+                bestVersion.continuityState = currentContinuityState;
+                console.log(`[Orchestrator] Saving violated draft as best base for surgical correction (${contentWordCount} words > previous best ${currentBestWords}).`);
+              }
+
               refinementAttempts++;
               refinementInstructions = `🚨 VIOLACIÓN DE CONTINUIDAD CRÍTICA 🚨\n\nTu capítulo contiene los siguientes errores que DEBEN corregirse:\n\n${continuityCheck.violations.map((v, idx) => `${idx + 1}. ${v}`).join("\n\n")}\n\nCORRIGE SOLO los pasajes con violaciones de continuidad. PRESERVA INTACTO todo el resto del capítulo — prosa, diálogos, descripciones y estructura que funcionan. NO reescribas desde cero.`;
               await new Promise(resolve => setTimeout(resolve, 5000));
@@ -1983,7 +1990,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               this.callbacks.onAgentStatus("ghostwriter", "warning", 
                 `${sectionLabel} tiene ${continuityCheck.violations.length} violación(es) de continuidad. Corrigiendo...`
               );
-              
+
+              const currentBestWords = bestVersion.content.split(/\s+/).filter((w: string) => w.length > 0).length;
+              if (contentWordCount > currentBestWords) {
+                bestVersion.content = currentContent;
+                bestVersion.continuityState = currentContinuityState;
+                console.log(`[Orchestrator] Saving violated draft as best base for surgical correction (${contentWordCount} words > previous best ${currentBestWords}).`);
+              }
+
               refinementAttempts++;
               refinementInstructions = `🚨 VIOLACIÓN DE CONTINUIDAD CRÍTICA 🚨\n\nTu capítulo contiene los siguientes errores que DEBEN corregirse:\n\n${continuityCheck.violations.map((v, idx) => `${idx + 1}. ${v}`).join("\n\n")}\n\nCORRIGE SOLO los pasajes con violaciones de continuidad. PRESERVA INTACTO todo el resto del capítulo — prosa, diálogos, descripciones y estructura que funcionan. NO reescribas desde cero.`;
               await new Promise(resolve => setTimeout(resolve, 5000));
