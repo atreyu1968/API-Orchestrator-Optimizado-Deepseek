@@ -111,75 +111,29 @@ REGLAS OBLIGATORIAS:
 5. PROHIBIDO: Tramas donde la identidad del personaje sea deliberadamente ambigua sin resolución clara planificada
 
 ═══════════════════════════════════════════════════════════════════
-🕰️ ÉPOCA DE LA ACCIÓN — DEFINICIÓN OBLIGATORIA (CRÍTICO PARA ANACRONISMOS)
+🕰️ ÉPOCA DE LA ACCIÓN
 ═══════════════════════════════════════════════════════════════════
-ANTES de escribir nada del JSON, define mentalmente la ÉPOCA EXACTA en la
-que ocurre la acción. Sin esto es IMPOSIBLE evitar anacronismos en los
-capítulos generados después.
+Identifica la época a partir de título/premisa/guía y rellena
+"world_bible.lexico_historico.epoca" con UNA LÍNEA. Ejemplos:
+  - "1888, Londres victoriano"     - "Contemporánea, Madrid"
+  - "Año 3024, colonia marciana"   - "Mundo secundario, s. XIX equiv."
 
-🔎 FUENTE DE VERDAD PRIORITARIA — LA GUÍA DE ESTILO:
-La "Guía de Estilo" recibida puede contener una sección titulada
-"ÉPOCA(S) HISTÓRICA(S) DE LA NARRACIÓN" / "ÉPOCA(S) HISTÓRICA(S) DE LA
-SERIE" con la época principal, el listado de épocas paralelas (si las
-hay), el vocabulario autorizado/prohibido, el registro lingüístico y
-las notas de voz histórica.
+Si la Guía de Estilo trae sección "ÉPOCA(S) HISTÓRICA(S)", úsala como
+fuente de verdad: copia "epoca", ids de épocas paralelas y, si vienen,
+sus listas de vocabulario y registro. No las reinventes ni contradigas.
 
-→ Si esa sección EXISTE en la guía, COPIA ESA INFORMACIÓN tal cual al
-  campo "world_bible.lexico_historico" (incluyendo "epocas_paralelas"
-  y los slugs/ids declarados en la guía). NO la reinventes ni la
-  contradigas. Puedes ENRIQUECERLA con más términos prohibidos/
-  autorizados específicos, pero NO cambies la época ni los ids.
-→ Si la guía declara qué capítulos pertenecen a cada época paralela,
-  asigna el campo "epoca_id" en cada capítulo de "escaleta_capitulos"
-  respetando esa asignación.
-→ Si la guía NO incluye sección de época (guías antiguas), DEDÚCELA
-  tú mismo a partir de la idea/título/género siguiendo las reglas
-  de abajo.
+Los demás campos de "lexico_historico" (terminos_anacronicos_prohibidos,
+vocabulario_epoca_autorizado, registro_linguistico, notas_voz_historica)
+son OPCIONALES en Fase 1: si los tienes claros añade 4-8 entradas como
+ancla; si no, déjalos como [] o "" — los agentes posteriores los
+completan bajo demanda. NO inventes listas largas: ahorrar tokens
+es más importante que cubrir todo el vocabulario aquí.
 
-DEBES rellenar OBLIGATORIAMENTE el campo "world_bible.lexico_historico.epoca"
-con formato preciso:
-  - Si es novela histórica con período concreto: "Año(s) + Lugar geográfico".
-    Ej: "1888, Londres victoriano"; "Verano de 79 d.C., Pompeya";
-        "1936-1939, España (Guerra Civil)".
-  - Si es contemporánea: "Contemporánea, [ciudad/país]" o "Actualidad, Madrid".
-  - Si es futuro/sci-fi: "Futuro cercano (~2070), Tokio" / "Año 3024, colonia marciana".
-  - Si es fantasía con mundo secundario: "Mundo secundario, equivalente a [siglo X / cultura Y]".
-
-A partir de esa época concreta, RELLENA ADEMÁS los siguientes campos. IMPORTANTE:
-si la guía YA trae la sección de época, COPIA LITERALMENTE sus listas (no las
-reinventes ni recortes); estos mínimos APLICAN SOLO cuando la guía no las trae.
-  - "terminos_anacronicos_prohibidos": palabras/conceptos que NO existían en esa
-    época. Específicos: "ordenador" / "antibiótico" para 1888; "minuto exacto" /
-    "pólvora" para Roma 79 d.C. Mínimo 12 entradas (8 si hay multi-época); vacío
-    solo si es contemporánea.
-  - "vocabulario_epoca_autorizado": 12-20 términos auténticos (oficios, monedas,
-    indumentaria, instituciones). 8-12 si hay multi-época; vacío solo si es
-    contemporánea.
-  - "registro_linguistico": tipo de habla (formal cortesano / coloquial popular /
-    técnico jurídico / etc.). UNA línea.
-  - "notas_voz_historica": 1-2 frases breves con el matiz que el narrador debe
-    mantener.
-
-Si la novela es CONTEMPORÁNEA o FUTURISTA SIN restricciones de época, las listas
-pueden ir vacías PERO "epoca" debe estar declarada explícitamente para que los
-agentes posteriores sepan que NO hay restricciones (no es lo mismo que olvidarlo).
-
-═══════════════════════════════════════════════════════════════════
-🕰️🕰️ MULTI-ÉPOCA / DUAL TIMELINE
-═══════════════════════════════════════════════════════════════════
-Si la novela tiene capítulos en MÁS de una época (p.ej. presente + flashbacks),
-declara TODAS las épocas en "world_bible.lexico_historico.epocas_paralelas"
-como array de objetos con campos: "id" (slug corto sin espacios), "epoca",
-"terminos_anacronicos_prohibidos" (array, mín. 8 si histórica), 
-"vocabulario_epoca_autorizado" (array, 8-12 si histórica), 
-"registro_linguistico" (1 línea), "notas_voz_historica" (1-2 frases).
-
-REGLAS:
-- "epoca" raíz contiene la época MARCO/principal; "epocas_paralelas" añade el resto.
-- Cada capítulo en "escaleta_capitulos" DEBE traer "epoca_id" coincidiendo con un
-  "id" del array (o null si pertenece a la época raíz).
-- Si la novela es MONO-ÉPOCA, deja "epocas_paralelas" como [] y rellena solo el
-  bloque raíz.
+MULTI-ÉPOCA (solo si la novela tiene timelines paralelos): añade entradas
+en "epocas_paralelas" con {id (slug), epoca}. El resto opcional. Cada
+capítulo de "escaleta_capitulos" debe traer "epoca_id" igual a un id del
+array, o null si pertenece a la época raíz. Si es mono-época, deja
+"epocas_paralelas" como [].
 
 ═══════════════════════════════════════════════════════════════════
 FASE 1: WORLD BIBLE + ESTRUCTURA GLOBAL
@@ -230,7 +184,7 @@ Genera un JSON con estas claves:
   "motivos_literarios": ["Símbolos recurrentes"],
   "vocabulario_prohibido": ["Palabras/frases cliché a EVITAR"],
   "lexico_historico": {
-    "epoca": "OBLIGATORIO. Formato exacto: 'Año(s) + Lugar geográfico'. Ejemplos válidos: '1888, Londres victoriano', 'Verano de 79 d.C., Pompeya', '1936-1939, España (Guerra Civil)', '2024, Madrid contemporáneo', 'Futuro cercano (~2070), Tokio'. Si la novela es contemporánea, escribe 'Contemporánea' o 'Actualidad' + ciudad/país. Si es fantasía/sci-fi sin equivalente histórico, escribe 'Mundo secundario, equivalente tecnológico/cultural a [siglo X / época Y]'. Si la novela tiene varias épocas paralelas (timeline dual), pon aquí la PRINCIPAL/marco y rellena además 'epocas_paralelas'. NUNCA dejes este campo vacío.",
+    "epoca": "OBLIGATORIO, una línea (ver instrucciones de ÉPOCA arriba).",
     "terminos_anacronicos_prohibidos": [],
     "vocabulario_epoca_autorizado": [],
     "registro_linguistico": "",
@@ -361,6 +315,10 @@ export class ArchitectAgent extends BaseAgent {
       thinkingBudget: 8192,
       maxOutputTokens: 32768,
     });
+    // Override timeout: el Arquitecto genera JSON estructurado (no prosa larga).
+    // Bajamos de 12 min → 5 min para que cuelgues de Gemini fallen rápido y los
+    // 3 reintentos del orquestador quepan dentro del watchdog de 15 min.
+    this.timeoutMs = 5 * 60 * 1000;
   }
 
   async execute(input: ArchitectInput): Promise<AgentResponse> {
@@ -433,8 +391,9 @@ export class ArchitectAgent extends BaseAgent {
     - "linea_temporal": MÁX. 8 entradas de momentos clave, no una por capítulo.
     - "personajes": describe a fondo solo a protagonistas y antagonistas (perfil ≤ 3 frases);
       secundarios con 1-2 frases de perfil + contra_cliche obligatorio.
-    - "lexico_historico": respeta los mínimos compactos definidos arriba (8-12 entradas
-      en multi-época, 12-20 en mono-época). NO infles.
+    - "lexico_historico": SOLO el campo "epoca" es obligatorio (1 línea). Las listas
+      de vocabulario son OPCIONALES — si las añades máx. 4-8 entradas como ancla.
+      No las infles, los agentes posteriores las amplían bajo demanda.
     - Termina el JSON limpiamente: si te quedas corto de tokens, recorta entradas
       opcionales antes que dejar el JSON truncado a media frase.
     
@@ -483,6 +442,10 @@ export class ArchitectAgent extends BaseAgent {
         lugares: phase1Json.world_bible?.lugares,
         temas_centrales: phase1Json.world_bible?.temas_centrales,
         motivos_literarios: phase1Json.world_bible?.motivos_literarios,
+        lexico_historico: phase1Json.world_bible?.lexico_historico ? {
+          epoca: phase1Json.world_bible.lexico_historico.epoca,
+          epocas_paralelas: phase1Json.world_bible.lexico_historico.epocas_paralelas,
+        } : undefined,
       },
       matriz_arcos: phase1Json.matriz_arcos,
       momentum_plan: phase1Json.momentum_plan,

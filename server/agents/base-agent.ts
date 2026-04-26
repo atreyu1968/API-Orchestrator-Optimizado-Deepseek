@@ -32,7 +32,7 @@ export interface AgentConfig {
   maxOutputTokens?: number;
 }
 
-const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000; // 12 min: agentes como ghostwriter/copyeditor generan capítulos enteros (maxOutputTokens=65536) y necesitan margen. Agentes con respuestas más cortas (architect) deben sobrescribir `this.timeoutMs` en su constructor.
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 5000;
 
