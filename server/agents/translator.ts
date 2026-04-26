@@ -278,7 +278,7 @@ export class TranslatorAgent extends BaseAgent {
       name: "El Traductor",
       role: "translator",
       systemPrompt: SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: false,
       maxOutputTokens: 65536,
     });

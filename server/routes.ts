@@ -2033,8 +2033,8 @@ export async function registerRoutes(
         worldContext += `\n--- Guía de la serie original ---\n${parentSeries.seriesGuide.substring(0, 3000)}\n`;
       }
       
-      const { GoogleGenAI } = await import("@google/genai");
-      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+      const { default: OpenAI } = await import("openai");
+      const genAI = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY || "", baseURL: "https://api.deepseek.com" });
       
       const prompt = `Eres un editor literario experto en planificación de series. Analiza los datos de la serie "${parentSeries.title}" y genera una GUÍA DE ESCRITURA completa para una nueva serie spin-off.
 
@@ -2074,13 +2074,14 @@ Genera una GUÍA DE ESCRITURA en español para la nueva serie spin-off que inclu
 
 Escribe en formato Markdown claro y organizado. Sé específico con datos concretos de la serie original — no inventes datos que no aparezcan en el contexto proporcionado.`;
       
-      const result = await genAI.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: { maxOutputTokens: 8192 },
+      const result = await genAI.chat.completions.create({
+        model: "deepseek-v4-flash",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 8192,
+        ...({ thinking: { type: "disabled" } } as any),
       });
       
-      const guideText = result.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
+      const guideText = result.choices?.[0]?.message?.content || "";
       
       await storage.updateSeries(targetSeriesId, {
         seriesGuide: guideText,
@@ -3082,8 +3083,8 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
       const hasWorldBibleData = allCharacters.length > 0 || allLocations.length > 0 || allTimeline.length > 0 || allLoreRules.length > 0;
 
       if (hasWorldBibleData) {
-        const { GoogleGenAI } = await import("@google/genai");
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+        const { default: OpenAI } = await import("openai");
+        const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
 
         const worldBiblePrompt = `Eres un analista literario experto. A partir de los siguientes datos extraídos de ${resolvedBooks.length} libro(s) de la serie "${seriesTitle.trim()}", genera un World Bible UNIFICADO para toda la serie en formato JSON.
 
@@ -3110,19 +3111,17 @@ Genera un JSON con esta estructura exacta:
 
 Deduplica personajes y localizaciones que aparezcan en múltiples libros, unificando su información. Responde SOLO con el JSON válido.`;
 
-        const wbResponse = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: [{ role: "user", parts: [{ text: worldBiblePrompt }] }],
-          config: {
-            temperature: 0.3,
-            maxOutputTokens: 32768,
-            thinkingConfig: { thinkingBudget: 1024 },
-          },
+        const wbResponse = await ai.chat.completions.create({
+          model: "deepseek-v4-flash",
+          messages: [{ role: "user", content: worldBiblePrompt }],
+          temperature: 0.3,
+          max_tokens: 32768,
+          ...({ thinking: { type: "disabled" } } as any),
         });
 
         let worldBibleData: any = {};
         try {
-          const wbText = (wbResponse.text || "").replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+          const wbText = (wbResponse.choices?.[0]?.message?.content || "").replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
           worldBibleData = JSON.parse(wbText);
         } catch {
           worldBibleData = {
@@ -3182,17 +3181,19 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
 
         let generatedTitles: string[] = [];
         try {
-          const { GoogleGenAI } = await import("@google/genai");
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+          const { default: OpenAI } = await import("openai");
+          const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
           const titlePrompt = `Eres un experto en títulos de novelas. La serie se llama "${seriesTitle.trim()}" y ya tiene estos libros:\n${existingTitles.map((t: string, i: number) => `- Libro ${resolvedBooks[i].seriesOrder}: "${t}"`).join("\n")}\n\nGenera exactamente ${remaining} título(s) para los libros restantes de la serie (posiciones: ${assignedOrders.join(", ")}). Los títulos deben:\n- Ser coherentes con el estilo y temática de los títulos existentes\n- Sonar como títulos reales de novela, no genéricos\n- Estar en el mismo idioma que los títulos existentes\n\nResponde SOLO con un JSON array de strings, sin explicaciones. Ejemplo: ["Título 1", "Título 2"]`;
 
-          const titleResponse = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: [{ role: "user", parts: [{ text: titlePrompt }] }],
-            config: { temperature: 0.8, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 512 } },
+          const titleResponse = await ai.chat.completions.create({
+            model: "deepseek-v4-flash",
+            messages: [{ role: "user", content: titlePrompt }],
+            temperature: 0.8,
+            max_tokens: 1024,
+            ...({ thinking: { type: "disabled" } } as any),
           });
 
-          const titleText = (titleResponse.text || "").replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+          const titleText = (titleResponse.choices?.[0]?.message?.content || "").replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
           const parsed = JSON.parse(titleText);
           if (Array.isArray(parsed) && parsed.length >= remaining) {
             generatedTitles = parsed.slice(0, remaining).map((t: any) => String(t).trim());
@@ -3317,9 +3318,10 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
         return res.status(400).json({ error: "No series guide uploaded. Upload a guide first." });
       }
 
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY!,
+      const { default: OpenAI } = await import("openai");
+      const ai = new OpenAI({
+        apiKey: process.env.DEEPSEEK_API_KEY!,
+        baseURL: "https://api.deepseek.com",
       });
 
       const extractionPrompt = `Analiza esta guía de serie literaria y extrae:
@@ -3362,10 +3364,11 @@ ${series.seriesGuide.substring(0, 50000)}`;
         try {
           attempts++;
           console.log(`[ExtractMilestones] Attempt ${attempts}/${maxAttempts}`);
-          response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: [{ role: "user", parts: [{ text: extractionPrompt }] }],
-            config: { temperature: 0.3 },
+          response = await ai.chat.completions.create({
+            model: "deepseek-v4-flash",
+            messages: [{ role: "user", content: extractionPrompt }],
+            temperature: 0.3,
+            ...({ thinking: { type: "disabled" } } as any),
           });
           break; // Success, exit loop
         } catch (err: any) {
@@ -3386,15 +3389,7 @@ ${series.seriesGuide.substring(0, 50000)}`;
         return res.status(503).json({ error: "Servicio temporalmente no disponible. Inténtalo en unos minutos." });
       }
 
-      // Try multiple ways to extract the text from the response
-      let text = "";
-      if (typeof response.text === "string") {
-        text = response.text;
-      } else if (typeof response.text === "function") {
-        text = (response as any).text();
-      } else if ((response as any).response?.candidates?.[0]?.content?.parts?.[0]?.text) {
-        text = (response as any).response.candidates[0].content.parts[0].text;
-      }
+      const text = (response as any)?.choices?.[0]?.message?.content || "";
       
       console.log(`[ExtractMilestones] Raw response length: ${text.length} chars`);
       console.log(`[ExtractMilestones] Response preview: ${text.substring(0, 500)}...`);
@@ -7493,8 +7488,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
       const totalWords = completedChapters.reduce((sum, ch) => sum + (ch.content?.split(/\s+/).length || 0), 0);
 
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const { default: OpenAI } = await import("openai");
+      const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
 
       const prompt = `Eres un consultor editorial experto. Analiza esta muestra de ${sampleSize} capítulos de un manuscrito de ${completedChapters.length} capítulos (${totalWords.toLocaleString()} palabras totales) y determina si vale la pena RE-EDITARLO (corregir y pulir lo existente) o es mejor REESCRIBIRLO desde cero.
 
@@ -7537,17 +7532,16 @@ CRITERIOS:
 - Si la puntuación media es < 5, o la prosa es fundamentalmente débil, o hay problemas estructurales graves → recomienda "rewrite"
 - Considera que la re-edición puede subir 1-2 puntos, pero no hacer milagros con prosa muy pobre`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          temperature: 0.7,
-          topP: 0.9,
-          maxOutputTokens: 4096,
-        },
+      const response = await ai.chat.completions.create({
+        model: "deepseek-v4-flash",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        top_p: 0.9,
+        max_tokens: 4096,
+        ...({ thinking: { type: "disabled" } } as any),
       });
 
-      const responseText = response.text || "";
+      const responseText = response.choices?.[0]?.message?.content || "";
       let assessment: any = null;
 
       try {
@@ -7775,8 +7769,8 @@ CRITERIOS:
         return sum + (text?.split(/\s+/).length || 0);
       }, 0);
 
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const { default: OpenAI } = await import("openai");
+      const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
 
       const prompt = `Eres un consultor editorial experto. Analiza esta muestra de ${sampleSize} capítulos de un manuscrito de ${chaptersWithContent.length} capítulos (${totalWords.toLocaleString()} palabras totales) y determina si vale la pena RE-EDITARLO (corregir y pulir lo existente) o es mejor REESCRIBIRLO desde cero.
 
@@ -7818,17 +7812,16 @@ CRITERIOS:
 - Si la puntuación media es < 5, o la prosa es fundamentalmente débil, o hay problemas estructurales graves → recomienda "rewrite"
 - Considera que la re-edición puede subir 1-2 puntos, pero no hacer milagros con prosa muy pobre`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          temperature: 0.7,
-          topP: 0.9,
-          maxOutputTokens: 4096,
-        },
+      const response = await ai.chat.completions.create({
+        model: "deepseek-v4-flash",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        top_p: 0.9,
+        max_tokens: 4096,
+        ...({ thinking: { type: "disabled" } } as any),
       });
 
-      const responseText = response.text || "";
+      const responseText = response.choices?.[0]?.message?.content || "";
       let assessment: any = null;
 
       try {

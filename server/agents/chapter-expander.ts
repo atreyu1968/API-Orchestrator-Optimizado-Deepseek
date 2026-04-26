@@ -170,7 +170,7 @@ export class ChapterExpansionAnalyzer extends BaseAgent {
       name: "Expansion Analyzer",
       role: "expansion_analyzer",
       systemPrompt: ANALYSIS_SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       maxOutputTokens: 8192,
     });
@@ -263,7 +263,7 @@ export class ChapterExpanderAgent extends BaseAgent {
       name: "Chapter Expander",
       role: "chapter_expander",
       systemPrompt: EXPANSION_SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       maxOutputTokens: 65536,
     });
@@ -358,7 +358,7 @@ export class NewChapterGeneratorAgent extends BaseAgent {
       name: "New Chapter Generator",
       role: "new_chapter_generator",
       systemPrompt: NEW_CHAPTER_SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       maxOutputTokens: 65536,
     });

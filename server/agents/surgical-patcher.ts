@@ -33,7 +33,7 @@ export class SurgicalPatcherAgent extends BaseAgent {
     super({
       name: "Cirujano de Texto",
       role: "surgical-patcher",
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 4096,
       maxOutputTokens: 8192,

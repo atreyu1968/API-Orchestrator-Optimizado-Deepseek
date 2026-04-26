@@ -320,7 +320,7 @@ export class EditorAgent extends BaseAgent {
       name: "El Editor",
       role: "editor",
       systemPrompt: SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 4096,
       maxOutputTokens: 8192,

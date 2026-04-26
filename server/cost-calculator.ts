@@ -1,5 +1,5 @@
 // Real pricing per model (per 1M tokens)
-// Source: Google AI pricing — updated March 2026
+// Source: DeepSeek API pricing — updated April 2026
 
 export interface ModelPricing {
   inputPerMillion: number;
@@ -8,6 +8,17 @@ export interface ModelPricing {
 }
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
+  "deepseek-v4-flash": {
+    inputPerMillion: 0.14,
+    outputPerMillion: 0.28,
+    thinkingPerMillion: 0.28, // DeepSeek bills reasoning tokens at the same output rate
+  },
+  "deepseek-v4-pro": {
+    inputPerMillion: 1.74,
+    outputPerMillion: 3.48,
+    thinkingPerMillion: 3.48,
+  },
+  // Legacy Gemini entries kept for historical AI usage events stored in DB
   "gemini-2.5-flash": {
     inputPerMillion: 0.15,
     outputPerMillion: 0.60,
@@ -34,9 +45,9 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
     thinkingPerMillion: 1.50,
   },
   "default": {
-    inputPerMillion: 0.15,
-    outputPerMillion: 0.60,
-    thinkingPerMillion: 3.50,
+    inputPerMillion: 0.14,
+    outputPerMillion: 0.28,
+    thinkingPerMillion: 0.28,
   },
 };
 
@@ -47,12 +58,12 @@ export function calculateRealCost(
   thinkingTokens: number = 0
 ): { inputCost: number; outputCost: number; thinkingCost: number; totalCost: number } {
   const pricing = MODEL_PRICING[model] || MODEL_PRICING["default"];
-  
+
   const inputCost = (inputTokens / 1_000_000) * pricing.inputPerMillion;
   const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillion;
   const thinkingCost = (thinkingTokens / 1_000_000) * pricing.thinkingPerMillion;
   const totalCost = inputCost + outputCost + thinkingCost;
-  
+
   return {
     inputCost: Math.round(inputCost * 1000000) / 1000000,
     outputCost: Math.round(outputCost * 1000000) / 1000000,
@@ -67,18 +78,18 @@ export function formatCostForStorage(cost: number): string {
 
 // Agent to model mapping for reference
 export const AGENT_MODEL_MAPPING: Record<string, string> = {
-  "architect": "gemini-2.5-flash",
-  "ghostwriter": "gemini-3-flash-preview",
-  "editor": "gemini-2.5-flash",
-  "copyeditor": "gemini-2.5-flash",
-  "final-reviewer": "gemini-2.5-flash",
-  "continuity-sentinel": "gemini-2.5-flash",
-  "voice-auditor": "gemini-2.5-flash",
-  "semantic-detector": "gemini-2.5-flash",
-  "translator": "gemini-2.5-flash",
-  "arc-validator": "gemini-2.5-flash",
-  "series-thread-fixer": "gemini-2.5-flash",
-  "restructurer": "gemini-2.5-flash",
-  "chapter-expander": "gemini-2.5-flash",
-  "manuscript-analyzer": "gemini-2.0-flash",
+  "architect": "deepseek-v4-flash",
+  "ghostwriter": "deepseek-v4-flash",
+  "editor": "deepseek-v4-flash",
+  "copyeditor": "deepseek-v4-flash",
+  "final-reviewer": "deepseek-v4-flash",
+  "continuity-sentinel": "deepseek-v4-flash",
+  "voice-auditor": "deepseek-v4-flash",
+  "semantic-detector": "deepseek-v4-flash",
+  "translator": "deepseek-v4-flash",
+  "arc-validator": "deepseek-v4-flash",
+  "series-thread-fixer": "deepseek-v4-flash",
+  "restructurer": "deepseek-v4-flash",
+  "chapter-expander": "deepseek-v4-flash",
+  "manuscript-analyzer": "deepseek-v4-flash",
 };

@@ -48,7 +48,7 @@ export class CoverPromptDesigner extends BaseAgent {
     super({
       name: "CoverPromptDesigner",
       role: "Diseñador de Prompts de Portadas",
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       maxOutputTokens: 8192,
       systemPrompt: `Eres un experto diseñador de portadas de libros especializado en crear prompts detallados para generación de portadas con IA (Midjourney, DALL-E, Stable Diffusion, Ideogram, Leonardo AI).

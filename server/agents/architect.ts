@@ -310,7 +310,7 @@ export class ArchitectAgent extends BaseAgent {
       name: "El Arquitecto",
       role: "architect",
       systemPrompt: PHASE1_SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 4096,        // bajado de 8192: menos cómputo interno = menos tiempo expuesto a drops del flash.
       maxOutputTokens: 32768,

@@ -43,9 +43,9 @@ function sortChaptersForDisplay(chapters: Chapter[]): Chapter[] {
 }
 
 function calculateCost(inputTokens: number, outputTokens: number, thinkingTokens: number): number {
-  const INPUT_PRICE_PER_MILLION = 0.15;
-  const OUTPUT_PRICE_PER_MILLION = 0.60;
-  const THINKING_PRICE_PER_MILLION = 3.50;
+  const INPUT_PRICE_PER_MILLION = 0.14;
+  const OUTPUT_PRICE_PER_MILLION = 0.28;
+  const THINKING_PRICE_PER_MILLION = 0.28;
   
   const inputCost = (inputTokens / 1_000_000) * INPUT_PRICE_PER_MILLION;
   const outputCost = (outputTokens / 1_000_000) * OUTPUT_PRICE_PER_MILLION;
@@ -54,11 +54,11 @@ function calculateCost(inputTokens: number, outputTokens: number, thinkingTokens
   return inputCost + outputCost + thinkingCost;
 }
 
-const MODEL_PRICING_INFO = `Modelo principal: gemini-2.5-flash
-• Input: $0.15/M, Output: $0.60/M, Thinking: $3.50/M
+const MODEL_PRICING_INFO = `Modelo principal: deepseek-v4-flash
+• Input: $0.14/M, Output: $0.28/M, Thinking: $0.28/M
 
-Modelo secundario: gemini-2.0-flash (analizador)
-• Input: $0.10/M, Output: $0.40/M`;
+Reserva: deepseek-v4-pro
+• Input: $1.74/M, Output: $3.48/M`;
 
 type ConfirmType = "cancel" | "forceComplete" | "resume" | "delete" | null;
 

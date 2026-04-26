@@ -504,7 +504,7 @@ export class FinalReviewerAgent extends BaseAgent {
       name: "El Revisor Final",
       role: "final-reviewer",
       systemPrompt: SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 12288,
       maxOutputTokens: 32768,

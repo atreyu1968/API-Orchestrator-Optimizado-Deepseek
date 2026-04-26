@@ -124,7 +124,7 @@ export class ProofreaderAgent extends BaseAgent {
       name: "Corrector Ortotipográfico Senior",
       role: "proofreader",
       systemPrompt: SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       maxOutputTokens: 65536,
     });

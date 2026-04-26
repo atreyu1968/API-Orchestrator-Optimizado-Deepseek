@@ -243,7 +243,7 @@ export class SeriesThreadFixerAgent extends BaseAgent {
       name: "Series Thread Fixer",
       role: "series-thread-fixer",
       systemPrompt: SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: false,
       maxOutputTokens: 65536,
     });

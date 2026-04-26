@@ -55,7 +55,7 @@ export class EditorialNotesParser extends BaseAgent {
     super({
       name: "Analista de Notas Editoriales",
       role: "editorial-notes-parser",
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 4096,
       maxOutputTokens: 8192,

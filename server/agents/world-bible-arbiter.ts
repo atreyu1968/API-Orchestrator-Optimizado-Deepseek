@@ -42,7 +42,7 @@ export class WorldBibleArbiterAgent extends BaseAgent {
     super({
       name: "Árbitro del World Bible",
       role: "wb-arbiter",
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 4096,
       maxOutputTokens: 6144,

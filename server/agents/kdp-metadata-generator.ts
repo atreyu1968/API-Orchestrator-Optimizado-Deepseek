@@ -34,7 +34,7 @@ export class KdpMetadataGenerator extends BaseAgent {
     super({
       name: "KdpMetadataGenerator",
       role: "Generador de Metadatos KDP",
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       maxOutputTokens: 8192,
       systemPrompt: `Eres un experto certificado en optimización de Amazon KDP y el algoritmo A9 (basado en la metodología de Dave Chesson / Kindlepreneur). Tu trabajo es generar metadatos que maximicen INDEXACIÓN, RANKING y CONVERSIÓN en Amazon, no metadatos genéricos.

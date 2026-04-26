@@ -550,7 +550,7 @@ export const aiUsageEvents = pgTable("ai_usage_events", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
   agentName: text("agent_name").notNull(),
-  model: text("model").notNull().default("gemini-2.5-pro"),
+  model: text("model").notNull().default("deepseek-v4-flash"),
   inputTokens: integer("input_tokens").notNull().default(0),
   outputTokens: integer("output_tokens").notNull().default(0),
   thinkingTokens: integer("thinking_tokens").notNull().default(0),

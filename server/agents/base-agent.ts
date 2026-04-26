@@ -1,9 +1,10 @@
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import { calculateRealCost, formatCostForStorage } from "../cost-calculator";
 import { storage } from "../storage";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+const ai = new OpenAI({
+  apiKey: process.env.DEEPSEEK_API_KEY,
+  baseURL: "https://api.deepseek.com",
 });
 
 export interface TokenUsage {
@@ -20,20 +21,21 @@ export interface AgentResponse {
   error?: string;
 }
 
-export type GeminiModel = "gemini-2.5-flash" | "gemini-2.0-flash" | "gemini-2.5-pro" | "gemini-3-flash-preview" | "gemini-3.1-flash-lite-preview";
+export type DeepSeekModel = "deepseek-v4-flash" | "deepseek-v4-pro";
+export type GeminiModel = DeepSeekModel;
 
 export interface AgentConfig {
   name: string;
   role: string;
   systemPrompt: string;
-  model?: GeminiModel;
+  model?: DeepSeekModel;
   useThinking?: boolean;
   thinkingBudget?: number;
   maxOutputTokens?: number;
-  includeThoughts?: boolean; // si false, Gemini no devuelve los thoughts en la respuesta (más pequeña/rápida). Default true.
+  includeThoughts?: boolean;
 }
 
-const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000; // 12 min: agentes como ghostwriter/copyeditor generan capítulos enteros (maxOutputTokens=65536) y necesitan margen. Agentes con respuestas más cortas (architect) deben sobrescribir `this.timeoutMs` en su constructor.
+const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000;
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 5000;
 
@@ -56,8 +58,10 @@ function isNetworkError(error: any): boolean {
 
 function isRateLimitError(error: any): boolean {
   const errorStr = String(error?.message || error || "");
-  return errorStr.includes("RATELIMIT_EXCEEDED") || 
-         errorStr.includes("429") || 
+  const status = (error as any)?.status;
+  return status === 429 ||
+         errorStr.includes("RATELIMIT_EXCEEDED") ||
+         errorStr.includes("429") ||
          errorStr.includes("Rate limit") ||
          errorStr.includes("rate limit");
 }
@@ -89,11 +93,11 @@ export async function isProjectCancelledFromDb(projectId: number): Promise<boole
   if (isProjectCancelled(projectId)) {
     return true;
   }
-  
+
   try {
     const project = await storage.getProject(projectId);
     if (!project) return true;
-    
+
     const cancelledStatuses = ["idle", "cancelled", "completed", "paused"];
     if (cancelledStatuses.includes(project.status)) {
       console.log(`[BaseAgent] Project ${projectId} cancelled via DB status: ${project.status}`);
@@ -102,7 +106,7 @@ export async function isProjectCancelledFromDb(projectId: number): Promise<boole
   } catch (error) {
     console.error(`[BaseAgent] Error checking project status:`, error);
   }
-  
+
   return false;
 }
 
@@ -120,7 +124,7 @@ async function withTimeout<T>(
   operationName: string
 ): Promise<T> {
   let timeoutId: NodeJS.Timeout;
-  
+
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
       reject(new Error(`TIMEOUT: ${operationName} exceeded ${timeoutMs}ms`));
@@ -159,9 +163,9 @@ export abstract class BaseAgent {
     const temperature = options?.temperature ?? 1.0;
     let rateLimitAttempts = 0;
     let networkErrorAttempts = 0;
-    
+
     const maxAttempts = MAX_RETRIES + RATE_LIMIT_MAX_RETRIES + NETWORK_ERROR_MAX_RETRIES + 1;
-    
+
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (projectId && isProjectCancelled(projectId)) {
         return {
@@ -170,107 +174,75 @@ export abstract class BaseAgent {
           timedOut: false,
         };
       }
-      
+
       try {
-        const modelToUse = this.config.model || "gemini-2.5-flash";
+        const modelToUse = this.config.model || "deepseek-v4-flash";
         const useThinking = this.config.useThinking === true;
-        
-        const defaultMaxOutput = (modelToUse === "gemini-2.5-pro" || modelToUse === "gemini-3-flash-preview" || modelToUse === "gemini-3.1-flash-lite-preview") ? 65536 : 32768;
+
+        const defaultMaxOutput = 32768;
         const maxOutput = this.config.maxOutputTokens || defaultMaxOutput;
-        
+
+        // DeepSeek V4 thinking mode: enabled by default. We control it explicitly per agent.
+        // - useThinking=true  -> thinking enabled, reasoning_effort = "high" (or "max" if thinkingBudget >= 8192)
+        // - useThinking=false -> thinking disabled (most agents — keeps cost & latency low)
+        const reasoningEffort: "high" | "max" = (this.config.thinkingBudget && this.config.thinkingBudget >= 8192) ? "max" : "high";
+
         const startTime = Date.now();
         console.log(`[${this.config.name}] Starting API call (attempt ${attempt + 1}, model=${modelToUse}, maxOut=${maxOutput}, thinking=${useThinking})...`);
-        
-        const modelsWithThinkingBudget = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash-preview"];
-        const modelsWithThinkingLevel = ["gemini-3.1-flash-lite-preview"];
-        const defaultThinkingBudget = modelToUse === "gemini-2.5-pro" ? 8192 
-          : modelToUse === "gemini-3-flash-preview" ? 16384 
-          : 4096;
-        
-        const includeThoughts = this.config.includeThoughts !== false; // default true
-        let thinkingConfigObj: any = {};
-        if (useThinking) {
-          if (modelsWithThinkingLevel.includes(modelToUse)) {
-            thinkingConfigObj = {
-              thinkingConfig: {
-                thinkingLevel: "high",
-                includeThoughts,
-              },
-            };
-          } else if (modelsWithThinkingBudget.includes(modelToUse)) {
-            thinkingConfigObj = {
-              thinkingConfig: {
-                thinkingBudget: this.config.thinkingBudget || defaultThinkingBudget,
-                includeThoughts,
-              },
-            };
-          }
-        }
-        
-        const generatePromise = this.ai.models.generateContent({
-          model: modelToUse,
-          contents: [
-            { role: "user", parts: [{ text: prompt }] },
-          ],
-          config: {
-            systemInstruction: this.config.systemPrompt,
-            temperature,
-            topP: 0.95,
-            maxOutputTokens: maxOutput,
-            ...thinkingConfigObj,
-          },
-        });
 
-        const response = await withTimeout(
+        // Build request. `thinking` and `reasoning_effort` are DeepSeek-specific extensions
+        // not in the official OpenAI types — cast to any to inject them.
+        const requestBody: any = {
+          model: modelToUse,
+          messages: [
+            { role: "system", content: this.config.systemPrompt },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: maxOutput,
+          stream: false,
+        };
+
+        if (useThinking) {
+          requestBody.thinking = { type: "enabled" };
+          requestBody.reasoning_effort = reasoningEffort;
+          // Note: DeepSeek silently ignores temperature/top_p in thinking mode.
+        } else {
+          requestBody.thinking = { type: "disabled" };
+          requestBody.temperature = temperature;
+          requestBody.top_p = 0.95;
+        }
+
+        const generatePromise = this.ai.chat.completions.create(requestBody);
+
+        const response: any = await withTimeout(
           generatePromise,
           this.timeoutMs,
           `${this.config.name} AI generation`
         );
-        
+
         const elapsedMs = Date.now() - startTime;
         console.log(`[${this.config.name}] API call completed in ${Math.round(elapsedMs / 1000)}s`);
 
-        const candidate = response.candidates?.[0];
-        let content = "";
-        let thoughtSignature = "";
+        const choice = response.choices?.[0];
+        const content = choice?.message?.content || "";
+        const thoughtSignature = choice?.message?.reasoning_content || "";
 
-        if (candidate?.content?.parts) {
-          for (const part of candidate.content.parts) {
-            if ((part as any).thought === true) {
-              thoughtSignature += part.text || "";
-            } else if (part.text) {
-              content += part.text;
-            }
-          }
-        }
-        
-        if (!thoughtSignature && candidate?.content?.parts) {
-          console.log(`[${this.config.name}] No thought signature captured. Parts structure:`, 
-            candidate.content.parts.map((p: any) => ({ 
-              hasText: !!p.text, 
-              textLength: p.text?.length || 0,
-              thought: p.thought,
-              keys: Object.keys(p)
-            }))
-          );
-        }
-
-        const usageMetadata = response.usageMetadata;
+        const usage = response.usage || {};
+        const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens || 0;
         const tokenUsage: TokenUsage = {
-          inputTokens: usageMetadata?.promptTokenCount || 0,
-          outputTokens: usageMetadata?.candidatesTokenCount || 0,
-          thinkingTokens: usageMetadata?.thoughtsTokenCount || 0,
+          inputTokens: usage.prompt_tokens || 0,
+          outputTokens: Math.max((usage.completion_tokens || 0) - reasoningTokens, 0),
+          thinkingTokens: reasoningTokens,
         };
 
-        // Track AI usage event with real costs
-        if (projectId && (tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0)) {
+        if (projectId && (tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0 || tokenUsage.thinkingTokens > 0)) {
           const costs = calculateRealCost(
             modelToUse,
             tokenUsage.inputTokens,
             tokenUsage.outputTokens,
             tokenUsage.thinkingTokens
           );
-          
+
           try {
             await storage.createAiUsageEvent({
               projectId,
@@ -293,7 +265,7 @@ export abstract class BaseAgent {
       } catch (error) {
         lastError = error as Error;
         const errorMessage = lastError.message || String(error);
-        
+
         if (isRateLimitError(error)) {
           rateLimitAttempts++;
           if (rateLimitAttempts <= RATE_LIMIT_MAX_RETRIES) {
@@ -325,10 +297,10 @@ export abstract class BaseAgent {
             timedOut: false,
           };
         }
-        
+
         console.error(`[${this.config.name}] Attempt ${attempt + 1} failed:`, errorMessage);
-        
-        if (errorMessage.includes("not found") || errorMessage.includes("not supported") || 
+
+        if (errorMessage.includes("not found") || errorMessage.includes("not supported") ||
             errorMessage.includes("does not exist") || errorMessage.includes("invalid model") ||
             errorMessage.includes("is not available") || errorMessage.includes("INVALID_ARGUMENT")) {
           console.error(`[${this.config.name}] ❌ MODEL ERROR: Model "${this.config.model}" may not be available. Error: ${errorMessage}`);
@@ -338,7 +310,7 @@ export abstract class BaseAgent {
             timedOut: false,
           };
         }
-        
+
         if (errorMessage.startsWith("TIMEOUT:")) {
           if (attempt < MAX_RETRIES) {
             console.log(`[${this.config.name}] Retrying after timeout...`);
@@ -351,7 +323,7 @@ export abstract class BaseAgent {
             timedOut: true,
           };
         }
-        
+
         if (attempt < MAX_RETRIES) {
           console.log(`[${this.config.name}] Retrying after error...`);
           await sleep(RETRY_DELAY_MS * (attempt + 1));
@@ -359,7 +331,7 @@ export abstract class BaseAgent {
         }
       }
     }
-    
+
     return {
       content: "",
       error: lastError?.message || "Unknown error after all retries",

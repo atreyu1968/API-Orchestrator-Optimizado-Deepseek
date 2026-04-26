@@ -1,14 +1,25 @@
-# LitAgents v6.6 - Autonomous Literary Agent Orchestration System
+# LitAgents v6.7 - Autonomous Literary Agent Orchestration System
 
 ## Overview
 
-LitAgents is a Node.js application that orchestrates autonomous AI literary agents using Google's Gemini models to manage the entire novel-writing workflow. It provides a comprehensive solution for authoring, re-editing, translating, and managing literary works through AI-driven processes. Key capabilities include orchestrating 12+ specialized AI agents, maintaining a persistent World Bible for consistency, logging AI reasoning, providing a real-time monitoring dashboard, automating refinement loops, auto-recovery from stalled generations, and advanced features for manuscript import, expansion, reordering, translation, approval, prequels, and spin-offs. The system ensures high-quality manuscript completion through robust approval logic and automatic pausing for user intervention.
+LitAgents is a Node.js application that orchestrates autonomous AI literary agents using DeepSeek V4-Flash (via OpenAI-compatible API) to manage the entire novel-writing workflow. It provides a comprehensive solution for authoring, re-editing, translating, and managing literary works through AI-driven processes. Key capabilities include orchestrating 12+ specialized AI agents, maintaining a persistent World Bible for consistency, logging AI reasoning, providing a real-time monitoring dashboard, automating refinement loops, auto-recovery from stalled generations, and advanced features for manuscript import, expansion, reordering, translation, approval, prequels, and spin-offs. The system ensures high-quality manuscript completion through robust approval logic and automatic pausing for user intervention.
 
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
+
+### v6.7 — DeepSeek V4-Flash Migration (Apr 2026)
+- **Full migration from Gemini to DeepSeek V4-Flash for all text generation agents** (no fallback). Image generation (cover designer assets) remains on Gemini via Replit AI integration since DeepSeek has no image model.
+- **`server/agents/base-agent.ts`** rewritten to use the `openai` SDK pointing at `https://api.deepseek.com`. Default model is `deepseek-v4-flash`. The agent's `useThinking` flag now maps to DeepSeek's `thinking: { type: "enabled" | "disabled" }` plus `reasoning_effort`. Reasoning tokens are extracted from `usage.completion_tokens_details.reasoning_tokens`.
+- **`server/cost-calculator.ts`** updated with DeepSeek pricing (V4-Flash: $0.14 input / $0.28 output per 1M; V4-Pro: $1.74 / $3.48). Legacy Gemini prices retained for historical events. `AGENT_MODEL_MAPPING` routes every agent to `deepseek-v4-flash`.
+- **`server/services/chatService.ts`** migrated to OpenAI client with streaming via `chat.completions.create({ stream: true, stream_options: { include_usage: true } })`.
+- **All agent files** in `server/agents/*.ts` had their hardcoded `model: "gemini-*"` replaced with `"deepseek-v4-flash"` (or `"deepseek-v4-pro"` where Pro was used). `style-guide-generator.ts` was rewritten to use the OpenAI SDK directly.
+- **5 inline AI calls in `server/routes.ts`** (spinoff guide generation, world-bible unification, title generation, milestone extraction, two assess-reedit endpoints) all migrated to OpenAI/DeepSeek.
+- **Frontend display**: `client/src/pages/dashboard.tsx` and `client/src/pages/costs.tsx` updated to show DeepSeek V4-Flash/V4-Pro labels and pricing. Cost calculation constants updated to DeepSeek rates.
+- **Database default**: `aiUsageEvents.model` default changed from `"gemini-2.5-pro"` to `"deepseek-v4-flash"` in `shared/schema.ts`.
+- **Required secret**: `DEEPSEEK_API_KEY`. `GEMINI_API_KEY` only used for image generation via Replit AI integration.
 
 ### v6.6 — Two-Step Editorial Notes Flow (Apr 2026)
 - **Multi-chapter arc support in editorial notes**: `EditorialNotesParser` now emits `plan_por_capitulo` distributing a single instruction across multiple chapters with per-chapter roles. The orchestrator injects each chapter's role and its sibling roles into the surgical rewrite prompt.
@@ -41,13 +52,13 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: Defined in `shared/schema.ts`, including tables for projects, chapters, world Bibles, thought logs, agent statuses, series, continuity snapshots, arc verifications, imported manuscripts, reedit projects, and translations.
 
 ### AI Integration
-- **Models**: Gemini 2.5 Flash (all agents — Architect, Ghostwriter, Editor, CopyEditor, FinalReviewer, Translator, validators, Chapter Expander, Restructurer, Reedit agents), Gemini 2.0 Flash (ManuscriptAnalyzer).
-- **Thinking Support**: Gemini 2.5 Flash (budget: 1024) for agents that need it (Ghostwriter, Architect, Restructurer, Chapter Expander). Thinking is OFF by default; agents must opt-in with `useThinking: true`.
-- **Token Optimization**: System prompts sent via `systemInstruction` (not as user messages). Per-agent `maxOutputTokens` limits: 65536 for writers/translators, 16384 for reviewers, 8192 for editors/analyzers, 4096 for validators/auditors. Default model is `gemini-2.5-flash` (not Pro).
+- **Models**: DeepSeek V4-Flash (all agents — Architect, Ghostwriter, Editor, CopyEditor, FinalReviewer, Translator, validators, Chapter Expander, Restructurer, Reedit agents, ManuscriptAnalyzer). Image generation (cover prompts/assets) still uses Gemini through the Replit AI integration.
+- **Thinking Support**: DeepSeek V4-Flash supports a `thinking: { type: "enabled" | "disabled" }` flag plus `reasoning_effort`. Thinking is OFF by default; agents that need it (Ghostwriter, Architect, Restructurer, Chapter Expander) opt-in with `useThinking: true`. Reasoning tokens are read from `usage.completion_tokens_details.reasoning_tokens`.
+- **Token Optimization**: System prompts sent via OpenAI `messages: [{ role: "system", ...}]`. Per-agent `max_tokens` limits: 65536 for writers/translators, 16384 for reviewers, 8192 for editors/analyzers, 4096 for validators/auditors. Default model is `deepseek-v4-flash`.
 - **Ghostwriter Quality System**: System prompt includes "Estándar de Excelencia Editorial" section targeting 9/10 on first draft, with 6 quality pillars (human-like prose, concrete sensory immersion, dialogue subtexto, emotional arc progression, hook opening/memorable close, beats as full scenes). Also includes a mandatory pre-delivery self-audit checklist (10 checkpoints matching Editor criteria).
 - **Character Name Originality System**: The Architect's system prompt includes a strict anti-name-repetition directive with a blacklist of commonly repeated AI names. The Orchestrator dynamically extracts all character names from existing World Bibles AND reedit World Bibles (excluding projects in the same series) AND all entries from the `name_blacklist` table (user-managed via UI), passing them as `forbiddenNames` to the Architect. The Ghostwriter is instructed to faithfully use only the names defined in the World Bible. The **Style Guide Generator** also receives `forbiddenNames` to avoid suggesting already-used names when generating new guides. The extraction logic lives in `extractForbiddenNames()` (exported from `server/orchestrator.ts`) and is reused in `routes.ts` for all 3 guide-generation call sites.
-- **Configuration**: `temperature: 1.0`, `topP: 0.95`.
-- **Client Setup**: `@google/genai` SDK using `GEMINI_API_KEY`.
+- **Configuration**: `temperature: 1.0`, `top_p: 0.95` (note: when `thinking` is enabled DeepSeek silently ignores temperature/top_p).
+- **Client Setup**: `openai` SDK pointed at `baseURL: "https://api.deepseek.com"` using `DEEPSEEK_API_KEY`.
 
 ### Build System
 - **Development**: `tsx` for hot reload.

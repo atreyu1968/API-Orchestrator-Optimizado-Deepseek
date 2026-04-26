@@ -82,14 +82,11 @@ interface UsageByModel {
 
 const PRICING_INFO = `Precios por modelo (por millón de tokens):
 
-gemini-2.5-flash (todos los agentes):
-  Input: $0.15/M, Output: $0.60/M, Thinking: $3.50/M
+deepseek-v4-flash (todos los agentes):
+  Input: $0.14/M, Output: $0.28/M, Thinking: $0.28/M
 
-gemini-2.0-flash (analizador):
-  Input: $0.10/M, Output: $0.40/M
-
-gemini-2.5-pro (reserva):
-  Input: $1.25/M, Output: $10.00/M, Thinking: $10.00/M
+deepseek-v4-pro (reserva):
+  Input: $1.74/M, Output: $3.48/M, Thinking: $3.48/M
 
 Los costos se calculan según el modelo usado por cada agente.`;
 
@@ -105,11 +102,15 @@ function formatCurrency(amount: number): string {
 
 function getModelBadge(model: string) {
   const colors: Record<string, "default" | "secondary" | "outline"> = {
-    "gemini-2.5-flash": "default",
-    "gemini-2.0-flash": "secondary",
+    "deepseek-v4-flash": "default",
+    "deepseek-v4-pro": "secondary",
+    "gemini-2.5-flash": "outline",
+    "gemini-2.0-flash": "outline",
     "gemini-2.5-pro": "outline",
   };
   const shortNames: Record<string, string> = {
+    "deepseek-v4-flash": "V4 Flash",
+    "deepseek-v4-pro": "V4 Pro",
     "gemini-2.5-flash": "2.5 Flash",
     "gemini-2.0-flash": "2.0 Flash",
     "gemini-2.5-pro": "2.5 Pro",

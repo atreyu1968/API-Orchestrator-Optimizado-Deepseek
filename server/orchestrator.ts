@@ -28,6 +28,7 @@ import type { TokenUsage } from "./agents/base-agent";
 import type { FinalReviewIssue } from "./agents/final-reviewer";
 import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, TimelineEvent } from "@shared/schema";
 import { ensureChapterNumbers } from "./utils/extract-chapters";
+import { calculateRealCost } from "./cost-calculator";
 
 interface OrchestratorCallbacks {
   onAgentStatus: (role: string, status: string, message?: string) => void;
@@ -269,25 +270,19 @@ export class Orchestrator {
   }
   
   private calculateTokenCosts(model: string, tokenUsage: TokenUsage): { inputCost: number; outputCost: number; totalCost: number } {
-    // Pricing per million tokens
-    const pricing: Record<string, { input: number; output: number; thinking: number }> = {
-      "gemini-2.5-flash": { input: 0.15, output: 0.60, thinking: 3.50 },
-      "gemini-2.0-flash": { input: 0.10, output: 0.40, thinking: 0 },
-      "gemini-2.5-pro": { input: 1.25, output: 10.00, thinking: 10.00 },
-      "gemini-3-flash-preview": { input: 0.50, output: 3.00, thinking: 3.50 },
-      "gemini-3.1-flash-lite-preview": { input: 0.25, output: 1.50, thinking: 1.50 },
-    };
-    
-    const modelPricing = pricing[model] || pricing["gemini-2.5-flash"];
-    
-    const inputCost = (tokenUsage.inputTokens / 1_000_000) * modelPricing.input;
-    const outputCost = (tokenUsage.outputTokens / 1_000_000) * modelPricing.output;
-    const thinkingCost = (tokenUsage.thinkingTokens / 1_000_000) * modelPricing.thinking;
-    
+    // Delegate to centralized cost calculator (single source of truth).
+    // Keep legacy behavior of bundling thinking cost into outputCost so the
+    // ai_usage_events.outputCostUsd column matches totalCost - inputCost.
+    const c = calculateRealCost(
+      model,
+      tokenUsage.inputTokens,
+      tokenUsage.outputTokens,
+      tokenUsage.thinkingTokens,
+    );
     return {
-      inputCost,
-      outputCost: outputCost + thinkingCost,
-      totalCost: inputCost + outputCost + thinkingCost,
+      inputCost: c.inputCost,
+      outputCost: c.outputCost + c.thinkingCost,
+      totalCost: c.totalCost,
     };
   }
   
@@ -843,7 +838,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             forbiddenNames,
           });
 
-          await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "gemini-2.5-flash", undefined, "world_bible");
+          await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "deepseek-v4-flash", undefined, "world_bible");
 
           if (architectResult.error || architectResult.timedOut) {
             lastArchitectError = architectResult.error || "Timeout durante la generación del World Bible";
@@ -1248,7 +1243,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             console.warn(`[Orchestrator] ⚠️ Capítulo largo: ${sectionLabel} tiene ${contentWordCount} palabras (máximo flexible: ${FLEXIBLE_MAX}). Pasando al Editor.`);
           }
           
-          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "chapter_write");
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "deepseek-v4-flash", sectionData.numero, "chapter_write");
 
           if (writerResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -1294,7 +1289,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
           });
 
-          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "chapter_edit");
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "deepseek-v4-flash", sectionData.numero, "chapter_edit");
 
           if (editorResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -1382,7 +1377,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           lexicoHistorico: this.resolveLexicoForChapter(worldBibleData, sectionData.numero),
         });
 
-        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "polish");
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "deepseek-v4-flash", sectionData.numero, "polish");
 
         if (polishResult.thoughtSignature) {
           await storage.createThoughtLog({
@@ -1912,7 +1907,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             console.warn(`[Orchestrator] ⚠️ Capítulo largo: ${sectionLabel} tiene ${contentWordCount} palabras (máximo flexible: ${FLEXIBLE_MAX}). Pasando al Editor.`);
           }
           
-          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "chapter_write");
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "deepseek-v4-flash", sectionData.numero, "chapter_write");
 
           if (writerResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -1958,7 +1953,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
           });
 
-          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "chapter_edit");
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "deepseek-v4-flash", sectionData.numero, "chapter_edit");
 
           if (editorResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -2026,7 +2021,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           lexicoHistorico: this.resolveLexicoForChapter(worldBibleData, sectionData.numero),
         });
 
-        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "polish");
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "deepseek-v4-flash", sectionData.numero, "polish");
 
         if (polishResult.thoughtSignature) {
           await storage.createThoughtLog({
@@ -2525,7 +2520,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         seriesContext: seriesContextForReview,
       });
 
-      await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "gemini-2.5-flash", undefined, "final_review");
+      await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "deepseek-v4-flash", undefined, "final_review");
 
       if (reviewResult.thoughtSignature) {
         await storage.createThoughtLog({
@@ -3556,7 +3551,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         capitulosConLimitaciones: [],
       });
 
-      await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "gemini-2.5-flash", undefined, "resolve_issues_verify");
+      await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "deepseek-v4-flash", undefined, "resolve_issues_verify");
 
       const newScore = reviewResult.result?.puntuacion_global || 0;
       const scoreForDb = newScore != null ? Math.round(newScore) : null;
@@ -3632,7 +3627,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       projectTitle: project.title,
     });
 
-    await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "gemini-2.5-flash", undefined, "editorial_parse");
+    await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "deepseek-v4-flash", undefined, "editorial_parse");
 
     const draftInstructions: EditorialInstruction[] = parseResult.result?.instrucciones || [];
     const summary = parseResult.result?.resumen_general;
@@ -3711,7 +3706,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         worldBibleContext,
       });
 
-      await this.trackTokenUsage(project.id, refineResp.tokenUsage, "Analista de Notas Editoriales", "gemini-2.5-flash", undefined, "editorial_refine");
+      await this.trackTokenUsage(project.id, refineResp.tokenUsage, "Analista de Notas Editoriales", "deepseek-v4-flash", undefined, "editorial_refine");
 
       const refined = refineResp.result?.refined || [];
       const dropped = refineResp.result?.dropped || [];
@@ -3830,7 +3825,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           projectTitle: project.title,
         });
 
-        await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "gemini-2.5-flash", undefined, "editorial_parse");
+        await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "deepseek-v4-flash", undefined, "editorial_parse");
 
         const draftInstructions = parseResult.result?.instrucciones || [];
 
@@ -4009,7 +4004,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               instructions: puntualesFormatted,
             });
 
-            await this.trackTokenUsage(project.id, patchResult.tokenUsage, "Cirujano de Texto", "gemini-2.5-flash", sectionData.numero, "surgical_patch");
+            await this.trackTokenUsage(project.id, patchResult.tokenUsage, "Cirujano de Texto", "deepseek-v4-flash", sectionData.numero, "surgical_patch");
 
             const operations = patchResult.result?.operations || [];
 
@@ -4217,7 +4212,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             seriesContext: undefined,
           });
 
-          await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "gemini-2.5-flash", undefined, "final_review");
+          await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "deepseek-v4-flash", undefined, "final_review");
 
           const newResult = reviewResult.result;
           const newScoreRaw = newResult?.puntuacion_global ?? null;
@@ -4408,7 +4403,7 @@ Responde SOLO con un JSON válido con la estructura:
         return;
       }
 
-      await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "gemini-2.5-flash", undefined, "extend_outline");
+      await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "deepseek-v4-flash", undefined, "extend_outline");
 
       // Parse the new chapter outlines
       let newChapterOutlines: any[] = [];
@@ -4549,7 +4544,7 @@ Responde SOLO con un JSON válido con la estructura:
           
           const contentWordCount = currentContent.split(/\s+/).filter((w: string) => w.length > 0).length;
           
-          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "extend_write");
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "deepseek-v4-flash", sectionData.numero, "extend_write");
 
           // Editor review
           this.callbacks.onAgentStatus("editor", "reviewing", `El Editor está revisando ${sectionLabel}...`);
@@ -4567,7 +4562,7 @@ Responde SOLO con un JSON válido con la estructura:
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(extEditorChaptersCtx, sectionData.numero),
           });
 
-          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "extend_edit");
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "deepseek-v4-flash", sectionData.numero, "extend_edit");
 
           if (editorResult.result) {
             const score = editorResult.result.puntuacion || 0;
@@ -4864,7 +4859,7 @@ Responde SOLO con un JSON válido con la estructura:
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
-          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", chapter.chapterNumber, "chapter_regenerate");
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "deepseek-v4-flash", chapter.chapterNumber, "chapter_regenerate");
 
           const { cleanContent } = this.ghostwriter.extractContinuityState(writerResult.content);
           const wordCount = cleanContent.split(/\s+/).filter((w: string) => w.length > 0).length;
@@ -6128,7 +6123,7 @@ Responde SOLO con un JSON válido con la estructura:
           capitulosConLimitaciones: [],
         });
 
-        await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "gemini-2.5-flash", undefined, "post_audit_verify");
+        await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "deepseek-v4-flash", undefined, "post_audit_verify");
 
         const score = reviewResult.result?.puntuacion_global || 0;
         scores.push(score);
@@ -6220,7 +6215,7 @@ Responde SOLO con un JSON válido con la estructura:
             projectId: project.id,
           });
 
-          await this.trackTokenUsage(project.id, result.tokenUsage, "Corrector Ortotipográfico", "gemini-2.5-flash", chapter.chapterNumber, "orthotypographic");
+          await this.trackTokenUsage(project.id, result.tokenUsage, "Corrector Ortotipográfico", "deepseek-v4-flash", chapter.chapterNumber, "orthotypographic");
 
           if (result.result && result.result.textoCorregido && result.result.textoCorregido.length > 100) {
             const changes = result.result.totalCambios || 0;
@@ -6640,7 +6635,7 @@ Responde SOLO con un JSON válido con la estructura:
       return { passed: false, issues: [`[MAYOR] Error en checkpoint: ${errorMsg}`], chaptersToRevise: [] };
     }
 
-    await this.trackTokenUsage(project.id, result.tokenUsage, "El Centinela", "gemini-2.5-flash", undefined, "continuity_check");
+    await this.trackTokenUsage(project.id, result.tokenUsage, "El Centinela", "deepseek-v4-flash", undefined, "continuity_check");
 
     if (result.thoughtSignature) {
       await storage.createThoughtLog({
@@ -6771,7 +6766,7 @@ Responde SOLO con un JSON válido con la estructura:
       guiaEstilo: styleGuideContent || undefined,
     });
 
-    await this.trackTokenUsage(project.id, result.tokenUsage, "El Auditor de Voz", "gemini-2.5-flash", undefined, "voice_audit");
+    await this.trackTokenUsage(project.id, result.tokenUsage, "El Auditor de Voz", "deepseek-v4-flash", undefined, "voice_audit");
 
     if (result.thoughtSignature) {
       await storage.createThoughtLog({
@@ -6830,7 +6825,7 @@ Responde SOLO con un JSON válido con la estructura:
       worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
     });
 
-    await this.trackTokenUsage(project.id, result.tokenUsage, "El Detector Semántico", "gemini-2.5-flash", undefined, "semantic_analysis");
+    await this.trackTokenUsage(project.id, result.tokenUsage, "El Detector Semántico", "deepseek-v4-flash", undefined, "semantic_analysis");
 
     if (result.thoughtSignature) {
       await storage.createThoughtLog({
@@ -7045,7 +7040,7 @@ Responde SOLO con un JSON válido con la estructura:
         worldBibleContext: worldBibleContextForPatcher,
       });
 
-      await this.trackTokenUsage(project.id, patchResult.tokenUsage, "Cirujano de Texto", "gemini-2.5-flash", sectionData.numero, `qa_surgical_${qaSource}`);
+      await this.trackTokenUsage(project.id, patchResult.tokenUsage, "Cirujano de Texto", "deepseek-v4-flash", sectionData.numero, `qa_surgical_${qaSource}`);
 
       const operations = patchResult.result?.operations || [];
 
@@ -7254,7 +7249,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       surgicalEdit: true,
     } as any);
 
-    await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite");
+    await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "deepseek-v4-flash", sectionData.numero, "qa_rewrite");
 
     // Primera red (permisiva): aceptamos cualquier cosa dentro del rango permitido con 5% de holgura.
     const firstTryLower = Math.round(surgicalMin * 0.95);
@@ -7285,7 +7280,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         kindleUnlimitedOptimized: false,
         surgicalEdit: true,
       } as any);
-      await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-flash-preview", sectionData.numero, "qa_rewrite_retry");
+      await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "deepseek-v4-flash", sectionData.numero, "qa_rewrite_retry");
     }
 
     if (!writerResult.content || !writerResult.content.trim()) {
@@ -7344,7 +7339,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         previousContinuityState: previousChapter?.continuityState as any,
         previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
       });
-      await this.trackTokenUsage(project.id, verifyResult.tokenUsage, "El Editor", "gemini-2.5-flash", sectionData.numero, "qa_verify");
+      await this.trackTokenUsage(project.id, verifyResult.tokenUsage, "El Editor", "deepseek-v4-flash", sectionData.numero, "qa_verify");
 
       editorScoreCandidate = verifyResult.result?.puntuacion || 0;
       editorHardRejectCandidate = this.hasHardRejectViolations(verifyResult.result);
@@ -7391,7 +7386,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         lexicoHistorico: this.resolveLexicoForChapter(worldBibleData, sectionData.numero),
       });
 
-      await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-2.5-flash", sectionData.numero, "qa_polish");
+      await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "deepseek-v4-flash", sectionData.numero, "qa_polish");
 
       if (polishResult.result?.texto_final && polishResult.result.texto_final.trim().length > 0) {
         const polishedWc = polishResult.result.texto_final.split(/\s+/).filter((w: string) => w.length > 0).length;
@@ -7545,7 +7540,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         worldBibleJson: JSON.stringify(wbSnapshot, null, 2).slice(0, 40000),
         concordance: concordanceLines.join("\n"),
       });
-      await this.trackTokenUsage(project.id, response.tokenUsage, "Árbitro del World Bible", "gemini-2.5-flash", sectionData.numero, "wb_arbitration");
+      await this.trackTokenUsage(project.id, response.tokenUsage, "Árbitro del World Bible", "deepseek-v4-flash", sectionData.numero, "wb_arbitration");
       arbiterResult = response.result;
     } catch (err) {
       console.warn(`[WBArbiter] Error en cap ${sectionData.numero}:`, err);
@@ -7852,7 +7847,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       lexicoHistorico,
     });
 
-    await this.trackTokenUsage(project.id, copyEditResult.tokenUsage, "El Estilista", "gemini-2.5-flash", chapter.chapterNumber, "voice_polish");
+    await this.trackTokenUsage(project.id, copyEditResult.tokenUsage, "El Estilista", "deepseek-v4-flash", chapter.chapterNumber, "voice_polish");
 
     const polishedContent = copyEditResult.result?.texto_final;
     if (polishedContent) {

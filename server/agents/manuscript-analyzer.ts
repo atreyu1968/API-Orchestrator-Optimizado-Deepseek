@@ -82,7 +82,7 @@ Responde SIEMPRE en formato JSON válido con esta estructura exacta:
   "keyEvents": [...],
   "seriesHooks": [...]
 }`,
-      model: "gemini-2.0-flash",
+      model: "deepseek-v4-flash",
       useThinking: false,
       maxOutputTokens: 8192,
     });

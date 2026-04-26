@@ -1,6 +1,6 @@
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
 
 interface GenerateGuideParams {
   guideType: "author_style" | "idea_writing" | "pseudonym_style" | "series_writing";
@@ -434,21 +434,21 @@ Si necesitas sugerir nombres de personajes, inventa nombres COMPLETAMENTE NUEVOS
       break;
   }
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [{ role: "user", parts: [{ text: userMessage }] }],
-    config: {
-      systemInstruction: systemPrompt,
-      temperature: 1.0,
-      topP: 0.95,
-      maxOutputTokens: 32768,
-      thinkingConfig: { thinkingBudget: 1024 },
-    },
+  const response = await ai.chat.completions.create({
+    model: "deepseek-v4-flash",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    temperature: 1.0,
+    top_p: 0.95,
+    max_tokens: 32768,
+    ...({ thinking: { type: "disabled" } } as any),
   });
 
-  const text = response.text || "";
-  const inputTokens = (response as any).usageMetadata?.promptTokenCount || 0;
-  const outputTokens = (response as any).usageMetadata?.candidatesTokenCount || 0;
+  const text = response.choices?.[0]?.message?.content || "";
+  const inputTokens = response.usage?.prompt_tokens || 0;
+  const outputTokens = response.usage?.completion_tokens || 0;
 
   let title = "";
   switch (params.guideType) {

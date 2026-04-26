@@ -88,7 +88,7 @@ RESPONDE SOLO EN JSON:
   "dialogueQuality": "Evaluación de la calidad y naturalidad de los diálogos",
   "styleConsistency": "¿Mantiene el estilo consistente con el resto del manuscrito?"
 }`,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       maxOutputTokens: 8192,
     });
@@ -208,7 +208,7 @@ RESPONDE SOLO EN JSON:
   "changesLog": "Resumen de los cambios realizados",
   "fluencyChanges": [{"before": "texto original", "after": "texto mejorado", "reason": "razón del cambio"}]
 }`,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       maxOutputTokens: 65536,
     });
@@ -563,7 +563,7 @@ RESPONDE SOLO EN JSON:
   "resumen": "Resumen de la precisión histórica",
   "puntuacionHistorica": 8
 }`,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: false,
       maxOutputTokens: 4096,
     });
@@ -651,7 +651,7 @@ RESPONDE SOLO EN JSON:
   },
   "confianza": 8
 }`,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: false,
       maxOutputTokens: 16384,
     });
@@ -839,7 +839,7 @@ RESPONDE SOLO EN JSON:
   "resumenEjecutivo": "Análisis arquitectónico completado...",
   "puntuacionArquitectura": 10
 }`,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: false,
       maxOutputTokens: 16384,
     });
@@ -942,7 +942,7 @@ RESPONDE SOLO EN JSON:
   "resumenCambios": "Resumen ejecutivo de los cambios realizados",
   "confianzaCorreccion": 8
 }`,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       maxOutputTokens: 65536,
     });
@@ -1144,7 +1144,7 @@ FORMATO DE RESPUESTA (JSON):
   },
   "resumenEjecutivo": "Descripción concisa de todas las correcciones realizadas"
 }`,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: true,
       maxOutputTokens: 65536,
     });
@@ -1361,7 +1361,7 @@ RESPONDE ÚNICAMENTE CON JSON EN ESPAÑOL:
   "marketPotential": "alto",
   "recommendations": ["Apretar el segundo acto", "Fortalecer el final"]
 }`,
-      model: "gemini-2.5-flash",
+      model: "deepseek-v4-flash",
       useThinking: false,
       maxOutputTokens: 8192,
     });

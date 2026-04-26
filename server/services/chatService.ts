@@ -1,9 +1,10 @@
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import { storage } from "../storage";
 import type { ChatSession, ChatMessage, Project, ReeditProject, ReeditChapter, Chapter, WorldBible, ReeditWorldBible } from "@shared/schema";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+const ai = new OpenAI({
+  apiKey: process.env.DEEPSEEK_API_KEY,
+  baseURL: "https://api.deepseek.com",
 });
 
 const ARCHITECT_SYSTEM_PROMPT = `
@@ -545,38 +546,42 @@ ${truncatedContent}
       : REEDITOR_SYSTEM_PROMPT;
 
     const conversationHistory = context.recentMessages.slice(-10).map(msg => ({
-      role: msg.role as "user" | "model",
-      parts: [{ text: msg.content }]
+      role: (msg.role === "model" ? "assistant" : msg.role) as "user" | "assistant",
+      content: msg.content,
     }));
 
-    conversationHistory.push({
-      role: "user",
-      parts: [{ text: userMessage }]
-    });
+    const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+      { role: "system", content: `${systemPrompt}\n\n${contextPrompt}` },
+      ...conversationHistory,
+      { role: "user", content: userMessage },
+    ];
 
     let fullResponse = "";
     let inputTokens = 0;
     let outputTokens = 0;
 
     try {
-      const response = await ai.models.generateContentStream({
-        model: "gemini-2.5-flash",
-        contents: conversationHistory,
-        config: {
-          systemInstruction: `${systemPrompt}\n\n${contextPrompt}`,
-          temperature: 0.7,
-        }
+      const stream = await ai.chat.completions.create({
+        model: "deepseek-v4-flash",
+        messages,
+        temperature: 0.7,
+        stream: true,
+        stream_options: { include_usage: true },
+        // DeepSeek-specific: keep thinking off for chat to minimize latency.
+        ...({ thinking: { type: "disabled" } } as any),
       });
 
-      for await (const chunk of response) {
-        const text = chunk.text || "";
-        fullResponse += text;
-        if (onProgress) {
-          onProgress(text);
+      for await (const chunk of stream) {
+        const text = chunk.choices?.[0]?.delta?.content || "";
+        if (text) {
+          fullResponse += text;
+          if (onProgress) {
+            onProgress(text);
+          }
         }
-        if (chunk.usageMetadata) {
-          inputTokens = chunk.usageMetadata.promptTokenCount || 0;
-          outputTokens = chunk.usageMetadata.candidatesTokenCount || 0;
+        if (chunk.usage) {
+          inputTokens = chunk.usage.prompt_tokens || 0;
+          outputTokens = chunk.usage.completion_tokens || 0;
         }
       }
 
