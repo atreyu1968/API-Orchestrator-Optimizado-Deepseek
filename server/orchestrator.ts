@@ -3491,6 +3491,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       let resolvedCount = 0;
 
       for (let i = 0; i < sortedChapters.length; i++) {
+        if (this.aborted) {
+          console.log(`[ResolveIssues] Aborted before chapter ${sortedChapters[i]} (project ${project.id}). Exiting silently.`);
+          return { resolvedCount: 0, totalChanges: 0 } as any;
+        }
         const chapterNum = sortedChapters[i];
         const chapter = allChapters.find(c => c.chapterNumber === chapterNum);
         const sectionData = allSections.find(s => s.numero === chapterNum);
@@ -3958,6 +3962,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const previousFinalScore = project.finalScore ?? null;
 
       for (let i = 0; i < sortedChapters.length; i++) {
+        if (this.aborted) {
+          console.log(`[ApplyEditorialNotes] Aborted after processing ${i}/${sortedChapters.length} chapters (project ${project.id}). Exiting silently.`);
+          return;
+        }
         // Cancellation check between chapters — allows the user to abort mid-process.
         if (await isProjectCancelledFromDb(project.id)) {
           await storage.createActivityLog({
@@ -6260,6 +6268,10 @@ Responde SOLO con un JSON válido con la estructura:
       let chaptersProcessed = 0;
 
       for (let i = 0; i < completedChapters.length; i++) {
+        if (this.aborted) {
+          console.log(`[Orthotypographic] Aborted after ${chaptersProcessed}/${completedChapters.length} chapters (project ${project.id}). Exiting silently.`);
+          return;
+        }
         const chapter = completedChapters[i];
 
         if (await isProjectCancelledFromDb(project.id)) {

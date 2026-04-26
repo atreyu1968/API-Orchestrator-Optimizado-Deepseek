@@ -113,6 +113,13 @@ export class QueueManager {
         
         // Free queue and stop heartbeat. Reset memory counter so next project starts fresh.
         await storage.updateQueueState({ currentProjectId: null });
+        if (this.currentOrchestrator) {
+          try {
+            this.currentOrchestrator.abort(`heartbeat auto-recovery cap reached for project ${projectId}`);
+          } catch (e) {
+            console.error("[QueueManager] Error aborting orphan orchestrator (heartbeat cap):", e);
+          }
+        }
         this.currentOrchestrator = null;
         this.currentProjectId = null;
         this.autoRecoveryCount = 0;
@@ -354,6 +361,13 @@ export class QueueManager {
                 const state = await storage.getQueueState();
                 if (state?.currentProjectId === project.id) {
                   await storage.updateQueueState({ currentProjectId: null });
+                  if (this.currentOrchestrator) {
+                    try {
+                      this.currentOrchestrator.abort(`global frozen monitor: cap reached for project ${project.id}`);
+                    } catch (e) {
+                      console.error("[QueueManager] Error aborting orphan orchestrator (cap path):", e);
+                    }
+                  }
                   this.currentOrchestrator = null;
                   this.currentProjectId = null;
                 }
@@ -379,6 +393,13 @@ export class QueueManager {
             const state = await storage.getQueueState();
             if (state?.currentProjectId === project.id) {
               await storage.updateQueueState({ currentProjectId: null });
+              if (this.currentOrchestrator) {
+                try {
+                  this.currentOrchestrator.abort(`global frozen monitor: ${Math.round(timeSinceActivity / 60000)} min sin actividad para project ${project.id}`);
+                } catch (e) {
+                  console.error("[QueueManager] Error aborting orphan orchestrator (frozen path):", e);
+                }
+              }
               this.currentOrchestrator = null;
               this.currentProjectId = null;
             }
@@ -419,6 +440,16 @@ export class QueueManager {
             this.isPaused = false;
             this.processingLock = false;
             this.currentProjectId = null;
+            // Belt-and-suspenders: if a different orchestrator instance is still
+            // referenced here (race with the abort above), tell it too. abort()
+            // is idempotent so calling twice is safe.
+            if (this.currentOrchestrator) {
+              try {
+                this.currentOrchestrator.abort(`global frozen monitor: force reset for project ${project.id}`);
+              } catch (e) {
+                console.error("[QueueManager] Error aborting orphan orchestrator (force-reset path):", e);
+              }
+            }
             this.currentOrchestrator = null;
             
             // Also ensure DB state is fully cleared
@@ -545,6 +576,13 @@ export class QueueManager {
     }
     
     this.currentProjectId = null;
+    if (this.currentOrchestrator) {
+      try {
+        this.currentOrchestrator.abort("queue stopped by user");
+      } catch (e) {
+        console.error("[QueueManager] Error aborting orchestrator on stop():", e);
+      }
+    }
     this.currentOrchestrator = null;
     
     await storage.updateQueueState({ status: "stopped", currentProjectId: null });
@@ -891,6 +929,13 @@ export class QueueManager {
     this.processingLock = false;
     this.currentProjectId = null;
     this.pendingRetryProjectId = null;
+    if (this.currentOrchestrator) {
+      try {
+        this.currentOrchestrator.abort(`forceUnlock for project ${lockedProjectId}`);
+      } catch (e) {
+        console.error("[QueueManager] Error aborting orchestrator on forceUnlock:", e);
+      }
+    }
     this.currentOrchestrator = null;
     this.stopHeartbeatMonitor();
     
