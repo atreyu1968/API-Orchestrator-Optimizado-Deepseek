@@ -45,7 +45,7 @@ Preferred communication style: Simple, everyday language.
 - **Runtime**: Node.js with Express.
 - **Language**: TypeScript (ES modules).
 - **API Pattern**: RESTful endpoints with Server-Sent Events (SSE).
-- **Agent System**: Modular agent classes (inheriting from `BaseAgent`) with specialized system prompts for Gemini 3. An orchestrator manages the pipeline, including refinement loops triggered by the Editor agent.
+- **Agent System**: Modular agent classes (inheriting from `BaseAgent`) with specialized system prompts for DeepSeek V4-Flash. An orchestrator manages the pipeline, including refinement loops triggered by the Editor agent.
 
 ### Data Storage
 - **Database**: PostgreSQL with Drizzle ORM.
@@ -148,7 +148,7 @@ Preferred communication style: Simple, everyday language.
 - **Automatic Pause & Approval**: System pauses for user input after 5 non-perfect evaluations (applies to both `processProject` and `runFinalReviewOnly`). Requires two consecutive 9+/10 scores with no issues for approval. Editor approval threshold: 9/10 (chapters scoring below 9 are sent back for rewriting). Final Reviewer auto-approval on plateau/cycle-limit also requires 9+. All pause/exit paths persist complete state (revisionCycle, consecutiveHighScores, nonPerfectCount, previousScores, tokens) for reliable resume.
 - **Score Regression Detection**: Before applying corrections, chapter content is snapshotted. If the score drops by 2+ points after corrections (e.g. from 9 to 6), the system auto-reverts the chapters to pre-correction state and pauses for user instructions, preventing quality degradation.
 - **Chapter Number Extraction**: `server/utils/extract-chapters.ts` provides `ensureChapterNumbers()` which extracts chapter numbers from issue descriptions when the AI omits `capitulos_afectados`. Applied in all 3 orchestrator correction paths (main, reedit, FRO). Final Reviewer prompt reinforced to always include `capitulos_afectados`.
-- **JSON Repair**: All AI agents use `server/utils/json-repair.ts` to parse JSON responses from Gemini, handling truncated JSON, missing commas, unclosed strings/brackets automatically.
+- **JSON Repair**: All AI agents use `server/utils/json-repair.ts` to parse JSON responses from the LLM, handling truncated JSON, missing commas, unclosed strings/brackets automatically.
 - **Reedit Assessment**: Before starting a re-edit, users can run `/api/projects/:id/assess-reedit` to get an AI-powered quality assessment (samples 5 chapters, evaluates prose/structure/characters/dialogue/pacing/coherence). Returns "reedit" or "rewrite" recommendation with per-category scores. Has 60s per-project cooldown. Frontend shows results in the auto-reedit dialog with a warning gate when "rewrite" is recommended.
 - **Issue Tracking**: Issue hash tracking prevents re-reporting of resolved issues.
 - **Enhanced Cancellation & Resume**: Immediate process cancellation and optimized project resumption from `awaiting_instructions`. All three orchestrator methods (`processProject`, `runFinalReviewOnly`, `applyReviewerCorrections`) have full try/catch error handling with status/token persistence on failure.

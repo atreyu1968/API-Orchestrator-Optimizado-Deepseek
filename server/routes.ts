@@ -14,6 +14,7 @@ import { z } from "zod";
 import { CopyEditorAgent, cancelProject, ItalianReviewerAgent } from "./agents";
 import { ReeditOrchestrator } from "./orchestrators/reedit-orchestrator";
 import { chatService } from "./services/chatService";
+import { calculateRealCost } from "./cost-calculator";
 
 const workTypeEnum = z.enum(["standalone", "series", "trilogy"]);
 
@@ -11968,15 +11969,10 @@ CRITERIOS:
   return httpServer;
 }
 
-// Gemini 2.5 Flash pricing (per million tokens)
+// DeepSeek V4-Flash pricing via centralized cost calculator.
+// Delegates to calculateRealCost so any future pricing/model changes
+// only need to be updated in server/cost-calculator.ts.
 function calculateProjectCost(inputTokens: number, outputTokens: number, thinkingTokens: number): number {
-  const INPUT_COST_PER_MILLION = 0.15;
-  const OUTPUT_COST_PER_MILLION = 0.60;
-  const THINKING_COST_PER_MILLION = 3.50;
-  
-  const inputCost = (inputTokens / 1_000_000) * INPUT_COST_PER_MILLION;
-  const outputCost = (outputTokens / 1_000_000) * OUTPUT_COST_PER_MILLION;
-  const thinkingCost = (thinkingTokens / 1_000_000) * THINKING_COST_PER_MILLION;
-  
-  return Math.round((inputCost + outputCost + thinkingCost) * 10000) / 10000;
+  const { totalCost } = calculateRealCost("deepseek-v4-flash", inputTokens, outputTokens, thinkingTokens);
+  return Math.round(totalCost * 10000) / 10000;
 }

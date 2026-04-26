@@ -1,9 +1,10 @@
 import type { Express, Request, Response } from "express";
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import { chatStorage } from "./storage";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+const ai = new OpenAI({
+  apiKey: process.env.DEEPSEEK_API_KEY,
+  baseURL: "https://api.deepseek.com",
 });
 
 export function registerChatRoutes(app: Express): void {
@@ -70,8 +71,8 @@ export function registerChatRoutes(app: Express): void {
       // Get conversation history for context
       const messages = await chatStorage.getMessagesByConversation(conversationId);
       const chatMessages = messages.map((m) => ({
-        role: m.role as "user" | "model",
-        parts: [{ text: m.content }],
+        role: (m.role === "model" || m.role === "assistant" ? "assistant" : "user") as "assistant" | "user",
+        content: m.content,
       }));
 
       // Set up SSE
@@ -79,19 +80,21 @@ export function registerChatRoutes(app: Express): void {
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      // Stream response from Gemini
-      const stream = await ai.models.generateContentStream({
-        model: "gemini-2.5-flash",
-        contents: chatMessages,
-      });
+      // Stream response from DeepSeek (OpenAI-compatible)
+      const stream = await ai.chat.completions.create({
+        model: "deepseek-v4-flash",
+        messages: chatMessages,
+        stream: true,
+        thinking: { type: "disabled" },
+      } as any);
 
       let fullResponse = "";
 
-      for await (const chunk of stream) {
-        const content = chunk.text || "";
-        if (content) {
-          fullResponse += content;
-          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+      for await (const chunk of stream as any) {
+        const delta = chunk?.choices?.[0]?.delta?.content || "";
+        if (delta) {
+          fullResponse += delta;
+          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
         }
       }
 
@@ -112,4 +115,3 @@ export function registerChatRoutes(app: Express): void {
     }
   });
 }
-

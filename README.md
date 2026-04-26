@@ -1,8 +1,17 @@
-# LitAgents v6.6 — Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v6.7 — Sistema de Orquestacion de Agentes Literarios IA
 
-Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando Google Gemini.
+Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando **DeepSeek V4** (texto) y **Google Gemini** (solo imagenes).
 
 **PWA instalable** — se puede instalar en escritorio y movil directamente desde el navegador.
+
+## Novedades v6.7 — Migracion a DeepSeek V4
+
+- **Backend de IA migrado a DeepSeek V4-Flash**: Todos los agentes literarios (Arquitecto, Ghostwriter, Editor, Corrector, Revisor Final, Centinela, Auditores, Re-editores, Adaptadores, Generador de Guias, Generador de Metadatos KDP, Disenador de Portadas, etc.) ahora usan DeepSeek V4-Flash via API compatible con OpenAI.
+- **Reduccion de costos ~5x**: De $0.30/$2.50 por millon (Gemini 2.5 Flash) a $0.14/$0.28 por millon (DeepSeek V4-Flash). El thinking ya no se factura aparte.
+- **Migracion completa, sin fallback**: El sistema usa DeepSeek directamente, sin enrutado dual ni dependencia residual del SDK de Gemini para texto.
+- **Generacion de imagenes mantiene Gemini**: La generacion de portadas e imagenes sigue usando Gemini (DeepSeek no expone modelo de imagen). Configura `GEMINI_API_KEY` solo si necesitas portadas IA.
+- **Pricing y badges actualizados**: Dashboard y pagina de costos muestran los nuevos precios y badges de DeepSeek.
+- **Cost tracking unificado**: Todos los eventos de uso de IA (`ai_usage_events`) usan el calculador centralizado de costos con la tabla de precios de DeepSeek como unica fuente de verdad.
 
 ## Novedades v6.6 — Notas Editoriales en Dos Pasos
 
@@ -42,73 +51,76 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 ### Generador de Novelas
 | Agente | Modelo | Tokens Max | Funcion |
 |--------|--------|------------|---------|
-| Arquitecto Global | Gemini 2.5 Flash | 65536 | Planificacion de estructura narrativa y World Bible (thinking: 8K) |
-| Ghostwriter | Gemini 3 Flash | 65536 | Escritura creativa de capitulos completos (thinking: 16K) |
-| Editor | Gemini 2.5 Flash | 8192 | Evaluacion de calidad y plan quirurgico de correcciones (thinking: 4K) |
-| Corrector (Copyeditor) | Gemini 2.5 Flash | 65536 | Reescritura y correccion de capitulos rechazados (thinking: 8K) |
-| Revisor Final | Gemini 2.5 Flash | 16384 | Evaluacion completa del manuscrito con auditoria forense (thinking: 4K) |
-| Centinela de Continuidad | Gemini 2.5 Flash | 4096 | Validacion de consistencia post-escritura |
-| Auditor de Voz y Ritmo | Gemini 2.5 Flash | 4096 | Deteccion de problemas de ritmo narrativo |
-| Detector de Repeticiones | Gemini 2.5 Flash | 4096 | Deteccion de repeticiones semanticas y lexicas |
-| Validador de Arcos | Gemini 2.5 Flash | 4096 | Verificacion de arcos narrativos de personajes |
+| Arquitecto Global | DeepSeek V4-Flash | 65536 | Planificacion de estructura narrativa y World Bible (thinking: 8K) |
+| Ghostwriter | DeepSeek V4-Flash | 65536 | Escritura creativa de capitulos completos (thinking: 16K) |
+| Editor | DeepSeek V4-Flash | 8192 | Evaluacion de calidad y plan quirurgico de correcciones (thinking: 4K) |
+| Corrector (Copyeditor) | DeepSeek V4-Flash | 65536 | Reescritura y correccion de capitulos rechazados (thinking: 8K) |
+| Revisor Final | DeepSeek V4-Flash | 16384 | Evaluacion completa del manuscrito con auditoria forense (thinking: 4K) |
+| Centinela de Continuidad | DeepSeek V4-Flash | 4096 | Validacion de consistencia post-escritura |
+| Auditor de Voz y Ritmo | DeepSeek V4-Flash | 4096 | Deteccion de problemas de ritmo narrativo |
+| Detector de Repeticiones | DeepSeek V4-Flash | 4096 | Deteccion de repeticiones semanticas y lexicas |
+| Validador de Arcos | DeepSeek V4-Flash | 4096 | Verificacion de arcos narrativos de personajes |
 
 ### Expansion y Reestructuracion
 | Agente | Modelo | Tokens Max | Funcion |
 |--------|--------|------------|---------|
-| Analizador de Expansion | Gemini 2.5 Flash | 8192 | Identifica capitulos cortos y gaps narrativos |
-| Expansor de Capitulos | Gemini 2.5 Flash | 65536 | Expande capitulos cortos manteniendo coherencia |
-| Generador de Capitulos Nuevos | Gemini 2.5 Flash | 65536 | Inserta capitulos nuevos para llenar gaps |
-| Reestructurador | Gemini 2.5 Flash | 8192 | Reordena capitulos para mejor pacing |
+| Analizador de Expansion | DeepSeek V4-Flash | 8192 | Identifica capitulos cortos y gaps narrativos |
+| Expansor de Capitulos | DeepSeek V4-Flash | 65536 | Expande capitulos cortos manteniendo coherencia |
+| Generador de Capitulos Nuevos | DeepSeek V4-Flash | 65536 | Inserta capitulos nuevos para llenar gaps |
+| Reestructurador | DeepSeek V4-Flash | 8192 | Reordena capitulos para mejor pacing |
 
 ### Re-editor (LitEditors)
 | Agente | Modelo | Tokens Max | Funcion |
 |--------|--------|------------|---------|
-| Analizador de Manuscritos | Gemini 2.0 Flash | — | Extraccion y analisis de manuscritos importados |
-| Editor de Re-edicion | Gemini 2.5 Flash | 8192 | Revision profunda con analisis de 7 categorias |
-| Corrector de Re-edicion | Gemini 2.5 Flash | 65536 | Correccion con World Bible y contexto adyacente |
-| Centinela de Continuidad | Gemini 2.5 Flash | 4096 | Auditoria de continuidad multi-capitulo |
-| Auditor de Voz y Ritmo | Gemini 2.5 Flash | 4096 | Analisis de ritmo y pacing |
-| Detector de Repeticiones | Gemini 2.5 Flash | 4096 | Deteccion de repeticiones semanticas |
-| Detector de Anacronismos | Gemini 2.5 Flash | 4096 | Verificacion de precision historica |
-| Extractor de World Bible | Gemini 2.5 Flash | 16384 | Extraccion automatica de Bible desde manuscrito |
-| Analizador Arquitectonico | Gemini 2.5 Flash | 16384 | Analisis estructural del manuscrito |
-| Corrector Estructural | Gemini 2.5 Flash | 65536 | Correccion de problemas estructurales (con thinking) |
-| Reescritor Narrativo | Gemini 2.5 Flash | 65536 | Reescritura completa de capitulos (con thinking) |
-| Revisor Final | Gemini 2.5 Flash | 8192 | Evaluacion forense de consistencia |
+| Analizador de Manuscritos | DeepSeek V4-Flash | — | Extraccion y analisis de manuscritos importados |
+| Editor de Re-edicion | DeepSeek V4-Flash | 8192 | Revision profunda con analisis de 7 categorias |
+| Corrector de Re-edicion | DeepSeek V4-Flash | 65536 | Correccion con World Bible y contexto adyacente |
+| Centinela de Continuidad | DeepSeek V4-Flash | 4096 | Auditoria de continuidad multi-capitulo |
+| Auditor de Voz y Ritmo | DeepSeek V4-Flash | 4096 | Analisis de ritmo y pacing |
+| Detector de Repeticiones | DeepSeek V4-Flash | 4096 | Deteccion de repeticiones semanticas |
+| Detector de Anacronismos | DeepSeek V4-Flash | 4096 | Verificacion de precision historica |
+| Extractor de World Bible | DeepSeek V4-Flash | 16384 | Extraccion automatica de Bible desde manuscrito |
+| Analizador Arquitectonico | DeepSeek V4-Flash | 16384 | Analisis estructural del manuscrito |
+| Corrector Estructural | DeepSeek V4-Flash | 65536 | Correccion de problemas estructurales (con thinking) |
+| Reescritor Narrativo | DeepSeek V4-Flash | 65536 | Reescritura completa de capitulos (con thinking) |
+| Revisor Final | DeepSeek V4-Flash | 8192 | Evaluacion forense de consistencia |
 
 ### Post-produccion
 | Agente | Modelo | Tokens Max | Funcion |
 |--------|--------|------------|---------|
-| Corrector Ortotipografico | Gemini 2.5 Flash | 65536 | Correccion profesional adaptada a genero/autor, detecta glitches IA (thinking: 4K) |
+| Corrector Ortotipografico | DeepSeek V4-Flash | 65536 | Correccion profesional adaptada a genero/autor, detecta glitches IA (thinking: 4K) |
 
 ### Adaptacion Literaria Profesional (LitTranslators)
 | Agente | Modelo | Tokens Max | Funcion |
 |--------|--------|------------|---------|
-| Adaptador Literario | Gemini 2.5 Flash | 65536 | Recreacion literaria profesional lista para publicacion |
-| Revisor Nativo | Gemini 2.5 Flash | 65536 | Revision como hablante nativo del idioma destino |
+| Adaptador Literario | DeepSeek V4-Flash | 65536 | Recreacion literaria profesional lista para publicacion |
+| Revisor Nativo | DeepSeek V4-Flash | 65536 | Revision como hablante nativo del idioma destino |
 
 ### Taller de Guias
 | Agente | Modelo | Tokens Max | Funcion |
 |--------|--------|------------|---------|
-| Generador de Guias | Gemini 2.5 Flash | 32768 | Generacion de guias de estilo y escritura (con thinking) |
+| Generador de Guias | DeepSeek V4-Flash | 32768 | Generacion de guias de estilo y escritura (con thinking) |
 
 ### Herramientas de Publicacion
 | Agente | Modelo | Tokens Max | Funcion |
 |--------|--------|------------|---------|
-| Generador de Metadatos KDP | Gemini 2.5 Flash | 16384 | Metadata Amazon KDP (descripcion, keywords, BISAC) |
-| Disenador de Portadas | Gemini 2.5 Flash | 16384 | Prompts optimizados para generacion de portadas IA |
+| Generador de Metadatos KDP | DeepSeek V4-Flash | 16384 | Metadata Amazon KDP (descripcion, keywords, BISAC) |
+| Disenador de Portadas | DeepSeek V4-Flash | 16384 | Prompts optimizados para generacion de portadas IA |
+| Generacion de Imagenes | Google Gemini | — | Renderizado real de portadas e imagenes (unico agente que sigue en Gemini) |
 
 ## Distribucion de Modelos y Costos
 
-Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando costos sin sacrificar calidad.
+Todos los agentes de texto usan **DeepSeek V4-Flash** como modelo principal via API compatible con OpenAI, optimizando costos sin sacrificar calidad. La generacion de imagenes (portadas) sigue en **Google Gemini** porque DeepSeek no ofrece modelo de imagen.
 
 | Modelo | Uso | Input/M | Output/M | Thinking/M |
 |--------|-----|---------|----------|------------|
-| Gemini 2.5 Flash | Todos los agentes | $0.30 | $2.50 | $3.50 |
-| Gemini 2.0 Flash | Analizador de manuscritos | $0.10 | $0.40 | — |
+| DeepSeek V4-Flash | Todos los agentes de texto | $0.14 | $0.28 | $0.28 |
+| Google Gemini (imagen) | Generacion de portadas e imagenes | — | — | — |
+
+**Reduccion de costos vs Gemini 2.5 Flash**: input ~2.1x mas barato, output ~9x mas barato, thinking ~12.5x mas barato.
 
 ### Optimizacion de Tokens
-- **System prompts** enviados via `systemInstruction` (no como mensajes de usuario) para reducir tokens de entrada
+- **System prompts** enviados como primer mensaje del array `messages[]` con rol `system` (formato OpenAI estandar)
 - **Thinking desactivado por defecto**: Solo los agentes que lo necesitan (Ghostwriter, Arquitecto, Reestructurador, Expansor, correctores estructurales) lo activan explicitamente
 - **Limites de salida por rol**: 65536 (escritores/traductores), 16384 (revisores/analizadores), 8192 (editores), 4096 (validadores/auditores)
 - **Contexto deslizante comprimido**: 1 capitulo completo + 4 resumenes, truncados a 5000 caracteres
@@ -262,7 +274,8 @@ Todos los agentes usan **Gemini 2.5 Flash** como modelo principal, optimizando c
 - 4GB RAM minimo (8GB recomendado)
 - 20GB espacio en disco
 - Conexion a internet
-- API key de Google Gemini
+- API key de DeepSeek (obligatoria, para agentes de texto)
+- API key de Google Gemini (opcional, solo para generacion de portadas IA)
 - API key de Fish Audio (opcional, para audiolibros)
 
 ## Preparacion del Servidor Ubuntu
@@ -296,10 +309,11 @@ git clone https://github.com/atreyu1968/escritorasdgemini.git
 cd escritorasdgemini
 
 # Instalacion minima
-sudo GEMINI_API_KEY="tu-api-key-aqui" bash install.sh --unattended
+sudo DEEPSEEK_API_KEY="tu-api-key-aqui" bash install.sh --unattended
 
 # Con todas las opciones
-sudo GEMINI_API_KEY="tu-api-key" \
+sudo DEEPSEEK_API_KEY="tu-deepseek-key" \
+     GEMINI_API_KEY="tu-gemini-key-para-portadas" \
      FISH_AUDIO_API_KEY="tu-fish-key" \
      LITAGENTS_PASSWORD="tu-contrasena" \
      CF_TUNNEL_TOKEN="token-cloudflare-opcional" \
@@ -310,7 +324,8 @@ Tambien puedes usar argumentos de linea de comandos:
 
 ```bash
 sudo bash install.sh --unattended \
-    --gemini-key="tu-api-key" \
+    --deepseek-key="tu-deepseek-key" \
+    --gemini-key="tu-gemini-key" \
     --fish-key="tu-fish-key" \
     --password="tu-contrasena" \
     --cf-token="token-cloudflare"
@@ -322,10 +337,11 @@ Ver todas las opciones: `bash install.sh --help`
 
 El instalador te pedira:
 
-1. **GEMINI_API_KEY** (obligatorio): API key de Google Gemini
-2. **FISH_AUDIO_API_KEY** (opcional): API key de Fish Audio para generar audiolibros
-3. **LITAGENTS_PASSWORD** (opcional): Contrasena para proteger el acceso
-4. **Cloudflare Tunnel Token** (opcional): Para acceso HTTPS externo
+1. **DEEPSEEK_API_KEY** (obligatorio): API key de DeepSeek para todos los agentes de texto
+2. **GEMINI_API_KEY** (opcional): API key de Google Gemini, solo necesaria si quieres generar portadas IA
+3. **FISH_AUDIO_API_KEY** (opcional): API key de Fish Audio para generar audiolibros
+4. **LITAGENTS_PASSWORD** (opcional): Contrasena para proteger el acceso
+5. **Cloudflare Tunnel Token** (opcional): Para acceso HTTPS externo
 
 ### Acceder a la aplicacion
 
@@ -337,10 +353,17 @@ Si configuraste una contrasena, veras una pantalla de login antes de acceder.
 
 ## Obtener API Keys
 
-### Google Gemini (obligatoria)
+### DeepSeek (obligatoria)
+1. Visita https://platform.deepseek.com/api_keys
+2. Crea una cuenta y verifica tu email
+3. Genera una API key
+4. El sistema usa el modelo `deepseek-v4-flash` con API compatible con OpenAI (`https://api.deepseek.com`)
+
+### Google Gemini (opcional, solo para portadas IA)
 1. Visita https://aistudio.google.com/apikey
 2. Crea un proyecto y habilita la API
 3. Genera una API key
+4. Solo necesaria si vas a usar la funcion de generacion de portadas
 
 ### Fish Audio (opcional, para audiolibros)
 1. Visita https://fish.audio/account/api-key
@@ -447,7 +470,8 @@ put mi_manuscrito.docx
 |----------|-------------|-----------|
 | `DATABASE_URL` | URL de conexion PostgreSQL | Si (auto) |
 | `SESSION_SECRET` | Secreto para sesiones | Si (auto) |
-| `GEMINI_API_KEY` | API key de Google Gemini | Si |
+| `DEEPSEEK_API_KEY` | API key de DeepSeek (todos los agentes de texto) | Si |
+| `GEMINI_API_KEY` | API key de Google Gemini (solo para portadas IA) | Opcional |
 | `FISH_AUDIO_API_KEY` | API key de Fish Audio (audiolibros) | Opcional |
 | `LITAGENTS_PASSWORD` | Contrasena de acceso | Opcional |
 | `SECURE_COOKIES` | true/false para cookies seguras | Si (auto) |
@@ -548,13 +572,30 @@ sudo systemctl restart nginx
 - **Frontend**: React + TypeScript + Vite + shadcn/ui (PWA)
 - **Backend**: Node.js + Express + TypeScript
 - **Base de datos**: PostgreSQL + Drizzle ORM
-- **IA**: Google Gemini API (Gemini 2.5 Flash, 2.0 Flash)
+- **IA (texto)**: DeepSeek API (modelo `deepseek-v4-flash`) via SDK compatible con OpenAI
+- **IA (imagenes)**: Google Gemini API (solo para generacion de portadas)
 - **TTS**: Fish Audio API (modelo speech-1.6) para audiolibros
 - **Proxy**: Nginx
 - **Proceso**: systemd
 - **Idioma**: Interfaz en espanol (`lang="es"`)
 
 ## Changelog
+
+### v6.7
+- **Migracion completa de Gemini a DeepSeek V4-Flash** para todos los agentes de texto. La generacion de imagenes (portadas) se mantiene en Gemini.
+- **Nueva variable de entorno obligatoria**: `DEEPSEEK_API_KEY`. `GEMINI_API_KEY` pasa a ser opcional (solo necesaria para portadas IA).
+- **Reduccion de costos drastica**: input 2.1x mas barato, output 9x mas barato, thinking 12.5x mas barato vs Gemini 2.5 Flash.
+- **SDK unificado**: Cliente OpenAI con `baseURL: https://api.deepseek.com`, formato estandar de mensajes con rol `system`.
+- **Cost tracking refactorizado**: Calculador centralizado de costos como unica fuente de verdad para todos los `ai_usage_events`.
+- **Notas editoriales en dos pasos** y demas funciones de v6.6 mantenidas intactas.
+
+### v6.6 — Notas Editoriales en Dos Pasos
+- Soporte multi-capitulo en notas editoriales con badges de arco y plan distributivo
+- Previsualizacion antes de aplicar con checkboxes para seleccionar instrucciones
+- Carga de notas desde archivos `.txt` y `.md`
+- Snapshot pre-edicion con diff visual palabra a palabra
+- Revision Final automatica post-editorial con flecha de mejora/regresion
+- Cancelacion entre capitulos con AbortController
 
 ### v6.5
 - **Politica de aprobacion 9/10**: Capitulos con puntuacion >= 9 se aprueban siempre, incluso si el Editor detecta hard-rejects (continuidad, filtraciones, repeticiones de trama, inconsistencias de objetos). Las violaciones se anotan para que el Centinela de Continuidad o la auditoria final las traten con reescritura quirurgica. Evita destruir prosa de calidad alta por correcciones marginales.
