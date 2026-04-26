@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp, Eye, ArrowLeft, FileUp, Undo2 } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp, Eye, ArrowLeft, FileUp, Undo2, RotateCcw } from "lucide-react";
 import { diffWords } from "diff";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
@@ -352,6 +352,10 @@ export default function Dashboard() {
   // Diff dialog state for "Ver cambios" per chapter
   const [diffChapter, setDiffChapter] = useState<Chapter | null>(null);
 
+  // Confirmation state for "Regenerar capítulo" — null when closed,
+  // chapter number when the user clicked the regenerate icon and we await confirm.
+  const [regenerateChapterTarget, setRegenerateChapterTarget] = useState<number | null>(null);
+
   const revertChapterEditMutation = useMutation({
     mutationFn: async ({ projectId, chapterId }: { projectId: number; chapterId: number }) => {
       const response = await apiRequest("POST", `/api/projects/${projectId}/chapters/${chapterId}/revert-edit`);
@@ -367,6 +371,28 @@ export default function Dashboard() {
       toast({
         title: "No se pudo revertir",
         description: err?.message || "Error al restaurar el capítulo",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const regenerateChapterMutation = useMutation({
+    mutationFn: async ({ projectId, chapterNumber }: { projectId: number; chapterNumber: number }) => {
+      const response = await apiRequest("POST", `/api/projects/${projectId}/regenerate-chapter/${chapterNumber}`);
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({
+        title: "Capítulo regenerado",
+        description: data?.message || `Se ha vuelto a escribir el capítulo (${data?.wordCount || "?"} palabras).`,
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "No se pudo regenerar",
+        description: err?.message || "Error al regenerar el capítulo. Mira los logs del proyecto.",
         variant: "destructive",
       });
     },
@@ -842,6 +868,29 @@ export default function Dashboard() {
                            chapter.status === "editing" ? "Editando" : 
                            chapter.status === "revision" ? "Reescribiendo" : "Pendiente"}
                         </Badge>
+                        {chapter.status === "completed" && currentProject?.status !== "generating" && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => setRegenerateChapterTarget(chapter.chapterNumber)}
+                                disabled={regenerateChapterMutation.isPending}
+                                className="text-xs flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted disabled:opacity-50"
+                                data-testid={`button-regenerate-chapter-${chapter.chapterNumber}`}
+                                aria-label={`Regenerar ${chapter.title || `capítulo ${chapter.chapterNumber}`}`}
+                              >
+                                {regenerateChapterMutation.isPending && regenerateChapterMutation.variables?.chapterNumber === chapter.chapterNumber ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Regenerar este capítulo desde cero (usa El Narrador)
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1534,6 +1583,24 @@ export default function Dashboard() {
         onConfirm={() => {
           if (currentProject) deleteProjectMutation.mutate(currentProject.id);
           setConfirmDialog(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={regenerateChapterTarget !== null}
+        onOpenChange={(open) => !open && setRegenerateChapterTarget(null)}
+        title={`Regenerar ${regenerateChapterTarget !== null ? sectionLabel(regenerateChapterTarget) : ""}`}
+        description={`Se reescribirá el capítulo desde cero usando El Narrador (no pasa por Editor ni Estilista). El contenido actual se sustituirá. Tarda 1-5 min. ¿Continuar?`}
+        confirmText="Regenerar"
+        variant="destructive"
+        onConfirm={() => {
+          if (currentProject && regenerateChapterTarget !== null) {
+            regenerateChapterMutation.mutate({
+              projectId: currentProject.id,
+              chapterNumber: regenerateChapterTarget,
+            });
+          }
+          setRegenerateChapterTarget(null);
         }}
       />
 
