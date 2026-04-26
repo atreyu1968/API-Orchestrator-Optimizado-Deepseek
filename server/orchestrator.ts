@@ -138,6 +138,27 @@ export class Orchestrator {
     thinkingTokens: 0,
   };
 
+  // Cancellation flag set by the queue manager when this orchestrator instance is
+  // being abandoned (e.g. heartbeat auto-recovery is starting a fresh one).
+  // Long-running loops (architect retries, section iteration) check this flag at
+  // safe checkpoints so the orphan instance unwinds quietly instead of writing
+  // log entries to the same project as the new live orchestrator.
+  private aborted = false;
+
+  public abort(reason?: string): void {
+    if (this.aborted) return;
+    this.aborted = true;
+    if (reason) {
+      console.log(`[Orchestrator] abort() called: ${reason}`);
+    } else {
+      console.log(`[Orchestrator] abort() called`);
+    }
+  }
+
+  public isAborted(): boolean {
+    return this.aborted;
+  }
+
   private hasHardRejectViolations(editorResultObj: any): boolean {
     if (!editorResultObj) return false;
     const r = editorResultObj;
@@ -815,6 +836,10 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       let lastArchitectError = "";
 
       while (architectAttempt < MAX_ARCHITECT_RETRIES) {
+        if (this.aborted) {
+          console.log(`[Orchestrator] Architect retry loop aborted before attempt ${architectAttempt + 1} (project ${project.id})`);
+          return;
+        }
         architectAttempt++;
         
         this.callbacks.onAgentStatus("architect", "thinking", 
@@ -837,6 +862,15 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
             forbiddenNames,
           });
+
+          // Architect call may take up to 5 minutes; if a heartbeat watchdog
+          // aborted us in the meantime, exit silently before logging any
+          // failure or retry message that would corrupt the new orchestrator's
+          // log stream for the same project.
+          if (this.aborted) {
+            console.log(`[Orchestrator] Aborted right after architect.execute returned (project ${project.id}, attempt ${architectAttempt}). Exiting silently.`);
+            return;
+          }
 
           await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "deepseek-v4-flash", undefined, "world_bible");
 
@@ -1021,6 +1055,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         return;
       }
 
+      if (this.aborted) {
+        console.log(`[Orchestrator] Aborted after architect completion (project ${project.id}). Skipping chapter generation.`);
+        return;
+      }
+
       this.callbacks.onAgentStatus("architect", "completed", "Estructura narrativa completada");
 
       const allSections = this.buildSectionsList(project, worldBibleData);
@@ -1082,6 +1121,10 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         : baseStyleGuide;
 
       for (let i = 0; i < chapters.length; i++) {
+        if (this.aborted) {
+          console.log(`[Orchestrator] Aborted at chapter loop iteration ${i + 1} (project ${project.id}). Exiting silently.`);
+          return;
+        }
         if (await isProjectCancelledFromDb(project.id)) {
           console.log(`[Orchestrator] Project ${project.id} cancelled before chapter ${i + 1}. Stopping.`);
           await storage.createActivityLog({
@@ -1114,6 +1157,10 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         let attemptsSinceBestImprovement = 0;
 
         while (!approved && refinementAttempts < this.maxRefinementLoops) {
+          if (this.aborted) {
+            console.log(`[Orchestrator] Aborted inside refinement loop for chapter ${sectionData.numero} (project ${project.id}). Exiting silently.`);
+            return;
+          }
           const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
           const fullStyleGuide = styleGuideContent 
             ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
@@ -1764,6 +1811,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const characterStates: Map<string, { alive: boolean; location: string; injuries: string[]; lastSeen: number }> = new Map();
 
       for (const chapter of pendingChapters) {
+        if (this.aborted) {
+          console.log(`[Orchestrator] Aborted in resume loop before chapter ${chapter.chapterNumber} (project ${project.id}). Exiting silently.`);
+          return;
+        }
         const sectionData = this.buildSectionDataFromChapter(chapter, worldBibleData);
         
         await storage.updateChapter(chapter.id, { status: "writing" });
@@ -1782,6 +1833,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         let attemptsSinceBestImprovement = 0;
 
         while (!approved && refinementAttempts < this.maxRefinementLoops) {
+          if (this.aborted) {
+            console.log(`[Orchestrator:Resume] Aborted inside refinement loop for chapter ${sectionData.numero} (project ${project.id}). Exiting silently.`);
+            return;
+          }
           const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
           const fullStyleGuide = styleGuideContent 
             ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
@@ -4386,6 +4441,11 @@ Responde SOLO con un JSON válido con la estructura:
 }
 `;
 
+      if (this.aborted) {
+        console.log(`[Orchestrator:Extend] Aborted before architect call (project ${project.id}). Exiting silently.`);
+        return;
+      }
+
       const architectResult = await this.architect.execute({
         title: project.title,
         premise: architectPrompt,
@@ -4396,6 +4456,11 @@ Responde SOLO con un JSON válido con la estructura:
         hasAuthorNote: false,
         tone: project.tone,
       });
+
+      if (this.aborted) {
+        console.log(`[Orchestrator:Extend] Aborted after architect.execute returned (project ${project.id}). Exiting silently.`);
+        return;
+      }
 
       if (!architectResult.content) {
         this.callbacks.onError("El Arquitecto no generó una escaleta válida para la extensión");
@@ -4507,6 +4572,10 @@ Responde SOLO con un JSON válido con la estructura:
         let attemptsSinceBestImprovement = 0;
 
         while (!approved && refinementAttempts < this.maxRefinementLoops) {
+          if (this.aborted) {
+            console.log(`[Orchestrator:Extend] Aborted inside refinement loop for chapter ${sectionData.numero} (project ${project.id}). Exiting silently.`);
+            return;
+          }
           const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
           const fullStyleGuide = styleGuideContent 
             ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`

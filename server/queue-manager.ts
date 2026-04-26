@@ -149,6 +149,18 @@ export class QueueManager {
     // Clear current state BUT remember which project to retry
     this.pendingRetryProjectId = projectId; // CRITICAL: Force retry THIS project
     await storage.updateQueueState({ currentProjectId: null });
+    // CRITICAL: Tell the in-flight orchestrator to abort BEFORE we drop the
+    // reference. Without this, the orphan orchestrator keeps writing to the
+    // same project (architect retries, chapter generation) in parallel with the
+    // fresh orchestrator we are about to spawn, producing duplicate/phantom log
+    // entries and racing chapter writes.
+    if (this.currentOrchestrator) {
+      try {
+        this.currentOrchestrator.abort(`heartbeat auto-recovery for project ${projectId}`);
+      } catch (e) {
+        console.error("[QueueManager] Error aborting orphan orchestrator:", e);
+      }
+    }
     this.currentOrchestrator = null;
     this.currentProjectId = null;
     this.stopHeartbeatMonitor();
