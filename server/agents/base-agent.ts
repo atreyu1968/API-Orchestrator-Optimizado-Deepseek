@@ -22,7 +22,6 @@ export interface AgentResponse {
 }
 
 export type DeepSeekModel = "deepseek-v4-flash" | "deepseek-v4-pro";
-export type GeminiModel = DeepSeekModel;
 
 export interface AgentConfig {
   name: string;

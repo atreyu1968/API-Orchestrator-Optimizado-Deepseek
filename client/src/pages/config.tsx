@@ -548,7 +548,7 @@ export default function ConfigPage() {
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1">
                 Modelo de IA
               </p>
-              <p className="font-medium">Gemini 3 Pro Preview</p>
+              <p className="font-medium">DeepSeek V4-Flash</p>
             </div>
             <div className="p-4 rounded-md bg-muted/50">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1">
@@ -573,7 +573,7 @@ export default function ConfigPage() {
           <p className="text-sm text-muted-foreground">
             Este sistema utiliza cuatro agentes literarios autónomos (Arquitecto, Narrador, Editor, Estilista) 
             que colaboran para crear manuscritos completos. Cada agente utiliza el motor de razonamiento 
-            avanzado de Gemini 3 Pro para planificar y ejecutar sus tareas con máxima coherencia narrativa.
+            avanzado de DeepSeek V4-Flash para planificar y ejecutar sus tareas con máxima coherencia narrativa.
           </p>
         </CardContent>
       </Card>

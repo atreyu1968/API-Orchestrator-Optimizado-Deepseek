@@ -11,7 +11,7 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### v6.7 — DeepSeek V4-Flash Migration (Apr 2026)
-- **Full migration from Gemini to DeepSeek V4-Flash for all text generation agents** (no fallback). Image generation (cover designer assets) remains on Gemini via Replit AI integration since DeepSeek has no image model.
+- **Full migration from Gemini to DeepSeek V4-Flash for all agents** (no fallback). The Google Gemini integration and the entire AI cover-generation feature ("Portadas") have been removed. DeepSeek is now the only AI provider.
 - **`server/agents/base-agent.ts`** rewritten to use the `openai` SDK pointing at `https://api.deepseek.com`. Default model is `deepseek-v4-flash`. The agent's `useThinking` flag now maps to DeepSeek's `thinking: { type: "enabled" | "disabled" }` plus `reasoning_effort`. Reasoning tokens are extracted from `usage.completion_tokens_details.reasoning_tokens`.
 - **`server/cost-calculator.ts`** updated with DeepSeek pricing (V4-Flash: $0.14 input / $0.28 output per 1M; V4-Pro: $1.74 / $3.48). Legacy Gemini prices retained for historical events. `AGENT_MODEL_MAPPING` routes every agent to `deepseek-v4-flash`.
 - **`server/services/chatService.ts`** migrated to OpenAI client with streaming via `chat.completions.create({ stream: true, stream_options: { include_usage: true } })`.
@@ -19,7 +19,8 @@ Preferred communication style: Simple, everyday language.
 - **5 inline AI calls in `server/routes.ts`** (spinoff guide generation, world-bible unification, title generation, milestone extraction, two assess-reedit endpoints) all migrated to OpenAI/DeepSeek.
 - **Frontend display**: `client/src/pages/dashboard.tsx` and `client/src/pages/costs.tsx` updated to show DeepSeek V4-Flash/V4-Pro labels and pricing. Cost calculation constants updated to DeepSeek rates.
 - **Database default**: `aiUsageEvents.model` default changed from `"gemini-2.5-pro"` to `"deepseek-v4-flash"` in `shared/schema.ts`.
-- **Required secret**: `DEEPSEEK_API_KEY`. `GEMINI_API_KEY` only used for image generation via Replit AI integration.
+- **Required secret**: `DEEPSEEK_API_KEY`. `GEMINI_API_KEY` is no longer used and has been removed from install/update scripts.
+- **Removed cover-generation surface**: deleted `server/replit_integrations/image/`, `server/agents/cover-prompt-designer.ts`, `client/src/pages/covers.tsx`, the `cover_prompts` table from `shared/schema.ts`, all `getCoverPrompt*`/`createCoverPrompt`/`updateCoverPrompt`/`deleteCoverPrompt` storage methods, and the entire `/api/cover-prompts*` and `/api/cover-images/:filename` route block from `server/routes.ts`. The "Portadas" sidebar entry was removed from `client/src/components/app-sidebar.tsx`. Audiobook covers (manual upload via multer) are unaffected.
 
 ### v6.6 — Two-Step Editorial Notes Flow (Apr 2026)
 - **Multi-chapter arc support in editorial notes**: `EditorialNotesParser` now emits `plan_por_capitulo` distributing a single instruction across multiple chapters with per-chapter roles. The orchestrator injects each chapter's role and its sibling roles into the surgical rewrite prompt.
@@ -52,7 +53,7 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: Defined in `shared/schema.ts`, including tables for projects, chapters, world Bibles, thought logs, agent statuses, series, continuity snapshots, arc verifications, imported manuscripts, reedit projects, and translations.
 
 ### AI Integration
-- **Models**: DeepSeek V4-Flash (all agents — Architect, Ghostwriter, Editor, CopyEditor, FinalReviewer, Translator, validators, Chapter Expander, Restructurer, Reedit agents, ManuscriptAnalyzer). Image generation (cover prompts/assets) still uses Gemini through the Replit AI integration.
+- **Models**: DeepSeek V4-Flash (all agents — Architect, Ghostwriter, Editor, CopyEditor, FinalReviewer, Translator, validators, Chapter Expander, Restructurer, Reedit agents, ManuscriptAnalyzer). No image generation in the system.
 - **Thinking Support**: DeepSeek V4-Flash supports a `thinking: { type: "enabled" | "disabled" }` flag plus `reasoning_effort`. Thinking is OFF by default; agents that need it (Ghostwriter, Architect, Restructurer, Chapter Expander) opt-in with `useThinking: true`. Reasoning tokens are read from `usage.completion_tokens_details.reasoning_tokens`.
 - **Token Optimization**: System prompts sent via OpenAI `messages: [{ role: "system", ...}]`. Per-agent `max_tokens` limits: 65536 for writers/translators, 16384 for reviewers, 8192 for editors/analyzers, 4096 for validators/auditors. Default model is `deepseek-v4-flash`.
 - **Ghostwriter Quality System**: System prompt includes "Estándar de Excelencia Editorial" section targeting 9/10 on first draft, with 6 quality pillars (human-like prose, concrete sensory immersion, dialogue subtexto, emotional arc progression, hook opening/memorable close, beats as full scenes). Also includes a mandatory pre-delivery self-audit checklist (10 checkpoints matching Editor criteria).
@@ -76,9 +77,9 @@ Preferred communication style: Simple, everyday language.
 - Publication-quality manuscript re-editing with 12 specialized agents.
 - Fixed critical bug where final review corrections were silently dropped (`capituloReescrito` vs `rewrittenContent` mismatch) — now all 5 code paths use dual-key fallback.
 - All agents use detected language instead of hardcoded Spanish.
-- **Editor**: Deep 7-category analysis (continuity, plot, pacing, style, dialogue, characters, setting) with thinking enabled on Gemini 2.5 Flash.
-- **CopyEditor**: Upgraded to Gemini Pro with thinking, World Bible context, adjacent chapter awareness, and period-appropriate language enforcement.
-- **StructuralFixer**: Upgraded to Gemini Pro with thinking.
+- **Editor**: Deep 7-category analysis (continuity, plot, pacing, style, dialogue, characters, setting) with thinking enabled on DeepSeek V4-Flash.
+- **CopyEditor**: DeepSeek V4-Flash with thinking, World Bible context, adjacent chapter awareness, and period-appropriate language enforcement.
+- **StructuralFixer**: DeepSeek V4-Flash with thinking.
 - **NarrativeRewriter**: Fixed `reglasDelMundo` field access (was reading empty `reglas`).
 - **Architect Analyzer**: 3000 chars per chapter context (was 500).
 - **QA Context Windows**: Continuity 15K, Voice 10K, WorldBible 12K per chapter.
@@ -92,8 +93,7 @@ Preferred communication style: Simple, everyday language.
 - **Editorial Critique-Driven Reedit**: `editorialCritique` column on `reedit_projects` accepts external editor/beta-reader feedback. Injected into NarrativeRewriter (as high-priority corrections) and FinalReviewer (as verification checklist). Available on upload, resume, and restart. UI shows critique in progress tab and restart dialog.
 - **System Project Reedit Optimization**: When cloning a system project to reedit (`sourceProjectId` set), the clone route copies the World Bible, maps `worldRules`→`loreRules`, `plotDecisions`+`persistentInjuries`→loreRules, and sets `editedContent` = chapter content. The orchestrator detects system projects and skips Stages 1-3 (structure analysis, editor review, World Bible extraction) — jumping directly to architect analysis, QA, and narrative rewriting. Saves significant time and API costs.
 - **Proofreading Agent (Corrector Ortotipográfico Senior)**: New `ProofreaderAgent` for post-production orthotypographic correction. Adapts to genre and author style. Detects AI glitches (cloned paragraphs, broken dialogues, action loops), corrects spelling/typography/punctuation/style, preserves author voice. Works on all 4 source types (projects, reedit, imported, translations). Schema: `proofreading_projects` + `proofreading_chapters`. Routes: GET/POST/DELETE `/api/proofreading`, POST `/api/proofreading/:id/start`, POST `/api/proofreading/:id/apply`. The "apply" route writes corrected content back to the original source. Frontend: `client/src/pages/proofreading.tsx`. Migration: `migrations/0006_add_proofreading.sql`.
-- **Ghostwriter on Gemini 3 Flash (v6.1)**: The Ghostwriter agent now uses `gemini-3-flash-preview` for significantly better creative writing quality — outperforms 2.5 Pro while being 3x faster at lower cost ($0.50/$3.00/$3.50 per million tokens). Tested: `gemini-3.1-flash-lite-preview` was too weak for creative writing (scores 3-6/10). All other agents remain on 2.5 Flash. Thinking budget: 16384 tokens. Temperature: 1.0 (new chapters), 0.85 (rewrites) — Gemini 3.x recommends not going below 1.0. Cost calculator and AGENT_MODEL_MAPPING updated in `server/cost-calculator.ts`. Pricing also added to `orchestrator.ts` calculateTokenCosts.  Base-agent supports both `thinkingBudget` (2.5 series, 3 Flash) and `thinkingLevel` (3.1 series) configs.
-- **Thinking Budget Optimization (v6.1)**: All critical agents now have per-agent configurable thinking budgets via `thinkingBudget` in `AgentConfig`. Ghostwriter: 16384 (Gemini 3 Flash), Architect: 8192, Copyeditor: 8192, Editor: 4096, Final Reviewer: 4096, Proofreader: default 4096. Default base: 4096 for 2.5 flash, 16384 for Gemini 3 Flash, 8192 for pro.
+- **Thinking Budget Optimization (v6.1)**: All critical agents have per-agent configurable thinking budgets via `useThinking` + `reasoning_effort` in `AgentConfig`. Ghostwriter, Architect, Copyeditor, Editor, Final Reviewer, Proofreader and structural agents opt in to DeepSeek's `thinking: { type: "enabled" }` mode. Reasoning tokens are read from `usage.completion_tokens_details.reasoning_tokens`.
 - **Editor Holistic Scoring (v6.1)**: Editor rubric changed from penalty-only system (15+ categories subtracting points) to holistic quality evaluation. Only 3 automatic rejection reasons: continuity grave, knowledge leaks, truncated text. Everything else (clichés, repetitions, purple prose, epithets) are reported as weaknesses but don't cause auto-reject. Scoring guide: 9-10 excellent, 7-8 good, 5-6 mediocre, 3-4 bad.
 - **Resolve Documented Issues (v6.4)**: "Resolver Issues" button on dashboard (placed below the issues list) for completed projects with documented issues. Calls `POST /api/projects/:id/resolve-issues` → `orchestrator.resolveDocumentedIssues()`. Targeted fix: reads stored `finalReviewResult.issues`, extracts `capitulos_afectados`, rewrites only affected chapters with issue-specific correction instructions (Ghostwriter → Editor → CopyEditor pipeline), then runs a verification Final Review. Button stays available after each cycle so any newly-detected issues can be re-resolved. Normalizes legacy issue data (`capitulo` → `capitulos_afectados`, `problema` → `descripcion`). Dashboard issue display fixed to use correct field names (`capitulos_afectados[]`, `descripcion`, `categoria`).
 - **Final Continuity Audit Disabled (v6.4)**: The post-final-review continuity audit (`runFinalContinuityAudit` + `runPostAuditVerification`) was removed from `finalizeCompletedProject()`. Reason: the second massive pass over the manuscript was over-correcting and breaking scenes. Continuity is already enforced chapter-by-chapter during generation via the Continuity Sentinel; the post-review pass added more harm than benefit. The functions remain defined as dead code in `orchestrator.ts` for easy re-enablement if needed. The finalization flow now goes: Final Review → Orthotypographic Pass → checklist → mark completed.
@@ -107,7 +107,7 @@ Preferred communication style: Simple, everyday language.
 - AI-powered style and writing guide generation module at `/guides`.
 - 4 guide types: author_style (emulate known authors), idea_writing (develop story premises + auto-create project), pseudonym_style (define pseudonym identity), series_writing (maintain series coherence).
 - `generated_guides` table with fields: id, title, content, guideType, sourceAuthor, sourceIdea, sourceGenre, pseudonymId, seriesId, inputTokens, outputTokens, createdAt.
-- Agent: `server/agents/style-guide-generator.ts` using Gemini 2.5 Flash with thinking (budget: 2048).
+- Agent: `server/agents/style-guide-generator.ts` using DeepSeek V4-Flash via the OpenAI SDK directly.
 - API: `GET /api/guides`, `GET /api/guides/:id`, `DELETE /api/guides/:id`, `POST /api/guides/generate`, `POST /api/guides/:id/apply-to-pseudonym`.
 - Frontend: `client/src/pages/guides.tsx` with 5 tabs (library + 4 guide types), guide viewer dialog, apply-to-pseudonym dialog.
 - **idea_writing flow**: Collects full project data (title, chapters, prologue/epilogue/author note, words per chapter, Kindle optimization, pseudonym, style guide). On generation: saves as `extendedGuide` (not styleGuide) and auto-creates a project with `extendedGuideId` set. Genre and tone use dropdown selectors matching the config panel options.
@@ -121,14 +121,14 @@ Preferred communication style: Simple, everyday language.
 - Validates: no duplicate project IDs, books not already in a series, bounds on totalPlannedBooks.
 - Creates series record, links each reedit project via `seriesId`/`seriesOrder` update.
 - Auto-generates a `series_writing` guide using AI (feeds book summaries/excerpts to the style-guide-generator agent).
-- Merges World Bible data from all selected books using Gemini 2.5 Flash to deduplicate characters/locations/timeline across books, then updates each book's World Bible with the unified data.
+- Merges World Bible data from all selected books using DeepSeek V4-Flash to deduplicate characters/locations/timeline across books, then updates each book's World Bible with the unified data.
 - Series registry (`GET /api/series/registry`) includes reedit projects as volumes alongside regular projects and imported manuscripts.
 - Frontend: "Crear Serie" button in the reedit page projects card opens a dialog to select books, reorder them, name the series, and trigger conversion.
 
 #### Spin-off Series Creation (v6.0)
 - Create new series derived from existing ones with a character from the original as protagonist.
 - Schema: `series` table has `parentSeriesId`, `spinoffProtagonist`, `spinoffContext` columns.
-- API: `GET /api/series/:id/characters` extracts unique characters from all world bibles and continuity snapshots in a series. `POST /api/series/:id/generate-spinoff-guide` analyzes parent series novels with Gemini 2.5 Flash to auto-generate a complete series guide.
+- API: `GET /api/series/:id/characters` extracts unique characters from all world bibles and continuity snapshots in a series. `POST /api/series/:id/generate-spinoff-guide` analyzes parent series novels with DeepSeek V4-Flash to auto-generate a complete series guide.
 - Generated guide includes: protagonist profile, inherited world rules, recurring characters, inherited/new plot threads, continuity bible, tone/style directives.
 - Orchestrator injects spin-off context (parent series name, protagonist, concept) into chapter generation pipeline alongside the generated guide.
 - Frontend: Series creation form has "Serie Origen" selector. When selected, loads characters from parent series for protagonist selection. On creation, auto-generates the writing guide by analyzing all novels.
@@ -194,7 +194,7 @@ Preferred communication style: Simple, everyday language.
 ## External Dependencies
 
 ### AI Services
-- **Google Gemini API**: `GEMINI_API_KEY` — primary model `gemini-2.5-flash` (all agents), `gemini-2.0-flash` (manuscript analyzer), `gemini-2.5-flash-image` (image generation).
+- **DeepSeek API**: `DEEPSEEK_API_KEY` — primary model `deepseek-v4-flash` (all agents) via OpenAI-compatible SDK at `https://api.deepseek.com`. No image generation provider configured.
 
 ### Deployment & Database
 - **PostgreSQL**: Database accessed via `DATABASE_URL`.
@@ -214,26 +214,12 @@ Preferred communication style: Simple, everyday language.
 - **Frontend**: `client/src/pages/audiobooks.tsx` — list/create/detail views. Create form includes source selection, Fish Audio voice picker, format/bitrate/speed sliders, cover upload. Detail view shows per-chapter progress, inline audio players, pause/resume controls, generate-all or per-chapter generation, delete (works even during active generation), and ZIP download.
 - Audio files stored in `./audiobooks/project_{id}/` directory.
 
-#### Cover Prompt Generator (v6.2)
-- Generates optimized AI prompts for book cover creation, compatible with Midjourney, DALL-E, Stable Diffusion, Ideogram, Leonardo AI.
-- **Scopes**: Project (individual book), Series (coherent visual identity), Pseudonym (author branding), Independent (custom).
-- **KDP Specs**: 2560x1600px, 300 DPI, RGB, JPEG/TIFF, portrait orientation.
-- **Chain Generation (v6.2)**: When generating a project cover, the system automatically checks if the pseudonym has existing author branding and if the series has an existing design system. If either is missing, it generates them first in chain order: Author Branding → Series Design → Project Cover. This ensures visual coherence across all covers. Same logic applies when generating a series cover — if the pseudonym branding is missing, it's created first. The frontend shows an amber warning when chain generation will occur.
-- **Author Branding**: Pseudonym-level visual identity stored in `authorBranding` jsonb field. Defines: visualIdentity, colorScheme, typographyStyle, moodAndTone, brandingNotes. All covers for the same pseudonym inherit this branding.
-- **Series Design System**: When generating for a series, creates a shared design system (common elements, color scheme, typography, layout pattern, branding notes) that subsequent covers in the series will follow. Inherits from author branding when available.
-- **Agent**: `server/agents/cover-prompt-designer.ts` — extends BaseAgent, uses Gemini 2.5 Flash with thinking. Generates prompts in English (better AI image gen results), includes negative prompts, style, color palette, mood, typography suggestions, composition details. Supports hierarchical context: authorBranding → seriesDesignSystem → project-specific.
-- **Image Generation (v6.2)**: Each cover prompt can generate an actual AI image using Gemini's image model (`gemini-2.5-flash-image`). Images are saved to `./covers/` directory and served via `/api/cover-images/:filename`. Cards show the generated image with hover overlay for download/regenerate. View dialog shows the image with download button. Status updates to "generated" after image creation.
-- **Schema**: `cover_prompts` table (projectId?, seriesId?, pseudonymId?, title, prompt, negativePrompt, style, colorPalette, mood, typography, composition, seriesDesignSystem, authorBranding, generatedImageUrl, coverSpecs, status, notes).
-- **API Routes**: `GET /api/cover-prompts`, `GET /api/cover-prompts/:id`, `POST /api/cover-prompts/generate` (supports chain generation, returns `chainGenerated` array when multiple prompts created), `POST /api/cover-prompts/:id/generate-image` (generates AI image from prompt), `GET /api/cover-images/:filename` (serves generated images), `PATCH /api/cover-prompts/:id`, `DELETE /api/cover-prompts/:id`.
-- **Frontend**: `client/src/pages/covers.tsx` — scope selector (tabs), prompt generation with chain warnings, image generation per prompt, full prompt viewer dialog with image preview, author branding, and series design display, copy to clipboard, edit prompt, download image, regenerate image, delete. Badges show "Branding" (purple) and "Diseño Serie" (blue) on prompt cards.
-- **Migrations**: `migrations/add_author_branding.sql`, `migrations/add_cover_generated_image.sql`.
-
 #### KDP Metadata Generator (v6.0)
 - Generates Amazon KDP publishing metadata: subtitle, HTML description (max 4000 chars), 7 search keywords (50 chars each), 2 BISAC categories, series info, AI disclosure.
 - **Sources**: Regular projects and reedit projects.
 - **KDP Compliance**: HTML description uses only allowed tags (b, i, em, strong, br, p, h4-h6, ul, ol, li). No contact info, reviews, time-sensitive info, or quality claims in description. Keywords avoid trademark terms, "kindle", "ebook". Series name without volume numbers.
 - **AI Disclosure**: Defaults to "ai-assisted" (correct for AI-assisted writing tools per Amazon 2025 policy). Confidential to Amazon, not shown to readers.
-- **Agent**: `server/agents/kdp-metadata-generator.ts` — extends BaseAgent, uses Gemini 2.5 Flash with thinking. Generates metadata in the target language matching the marketplace.
+- **Agent**: `server/agents/kdp-metadata-generator.ts` — extends BaseAgent, uses DeepSeek V4-Flash with thinking. Generates metadata in the target language matching the marketplace.
 - **Schema**: `kdp_metadata` table (projectId?, reeditProjectId?, title, subtitle, description, keywords[], bisacCategories[], seriesName, seriesNumber, seriesDescription, language, targetMarketplace, aiDisclosure, contentWarnings, status, notes).
 - **API Routes**: `GET /api/kdp-metadata`, `GET /api/kdp-metadata/:id`, `POST /api/kdp-metadata/generate`, `PATCH /api/kdp-metadata/:id`, `DELETE /api/kdp-metadata/:id`.
 - **Frontend**: `client/src/pages/kdp-metadata.tsx` — project/reedit selector, language/marketplace picker, metadata generation, full detail viewer with HTML preview, edit all fields, copy individual fields or all metadata, character count warnings for description and keywords.
@@ -284,7 +270,7 @@ Preferred communication style: Simple, everyday language.
 - Validates volume order conflicts and inherits pseudonym from the series.
 
 ### Key NPM Packages
-- `@google/genai`: Google Gemini AI SDK.
+- `openai`: OpenAI-compatible SDK used to call DeepSeek (`baseURL: https://api.deepseek.com`).
 - `drizzle-orm` / `drizzle-zod`: ORM and schema validation.
 - `express`: Node.js web framework.
 - `@tanstack/react-query`: React asynchronous state management.

@@ -32,7 +32,6 @@ import {
   audiobookProjects, audiobookChapters,
   type AudiobookProject, type InsertAudiobookProject,
   type AudiobookChapter, type InsertAudiobookChapter,
-  coverPrompts, type CoverPrompt, type InsertCoverPrompt,
   kdpMetadata, type KdpMetadata, type InsertKdpMetadata,
   bookCatalog, type BookCatalogEntry, type InsertBookCatalogEntry,
   nameBlacklist, type NameBlacklistEntry, type InsertNameBlacklistEntry,
@@ -233,16 +232,6 @@ export interface IStorage {
   getChatProposalsByMessage(messageId: number): Promise<ChatProposal[]>;
   updateChatProposal(id: number, data: Partial<ChatProposal>): Promise<ChatProposal | undefined>;
   deleteChatProposal(id: number): Promise<void>;
-
-  // Cover Prompts
-  createCoverPrompt(data: InsertCoverPrompt): Promise<CoverPrompt>;
-  getCoverPrompt(id: number): Promise<CoverPrompt | undefined>;
-  getAllCoverPrompts(): Promise<CoverPrompt[]>;
-  getCoverPromptsByProject(projectId: number): Promise<CoverPrompt[]>;
-  getCoverPromptsBySeries(seriesId: number): Promise<CoverPrompt[]>;
-  getCoverPromptsByPseudonym(pseudonymId: number): Promise<CoverPrompt[]>;
-  updateCoverPrompt(id: number, data: Partial<CoverPrompt>): Promise<CoverPrompt | undefined>;
-  deleteCoverPrompt(id: number): Promise<void>;
 
   // KDP Metadata
   createKdpMetadata(data: InsertKdpMetadata): Promise<KdpMetadata>;
@@ -1284,41 +1273,6 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAudiobookChaptersByProject(projectId: number): Promise<void> {
     await db.delete(audiobookChapters).where(eq(audiobookChapters.projectId, projectId));
-  }
-
-  async createCoverPrompt(data: InsertCoverPrompt): Promise<CoverPrompt> {
-    const [prompt] = await db.insert(coverPrompts).values(data).returning();
-    return prompt;
-  }
-
-  async getCoverPrompt(id: number): Promise<CoverPrompt | undefined> {
-    const [prompt] = await db.select().from(coverPrompts).where(eq(coverPrompts.id, id));
-    return prompt;
-  }
-
-  async getAllCoverPrompts(): Promise<CoverPrompt[]> {
-    return db.select().from(coverPrompts).orderBy(desc(coverPrompts.createdAt));
-  }
-
-  async getCoverPromptsByProject(projectId: number): Promise<CoverPrompt[]> {
-    return db.select().from(coverPrompts).where(eq(coverPrompts.projectId, projectId)).orderBy(desc(coverPrompts.createdAt));
-  }
-
-  async getCoverPromptsBySeries(seriesId: number): Promise<CoverPrompt[]> {
-    return db.select().from(coverPrompts).where(eq(coverPrompts.seriesId, seriesId)).orderBy(desc(coverPrompts.createdAt));
-  }
-
-  async getCoverPromptsByPseudonym(pseudonymId: number): Promise<CoverPrompt[]> {
-    return db.select().from(coverPrompts).where(eq(coverPrompts.pseudonymId, pseudonymId)).orderBy(desc(coverPrompts.createdAt));
-  }
-
-  async updateCoverPrompt(id: number, data: Partial<CoverPrompt>): Promise<CoverPrompt | undefined> {
-    const [updated] = await db.update(coverPrompts).set(data).where(eq(coverPrompts.id, id)).returning();
-    return updated;
-  }
-
-  async deleteCoverPrompt(id: number): Promise<void> {
-    await db.delete(coverPrompts).where(eq(coverPrompts.id, id));
   }
 
   async createKdpMetadata(data: InsertKdpMetadata): Promise<KdpMetadata> {

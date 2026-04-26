@@ -54,7 +54,7 @@ function manualRepair(text: string): any {
  * the last fully-closed element inside the deepest array — drops the partial trailing
  * element, then closes the open contexts in proper LIFO order.
  *
- * This handles the common Gemini failure mode where Phase 1 output stops mid-way through
+ * This handles the common LLM failure mode where Phase 1 output stops mid-way through
  * a long array (e.g. inside the 17th personajes entry, or inside vocabulario_epoca_autorizado).
  */
 function smartTruncationSalvage(raw: string): any {

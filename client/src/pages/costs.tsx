@@ -104,16 +104,10 @@ function getModelBadge(model: string) {
   const colors: Record<string, "default" | "secondary" | "outline"> = {
     "deepseek-v4-flash": "default",
     "deepseek-v4-pro": "secondary",
-    "gemini-2.5-flash": "outline",
-    "gemini-2.0-flash": "outline",
-    "gemini-2.5-pro": "outline",
   };
   const shortNames: Record<string, string> = {
     "deepseek-v4-flash": "V4 Flash",
     "deepseek-v4-pro": "V4 Pro",
-    "gemini-2.5-flash": "2.5 Flash",
-    "gemini-2.0-flash": "2.0 Flash",
-    "gemini-2.5-pro": "2.5 Pro",
   };
   return (
     <Badge variant={colors[model] || "outline"} className="text-xs font-mono">
@@ -148,7 +142,7 @@ export default function CostsPage() {
   });
 
   const calcTranslationCost = (inputTokens: number, outputTokens: number) => {
-    return ((inputTokens / 1_000_000) * 0.15) + ((outputTokens / 1_000_000) * 0.60);
+    return ((inputTokens / 1_000_000) * 0.14) + ((outputTokens / 1_000_000) * 0.28);
   };
 
   const translationsWithCost = (translationsList || []).filter(t => (t.inputTokens || 0) > 0 || (t.outputTokens || 0) > 0);
@@ -603,8 +597,8 @@ export default function CostsPage() {
             <Info className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
             <div className="text-sm text-muted-foreground space-y-2">
               <p>
-                <strong>Costos reales:</strong> Los costos se calculan usando los precios oficiales de cada modelo 
-                de Gemini y el conteo real de tokens de cada llamada a la API.
+                <strong>Costos reales:</strong> Los costos se calculan usando los precios oficiales de DeepSeek 
+                y el conteo real de tokens de cada llamada a la API.
               </p>
               <p>
                 El tracking de costos se activa automáticamente para nuevas generaciones. 

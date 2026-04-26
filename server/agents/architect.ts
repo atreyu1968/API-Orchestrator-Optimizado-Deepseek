@@ -317,7 +317,7 @@ export class ArchitectAgent extends BaseAgent {
       includeThoughts: false,      // el thoughtSignature solo se loguea, no lo usamos. Quitarlo reduce el tamaño de respuesta y baja el riesgo de drop a media generación.
     });
     // Override timeout: el Arquitecto genera JSON estructurado (no prosa larga).
-    // Bajamos de 12 min → 5 min para que cuelgues de Gemini fallen rápido y los
+    // Bajamos de 12 min → 5 min para que cuelgues de la API fallen rápido y los
     // 3 reintentos del orquestador quepan dentro del watchdog de 15 min.
     this.timeoutMs = 5 * 60 * 1000;
   }

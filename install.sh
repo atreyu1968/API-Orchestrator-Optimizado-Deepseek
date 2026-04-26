@@ -11,7 +11,6 @@ set -eo pipefail
 #
 # Variables de entorno:
 #   DEEPSEEK_API_KEY        - (Requerido) API key de DeepSeek (texto)
-#   GEMINI_API_KEY          - (Opcional) API key de Gemini (solo para portadas)
 #   FISH_AUDIO_API_KEY      - (Opcional) API key de Fish Audio para audiolibros
 #   LITAGENTS_PASSWORD      - (Opcional) Contrasena de acceso
 #   CF_TUNNEL_TOKEN         - (Opcional) Token de Cloudflare Tunnel
@@ -53,10 +52,6 @@ while [[ $# -gt 0 ]]; do
             DEEPSEEK_API_KEY="${1#*=}"
             shift
             ;;
-        --gemini-key=*)
-            GEMINI_API_KEY="${1#*=}"
-            shift
-            ;;
         --password=*)
             LITAGENTS_PASSWORD="${1#*=}"
             shift
@@ -75,7 +70,6 @@ while [[ $# -gt 0 ]]; do
             echo "Opciones:"
             echo "  --unattended, -u              Instalacion sin interaccion"
             echo "  --deepseek-key=KEY            API key de DeepSeek (requerido para texto)"
-            echo "  --gemini-key=KEY              API key de Gemini (opcional, solo portadas)"
             echo "  --fish-key=KEY                API key de Fish Audio para audiolibros (opcional)"
             echo "  --password=PASS               Contrasena de acceso (opcional)"
             echo "  --cf-token=TOKEN              Token de Cloudflare Tunnel (opcional)"
@@ -83,10 +77,9 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Ejemplo desatendido:"
             echo "  sudo DEEPSEEK_API_KEY=\"tu-key\" bash install.sh --unattended"
-            echo "  sudo DEEPSEEK_API_KEY=\"tu-key\" GEMINI_API_KEY=\"gemini-key\" bash install.sh --unattended"
             echo ""
             echo "  O con argumentos:"
-            echo "  sudo bash install.sh --unattended --gemini-key=\"tu-key\" --fish-key=\"fish-key\" --password=\"secreto\""
+            echo "  sudo bash install.sh --unattended --deepseek-key=\"tu-key\" --fish-key=\"fish-key\" --password=\"secreto\""
             exit 0
             ;;
         *)
@@ -104,7 +97,6 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 PROVIDED_DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}"
-PROVIDED_GEMINI_API_KEY="${GEMINI_API_KEY:-}"
 PROVIDED_FISH_AUDIO_API_KEY="${FISH_AUDIO_API_KEY:-}"
 PROVIDED_LITAGENTS_PASSWORD="${LITAGENTS_PASSWORD:-}"
 PROVIDED_CF_TUNNEL_TOKEN="${CF_TUNNEL_TOKEN:-}"
@@ -125,7 +117,6 @@ if [ -f "$CONFIG_DIR/env" ]; then
     source "$CONFIG_DIR/env"
     
     [ -n "$PROVIDED_DEEPSEEK_API_KEY" ] && DEEPSEEK_API_KEY="$PROVIDED_DEEPSEEK_API_KEY"
-    [ -n "$PROVIDED_GEMINI_API_KEY" ] && GEMINI_API_KEY="$PROVIDED_GEMINI_API_KEY"
     [ -n "$PROVIDED_FISH_AUDIO_API_KEY" ] && FISH_AUDIO_API_KEY="$PROVIDED_FISH_AUDIO_API_KEY"
     [ -n "$PROVIDED_LITAGENTS_PASSWORD" ] && LITAGENTS_PASSWORD="$PROVIDED_LITAGENTS_PASSWORD"
     [ -n "$PROVIDED_CF_TUNNEL_TOKEN" ] && CF_TUNNEL_TOKEN="$PROVIDED_CF_TUNNEL_TOKEN"
@@ -156,12 +147,6 @@ if [ "$IS_UPDATE" = false ]; then
         fi
         print_success "Usando DEEPSEEK_API_KEY desde variable de entorno"
         
-        if [ -n "$GEMINI_API_KEY" ]; then
-            print_success "Usando GEMINI_API_KEY desde variable de entorno (portadas habilitadas)"
-        else
-            print_status "GEMINI_API_KEY no proporcionada (generacion de portadas deshabilitada)"
-        fi
-        
         if [ -n "$FISH_AUDIO_API_KEY" ]; then
             print_success "Usando FISH_AUDIO_API_KEY desde variable de entorno"
         else
@@ -183,14 +168,6 @@ if [ "$IS_UPDATE" = false ]; then
         DEEPSEEK_API_KEY="$INPUT_DEEPSEEK_KEY"
         
         echo ""
-        echo "=== Configuracion de Gemini (Portadas) ==="
-        echo "(Opcional) Para generar portadas de libros necesitas una API key de Google Gemini."
-        echo "Puedes obtenerla en: https://aistudio.google.com/apikey"
-        echo "Presiona Enter para omitir (podras configurarla despues)."
-        read -p "GEMINI_API_KEY (opcional): " INPUT_GEMINI_KEY
-        GEMINI_API_KEY="${INPUT_GEMINI_KEY:-}"
-        
-        echo ""
         echo "=== Configuracion de Fish Audio (Audiolibros) ==="
         echo "(Opcional) Para generar audiolibros necesitas una API key de Fish Audio."
         echo "Puedes obtenerla en: https://fish.audio/account/api-key"
@@ -205,12 +182,6 @@ if [ "$IS_UPDATE" = false ]; then
         read -sp "LITAGENTS_PASSWORD (opcional): " INPUT_PASSWORD
         echo ""
         LITAGENTS_PASSWORD="${INPUT_PASSWORD:-}"
-    fi
-    
-    if [ -n "$GEMINI_API_KEY" ]; then
-        print_success "Gemini API key configurada (portadas habilitadas)"
-    else
-        print_status "Gemini omitido (podras configurarlo despues en /etc/litagents/env)"
     fi
     
     if [ -n "$FISH_AUDIO_API_KEY" ]; then
@@ -408,9 +379,9 @@ if [ "$IS_UPDATE" = true ]; then
         echo "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" >> "$CONFIG_DIR/env"
     fi
     
-    if [ -n "$GEMINI_API_KEY" ] && [ "$GEMINI_API_KEY" != "$(grep -oP 'GEMINI_API_KEY=\K.*' "$CONFIG_DIR/env" 2>/dev/null)" ]; then
-        sed -i "s|^GEMINI_API_KEY=.*|GEMINI_API_KEY=$GEMINI_API_KEY|" "$CONFIG_DIR/env"
-        print_status "API key de Gemini actualizada"
+    if grep -q "^GEMINI_API_KEY=" "$CONFIG_DIR/env" 2>/dev/null; then
+        sed -i "/^GEMINI_API_KEY=/d" "$CONFIG_DIR/env"
+        print_status "GEMINI_API_KEY obsoleta eliminada (Gemini ya no se usa)"
     fi
     
     if [ -n "$PROVIDED_FISH_AUDIO_API_KEY" ]; then
@@ -441,7 +412,6 @@ PORT=$APP_PORT
 DATABASE_URL=$DATABASE_URL
 SESSION_SECRET=$SESSION_SECRET
 DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
-GEMINI_API_KEY=$GEMINI_API_KEY
 FISH_AUDIO_API_KEY=$FISH_AUDIO_API_KEY
 LITAGENTS_PASSWORD=$LITAGENTS_PASSWORD
 SECURE_COOKIES=false

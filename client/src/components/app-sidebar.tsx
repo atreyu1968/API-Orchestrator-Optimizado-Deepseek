@@ -27,7 +27,6 @@ import {
   Sparkles,
   BookMarked,
   Headphones,
-  Image,
   Tag,
   BookCopy,
   ShieldBan,
@@ -48,7 +47,6 @@ const translationsNavItems = [
   { title: "Serie desde Importados", url: "/reedit-series", icon: BookMarked },
   { title: "Taller de Guías", url: "/guides", icon: Sparkles },
   { title: "Audiolibros", url: "/audiobooks", icon: Headphones },
-  { title: "Portadas", url: "/covers", icon: Image },
   { title: "Metadatos KDP", url: "/kdp-metadata", icon: Tag },
   { title: "Corrector Ortotipográfico", url: "/proofreading", icon: SpellCheck },
   { title: "Catálogo de Libros", url: "/book-catalog", icon: BookCopy },
@@ -150,7 +148,7 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
         <p className="text-xs text-muted-foreground text-center">
-          Powered by Gemini 3 Pro
+          Powered by DeepSeek V4-Flash
         </p>
         <p className="text-xs text-muted-foreground/60 text-center">
           Deep Thinking Engine

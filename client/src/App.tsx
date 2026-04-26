@@ -29,7 +29,6 @@ import ReeditPage from "@/pages/reedit";
 import ReeditSeriesPage from "@/pages/reedit-series";
 import GuidesPage from "@/pages/guides";
 import AudiobooksPage from "@/pages/audiobooks";
-import CoversPage from "@/pages/covers";
 import KdpMetadataPage from "@/pages/kdp-metadata";
 import BookCatalogPage from "@/pages/book-catalog";
 import NameBlacklistPage from "@/pages/name-blacklist";
@@ -53,7 +52,6 @@ function Router() {
       <Route path="/reedit-series" component={ReeditSeriesPage} />
       <Route path="/guides" component={GuidesPage} />
       <Route path="/audiobooks" component={AudiobooksPage} />
-      <Route path="/covers" component={CoversPage} />
       <Route path="/kdp-metadata" component={KdpMetadataPage} />
       <Route path="/book-catalog" component={BookCatalogPage} />
       <Route path="/name-blacklist" component={NameBlacklistPage} />

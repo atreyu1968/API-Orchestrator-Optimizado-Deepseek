@@ -1,15 +1,14 @@
 # LitAgents v6.7 — Sistema de Orquestacion de Agentes Literarios IA
 
-Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando **DeepSeek V4** (texto) y **Google Gemini** (solo imagenes).
+Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando **DeepSeek V4** como unico backend de IA.
 
 **PWA instalable** — se puede instalar en escritorio y movil directamente desde el navegador.
 
 ## Novedades v6.7 — Migracion a DeepSeek V4
 
-- **Backend de IA migrado a DeepSeek V4-Flash**: Todos los agentes literarios (Arquitecto, Ghostwriter, Editor, Corrector, Revisor Final, Centinela, Auditores, Re-editores, Adaptadores, Generador de Guias, Generador de Metadatos KDP, Disenador de Portadas, etc.) ahora usan DeepSeek V4-Flash via API compatible con OpenAI.
+- **Backend de IA migrado a DeepSeek V4-Flash**: Todos los agentes literarios (Arquitecto, Ghostwriter, Editor, Corrector, Revisor Final, Centinela, Auditores, Re-editores, Adaptadores, Generador de Guias, Generador de Metadatos KDP, etc.) ahora usan DeepSeek V4-Flash via API compatible con OpenAI.
 - **Reduccion de costos ~5x**: De $0.30/$2.50 por millon (Gemini 2.5 Flash) a $0.14/$0.28 por millon (DeepSeek V4-Flash). El thinking ya no se factura aparte.
-- **Migracion completa, sin fallback**: El sistema usa DeepSeek directamente, sin enrutado dual ni dependencia residual del SDK de Gemini para texto.
-- **Generacion de imagenes mantiene Gemini**: La generacion de portadas e imagenes sigue usando Gemini (DeepSeek no expone modelo de imagen). Configura `GEMINI_API_KEY` solo si necesitas portadas IA.
+- **Eliminacion total de Gemini**: Se removio toda la integracion con Google Gemini y la seccion de generacion de portadas IA. La unica API requerida es `DEEPSEEK_API_KEY`.
 - **Pricing y badges actualizados**: Dashboard y pagina de costos muestran los nuevos precios y badges de DeepSeek.
 - **Cost tracking unificado**: Todos los eventos de uso de IA (`ai_usage_events`) usan el calculador centralizado de costos con la tabla de precios de DeepSeek como unica fuente de verdad.
 
@@ -37,9 +36,8 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 - **Spin-offs**: Creacion de series derivadas con protagonista de la serie original y guia auto-generada
 - **Critica Editorial**: Inyeccion de feedback externo (editores, beta-readers) como guia prioritaria en re-ediciones
 - **Autenticacion**: Proteccion con contrasena para instalaciones en servidor propio
-- **Audiolibros**: Conversion de novelas a audiolibro con voces TTS de Fish Audio (modelo speech-1.6), portadas personalizadas y descarga en ZIP
+- **Audiolibros**: Conversion de novelas a audiolibro con voces TTS de Fish Audio (modelo speech-1.6), portadas personalizadas (subida manual) y descarga en ZIP
 - **Metadatos KDP**: Generacion automatica de metadata para Amazon KDP (descripcion HTML, keywords, categorias BISAC)
-- **Portadas IA**: Generacion de prompts optimizados para crear portadas con Midjourney, DALL-E, Stable Diffusion, etc.
 - **Catalogo de Libros y Back Matter**: Gestion centralizada de obras publicadas con generacion automatica de paginas finales
 - **Originalidad de Nombres**: Sistema dinamico que prohibe al Arquitecto reutilizar nombres de personajes entre novelas diferentes (permitidos dentro de la misma serie)
 - **Corrector Ortotipografico**: Agente de correccion post-produccion que adapta al genero y estilo del autor, detecta glitches de IA y aplica correcciones directamente al manuscrito original
@@ -105,17 +103,14 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 | Agente | Modelo | Tokens Max | Funcion |
 |--------|--------|------------|---------|
 | Generador de Metadatos KDP | DeepSeek V4-Flash | 16384 | Metadata Amazon KDP (descripcion, keywords, BISAC) |
-| Disenador de Portadas | DeepSeek V4-Flash | 16384 | Prompts optimizados para generacion de portadas IA |
-| Generacion de Imagenes | Google Gemini | — | Renderizado real de portadas e imagenes (unico agente que sigue en Gemini) |
 
 ## Distribucion de Modelos y Costos
 
-Todos los agentes de texto usan **DeepSeek V4-Flash** como modelo principal via API compatible con OpenAI, optimizando costos sin sacrificar calidad. La generacion de imagenes (portadas) sigue en **Google Gemini** porque DeepSeek no ofrece modelo de imagen.
+Todos los agentes usan **DeepSeek V4-Flash** como unico modelo via API compatible con OpenAI, optimizando costos sin sacrificar calidad.
 
 | Modelo | Uso | Input/M | Output/M | Thinking/M |
 |--------|-----|---------|----------|------------|
-| DeepSeek V4-Flash | Todos los agentes de texto | $0.14 | $0.28 | $0.28 |
-| Google Gemini (imagen) | Generacion de portadas e imagenes | — | — | — |
+| DeepSeek V4-Flash | Todos los agentes | $0.14 | $0.28 | $0.28 |
 
 **Reduccion de costos vs Gemini 2.5 Flash**: input ~2.1x mas barato, output ~9x mas barato, thinking ~12.5x mas barato.
 
@@ -228,7 +223,7 @@ Todos los agentes de texto usan **DeepSeek V4-Flash** como modelo principal via 
 - **Velocidad ajustable**: Control de velocidad de narracion (0.5x a 2.0x)
 - **Generacion paralela**: Hasta 3 capitulos simultaneos para mayor velocidad
 - **Pausa y reanudacion**: Control total sobre el proceso de generacion
-- **Portadas**: Subida de imagen de portada para el proyecto de audiolibro
+- **Portadas**: Subida manual de imagen de portada para el proyecto de audiolibro
 - **Descarga en ZIP**: Descarga todos los capitulos generados en un archivo ZIP con metadata
 - **Streaming de audio**: Reproduccion directa desde la interfaz web
 - **Chunking inteligente**: Capitulos largos (>9500 caracteres) se dividen automaticamente en fragmentos
@@ -238,12 +233,6 @@ Todos los agentes de texto usan **DeepSeek V4-Flash** como modelo principal via 
 - **Cumplimiento KDP**: Solo tags HTML permitidos, sin informacion prohibida, keywords sin marcas registradas
 - **Declaracion de IA**: Configurada como "ai-assisted" segun politica Amazon 2025
 - **Edicion completa**: Todos los campos editables con avisos de limite de caracteres
-
-### Portadas IA
-- **Prompts optimizados**: Compatible con Midjourney, DALL-E, Stable Diffusion, Ideogram, Leonardo AI
-- **4 alcances**: Proyecto individual, serie (identidad visual coherente), pseudonimo (branding), independiente
-- **Especificaciones KDP**: 2560x1600px, 300 DPI, RGB, JPEG/TIFF
-- **Sistema de diseno de serie**: Elementos comunes, paleta de colores, tipografia y patron de layout compartidos
 
 ### Catalogo de Libros y Back Matter
 - **Catalogo centralizado**: Registro de obras publicadas por pseudonimo con titulo, idioma, genero y enlace Amazon/ASIN
@@ -274,8 +263,7 @@ Todos los agentes de texto usan **DeepSeek V4-Flash** como modelo principal via 
 - 4GB RAM minimo (8GB recomendado)
 - 20GB espacio en disco
 - Conexion a internet
-- API key de DeepSeek (obligatoria, para agentes de texto)
-- API key de Google Gemini (opcional, solo para generacion de portadas IA)
+- API key de DeepSeek (obligatoria, para todos los agentes)
 - API key de Fish Audio (opcional, para audiolibros)
 
 ## Preparacion del Servidor Ubuntu
@@ -313,7 +301,6 @@ sudo DEEPSEEK_API_KEY="tu-api-key-aqui" bash install.sh --unattended
 
 # Con todas las opciones
 sudo DEEPSEEK_API_KEY="tu-deepseek-key" \
-     GEMINI_API_KEY="tu-gemini-key-para-portadas" \
      FISH_AUDIO_API_KEY="tu-fish-key" \
      LITAGENTS_PASSWORD="tu-contrasena" \
      CF_TUNNEL_TOKEN="token-cloudflare-opcional" \
@@ -325,7 +312,6 @@ Tambien puedes usar argumentos de linea de comandos:
 ```bash
 sudo bash install.sh --unattended \
     --deepseek-key="tu-deepseek-key" \
-    --gemini-key="tu-gemini-key" \
     --fish-key="tu-fish-key" \
     --password="tu-contrasena" \
     --cf-token="token-cloudflare"
@@ -337,11 +323,10 @@ Ver todas las opciones: `bash install.sh --help`
 
 El instalador te pedira:
 
-1. **DEEPSEEK_API_KEY** (obligatorio): API key de DeepSeek para todos los agentes de texto
-2. **GEMINI_API_KEY** (opcional): API key de Google Gemini, solo necesaria si quieres generar portadas IA
-3. **FISH_AUDIO_API_KEY** (opcional): API key de Fish Audio para generar audiolibros
-4. **LITAGENTS_PASSWORD** (opcional): Contrasena para proteger el acceso
-5. **Cloudflare Tunnel Token** (opcional): Para acceso HTTPS externo
+1. **DEEPSEEK_API_KEY** (obligatorio): API key de DeepSeek para todos los agentes
+2. **FISH_AUDIO_API_KEY** (opcional): API key de Fish Audio para generar audiolibros
+3. **LITAGENTS_PASSWORD** (opcional): Contrasena para proteger el acceso
+4. **Cloudflare Tunnel Token** (opcional): Para acceso HTTPS externo
 
 ### Acceder a la aplicacion
 
@@ -358,12 +343,6 @@ Si configuraste una contrasena, veras una pantalla de login antes de acceder.
 2. Crea una cuenta y verifica tu email
 3. Genera una API key
 4. El sistema usa el modelo `deepseek-v4-flash` con API compatible con OpenAI (`https://api.deepseek.com`)
-
-### Google Gemini (opcional, solo para portadas IA)
-1. Visita https://aistudio.google.com/apikey
-2. Crea un proyecto y habilita la API
-3. Genera una API key
-4. Solo necesaria si vas a usar la funcion de generacion de portadas
 
 ### Fish Audio (opcional, para audiolibros)
 1. Visita https://fish.audio/account/api-key
@@ -470,8 +449,7 @@ put mi_manuscrito.docx
 |----------|-------------|-----------|
 | `DATABASE_URL` | URL de conexion PostgreSQL | Si (auto) |
 | `SESSION_SECRET` | Secreto para sesiones | Si (auto) |
-| `DEEPSEEK_API_KEY` | API key de DeepSeek (todos los agentes de texto) | Si |
-| `GEMINI_API_KEY` | API key de Google Gemini (solo para portadas IA) | Opcional |
+| `DEEPSEEK_API_KEY` | API key de DeepSeek (todos los agentes) | Si |
 | `FISH_AUDIO_API_KEY` | API key de Fish Audio (audiolibros) | Opcional |
 | `LITAGENTS_PASSWORD` | Contrasena de acceso | Opcional |
 | `SECURE_COOKIES` | true/false para cookies seguras | Si (auto) |
@@ -572,8 +550,7 @@ sudo systemctl restart nginx
 - **Frontend**: React + TypeScript + Vite + shadcn/ui (PWA)
 - **Backend**: Node.js + Express + TypeScript
 - **Base de datos**: PostgreSQL + Drizzle ORM
-- **IA (texto)**: DeepSeek API (modelo `deepseek-v4-flash`) via SDK compatible con OpenAI
-- **IA (imagenes)**: Google Gemini API (solo para generacion de portadas)
+- **IA**: DeepSeek API (modelo `deepseek-v4-flash`) via SDK compatible con OpenAI
 - **TTS**: Fish Audio API (modelo speech-1.6) para audiolibros
 - **Proxy**: Nginx
 - **Proceso**: systemd
@@ -582,8 +559,8 @@ sudo systemctl restart nginx
 ## Changelog
 
 ### v6.7
-- **Migracion completa de Gemini a DeepSeek V4-Flash** para todos los agentes de texto. La generacion de imagenes (portadas) se mantiene en Gemini.
-- **Nueva variable de entorno obligatoria**: `DEEPSEEK_API_KEY`. `GEMINI_API_KEY` pasa a ser opcional (solo necesaria para portadas IA).
+- **Migracion completa de Gemini a DeepSeek V4-Flash** para todos los agentes. La integracion con Google Gemini y la seccion de generacion de portadas IA se han eliminado por completo.
+- **Unica variable de entorno obligatoria**: `DEEPSEEK_API_KEY`. `GEMINI_API_KEY` ya no se usa.
 - **Reduccion de costos drastica**: input 2.1x mas barato, output 9x mas barato, thinking 12.5x mas barato vs Gemini 2.5 Flash.
 - **SDK unificado**: Cliente OpenAI con `baseURL: https://api.deepseek.com`, formato estandar de mensajes con rol `system`.
 - **Cost tracking refactorizado**: Calculador centralizado de costos como unica fuente de verdad para todos los `ai_usage_events`.
@@ -619,7 +596,7 @@ sudo systemctl restart nginx
 - Critica editorial en re-ediciones
 - Optimizacion clone-to-reedit (skip stages 1-3)
 - Audiolibros con Fish Audio TTS
-- Metadatos KDP y portadas IA
+- Metadatos KDP
 - Catalogo de libros y back matter
 - PWA instalable
 

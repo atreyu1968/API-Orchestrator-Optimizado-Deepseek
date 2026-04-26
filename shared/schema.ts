@@ -788,43 +788,6 @@ export type InsertAudiobookProject = z.infer<typeof insertAudiobookProjectSchema
 export type AudiobookChapter = typeof audiobookChapters.$inferSelect;
 export type InsertAudiobookChapter = z.infer<typeof insertAudiobookChapterSchema>;
 
-export const coverPrompts = pgTable("cover_prompts", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
-  seriesId: integer("series_id").references(() => series.id, { onDelete: "set null" }),
-  pseudonymId: integer("pseudonym_id").references(() => pseudonyms.id, { onDelete: "set null" }),
-  title: text("title").notNull(),
-  prompt: text("prompt").notNull(),
-  negativePrompt: text("negative_prompt"),
-  style: text("style").notNull().default("realistic"),
-  colorPalette: text("color_palette"),
-  mood: text("mood"),
-  typography: text("typography"),
-  composition: text("composition"),
-  seriesDesignSystem: jsonb("series_design_system"),
-  authorBranding: jsonb("author_branding"),
-  generatedImageUrl: text("generated_image_url"),
-  coverSpecs: jsonb("cover_specs").default({
-    width: 1600,
-    height: 2560,
-    dpi: 300,
-    format: "JPEG",
-    colorMode: "RGB",
-    ratio: "1.6:1"
-  }),
-  status: text("status").notNull().default("draft"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
-});
-
-export const insertCoverPromptSchema = createInsertSchema(coverPrompts).omit({
-  id: true,
-  createdAt: true,
-});
-
-export type CoverPrompt = typeof coverPrompts.$inferSelect;
-export type InsertCoverPrompt = z.infer<typeof insertCoverPromptSchema>;
-
 export const kdpMetadata = pgTable("kdp_metadata", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),

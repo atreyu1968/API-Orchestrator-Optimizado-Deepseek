@@ -1,5 +1,5 @@
-export class GeminiRateLimiter {
-  private static instance: GeminiRateLimiter;
+export class AIRateLimiter {
+  private static instance: AIRateLimiter;
   private lastRequestTime: number = 0;
   private minDelayMs: number = 5000;
   private currentBackoffMs: number = 5000;
@@ -10,11 +10,11 @@ export class GeminiRateLimiter {
 
   private constructor() {}
 
-  static getInstance(): GeminiRateLimiter {
-    if (!GeminiRateLimiter.instance) {
-      GeminiRateLimiter.instance = new GeminiRateLimiter();
+  static getInstance(): AIRateLimiter {
+    if (!AIRateLimiter.instance) {
+      AIRateLimiter.instance = new AIRateLimiter();
     }
-    return GeminiRateLimiter.instance;
+    return AIRateLimiter.instance;
   }
 
   private async processQueue(): Promise<void> {
@@ -87,4 +87,4 @@ export class GeminiRateLimiter {
   }
 }
 
-export const geminiRateLimiter = GeminiRateLimiter.getInstance();
+export const aiRateLimiter = AIRateLimiter.getInstance();
