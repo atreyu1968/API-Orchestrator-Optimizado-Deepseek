@@ -2,15 +2,16 @@
 set -eo pipefail
 
 # ============================================================
-# Autoinstalador para EscritorasdGemini (LitAgents)
+# Autoinstalador para LitAgents v6.7 (API Orchestrator Optimizado DeepSeek)
 # Compatible con Ubuntu 22.04/24.04
-# Repositorio: https://github.com/atreyu1968/escritorasdgemini
+# Repositorio: https://github.com/atreyu1968/API-Orchestrator-Optimizado-Deepseek
 # 
 # Uso desatendido:
-#   GEMINI_API_KEY="tu-key" bash install.sh --unattended
+#   DEEPSEEK_API_KEY="tu-key" bash install.sh --unattended
 #
-# Variables de entorno opcionales:
-#   GEMINI_API_KEY          - (Requerido) API key de Google Gemini
+# Variables de entorno:
+#   DEEPSEEK_API_KEY        - (Requerido) API key de DeepSeek (texto)
+#   GEMINI_API_KEY          - (Opcional) API key de Gemini (solo para portadas)
 #   FISH_AUDIO_API_KEY      - (Opcional) API key de Fish Audio para audiolibros
 #   LITAGENTS_PASSWORD      - (Opcional) Contrasena de acceso
 #   CF_TUNNEL_TOKEN         - (Opcional) Token de Cloudflare Tunnel
@@ -37,7 +38,7 @@ APP_PORT="5000"
 APP_USER="litagents"
 DB_NAME="litagents_db"
 DB_USER="litagents"
-GITHUB_REPO="https://github.com/atreyu1968/escritorasdgemini.git"
+GITHUB_REPO="https://github.com/atreyu1968/API-Orchestrator-Optimizado-Deepseek.git"
 NODE_MAJOR=20
 
 UNATTENDED=false
@@ -46,6 +47,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --unattended|-u)
             UNATTENDED=true
+            shift
+            ;;
+        --deepseek-key=*)
+            DEEPSEEK_API_KEY="${1#*=}"
             shift
             ;;
         --gemini-key=*)
@@ -69,15 +74,16 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Opciones:"
             echo "  --unattended, -u              Instalacion sin interaccion"
-            echo "  --gemini-key=KEY              API key de Google Gemini (requerido)"
+            echo "  --deepseek-key=KEY            API key de DeepSeek (requerido para texto)"
+            echo "  --gemini-key=KEY              API key de Gemini (opcional, solo portadas)"
             echo "  --fish-key=KEY                API key de Fish Audio para audiolibros (opcional)"
             echo "  --password=PASS               Contrasena de acceso (opcional)"
             echo "  --cf-token=TOKEN              Token de Cloudflare Tunnel (opcional)"
             echo "  --help, -h                    Mostrar esta ayuda"
             echo ""
             echo "Ejemplo desatendido:"
-            echo "  sudo GEMINI_API_KEY=\"tu-key\" bash install.sh --unattended"
-            echo "  sudo GEMINI_API_KEY=\"tu-key\" FISH_AUDIO_API_KEY=\"fish-key\" bash install.sh --unattended"
+            echo "  sudo DEEPSEEK_API_KEY=\"tu-key\" bash install.sh --unattended"
+            echo "  sudo DEEPSEEK_API_KEY=\"tu-key\" GEMINI_API_KEY=\"gemini-key\" bash install.sh --unattended"
             echo ""
             echo "  O con argumentos:"
             echo "  sudo bash install.sh --unattended --gemini-key=\"tu-key\" --fish-key=\"fish-key\" --password=\"secreto\""
@@ -97,12 +103,13 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+PROVIDED_DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}"
 PROVIDED_GEMINI_API_KEY="${GEMINI_API_KEY:-}"
 PROVIDED_FISH_AUDIO_API_KEY="${FISH_AUDIO_API_KEY:-}"
 PROVIDED_LITAGENTS_PASSWORD="${LITAGENTS_PASSWORD:-}"
 PROVIDED_CF_TUNNEL_TOKEN="${CF_TUNNEL_TOKEN:-}"
 
-print_header "INSTALADOR DE LITAGENTS (EscritorasdGemini)"
+print_header "INSTALADOR DE LITAGENTS v6.7 (DeepSeek V4-Flash)"
 echo "Este script instalara y configurara la aplicacion completa."
 echo ""
 
@@ -117,6 +124,7 @@ if [ -f "$CONFIG_DIR/env" ]; then
     print_status "Las credenciales y configuracion se preservaran."
     source "$CONFIG_DIR/env"
     
+    [ -n "$PROVIDED_DEEPSEEK_API_KEY" ] && DEEPSEEK_API_KEY="$PROVIDED_DEEPSEEK_API_KEY"
     [ -n "$PROVIDED_GEMINI_API_KEY" ] && GEMINI_API_KEY="$PROVIDED_GEMINI_API_KEY"
     [ -n "$PROVIDED_FISH_AUDIO_API_KEY" ] && FISH_AUDIO_API_KEY="$PROVIDED_FISH_AUDIO_API_KEY"
     [ -n "$PROVIDED_LITAGENTS_PASSWORD" ] && LITAGENTS_PASSWORD="$PROVIDED_LITAGENTS_PASSWORD"
@@ -141,12 +149,18 @@ print_header "PASO 1: Configuracion de API Keys"
 
 if [ "$IS_UPDATE" = false ]; then
     if [ "$UNATTENDED" = true ]; then
-        if [ -z "$GEMINI_API_KEY" ]; then
-            print_error "La variable GEMINI_API_KEY es obligatoria en modo desatendido"
-            echo "Uso: GEMINI_API_KEY=\"tu-key\" sudo bash install.sh --unattended"
+        if [ -z "$DEEPSEEK_API_KEY" ]; then
+            print_error "La variable DEEPSEEK_API_KEY es obligatoria en modo desatendido"
+            echo "Uso: DEEPSEEK_API_KEY=\"tu-key\" sudo bash install.sh --unattended"
             exit 1
         fi
-        print_success "Usando GEMINI_API_KEY desde variable de entorno"
+        print_success "Usando DEEPSEEK_API_KEY desde variable de entorno"
+        
+        if [ -n "$GEMINI_API_KEY" ]; then
+            print_success "Usando GEMINI_API_KEY desde variable de entorno (portadas habilitadas)"
+        else
+            print_status "GEMINI_API_KEY no proporcionada (generacion de portadas deshabilitada)"
+        fi
         
         if [ -n "$FISH_AUDIO_API_KEY" ]; then
             print_success "Usando FISH_AUDIO_API_KEY desde variable de entorno"
@@ -157,16 +171,24 @@ if [ "$IS_UPDATE" = false ]; then
         LITAGENTS_PASSWORD="${LITAGENTS_PASSWORD:-}"
         CF_TOKEN="${CF_TUNNEL_TOKEN:-}"
     else
-        echo "Necesitas proporcionar tu API key de Google Gemini."
-        echo "Puedes obtenerla en: https://aistudio.google.com/apikey"
+        echo "Necesitas proporcionar tu API key de DeepSeek (para todos los agentes de texto)."
+        echo "Puedes obtenerla en: https://platform.deepseek.com/api_keys"
         echo ""
         
-        read -p "GEMINI_API_KEY: " INPUT_GEMINI_KEY
-        if [ -z "$INPUT_GEMINI_KEY" ]; then
-            print_error "La API key de Gemini es obligatoria"
+        read -p "DEEPSEEK_API_KEY: " INPUT_DEEPSEEK_KEY
+        if [ -z "$INPUT_DEEPSEEK_KEY" ]; then
+            print_error "La API key de DeepSeek es obligatoria"
             exit 1
         fi
-        GEMINI_API_KEY="$INPUT_GEMINI_KEY"
+        DEEPSEEK_API_KEY="$INPUT_DEEPSEEK_KEY"
+        
+        echo ""
+        echo "=== Configuracion de Gemini (Portadas) ==="
+        echo "(Opcional) Para generar portadas de libros necesitas una API key de Google Gemini."
+        echo "Puedes obtenerla en: https://aistudio.google.com/apikey"
+        echo "Presiona Enter para omitir (podras configurarla despues)."
+        read -p "GEMINI_API_KEY (opcional): " INPUT_GEMINI_KEY
+        GEMINI_API_KEY="${INPUT_GEMINI_KEY:-}"
         
         echo ""
         echo "=== Configuracion de Fish Audio (Audiolibros) ==="
@@ -183,6 +205,12 @@ if [ "$IS_UPDATE" = false ]; then
         read -sp "LITAGENTS_PASSWORD (opcional): " INPUT_PASSWORD
         echo ""
         LITAGENTS_PASSWORD="${INPUT_PASSWORD:-}"
+    fi
+    
+    if [ -n "$GEMINI_API_KEY" ]; then
+        print_success "Gemini API key configurada (portadas habilitadas)"
+    else
+        print_status "Gemini omitido (podras configurarlo despues en /etc/litagents/env)"
     fi
     
     if [ -n "$FISH_AUDIO_API_KEY" ]; then
@@ -367,6 +395,19 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR/audiobooks"
 if [ "$IS_UPDATE" = true ]; then
     print_status "Preservando configuracion existente..."
     
+    if [ -n "$DEEPSEEK_API_KEY" ] && [ "$DEEPSEEK_API_KEY" != "$(grep -oP 'DEEPSEEK_API_KEY=\K.*' "$CONFIG_DIR/env" 2>/dev/null)" ]; then
+        if grep -q "^DEEPSEEK_API_KEY=" "$CONFIG_DIR/env" 2>/dev/null; then
+            sed -i "s|^DEEPSEEK_API_KEY=.*|DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY|" "$CONFIG_DIR/env"
+        else
+            echo "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" >> "$CONFIG_DIR/env"
+        fi
+        print_status "API key de DeepSeek actualizada"
+    fi
+    
+    if ! grep -q "^DEEPSEEK_API_KEY=" "$CONFIG_DIR/env" 2>/dev/null; then
+        echo "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" >> "$CONFIG_DIR/env"
+    fi
+    
     if [ -n "$GEMINI_API_KEY" ] && [ "$GEMINI_API_KEY" != "$(grep -oP 'GEMINI_API_KEY=\K.*' "$CONFIG_DIR/env" 2>/dev/null)" ]; then
         sed -i "s|^GEMINI_API_KEY=.*|GEMINI_API_KEY=$GEMINI_API_KEY|" "$CONFIG_DIR/env"
         print_status "API key de Gemini actualizada"
@@ -399,6 +440,7 @@ NODE_ENV=production
 PORT=$APP_PORT
 DATABASE_URL=$DATABASE_URL
 SESSION_SECRET=$SESSION_SECRET
+DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
 GEMINI_API_KEY=$GEMINI_API_KEY
 FISH_AUDIO_API_KEY=$FISH_AUDIO_API_KEY
 LITAGENTS_PASSWORD=$LITAGENTS_PASSWORD
@@ -546,7 +588,7 @@ AUDIOBOOKS_DIR="$APP_DIR/audiobooks"
 cat > "/etc/systemd/system/$APP_NAME.service" << EOF
 [Unit]
 Description=LitAgents Application
-Documentation=https://github.com/atreyu1968/escritorasdgemini
+Documentation=https://github.com/atreyu1968/API-Orchestrator-Optimizado-Deepseek
 After=network.target postgresql.service
 Wants=postgresql.service
 
