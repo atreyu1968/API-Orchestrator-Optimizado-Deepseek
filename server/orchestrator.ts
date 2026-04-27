@@ -1150,6 +1150,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         let approved = false;
         let refinementAttempts = 0;
         let wordCountRetries = 0;
+        let pendingContinuityViolations: string[] = [];
         let refinementInstructions = "";
 
         let extractedContinuityState: any = null;
@@ -1307,22 +1308,19 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             const continuityCheck = this.validateImmediateContinuity(currentContent, characterStates, worldBibleData.world_bible);
             
             if (!continuityCheck.valid) {
-              console.warn(`[Orchestrator] VIOLACIÓN DE CONTINUIDAD detectada en ${sectionLabel}:`, continuityCheck.violations);
-              this.callbacks.onAgentStatus("ghostwriter", "warning", 
-                `${sectionLabel} tiene ${continuityCheck.violations.length} violación(es) de continuidad. Corrigiendo...`
-              );
-
               const currentBestWords = bestVersion.content.split(/\s+/).filter((w: string) => w.length > 0).length;
               if (contentWordCount > currentBestWords) {
                 bestVersion.content = currentContent;
                 bestVersion.continuityState = currentContinuityState;
-                console.log(`[Orchestrator] Saving violated draft as best base for surgical correction (${contentWordCount} words > previous best ${currentBestWords}).`);
               }
 
-              refinementAttempts++;
-              refinementInstructions = `🚨 VIOLACIÓN DE CONTINUIDAD CRÍTICA 🚨\n\nTu capítulo contiene los siguientes errores que DEBEN corregirse:\n\n${continuityCheck.violations.map((v, idx) => `${idx + 1}. ${v}`).join("\n\n")}\n\nCORRIGE SOLO los pasajes con violaciones de continuidad. PRESERVA INTACTO todo el resto del capítulo — prosa, diálogos, descripciones y estructura que funcionan. NO reescribas desde cero.`;
-              await new Promise(resolve => setTimeout(resolve, 5000));
-              continue;
+              console.warn(`[Orchestrator] ${sectionLabel}: ${continuityCheck.violations.length} violación(es) de continuidad detectadas. Escalando directamente al Editor con violaciones inyectadas para plan quirúrgico.`);
+              this.callbacks.onAgentStatus("ghostwriter", "warning",
+                `${sectionLabel}: ${continuityCheck.violations.length} violación(es) de continuidad. Escalando al Editor para plan quirúrgico...`
+              );
+              pendingContinuityViolations = continuityCheck.violations;
+            } else {
+              pendingContinuityViolations = [];
             }
           }
 
@@ -1342,6 +1340,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               : `Género: ${project.genre}, Tono: ${project.tone}`,
             previousContinuityState: previousContinuityStateForEditor,
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
+            continuityViolations: pendingContinuityViolations.length > 0 ? pendingContinuityViolations : undefined,
           });
 
           await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "deepseek-v4-flash", sectionData.numero, "chapter_edit");
@@ -1986,22 +1985,19 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             const continuityCheck = this.validateImmediateContinuity(currentContent, characterStates, worldBibleData.world_bible);
             
             if (!continuityCheck.valid) {
-              console.warn(`[Orchestrator] VIOLACIÓN DE CONTINUIDAD detectada en ${sectionLabel}:`, continuityCheck.violations);
-              this.callbacks.onAgentStatus("ghostwriter", "warning", 
-                `${sectionLabel} tiene ${continuityCheck.violations.length} violación(es) de continuidad. Corrigiendo...`
-              );
-
               const currentBestWords = bestVersion.content.split(/\s+/).filter((w: string) => w.length > 0).length;
               if (contentWordCount > currentBestWords) {
                 bestVersion.content = currentContent;
                 bestVersion.continuityState = currentContinuityState;
-                console.log(`[Orchestrator] Saving violated draft as best base for surgical correction (${contentWordCount} words > previous best ${currentBestWords}).`);
               }
 
-              refinementAttempts++;
-              refinementInstructions = `🚨 VIOLACIÓN DE CONTINUIDAD CRÍTICA 🚨\n\nTu capítulo contiene los siguientes errores que DEBEN corregirse:\n\n${continuityCheck.violations.map((v, idx) => `${idx + 1}. ${v}`).join("\n\n")}\n\nCORRIGE SOLO los pasajes con violaciones de continuidad. PRESERVA INTACTO todo el resto del capítulo — prosa, diálogos, descripciones y estructura que funcionan. NO reescribas desde cero.`;
-              await new Promise(resolve => setTimeout(resolve, 5000));
-              continue;
+              console.warn(`[Orchestrator] ${sectionLabel}: ${continuityCheck.violations.length} violación(es) de continuidad detectadas. Escalando directamente al Editor con violaciones inyectadas para plan quirúrgico.`);
+              this.callbacks.onAgentStatus("ghostwriter", "warning",
+                `${sectionLabel}: ${continuityCheck.violations.length} violación(es) de continuidad. Escalando al Editor para plan quirúrgico...`
+              );
+              pendingContinuityViolations = continuityCheck.violations;
+            } else {
+              pendingContinuityViolations = [];
             }
           }
 
@@ -2021,6 +2017,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               : `Género: ${project.genre}, Tono: ${project.tone}`,
             previousContinuityState: previousContinuityStateForEditor,
             previousChaptersContext: this.buildPreviousChaptersContextForEditor(editorChaptersCtx, sectionData.numero),
+            continuityViolations: pendingContinuityViolations.length > 0 ? pendingContinuityViolations : undefined,
           });
 
           await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "deepseek-v4-flash", sectionData.numero, "chapter_edit");

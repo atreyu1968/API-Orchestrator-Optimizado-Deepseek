@@ -39,6 +39,7 @@ interface EditorInput {
   estructuraTresActos?: any;
   previousContinuityState?: any;
   previousChaptersContext?: string;
+  continuityViolations?: string[];
 }
 
 export interface EditorResult {
@@ -393,6 +394,24 @@ ${authorNotesSection}
 ${input.estructuraTresActos ? `4. ESTRUCTURA DE TRES ACTOS:\n${JSON.stringify(input.estructuraTresActos, null, 2)}` : ""}
 
 ${continuitySection}
+${input.continuityViolations && input.continuityViolations.length > 0 ? `
+═══════════════════════════════════════════════════════════════════
+🚨 VIOLACIONES DE CONTINUIDAD PRE-DETECTADAS (PRIORIDAD MÁXIMA) 🚨
+═══════════════════════════════════════════════════════════════════
+El validador automático detectó las siguientes violaciones en este capítulo
+ANTES de tu revisión. El Narrador ya intentó corregirlas sin éxito.
+
+${input.continuityViolations.map((v, idx) => `${idx + 1}. ${v}`).join("\n")}
+
+INSTRUCCIONES OBLIGATORIAS:
+- INCLUYE estas violaciones en "errores_continuidad" (textual)
+- TU "plan_quirurgico" DEBE indicar correcciones específicas para cada violación
+  (qué frase cambiar, qué eliminar, qué reformular)
+- PUNTÚA este capítulo como máximo 6/10 hasta que las violaciones se resuelvan
+- Si una violación es estructural (el outline pide un personaje muerto),
+  marca "verdict: rechazado" e indica reescribir la escena completa
+═══════════════════════════════════════════════════════════════════
+` : ""}
 ${input.previousChaptersContext ? `
 ═══════════════════════════════════════════════════════════════════
 TEXTO DE CAPÍTULOS ANTERIORES (PARA DETECCIÓN DE REPETICIONES):
