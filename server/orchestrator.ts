@@ -3765,6 +3765,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       throw new Error("Las notas editoriales están vacías.");
     }
 
+    this.cumulativeTokens = {
+      inputTokens: project.totalInputTokens || 0,
+      outputTokens: project.totalOutputTokens || 0,
+      thinkingTokens: project.totalThinkingTokens || 0,
+    };
+
     const worldBible = await storage.getWorldBibleByProject(project.id);
     if (!worldBible) {
       throw new Error("No se encontró la biblia del mundo para este proyecto.");

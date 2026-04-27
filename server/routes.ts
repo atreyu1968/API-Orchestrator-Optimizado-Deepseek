@@ -1598,6 +1598,35 @@ export async function registerRoutes(
         });
       }
 
+      // Track token usage so the cost calculator accumulates this regeneration
+      if (result.tokenUsage) {
+        const inputTokens = result.tokenUsage.inputTokens || 0;
+        const outputTokens = result.tokenUsage.outputTokens || 0;
+        const thinkingTokens = result.tokenUsage.thinkingTokens || 0;
+        const model = "deepseek-v4-flash";
+        const costs = calculateRealCost(model, inputTokens, outputTokens, thinkingTokens);
+
+        await storage.updateProject(projectId, {
+          totalInputTokens: (project.totalInputTokens || 0) + inputTokens,
+          totalOutputTokens: (project.totalOutputTokens || 0) + outputTokens,
+          totalThinkingTokens: (project.totalThinkingTokens || 0) + thinkingTokens,
+        });
+
+        await storage.createAiUsageEvent({
+          projectId,
+          agentName: "Ghostwriter (Regeneración)",
+          model,
+          inputTokens,
+          outputTokens,
+          thinkingTokens,
+          inputCostUsd: costs.inputCost.toFixed(6),
+          outputCostUsd: (costs.outputCost + costs.thinkingCost).toFixed(6),
+          totalCostUsd: costs.totalCost.toFixed(6),
+          chapterNumber,
+          operation: "regenerate_single_chapter",
+        });
+      }
+
       await storage.updateChapter(chapter.id, {
         content: cleanContent,
         wordCount,
