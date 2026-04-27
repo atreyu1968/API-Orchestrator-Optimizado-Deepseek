@@ -1833,6 +1833,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         let approved = false;
         let refinementAttempts = 0;
         let wordCountRetries = 0;
+        let pendingContinuityViolations: string[] = [];
         let refinementInstructions = "";
         let extractedContinuityState: any = null;
         
