@@ -11,6 +11,15 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes
 
 ### v6.7 — DeepSeek V4-Flash Migration (Apr 2026)
+
+#### Originality Critic Agent (v6.7)
+- **New agent**: `server/agents/originality-critic.ts` — `OriginalityCriticAgent`. Reads the Architect's outline (premise, characters, chapter beats) and scores originality 1-10. Detects 6 cluster types: `premisa_generica`, `personaje_arquetipico`, `tropo_trama`, `giro_predecible`, `setpiece_cliche`, `dialogo_topico`. Uses `thinkingBudget: 8192` (max reasoning).
+- **Verdicts**: `aprobado` (score ≥7, proceed), `revisar` (5-6, proceed with warning), `rechazado` (≤4 or 3+ major clusters, re-run Architect).
+- **Wired in `server/orchestrator.ts`** between successful World Bible parse (~line 1023) and DB save (~line 1116). Non-blocking: any failure falls through to original outline. On `rechazado`, runs Architect ONCE more with `instrucciones_revision` injected as `architectInstructions`. Validates re-run output (must produce ≥ expectedChapters - 2 chapters); on invalid/failed re-run, keeps original outline.
+- **Activity log**: writes `🎭 Crítico de Originalidad — Score X/10 (veredicto)` with cluster details in `metadata.clusters` for dashboard inspection.
+- **Token tracking**: tracked under operation `originality_check` and (when re-pass occurs) `world_bible` for the second Architect pass.
+- **Architect reasoning bumped**: `thinkingBudget` 4096 → 8192 (max). Decisions made here propagate to 80k+ words; reasoning depth pays off.
+- **Final Reviewer new categories**: added `cliche` and `personaje_arquetipico` to `FinalReviewIssue.categoria` (detection-only safety net for clichés that slip through). System prompt updated with examples and false-positive guards.
 - **Full migration from Gemini to DeepSeek V4-Flash for all agents** (no fallback). The Google Gemini integration and the entire AI cover-generation feature ("Portadas") have been removed. DeepSeek is now the only AI provider.
 - **`server/agents/base-agent.ts`** rewritten to use the `openai` SDK pointing at `https://api.deepseek.com`. Default model is `deepseek-v4-flash`. The agent's `useThinking` flag now maps to DeepSeek's `thinking: { type: "enabled" | "disabled" }` plus `reasoning_effort`. Reasoning tokens are extracted from `usage.completion_tokens_details.reasoning_tokens`.
 - **`server/cost-calculator.ts`** updated with DeepSeek pricing (V4-Flash: $0.14 input / $0.28 output per 1M; V4-Pro: $1.74 / $3.48). Legacy Gemini prices retained for historical events. `AGENT_MODEL_MAPPING` routes every agent to `deepseek-v4-flash`.

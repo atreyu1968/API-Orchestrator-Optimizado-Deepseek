@@ -28,7 +28,7 @@ interface FinalReviewerInput {
 
 export interface FinalReviewIssue {
   capitulos_afectados: number[];
-  categoria: "enganche" | "personajes" | "trama" | "atmosfera" | "ritmo" | "continuidad_fisica" | "timeline" | "ubicacion" | "repeticion_lexica" | "arco_incompleto" | "tension_insuficiente" | "giro_predecible" | "hook_debil" | "identidad_confusa" | "capitulo_huerfano" | "meta_referencia" | "otro";
+  categoria: "enganche" | "personajes" | "trama" | "atmosfera" | "ritmo" | "continuidad_fisica" | "timeline" | "ubicacion" | "repeticion_lexica" | "arco_incompleto" | "tension_insuficiente" | "giro_predecible" | "hook_debil" | "identidad_confusa" | "capitulo_huerfano" | "meta_referencia" | "cliche" | "personaje_arquetipico" | "otro";
   descripcion: string;
   severidad: "critica" | "mayor" | "menor";
   elementos_a_preservar: string;
@@ -304,6 +304,8 @@ MAYORES (Molestan pero no destruyen):
 - Repeticiones léxicas muy evidentes que distraen
 - Ritmo irregular (capítulos que arrastran sin propósito)
 - Subtramas abandonadas sin resolución
+- CLICHÉS narrativos del género (categoría "cliche"): tropos muy vistos sin reinvención. Ejemplos típicos a reportar: el "elegido" reluctante, el sacrificio del mentor a mitad de obra, la traición del aliado más cercano, el villano que monologa en el clímax, el entrenamiento en montaña remota, el mercado/taberna con el "informador del bajo mundo", el reencuentro casual imposible, el diario/carta que aparece justo cuando hace falta. Reportar SOLO si el cliché no está reinventado, subvertido o usado conscientemente. Si hay un giro que lo hace fresco, NO es un issue.
+- PERSONAJES ARQUETÍPICOS sin profundidad (categoría "personaje_arquetipico"): personajes que cumplen un arquetipo (el sabio mentor, la femme fatale, el bufón cómico, el villano puramente malvado, el rebelde sin causa) sin contradicciones internas, sin contra-cliché, sin un rasgo que los humanice fuera del rol. Reportar el nombre del personaje, en qué capítulos aparece y qué rasgo concreto le falta. NO reportar si el personaje, aunque arquetípico, tiene momentos de matiz o ambigüedad genuina.
 
 MENORES (El lector ni nota):
 - Pequeñas inconsistencias de detalles secundarios
@@ -439,7 +441,7 @@ SALIDA OBLIGATORIA (JSON):
   "issues": [
     {
       "capitulos_afectados": [1, 5],
-      "categoria": "enganche" | "personajes" | "trama" | "atmosfera" | "ritmo" | "continuidad_fisica" | "timeline" | "repeticion_lexica" | "arco_incompleto" | "tension_insuficiente" | "giro_predecible" | "identidad_confusa" | "capitulo_huerfano" | "meta_referencia" | "otro",
+      "categoria": "enganche" | "personajes" | "trama" | "atmosfera" | "ritmo" | "continuidad_fisica" | "timeline" | "repeticion_lexica" | "arco_incompleto" | "tension_insuficiente" | "giro_predecible" | "identidad_confusa" | "capitulo_huerfano" | "meta_referencia" | "cliche" | "personaje_arquetipico" | "otro",
       "descripcion": "Lo que me sacó de la historia como lector. SIEMPRE incluir número(s) de capítulo en la descripción (ej: 'En el Capítulo 29, ...')",
       "severidad": "critica" | "mayor" | "menor",
       "elementos_a_preservar": "Lista ESPECÍFICA de escenas, diálogos y elementos del capítulo que funcionan bien y NO deben modificarse",

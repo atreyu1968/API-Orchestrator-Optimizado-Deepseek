@@ -15,3 +15,4 @@ export { ProofreaderAgent, type ProofreaderResult, type ProofreaderChange } from
 export { EditorialNotesParser, type EditorialInstruction, type EditorialNotesParseResult } from "./editorial-notes-parser";
 export { SurgicalPatcherAgent, type PatchOperation, type SurgicalPatchResult, type AppliedPatchReport } from "./surgical-patcher";
 export { WorldBibleArbiterAgent, type WorldBiblePatch, type WorldBibleArbiterResult, type WorldBibleSection } from "./world-bible-arbiter";
+export { OriginalityCriticAgent, type OriginalityCriticResult, type OriginalityCluster, type OriginalityClusterType } from "./originality-critic";

@@ -313,7 +313,7 @@ export class ArchitectAgent extends BaseAgent {
       systemPrompt: PHASE1_SYSTEM_PROMPT,
       model: "deepseek-v4-flash",
       useThinking: true,
-      thinkingBudget: 4096,        // bajado de 8192: menos cómputo interno = menos tiempo expuesto a drops del flash.
+      thinkingBudget: 8192,        // subido a max: el Arquitecto decide la trama y los personajes, baja originalidad se origina aquí. Razonamiento profundo merece la pena.
       maxOutputTokens: 32768,
       includeThoughts: false,      // el thoughtSignature solo se loguea, no lo usamos. Quitarlo reduce el tamaño de respuesta y baja el riesgo de drop a media generación.
     });

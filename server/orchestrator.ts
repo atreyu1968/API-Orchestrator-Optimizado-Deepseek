@@ -12,6 +12,7 @@ import {
   EditorialNotesParser,
   SurgicalPatcherAgent,
   WorldBibleArbiterAgent,
+  OriginalityCriticAgent,
   type EditorialInstruction,
   type EditorialNotesParseResult,
   type WorldBiblePatch,
@@ -112,6 +113,7 @@ function sortChaptersNarrative<T extends { chapterNumber: number }>(chapters: T[
 
 export class Orchestrator {
   private architect = new ArchitectAgent();
+  private originalityCritic = new OriginalityCriticAgent();
   private ghostwriter = new GhostwriterAgent();
   private editor = new EditorAgent();
   private copyeditor = new CopyEditorAgent();
@@ -1015,7 +1017,102 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         
         return;
       }
-      
+
+      // ═══════════════════════════════════════════════════════════════
+      // CRÍTICO DE ORIGINALIDAD — examina el outline antes de escribir.
+      // Si detecta clichés graves, re-ejecuta al Arquitecto UNA vez con
+      // las instrucciones de revisión inyectadas. Solo se ejecuta en
+      // generación nueva (no en extender ni en reanudación).
+      // ═══════════════════════════════════════════════════════════════
+      try {
+        if (!this.aborted) {
+          this.callbacks.onAgentStatus("architect", "thinking", "El Crítico de Originalidad está revisando la trama antes de escribir...");
+          const criticOutcome = await this.originalityCritic.execute({
+            title: project.title,
+            genre: project.genre,
+            tone: project.tone,
+            premise: effectivePremise,
+            worldBible: worldBibleData.world_bible,
+            escaletaCapitulos: worldBibleData.escaleta_capitulos as any[],
+            projectId: project.id,
+          });
+
+          if (criticOutcome.raw?.tokenUsage) {
+            await this.trackTokenUsage(project.id, criticOutcome.raw.tokenUsage, "El Crítico de Originalidad", "deepseek-v4-flash", undefined, "originality_check");
+          }
+
+          const critic = criticOutcome.result;
+          if (critic) {
+            const mayores = critic.clusters.filter(c => c.severidad === "mayor").length;
+            const menores = critic.clusters.filter(c => c.severidad === "menor").length;
+            console.log(`[Orchestrator] Crítico de Originalidad: score ${critic.score_originalidad}/10, veredicto "${critic.veredicto}", ${mayores} mayores + ${menores} menores. ${critic.resumen}`);
+
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: critic.veredicto === "rechazado" ? "warn" : "info",
+              agentRole: "architect",
+              message: `🎭 Crítico de Originalidad — Score ${critic.score_originalidad}/10 (${critic.veredicto}). ${mayores} clichés mayores, ${menores} menores. ${critic.resumen}`,
+              metadata: { originalityScore: critic.score_originalidad, veredicto: critic.veredicto, clusters: critic.clusters as any },
+            });
+
+            if (critic.veredicto === "rechazado" && critic.instrucciones_revision?.trim()) {
+              console.log(`[Orchestrator] Crítico de Originalidad RECHAZÓ el outline. Re-ejecutando Arquitecto con instrucciones de revisión...`);
+              this.callbacks.onAgentStatus("architect", "thinking", `Outline con baja originalidad (${critic.score_originalidad}/10). El Arquitecto está rediseñando para evitar clichés...`);
+
+              const baseInstructions = project.architectInstructions || "";
+              const revisionInstructions = `${baseInstructions ? `${baseInstructions}\n\n` : ""}═══════════════════════════════════════════════════════════════════\n🚨 REVISIÓN OBLIGATORIA — CRÍTICO DE ORIGINALIDAD 🚨\n═══════════════════════════════════════════════════════════════════\nEl outline anterior obtuvo un score de originalidad de ${critic.score_originalidad}/10 con ${mayores} clichés mayores. DEBES rediseñar el outline aplicando estas correcciones específicas:\n\n${critic.instrucciones_revision}\n\nMantén la premisa esencial y los géneros pedidos, pero reemplaza los elementos clichés señalados por alternativas frescas. NO repitas los arquetipos ni los giros que el crítico marcó como predecibles.\n═══════════════════════════════════════════════════════════════════`;
+
+              try {
+                const retryResult = await this.architect.execute({
+                  title: project.title,
+                  premise: effectivePremise,
+                  genre: project.genre,
+                  tone: project.tone,
+                  chapterCount: project.chapterCount,
+                  hasPrologue: project.hasPrologue,
+                  hasEpilogue: project.hasEpilogue,
+                  hasAuthorNote: project.hasAuthorNote,
+                  architectInstructions: revisionInstructions,
+                  kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+                  forbiddenNames,
+                  projectId: project.id,
+                });
+
+                if (retryResult.tokenUsage) {
+                  await this.trackTokenUsage(project.id, retryResult.tokenUsage, "El Arquitecto (revisión originalidad)", "deepseek-v4-flash", undefined, "world_bible");
+                }
+
+                if (!retryResult.error && !retryResult.timedOut && retryResult.content?.trim()) {
+                  const reviewedData = this.parseArchitectOutput(retryResult.content);
+                  const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
+                  const reviewedLen = reviewedData?.escaleta_capitulos?.length || 0;
+                  if (reviewedData && reviewedData.world_bible?.personajes?.length && reviewedLen >= expectedChapters - 2) {
+                    console.log(`[Orchestrator] Arquitecto revisó el outline tras crítica de originalidad: ${reviewedData.world_bible.personajes.length} personajes, ${reviewedLen}/${expectedChapters} capítulos. Reemplazando outline anterior.`);
+                    worldBibleData = reviewedData;
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "info",
+                      agentRole: "architect",
+                      message: `✅ El Arquitecto rediseñó el outline aplicando las correcciones del Crítico de Originalidad.`,
+                    });
+                  } else {
+                    console.warn(`[Orchestrator] Revisión del Arquitecto produjo un outline inválido (${reviewedLen}/${expectedChapters} caps). Manteniendo outline original.`);
+                  }
+                } else {
+                  console.warn(`[Orchestrator] Revisión del Arquitecto falló: ${retryResult.error || "vacío/timeout"}. Manteniendo outline original.`);
+                }
+              } catch (retryErr) {
+                console.error(`[Orchestrator] Excepción en revisión del Arquitecto: ${(retryErr as Error).message}. Manteniendo outline original.`);
+              }
+            }
+          } else {
+            console.warn(`[Orchestrator] Crítico de Originalidad no devolvió resultado válido. Continuando con el outline original.`);
+          }
+        }
+      } catch (criticErr) {
+        console.error(`[Orchestrator] Crítico de Originalidad falló (no bloqueante): ${(criticErr as Error).message}`);
+      }
+
       const worldBible = await storage.createWorldBible({
         projectId: project.id,
         timeline: this.convertTimeline(worldBibleData),
