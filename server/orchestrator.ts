@@ -4004,12 +4004,38 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       });
     }
 
-    await storage.createActivityLog({
-      projectId: project.id,
-      level: "info",
-      message: `Vista previa generada: ${refinedInstructions.length} instrucciones ancladas en el texto y la canon (de ${draftInstructions.length} borradores).`,
-      agentRole: "editor",
-    });
+    // Diagnóstico claro al usuario cuando NO sale ninguna acción aplicable.
+    // Distinguimos los tres casos para que el usuario sepa qué reescribir:
+    //   (a) parser primer paso devolvió 0 — las notas no contenían crítica accionable.
+    //   (b) parser sí extrajo borradores pero el refiner los descartó todos
+    //       (referencias inexistentes, conflictos con la canon, capítulos huérfanos).
+    //   (c) caso normal: hay instrucciones — log informativo estándar.
+    if (refinedInstructions.length === 0) {
+      const summarySnippet = (summary || "").slice(0, 250);
+      let diagnosticMessage: string;
+      let level: "info" | "warning" = "warning";
+      if (draftInstructions.length === 0) {
+        // Caso (a): las notas no producen ni un borrador.
+        diagnosticMessage = `No se generó ninguna instrucción aplicable a partir de las notas.\nResumen detectado: "${summarySnippet || "(sin resumen)"}"\nProbable causa: las notas son descriptivas pero no piden cambios concretos sobre el texto, o son elogios/contexto. Sugerencia: añade frases imperativas explícitas con número de capítulo, p. ej. "En el capítulo 5 refuerza la motivación de X", "El capítulo 7 sobra, elimínalo", "Reescribe el clímax para que la negociación sea más áspera".`;
+      } else {
+        // Caso (b): el refiner descartó TODO. Los motivos individuales ya se han
+        // logueado dentro de groundEditorialInstructions; aquí lo resumimos.
+        diagnosticMessage = `El parser extrajo ${draftInstructions.length} borrador(es) pero el refiner los descartó TODOS al cruzarlos contra el texto real y la canon. Revisa los logs de "instrucción descartada" anteriores para ver el motivo exacto de cada uno (frases inexistentes, capítulos huérfanos, conflictos con el world bible). Sugerencia: cita literalmente alguna frase del texto que quieras cambiar, o asegúrate de que los nombres/eventos que mencionas sí existen en el manuscrito.\nResumen detectado: "${summarySnippet || "(sin resumen)"}"`;
+      }
+      await storage.createActivityLog({
+        projectId: project.id,
+        level,
+        message: diagnosticMessage,
+        agentRole: "editor",
+      });
+    } else {
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "info",
+        message: `Vista previa generada: ${refinedInstructions.length} instrucciones ancladas en el texto y la canon (de ${draftInstructions.length} borradores).`,
+        agentRole: "editor",
+      });
+    }
 
     return { resumen_general: summary, instrucciones: refinedInstructions, instructions: refinedInstructions };
   }

@@ -458,10 +458,18 @@ export default function Dashboard() {
     });
     setSelectedInstructionIdxs(new Set(instrucciones.map((_, i) => i)));
     if (instrucciones.length === 0) {
+      // Sin instrucciones aplicables: damos al usuario el resumen detectado por el
+      // analista + una sugerencia concreta para reescribir la nota. Los logs de
+      // actividad ya tienen el diagnóstico completo (caso a vs b vs canon-conflict).
+      const resumen = (data.resumen_general || "").trim();
+      const description = resumen
+        ? `Resumen detectado: "${resumen.slice(0, 200)}${resumen.length > 200 ? "…" : ""}"\n\nSugerencia: añade frases imperativas con número de capítulo, p. ej. "En el capítulo 5 refuerza la motivación de X" o "Elimina el capítulo 7". Revisa los logs de actividad para ver si alguna nota quedó descartada por el refiner.`
+        : "El sistema no encontró ninguna acción aplicable. Revisa los logs de actividad para ver el motivo y reescribe las notas con frases imperativas explícitas y números de capítulo.";
       toast({
-        title: "No se extrajeron instrucciones",
-        description: data.resumen_general || "El sistema no encontró instrucciones aplicables en las notas.",
+        title: "No se extrajeron instrucciones aplicables",
+        description,
         variant: "destructive",
+        duration: 12000,
       });
     } else {
       toast({

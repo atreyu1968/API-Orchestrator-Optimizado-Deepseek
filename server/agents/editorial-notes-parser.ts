@@ -68,8 +68,15 @@ export class EditorialNotesParser extends BaseAgent {
 REGLAS:
 1. Extrae SOLO problemas que requieran modificar el texto del manuscrito. Ignora elogios, contexto editorial, valoraciones generales o consejos para futuros libros.
 2. Para cada problema, identifica los capítulos afectados leyendo el índice de capítulos disponible. Si la nota menciona "capítulo 8" o "Cap. 8", usa el número 8. Si menciona "el prólogo", usa 0. Si menciona "el epílogo", usa -1. Si menciona "nota del autor", usa -2. Si afecta a varios capítulos, lístalos todos.
-3. Si la nota es transversal (afecta a varios capítulos consecutivos pero no se especifica cuáles), infiere los más probables a partir del índice (por ejemplo, "el segundo acto" → capítulos centrales).
-4. Si NO puedes determinar capítulos concretos para un problema, OMÍTELO de la salida (no incluyas la instrucción).
+3. INFERENCIA POR ESTRUCTURA NARRATIVA (importante: NO descartes críticas por falta de número, infiere). Mapea conceptos estructurales al rango plausible del índice:
+   - "apertura" / "primer capítulo" / "inicio" → capítulo 1 (y 0 si hay prólogo).
+   - "primer acto" → primer tercio aproximado de capítulos positivos del índice.
+   - "segundo acto" / "acto medio" / "parte central" → tercio medio.
+   - "tercer acto" / "último tercio" / "tramo final" → último tercio.
+   - "clímax" → 1-2 capítulos cerca del final (pero antes del epílogo si existe).
+   - "desenlace" / "cierre" → últimos 2-3 capítulos positivos (y -1 si hay epílogo).
+   - "transición entre X e Y" → los 1-2 capítulos donde se produce la transición.
+4. Cuándo OMITIR: solo si la nota es elogio puro, contexto editorial sin acción, o un consejo abstracto que no exige tocar el texto ("para próximos libros plantéate..."). NUNCA omitas una crítica al manuscrito por no traer número explícito — usa la inferencia de la regla 3, o, si la crítica es genuinamente transversal y aplica a toda la novela ("el ritmo general es lento", "la prosa abusa de adjetivos"), asigna capitulos_afectados al RANGO COMPLETO de capítulos positivos del índice (todos los números > 0). El usuario podrá deseleccionar luego en la previsualización si solo quiere aplicarlo a algunos.
 5. Para cada problema, escribe instrucciones MUY ESPECÍFICAS y accionables: qué cambiar, dónde, cómo. NO copies la nota literal del editor — REFORMÚLALA como una orden quirúrgica para un narrador que va a editar el texto.
 6. Indica los elementos a PRESERVAR (qué NO debe tocar el narrador) cuando sea relevante, especialmente cuando el problema es local y el resto del capítulo funciona bien.
 7. Categoría: usa una de estas etiquetas en minúscula: "continuidad", "verosimilitud", "personaje", "ritmo", "dialogo", "estilo", "trama", "descripcion", "otro".
