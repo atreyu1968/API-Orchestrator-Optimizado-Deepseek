@@ -2538,17 +2538,33 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
   private reconstructWorldBibleData(worldBible: WorldBible, project: Project): ParsedWorldBible {
     const plotOutlineData = worldBible.plotOutline as any;
-    const timeline = (worldBible.timeline as TimelineEvent[]) || [];
-    
+    // FIX defensivo: los campos jsonb (characters, worldRules, timeline) y plotOutline
+    // pueden llegar como objetos, null, o tipos inesperados desde proyectos legacy o
+    // bibles a medio inicializar. El cast TS no protege en runtime: si timeline llega
+    // como {} o si plotOutline aún es array (formato antiguo), el código original
+    // reventaba o ignoraba la información. Estas guardas blindan ambos casos.
+    const timeline: any[] = Array.isArray(worldBible.timeline) ? (worldBible.timeline as any[]) : [];
+    const characters: any[] = Array.isArray(worldBible.characters) ? (worldBible.characters as any[]) : [];
+    const worldRules: any[] = Array.isArray(worldBible.worldRules) ? (worldBible.worldRules as any[]) : [];
+
     const lugares = timeline
-      .map((t: any) => t.ubicacion || t.location)
+      .map((t: any) => t?.ubicacion || t?.location)
       .filter((loc: any) => loc)
       .filter((loc: string, i: number, arr: string[]) => arr.indexOf(loc) === i);
-    
+
+    // Compatibilidad forma actual (objeto con .chapterOutlines) vs legacy (array directo).
+    let chapterOutlinesRaw: any[] = [];
+    if (Array.isArray(plotOutlineData)) {
+      chapterOutlinesRaw = plotOutlineData;
+    } else if (plotOutlineData && typeof plotOutlineData === "object") {
+      const candidate = plotOutlineData.chapterOutlines || plotOutlineData.chapter_outlines || plotOutlineData.escaleta;
+      if (Array.isArray(candidate)) chapterOutlinesRaw = candidate;
+    }
+
     // Reconstruir escaleta_capitulos desde chapterOutlines con todos los campos adicionales
-    const escaleta_capitulos = (plotOutlineData?.chapterOutlines || []).map((c: any) => ({
-      numero: c.number,
-      titulo: c.titulo || c.summary || `Capítulo ${c.number}`,
+    const escaleta_capitulos = chapterOutlinesRaw.map((c: any) => ({
+      numero: c.number ?? c.numero,
+      titulo: c.titulo || c.summary || `Capítulo ${c.number ?? c.numero ?? "?"}`,
       epoca_id: c.epoca_id ?? null,
       cronologia: c.cronologia || "",
       ubicacion: c.ubicacion || "",
@@ -3517,14 +3533,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         return;
       }
 
-      const worldBibleData: ParsedWorldBible = {
-        world_bible: {
-          personajes: worldBible.characters as any[] || [],
-          lugares: [],
-          reglas_lore: worldBible.worldRules as any[] || [],
-        },
-        escaleta_capitulos: worldBible.plotOutline as any[] || [],
-      };
+      // FIX: el campo plotOutline en BD es un OBJETO (PlotOutline) cuya escaleta vive
+      // en .chapterOutlines, NO un array. Antes esto pasaba {} como escaleta_capitulos
+      // y los agentes se quedaban sin la escaleta planificada. reconstructWorldBibleData
+      // convierte correctamente el objeto al array de capítulos en formato español.
+      const worldBibleData: ParsedWorldBible = this.reconstructWorldBibleData(worldBible, project);
 
       const chapters = await storage.getChaptersByProject(project.id);
       const allSections = this.buildSectionsListFromChapters(chapters, worldBibleData);
@@ -3691,14 +3704,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         return;
       }
 
-      const worldBibleData: ParsedWorldBible = {
-        world_bible: {
-          personajes: worldBible.characters as any[] || [],
-          lugares: [],
-          reglas_lore: worldBible.worldRules as any[] || [],
-        },
-        escaleta_capitulos: worldBible.plotOutline as any[] || [],
-      };
+      // FIX: el campo plotOutline en BD es un OBJETO (PlotOutline) cuya escaleta vive
+      // en .chapterOutlines, NO un array. Antes esto pasaba {} como escaleta_capitulos
+      // y los agentes se quedaban sin la escaleta planificada. reconstructWorldBibleData
+      // convierte correctamente el objeto al array de capítulos en formato español.
+      const worldBibleData: ParsedWorldBible = this.reconstructWorldBibleData(worldBible, project);
 
       const allChapters = await storage.getChaptersByProject(project.id);
       const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
@@ -3913,14 +3923,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       throw new Error("No se encontró la biblia del mundo para este proyecto.");
     }
 
-    const worldBibleData: ParsedWorldBible = {
-      world_bible: {
-        personajes: worldBible.characters as any[] || [],
-        lugares: [],
-        reglas_lore: worldBible.worldRules as any[] || [],
-      },
-      escaleta_capitulos: worldBible.plotOutline as any[] || [],
-    };
+    // FIX: ver nota larga en los demás call-sites — usamos reconstructWorldBibleData
+    // para convertir correctamente el plotOutline (objeto) a escaleta_capitulos (array).
+    const worldBibleData: ParsedWorldBible = this.reconstructWorldBibleData(worldBible, project);
 
     const allChapters = await storage.getChaptersByProject(project.id);
     const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
@@ -4256,14 +4261,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         return;
       }
 
-      const worldBibleData: ParsedWorldBible = {
-        world_bible: {
-          personajes: worldBible.characters as any[] || [],
-          lugares: [],
-          reglas_lore: worldBible.worldRules as any[] || [],
-        },
-        escaleta_capitulos: worldBible.plotOutline as any[] || [],
-      };
+      // FIX: el campo plotOutline en BD es un OBJETO (PlotOutline) cuya escaleta vive
+      // en .chapterOutlines, NO un array. Antes esto pasaba {} como escaleta_capitulos
+      // y los agentes se quedaban sin la escaleta planificada. reconstructWorldBibleData
+      // convierte correctamente el objeto al array de capítulos en formato español.
+      const worldBibleData: ParsedWorldBible = this.reconstructWorldBibleData(worldBible, project);
 
       const allChapters = await storage.getChaptersByProject(project.id);
       const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
@@ -5128,14 +5130,11 @@ Responde SOLO con un JSON válido con la estructura:
         return;
       }
 
-      const worldBibleData: ParsedWorldBible = {
-        world_bible: {
-          personajes: worldBible.characters as any[] || [],
-          lugares: [],
-          reglas_lore: worldBible.worldRules as any[] || [],
-        },
-        escaleta_capitulos: worldBible.plotOutline as any[] || [],
-      };
+      // FIX: el campo plotOutline en BD es un OBJETO (PlotOutline) cuya escaleta vive
+      // en .chapterOutlines, NO un array. Antes esto pasaba {} como escaleta_capitulos
+      // y los agentes se quedaban sin la escaleta planificada. reconstructWorldBibleData
+      // convierte correctamente el objeto al array de capítulos en formato español.
+      const worldBibleData: ParsedWorldBible = this.reconstructWorldBibleData(worldBible, project);
 
       let styleGuideContent = "";
       if (project.styleGuideId) {
@@ -5237,14 +5236,11 @@ Responde SOLO con un JSON válido con la estructura:
         return;
       }
 
-      const worldBibleData: ParsedWorldBible = {
-        world_bible: {
-          personajes: worldBible.characters as any[] || [],
-          lugares: [],
-          reglas_lore: worldBible.worldRules as any[] || [],
-        },
-        escaleta_capitulos: worldBible.plotOutline as any[] || [],
-      };
+      // FIX: el campo plotOutline en BD es un OBJETO (PlotOutline) cuya escaleta vive
+      // en .chapterOutlines, NO un array. Antes esto pasaba {} como escaleta_capitulos
+      // y los agentes se quedaban sin la escaleta planificada. reconstructWorldBibleData
+      // convierte correctamente el objeto al array de capítulos en formato español.
+      const worldBibleData: ParsedWorldBible = this.reconstructWorldBibleData(worldBible, project);
 
       let styleGuideContent = "";
       if (project.styleGuideId) {
@@ -5405,8 +5401,18 @@ Responde SOLO con un JSON válido con la estructura:
   }
 
   private buildSectionsListFromChapters(chapters: Chapter[], worldBibleData: ParsedWorldBible): SectionData[] {
-    return chapters.map((chapter, index) => {
-      const chapterData = worldBibleData.escaleta_capitulos?.[index] || {};
+    // FIX: antes indexaba por posición del array (`escaleta_capitulos[index]`).
+    // Eso funcionaba "por suerte" cuando los chapters de BD venían en el mismo orden
+    // que la escaleta planificada por el Arquitecto. En proyectos con prólogo / epílogo /
+    // nota de autor (que rompen la numeración natural) o cuando la escaleta venía vacía
+    // (caso pre-fix), inyectaba datos del capítulo equivocado en cada SectionData.
+    // Ahora resolvemos por chapterNumber, igual que hace buildSectionsList.
+    const escaleta = (worldBibleData.escaleta_capitulos as any[]) || [];
+    const findByNumero = (n: number) =>
+      escaleta.find((c: any) => Number(c?.numero) === Number(n)) || {};
+
+    return chapters.map((chapter) => {
+      const chapterData: any = findByNumero(chapter.chapterNumber);
       let tipo: "prologue" | "chapter" | "epilogue" | "author_note" = "chapter";
       
       if (chapter.title === "Prólogo") tipo = "prologue";
@@ -6401,14 +6407,11 @@ Responde SOLO con un JSON válido con la estructura:
       const worldBible = await storage.getWorldBibleByProject(project.id);
       if (!worldBible) return { correctedCount: 0, status: "clean", warnings };
 
-      const worldBibleData: ParsedWorldBible = {
-        world_bible: {
-          personajes: worldBible.characters as any[] || [],
-          lugares: [],
-          reglas_lore: worldBible.worldRules as any[] || [],
-        },
-        escaleta_capitulos: worldBible.plotOutline as any[] || [],
-      };
+      // FIX: el campo plotOutline en BD es un OBJETO (PlotOutline) cuya escaleta vive
+      // en .chapterOutlines, NO un array. Antes esto pasaba {} como escaleta_capitulos
+      // y los agentes se quedaban sin la escaleta planificada. reconstructWorldBibleData
+      // convierte correctamente el objeto al array de capítulos en formato español.
+      const worldBibleData: ParsedWorldBible = this.reconstructWorldBibleData(worldBible, project);
 
       let styleGuideContent = "";
       if (project.styleGuideId) {
@@ -6577,14 +6580,11 @@ Responde SOLO con un JSON válido con la estructura:
       const worldBible = await storage.getWorldBibleByProject(project.id);
       if (!worldBible) return "passed";
 
-      const worldBibleData: ParsedWorldBible = {
-        world_bible: {
-          personajes: worldBible.characters as any[] || [],
-          lugares: [],
-          reglas_lore: worldBible.worldRules as any[] || [],
-        },
-        escaleta_capitulos: worldBible.plotOutline as any[] || [],
-      };
+      // FIX: el campo plotOutline en BD es un OBJETO (PlotOutline) cuya escaleta vive
+      // en .chapterOutlines, NO un array. Antes esto pasaba {} como escaleta_capitulos
+      // y los agentes se quedaban sin la escaleta planificada. reconstructWorldBibleData
+      // convierte correctamente el objeto al array de capítulos en formato español.
+      const worldBibleData: ParsedWorldBible = this.reconstructWorldBibleData(worldBible, project);
 
       const chapters = await storage.getChaptersByProject(project.id);
       const sortedChapters = sortChaptersNarrative(
