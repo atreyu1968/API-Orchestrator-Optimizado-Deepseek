@@ -10,6 +10,23 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Hotfix #8 — Prevenir que el Narrador abra capítulos con su propia cabecera meta-referencial (Apr 30, 2026)
+El usuario reportó que en los caps 9-13 de su novela, la primera línea del texto narrativo era una repetición meta-referencial de la cabecera del capítulo (ej: «—Capítulo 9: La confesión en la gasolinera», «—**Capítulo 13: La decisión de Iona**»), rompiendo la inmersión. Su petición textual: «se trata de evitar que eso pueda suceder» (no arreglar los datos existentes — eso lo haría él con un script SQL aparte —, sino impedir que el sistema vuelva a generarlo).
+
+Defensa en dos capas:
+
+- **(1) Refuerzo en el SYSTEM_PROMPT del `GhostwriterAgent`** (regla 2 NARRATIVA DIEGÉTICA PURA): añadido párrafo explícito «PROHIBIDO ABSOLUTO REPETIR LA CABECERA DEL CAPÍTULO DENTRO DE LA PROSA» con ejemplos literales de los caps que fallaron y aclaración de que el sistema ya añade el título por su cuenta. Lista las variantes prohibidas (con/sin guion largo, con/sin asteriscos markdown, con/sin acento, prólogo/epílogo/parte/nota del autor).
+
+- **(2) Saneamiento defensivo en código:** nuevo helper `stripChapterHeaderFromOpening(text)` en `server/agents/ghostwriter.ts`, llamado desde **TODAS** las salidas de `extractContinuityState` (camino normal, camino sin separador `---CONTINUITY_STATE---`, y camino de fallback con texto vacío tras separador). La regex está diseñada para ser estricta (evitar falsos positivos en prosa legítima):
+  - Casa solo cuando hay `Capítulo|Cap.` + número arábigo o romano + separador (`:` `.` `-` `—`).
+  - Casa `Parte` + número/romano/ordinal + separador.
+  - Casa `Prólogo|Epílogo|Nota del/de autor` + separador OBLIGATORIO.
+  - **NO** mata «—Capítulo cerrado, no hay vuelta atrás» (diálogo legítimo, sin número), «Prólogo de Vasco al diario…» (prosa legítima, sin separador), «Parte del problema era…» (prosa).
+  - Anclada a `^` → solo afecta la primera línea, NO toca menciones legítimas a «Capítulo X» en mitad del texto.
+  - Loggea warning «Sanitized meta-header from chapter opening» cuando dispara, para que se vea en la actividad cuando el modelo se cuela.
+
+Verificación con tests manuales: 9 casos positivos de cabecera (guion, asteriscos, `Cap.`, romanos, prólogo, epílogo, nota, parte) → todos eliminados; 4 casos negativos de prosa legítima → todos preservados.
+
 ### Hotfix #7 — Traducir notas estructurales en instrucciones factibles en lugar de cancelarlas (Apr 30, 2026)
 El usuario, sobre el Hotfix #6: «pero entonces lo lógico es que de instrucciones que si sean factibles». Tenía razón: cancelar la nota cuando es estructural arregla el daño pero pierde la intención editorial. Si la nota dice «borrar Cap 8 y fusionar contenido en Cap 10», hay una parte 100% factible (integrar los eventos clave del Cap 8 al final del Cap 10 reescribiendo prosa) y otra que NO lo es por seguridad (eliminar el Cap 8, que es destructiva). El sistema debe hacer la primera y dejar la segunda explícitamente pendiente de tu confirmación.
 

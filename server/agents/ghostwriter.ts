@@ -125,6 +125,7 @@ REGLAS DE ORO INVIOLABLES
    - Solo literatura inmersiva
    - PROHIBIDO ABSOLUTO mencionar la estructura del libro dentro de la prosa: la novela NO sabe que es una novela. NUNCA escribas "como ocurrió en el Capítulo 3", "ya vimos en el prólogo", "tal y como se contó antes en el capítulo X", "en el epílogo", "en la primera parte", "en el cap. 7", ni ninguna referencia a números de capítulo, partes, secciones, escenas o cualquier división del manuscrito. Tampoco frases del tipo "más adelante" o "en páginas anteriores" referidas al libro.
    - Cuando un personaje o el narrador necesite recordar algo que el lector ya leyó en otro capítulo, hazlo SOLO con referencias narrativas/temporales internas a la ficción: "aquella noche en la cripta", "tres días antes, cuando llegó la carta", "lo que descubrió en Plasencia", "desde la última conversación con Vasco". El lector debe poder ubicar el recuerdo por el contenido, jamás por el número de capítulo.
+   - PROHIBIDO ABSOLUTO REPETIR LA CABECERA DEL CAPÍTULO DENTRO DE LA PROSA: el sistema ya añade el título del capítulo en su lugar. La PRIMERA línea de tu respuesta DEBE ser ya la primera línea de la narración (acción, descripción, diálogo de un personaje del libro). NUNCA empieces con cosas como "—Capítulo 9: La confesión en la gasolinera", "Capítulo 12: El peso de una niña", "**Capítulo 13: La decisión de Iona**", "Prólogo: La carta que no llegó", "Epílogo:", "Parte II:", ni ninguna variante con o sin guion largo, con o sin asteriscos markdown, con o sin acento. El primer carácter del texto narrativo DEBE pertenecer a la ficción misma. Si caes en este error, todo el capítulo se considera defectuoso y debe reescribirse.
 
 3. MOSTRAR, NUNCA CONTAR:
    - Emociones → acciones, gestos, decisiones. NO reacciones fisiológicas de catálogo.
@@ -1171,7 +1172,10 @@ export class GhostwriterAgent extends BaseAgent {
     
     if (lastSepIdx === -1) {
       console.log("[Ghostwriter] No continuity state separator found in content");
-      return { cleanContent: content.trim(), continuityState: null };
+      // Saneamiento defensivo aplicado también en este camino: si el modelo
+      // omite el bloque de continuidad, sigue habiendo riesgo de que la prosa
+      // empiece con la cabecera meta-referencial.
+      return { cleanContent: this.stripChapterHeaderFromOpening(content.trim()), continuityState: null };
     }
     
     let chapterText = content.substring(0, lastSepIdx).trim();
@@ -1189,7 +1193,8 @@ export class GhostwriterAgent extends BaseAgent {
     if (chapterWordCount === 0 && afterLastSep.length > 200) {
       console.warn(`[Ghostwriter] Chapter text empty after separator extraction. After-separator content is ${afterLastSep.length} chars. Treating full content as chapter text (no continuity state).`);
       const fullClean = content.replace(new RegExp(separator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').trim();
-      return { cleanContent: fullClean, continuityState: null };
+      // Saneamiento defensivo también aquí (camino de fallback).
+      return { cleanContent: this.stripChapterHeaderFromOpening(fullClean), continuityState: null };
     }
     
     let continuityState = null;
@@ -1208,6 +1213,65 @@ export class GhostwriterAgent extends BaseAgent {
       }
     }
     
-    return { cleanContent: chapterText || content.trim(), continuityState };
+    // Saneamiento defensivo: aunque el SYSTEM_PROMPT prohíbe expresamente
+    // que la prosa empiece con la cabecera del capítulo repetida ("—Capítulo
+    // 9: La confesión en la gasolinera", "**Capítulo 13: La decisión de
+    // Iona**", "Prólogo: …", "Epílogo:", "Parte II:" etc.), el modelo a
+    // veces se cuela. Quitamos esa primera línea aquí ANTES de devolver el
+    // texto limpio. Anclado a inicio (^) → solo afecta la primera línea, NO
+    // toca menciones legítimas a "Capítulo X" que aparezcan en mitad del
+    // texto. Normalizado para acentos/asteriscos/guiones largos.
+    const finalClean = this.stripChapterHeaderFromOpening(chapterText || content.trim());
+
+    return { cleanContent: finalClean, continuityState };
+  }
+
+  // Elimina la primera línea si es una meta-cabecera tipo "—Capítulo N: …",
+  // "**Capítulo N: …**", "Prólogo: …", "Epílogo: …", "Parte II: …", etc.
+  // Aplica solo a la PRIMERA línea (ancla ^), respeta el resto del texto.
+  // Es una red de seguridad por si el Narrador ignora la prohibición explícita
+  // del prompt — quirúrgica y predecible: solo toca lo que coincide con un
+  // patrón muy estrecho de FORMATO de cabecera (palabra clave + número/romano
+  // + separador), no cualquier línea que mencione "Capítulo X" como prosa.
+  //
+  // Diseño de la regex (estricto para evitar falsos positivos):
+  //   Casa una de tres formas, todas precedidas opcionalmente por guion largo
+  //   y/o asteriscos markdown:
+  //     (a) "Capítulo|Cap." + número arábigo o romano + separador (: . - —)
+  //         → mata "—Capítulo 9: La confesión", "Cap. IX: …", "**Capítulo 13: …**"
+  //         → NO mata "Capítulo cerrado, no hay vuelta atrás" (sin número)
+  //     (b) "Parte" + número/romano/ordinal + separador
+  //         → mata "Parte II:", "Parte primera:"
+  //         → NO mata "Parte del problema era…" (sin número ni separador)
+  //     (c) "Prólogo|Epílogo|Nota del/de autor" + separador OBLIGATORIO
+  //         → mata "Prólogo: La carta…", "Epílogo:", "Nota del autor:"
+  //         → NO mata "Prólogo de Vasco al diario…" (sin separador)
+  //   Tras la cabecera consume el resto de la línea + saltos siguientes,
+  //   o llega al fin de string si no hay salto.
+  private stripChapterHeaderFromOpening(text: string): string {
+    if (!text) return text;
+    const headerPattern = new RegExp(
+      // Prefijo opcional: whitespace + guion largo/bullet + asteriscos markdown
+      "^[\\s\\u00A0]*[—\\-•*]?[\\s\\u00A0]*\\*{0,2}[\\s\\u00A0]*" +
+      // Una de las tres formas de cabecera
+      "(?:" +
+        // (a) Capítulo / Cap. + número arábigo o romano + separador
+        "(?:Cap[íi]tulo|Cap\\.)\\s+(?:\\d+|[IVXLCDM]+)\\b\\s*[:.\\-—]" +
+      "|" +
+        // (b) Parte + número/romano/ordinal + separador
+        "Parte\\s+(?:\\d+|[IVXLCDM]+|primera|segunda|tercera|cuarta|quinta|sexta|s[ée]ptima|octava|novena|d[ée]cima|[uú]ltima)\\b\\s*[:.\\-—]" +
+      "|" +
+        // (c) Prólogo / Epílogo / Nota del autor + separador obligatorio
+        "(?:Pr[óo]logo|Ep[íi]logo|Nota\\s+(?:del?|de)\\s+autor)\\s*[:.\\-—]" +
+      ")" +
+      // Resto de la línea (incluyendo cierre markdown si lo hay) + salto(s) o EOF
+      "[^\\n]*(?:\\n+|$)",
+      "i"
+    );
+    const stripped = text.replace(headerPattern, "");
+    if (stripped !== text) {
+      console.warn("[Ghostwriter] Sanitized meta-header from chapter opening (Narrator broke the diegetic rule). Original first line discarded.");
+    }
+    return stripped.trimStart();
   }
 }
