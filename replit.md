@@ -10,6 +10,21 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Hotfix #7 — Traducir notas estructurales en instrucciones factibles en lugar de cancelarlas (Apr 30, 2026)
+El usuario, sobre el Hotfix #6: «pero entonces lo lógico es que de instrucciones que si sean factibles». Tenía razón: cancelar la nota cuando es estructural arregla el daño pero pierde la intención editorial. Si la nota dice «borrar Cap 8 y fusionar contenido en Cap 10», hay una parte 100% factible (integrar los eventos clave del Cap 8 al final del Cap 10 reescribiendo prosa) y otra que NO lo es por seguridad (eliminar el Cap 8, que es destructiva). El sistema debe hacer la primera y dejar la segunda explícitamente pendiente de tu confirmación.
+
+- **Nuevo agente** `StructuralInstructionTranslatorAgent` (`server/agents/structural-instruction-translator.ts`): recibe la nota original + razón del cirujano + lista de capítulos disponibles (con título, wordCount y resumen de 300 chars), y devuelve un plan estructurado con (a) `feasibleParts[]`: instrucciones de PROSA aplicables a capítulos concretos, (b) `pendingAdministrativeActions[]`: operaciones destructivas que requieren confirmación humana (`delete_chapter`, `merge_chapters`, `split_chapter`, `swap_chapters`, `reorder_chapters`, `move_content`), (c) `unfeasible` + razón si la nota no es traducible. El agente sanea la salida filtrando chapterNumbers que no existen en el proyecto.
+- **Cambio en `rewriteChapterForQA` (server/orchestrator.ts):** el bloque del Hotfix #6 ya no cancela inmediatamente. Ahora:
+  1. Llama al Traductor para descomponer la nota.
+  2. Para cada `feasiblePart`, reinvoca recursivamente la cirugía sobre el capítulo destino correcto con la instrucción reformulada (con el depth correspondiente para evitar bucles), tomando snapshot del contenido antes/después y solo contabilizando el capítulo como modificado si **realmente cambió** (evita inflar el contador y saltar capítulos que no se tocaron).
+  3. Para cada `pendingAdministrativeAction`, emite log warning estructurado «ACCIÓN PENDIENTE DE CONFIRMACIÓN — operación X sobre Cap Y» — **NUNCA** se ejecutan automáticamente operaciones destructivas (deuda conocida: hoy estas pendientes solo viven en logs; está pendiente persistirlas en estado estructurado y exponerlas con UI de confirmación dedicada).
+  4. Libera el capítulo actual como completed sin tocar su contenido (la nota era para otros capítulos).
+  5. Si el Traductor falla o devuelve `unfeasible`, cae al fallback del Hotfix #6 (cancelación con mensaje claro).
+- **Guarda anti-destructiva (`isDestructiveProseInstruction`):** rechaza `feasibleParts` cuya prosa derive en vaciar el capítulo (patrones tipo «vacía completamente», «elimina todo el contenido», «deja el capítulo en blanco», etc.) — si el modelo cuela una destructiva como prosa, se reconvierte en pendiente administrativa en lugar de aplicarse.
+- **Profundidad recursiva separada en dos contadores** (`_mismatchRerouteDepth` y `_structuralTranslateDepth`) para permitir la cadena legítima «mismatch (Hotfix #5) → traducción estructural (Hotfix #7)» en el cap correcto, sin abrir bucles del mismo tipo.
+- **Cambio de contrato:** `rewriteChapterForQA` retorna `{reroutedTo?: number[]}` (array, no número) para soportar múltiples capítulos modificados por una sola traducción. `applyEditorialNotes` itera el array al sumar `reroutedTargets`.
+- **Resultado:** una nota como «borrar Cap 8 y fusionar en Cap 10» ahora aplica la integración de prosa al Cap 10 automáticamente y deja registrada la eliminación del Cap 8 como acción pendiente que tú debes confirmar manualmente. Cero daño a capítulos sanos, máxima utilidad de la nota original.
+
 ### Hotfix #6 — Notas estructurales (eliminar/fusionar/dividir capítulos) caían al Narrador y dañaban capítulos sanos (Apr 30, 2026)
 El usuario reportó: «el Capítulo 8: cirugía no aplicable (La instrucción ordena eliminar el capítulo 8 como entidad independiente y fusionar su contenido en el capítulo 10. Esto constituye una reestructuración global del manuscrito (borrado de un capítulo completo), no una corrección puntual localizable... Cayendo a reescritura completa con Narrador.» El Narrador luego fallaba el QA (7/10) y se conservaba el original. Resultado: la nota se perdía, se gastaban tokens, y el usuario no entendía qué había pasado.
 

@@ -5217,13 +5217,17 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             estructuralesFormatted
           );
 
-          // Si la nota fue reenrutada a otro capítulo (parser editorial enrutó
-          // mal), el chapter actual no se ha tocado: el cambio real ocurrió en
-          // `rewriteResult.reroutedTo`. Lo registramos como aplicado en ese
-          // capítulo y lo memorizamos para evitar reprocesarlo si también
-          // estaba en `sortedChapters` (el bucle externo lo saltará).
-          if (rewriteResult && typeof rewriteResult.reroutedTo === "number") {
-            reroutedTargets.add(rewriteResult.reroutedTo);
+          // Si la nota fue reenrutada/traducida a otro(s) capítulo(s) (caso
+          // del Hotfix #5: parser enrutó mal — un solo destino; caso del
+          // Hotfix #7: nota estructural traducida en varias instrucciones de
+          // prosa — N destinos), el chapter actual no se ha tocado: el cambio
+          // real ocurrió en `rewriteResult.reroutedTo` (array de números).
+          // Memorizamos para evitar reprocesarlo si también estaba en cola
+          // (el bucle externo lo saltará) y para sumarlo al appliedCount.
+          if (rewriteResult && Array.isArray(rewriteResult.reroutedTo) && rewriteResult.reroutedTo.length > 0) {
+            for (const n of rewriteResult.reroutedTo) {
+              reroutedTargets.add(n);
+            }
           } else {
             const refreshedChapters = await storage.getChaptersByProject(project.id);
             const refreshedChapter = refreshedChapters.find(c => c.id === chapter.id);
@@ -8056,12 +8060,18 @@ Responde SOLO con un JSON válido con la estructura:
     guiaEstilo: string,
     qaSource: "continuity" | "voice" | "semantic" | "editorial",
     correctionInstructions: string,
-    // Profundidad de reenrutado por mismatch de capítulo. El cirujano puede
-    // detectar que la nota no era para el capítulo recibido y, si conseguimos
-    // identificar el destino real, reinvocamos esta función sobre el capítulo
-    // correcto. Evitamos rebotes en cadena con un máximo de 1 reenrutado.
-    _rerouteDepth: number = 0
-  ): Promise<{ reroutedTo?: number } | void> {
+    // Profundidades de re-invocación recursiva. Las separamos en dos para
+    // permitir la cadena legítima "mismatch → traducción estructural" (cuando
+    // la nota mal enrutada termina siendo, además, estructural en su destino
+    // correcto). Cada contador limita SU tipo a profundidad 1, sin bloquear
+    // el otro tipo:
+    //   _mismatchRerouteDepth: incrementado por el reenrutado del Hotfix #5
+    //     (parser editorial enrutó mal). Limita rebotes mismatch→mismatch.
+    //   _structuralTranslateDepth: incrementado por la traducción estructural
+    //     del Hotfix #7. Limita rebotes estructural→estructural.
+    _mismatchRerouteDepth: number = 0,
+    _structuralTranslateDepth: number = 0
+  ): Promise<{ reroutedTo?: number[] } | void> {
     const qaLabels = {
       continuity: "Centinela de Continuidad",
       voice: "Auditor de Voz",
@@ -8213,7 +8223,7 @@ Responde SOLO con un JSON válido con la estructura:
           const targetChapterNumber = this.detectInstructionTargetChapter(reason, sectionData.numero);
           let rerouted = false;
 
-          if (targetChapterNumber !== null && _rerouteDepth === 0) {
+          if (targetChapterNumber !== null && _mismatchRerouteDepth === 0) {
             const allChaptersForReroute = await storage.getChaptersByProject(project.id);
             const targetChapter = allChaptersForReroute.find(c => c.chapterNumber === targetChapterNumber);
 
@@ -8239,9 +8249,19 @@ Responde SOLO con un JSON válido con la estructura:
                 this.callbacks.onAgentStatus("surgical-patcher", "completed",
                   `${sectionLabel}: nota reenrutada a ${targetLabel}.`
                 );
-                // Llamada recursiva con el capítulo correcto. _rerouteDepth=1
-                // bloquea más reenrutados en cadena.
-                await this.rewriteChapterForQA(
+                // Snapshot del contenido del target ANTES, para verificar
+                // si la cirugía recursiva realmente lo modificó. Si no
+                // cambió (porque la guarda interna canceló, p.ej.), no
+                // debemos contabilizarlo como reroutedTo — eso inflaría
+                // appliedCount y haría que applyEditorialNotes saltase un
+                // capítulo no tocado.
+                const targetContentBefore = targetChapter.content || "";
+                // Llamada recursiva con el capítulo correcto.
+                // _mismatchRerouteDepth=1 bloquea más reenrutados por mismatch
+                // en cadena. _structuralTranslateDepth se preserva porque
+                // permitimos la cadena legítima mismatch→estructural si el
+                // cap correcto resulta tener una nota estructural.
+                const subResult = await this.rewriteChapterForQA(
                   project,
                   targetChapter,
                   targetSection,
@@ -8249,15 +8269,27 @@ Responde SOLO con un JSON válido con la estructura:
                   guiaEstilo,
                   qaSource,
                   correctionInstructions,
-                  1
+                  1,
+                  _structuralTranslateDepth
                 );
                 rerouted = true;
-                // Señalamos al caller (típicamente applyEditorialNotes) qué
-                // capítulo terminó modificado para que su contabilidad
-                // (appliedCount, recalculo de puntuación) lo refleje y para
-                // que pueda saltarse el target en su loop si también estaba
-                // en cola y así evitar doble procesamiento.
-                return { reroutedTo: targetChapterNumber };
+                // Acumular capítulos modificados: (a) el target principal SI
+                // su contenido cambió, (b) cualquier cap que la recursión a
+                // su vez haya reenrutado/traducido (p.ej. mismatch→estructural,
+                // donde el cambio real ocurre en otros caps distintos al target).
+                const reroutedSet = new Set<number>();
+                const refreshedAfterMismatch = await storage.getChaptersByProject(project.id);
+                const targetAfter = refreshedAfterMismatch.find(c => c.id === targetChapter.id);
+                if (targetAfter && targetAfter.content && targetAfter.content !== targetContentBefore) {
+                  reroutedSet.add(targetChapterNumber);
+                }
+                if (subResult && Array.isArray(subResult.reroutedTo)) {
+                  for (const n of subResult.reroutedTo) reroutedSet.add(n);
+                }
+                if (reroutedSet.size > 0) {
+                  return { reroutedTo: Array.from(reroutedSet) };
+                }
+                return;
               }
             }
           }
@@ -8265,7 +8297,7 @@ Responde SOLO con un JSON válido con la estructura:
           if (!rerouted) {
             const reasonNoReroute = targetChapterNumber === null
               ? "no se pudo identificar el capítulo de destino real en el mensaje del cirujano"
-              : _rerouteDepth > 0
+              : _mismatchRerouteDepth > 0
                 ? "ya se intentó reenrutar una vez; abortamos para evitar bucles"
                 : `el capítulo de destino (${targetChapterNumber}) no existe en este proyecto o está vacío`;
             await storage.createActivityLog({
@@ -8289,16 +8321,247 @@ Responde SOLO con un JSON válido con la estructura:
         // Detectar instrucciones que piden una operación ESTRUCTURAL del
         // manuscrito (eliminar capítulo, fusionar capítulos, dividir, mover
         // contenido entre capítulos, reordenar). El cirujano las rechaza
-        // correctamente porque no son corregibles con find/replace. Pero
-        // caer al Narrador es peor: intentaría "reescribir" el capítulo para
-        // cumplir la nota (ej. eliminarlo) y casi siempre falla en QA o
-        // genera un capítulo degradado. Cancelamos limpiamente y avisamos
-        // al usuario que debe usar una herramienta de reestructuración.
+        // correctamente porque no son corregibles con find/replace. Y caer al
+        // Narrador tampoco sirve: intentaría "reescribir" el capítulo para
+        // cumplir una orden imposible (no se puede borrar un capítulo desde
+        // dentro de él) y termina dañándolo o fallando el QA.
+        //
+        // Estrategia (Hotfix #7): en vez de cancelar y dejar al usuario sin
+        // recurso, llamamos a un Traductor LLM que descompone la nota
+        // imposible en (a) instrucciones de PROSA factibles para capítulos
+        // concretos (que SÍ ejecutamos automáticamente reinvocando el flujo
+        // editorial) y (b) acciones ADMINISTRATIVAS pendientes (delete_chapter,
+        // merge_chapters, etc.) que registramos como warnings para que el
+        // usuario las confirme — NUNCA aplicamos administrativas destructivas
+        // sin confirmación humana. Si el traductor falla o devuelve nada
+        // aplicable, caemos al fallback de cancelación con mensaje claro.
         if (this.isStructuralRestructureInstruction(reason)) {
+          // Evitamos cadenas de traducción estructural recursiva: si ya
+          // estamos dentro de una traducción estructural anterior, cancelamos
+          // para no arriesgar bucles. Permitimos en cambio la cadena
+          // mismatch→estructural (porque _mismatchRerouteDepth es independiente).
+          if (_structuralTranslateDepth > 0) {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              message: `${sectionLabel}: instrucción estructural detectada dentro de un reenrutado/traducción previo. Cancelando para evitar bucles. Razón del cirujano: ${reason}`,
+              agentRole: "surgical-patcher",
+            });
+            await storage.updateChapter(chapter.id, {
+              status: "completed",
+              needsRevision: false,
+              revisionReason: null,
+            });
+            this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+            this.callbacks.onAgentStatus("surgical-patcher", "completed",
+              `${sectionLabel}: estructural anidado — cancelado por seguridad.`
+            );
+            return;
+          }
+
+          let translatorResult: any = null;
+          try {
+            const { StructuralInstructionTranslatorAgent } = await import("./agents/structural-instruction-translator");
+            const translator = new StructuralInstructionTranslatorAgent();
+            const allChaptersForTranslation = await storage.getChaptersByProject(project.id);
+            const chaptersListForTranslator = allChaptersForTranslation.map(c => ({
+              chapterNumber: c.chapterNumber,
+              title: c.title || "",
+              wordCount: c.wordCount || (c.content ? c.content.split(/\s+/).filter(w => w.length > 0).length : 0),
+              summary: (c.content || "").substring(0, 300),
+            }));
+
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              message: `${sectionLabel}: nota estructural detectada. Llamando al Traductor para descomponerla en instrucciones factibles antes de cancelar.`,
+              agentRole: "editor",
+            });
+
+            const translatorResponse = await translator.execute({
+              originalInstruction: correctionInstructions,
+              surgeonReason: reason,
+              currentChapterNumber: chapter.chapterNumber,
+              availableChapters: chaptersListForTranslator,
+            });
+            translatorResult = translatorResponse.result;
+          } catch (err: any) {
+            console.error("[Orchestrator] Structural translator failed:", err);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              message: `${sectionLabel}: el Traductor de instrucciones estructurales falló (${err?.message || err}). Cayendo al fallback de cancelación.`,
+              agentRole: "editor",
+            });
+          }
+
+          // Si el traductor devolvió un plan aplicable, ejecutamos las partes
+          // de prosa y registramos las administrativas pendientes.
+          if (translatorResult && !translatorResult.unfeasible &&
+              (translatorResult.feasibleParts?.length > 0 || translatorResult.pendingAdministrativeActions?.length > 0)) {
+
+            const modifiedChapters: number[] = [];
+            const allChaptersForExec = await storage.getChaptersByProject(project.id);
+            const refreshedSectionsForExec = this.buildSectionsListFromChapters(allChaptersForExec, worldBibleData);
+
+            // Aplicar cada feasiblePart: reinvocar rewriteChapterForQA con la
+            // instrucción reformulada sobre el capítulo destino correcto.
+            // _structuralTranslateDepth=1 bloquea más traducciones estructurales
+            // anidadas; _mismatchRerouteDepth se preserva (independiente).
+            // Antes de ejecutar verificamos dos cosas:
+            //   (1) que la instrucción NO sea una operación destructiva
+            //       encubierta (ej. "vacía completamente este capítulo") —
+            //       eso debería ir como administrativa, no como prosa.
+            //   (2) tras ejecutar, comparamos contenido antes/después y solo
+            //       contamos el capítulo como modificado si efectivamente cambió
+            //       (la reescritura puede haberse cancelado por cualquier guarda
+            //       interna). Esto evita inflar `reroutedTo` y saltar capítulos
+            //       que no se tocaron realmente.
+            for (const part of (translatorResult.feasibleParts || [])) {
+              const targetCh = allChaptersForExec.find(c => c.chapterNumber === part.chapterNumber);
+              const targetSec = refreshedSectionsForExec.find((s: any) => s.numero === part.chapterNumber);
+              if (!targetCh || !targetCh.content || !targetSec) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warning",
+                  message: `Traducción estructural: capítulo destino ${part.chapterNumber} no disponible o vacío. Saltando esta parte. Instrucción derivada: ${(part.instruction || "").substring(0, 200)}`,
+                  agentRole: "editor",
+                });
+                continue;
+              }
+              const targetLabel = this.getSectionLabel(targetSec);
+
+              // Guarda anti-destructiva: si el Traductor coló una instrucción
+              // de prosa cuyo efecto es vaciar el capítulo, la rechazamos y la
+              // re-encolamos como administrativa pendiente de confirmación.
+              if (this.isDestructiveProseInstruction(part.instruction)) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warning",
+                  message: `ACCIÓN PENDIENTE DE CONFIRMACIÓN — el Traductor estructural emitió una instrucción de prosa para ${targetLabel} cuyo efecto neto es destructivo ("${(part.instruction || "").substring(0, 160)}"). Rechazada por seguridad: las operaciones destructivas (vaciar/eliminar contenido) requieren confirmación humana explícita y deben ir como acción administrativa, no como reescritura de prosa.`,
+                  agentRole: "editor",
+                });
+                continue;
+              }
+
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "info",
+                message: `Traducción estructural: aplicando instrucción derivada al ${targetLabel}. ${part.rationale ? `Justificación: ${part.rationale}` : ""}`,
+                agentRole: "editor",
+              });
+              // Snapshot del contenido ANTES para verificar cambio real.
+              const contentBefore = targetCh.content || "";
+              try {
+                const subResult = await this.rewriteChapterForQA(
+                  project,
+                  targetCh,
+                  targetSec,
+                  worldBibleData,
+                  guiaEstilo,
+                  qaSource,
+                  part.instruction,
+                  _mismatchRerouteDepth,
+                  1
+                );
+                // Comparar contenido DESPUÉS. Solo contamos el cap como
+                // modificado si realmente cambió. Esto evita falsos positivos
+                // que inflarían reroutedTo y harían que applyEditorialNotes
+                // saltara un capítulo que no se tocó. Además capturamos los
+                // capítulos que la propia recursión haya reenrutado por
+                // mismatch (cadena estructural→mismatch): si la cirugía sobre
+                // el target rebotó al cap correcto, el cambio real ocurre allí
+                // y no en `targetCh`, así que también hay que contabilizarlo.
+                const refreshedAfter = await storage.getChaptersByProject(project.id);
+                const targetChAfter = refreshedAfter.find(c => c.id === targetCh.id);
+                const contentAfter = targetChAfter?.content || "";
+                let countedSomething = false;
+                if (contentAfter && contentAfter !== contentBefore) {
+                  modifiedChapters.push(part.chapterNumber);
+                  countedSomething = true;
+                }
+                if (subResult && Array.isArray(subResult.reroutedTo)) {
+                  for (const n of subResult.reroutedTo) {
+                    modifiedChapters.push(n);
+                    countedSomething = true;
+                  }
+                }
+                if (!countedSomething) {
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "info",
+                    message: `Traducción estructural: la aplicación al ${targetLabel} no produjo cambios (la reescritura fue cancelada por una guarda interna). No se cuenta como capítulo modificado.`,
+                    agentRole: "editor",
+                  });
+                }
+              } catch (err: any) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warning",
+                  message: `Traducción estructural: la aplicación de la instrucción derivada al ${targetLabel} falló (${err?.message || err}).`,
+                  agentRole: "editor",
+                });
+              }
+            }
+
+            // Registrar las acciones administrativas pendientes (NO se aplican
+            // automáticamente — son destructivas y requieren confirmación).
+            for (const admin of (translatorResult.pendingAdministrativeActions || [])) {
+              const targetSec = refreshedSectionsForExec.find((s: any) => s.numero === admin.targetChapterNumber);
+              const targetLabel = targetSec ? this.getSectionLabel(targetSec) : `chapter ${admin.targetChapterNumber}`;
+              const secondaryStr = typeof admin.secondaryChapterNumber === "number"
+                ? ` (afecta también a chapter ${admin.secondaryChapterNumber})`
+                : "";
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warning",
+                message: `ACCIÓN PENDIENTE DE CONFIRMACIÓN — operación administrativa "${admin.type}" sobre ${targetLabel}${secondaryStr}. Motivo: ${admin.reason}. No se aplicó automáticamente porque es destructiva. Confírmala manualmente desde la herramienta correspondiente cuando hayas verificado que las reescrituras de prosa quedaron bien integradas.`,
+                agentRole: "editor",
+              });
+            }
+
+            // Liberar el capítulo actual: la nota era estructural, este cap
+            // no era el destino real. Marcamos completed sin tocar contenido.
+            await storage.updateChapter(chapter.id, {
+              status: "completed",
+              needsRevision: false,
+              revisionReason: null,
+            });
+            this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+
+            const summary = [
+              modifiedChapters.length > 0 ? `${modifiedChapters.length} capítulo(s) modificado(s) (${modifiedChapters.join(", ")})` : "0 capítulos modificados",
+              (translatorResult.pendingAdministrativeActions?.length || 0) > 0 ? `${translatorResult.pendingAdministrativeActions.length} acción(es) administrativa(s) pendiente(s) de tu confirmación` : "",
+            ].filter(Boolean).join("; ");
+
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              message: `${sectionLabel}: nota estructural traducida y aplicada. ${summary}. ${translatorResult.globalRationale || ""}`,
+              agentRole: "editor",
+            });
+            this.callbacks.onAgentStatus("surgical-patcher", "completed",
+              `${sectionLabel}: nota estructural traducida — ${summary}.`
+            );
+
+            // Devolvemos los capítulos modificados para que applyEditorialNotes
+            // los contabilice en appliedCount y los excluya del bucle externo
+            // si estaban en cola (evita doble proceso).
+            if (modifiedChapters.length > 0) {
+              return { reroutedTo: modifiedChapters };
+            }
+            return;
+          }
+
+          // Fallback: el traductor no pudo descomponer la nota (unfeasible) o
+          // falló. Cancelamos con mensaje claro.
+          const unfeasibleReason = translatorResult?.unfeasibleReason
+            ? ` Motivo del Traductor: ${translatorResult.unfeasibleReason}`
+            : "";
           await storage.createActivityLog({
             projectId: project.id,
             level: "warning",
-            message: `${sectionLabel}: la nota solicita una operación ESTRUCTURAL del manuscrito (eliminar/fusionar/dividir/mover/reordenar capítulos), no una corrección de texto localizable dentro de un capítulo. Reescritura cancelada — el Narrador no puede reestructurar el manuscrito desde un único capítulo y lo dañaría. Realiza esta operación desde el chat editorial (que sí puede aplicar cambios estructurales) o ajustando el plan/manuscrito manualmente. Razón del cirujano: ${reason}`,
+            message: `${sectionLabel}: la nota solicita una operación ESTRUCTURAL del manuscrito (eliminar/fusionar/dividir/mover/reordenar capítulos) y no fue posible traducirla en instrucciones factibles automáticamente.${unfeasibleReason} Reescritura cancelada para no dañar este capítulo. Realiza la operación desde el chat editorial o ajustando el plan/manuscrito manualmente. Razón del cirujano: ${reason}`,
             agentRole: "surgical-patcher",
           });
           await storage.updateChapter(chapter.id, {
@@ -8308,7 +8571,7 @@ Responde SOLO con un JSON válido con la estructura:
           });
           this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
           this.callbacks.onAgentStatus("surgical-patcher", "completed",
-            `${sectionLabel}: operación estructural — fuera del alcance de la cirugía y la reescritura del capítulo.`
+            `${sectionLabel}: operación estructural — no se pudo traducir automáticamente.`
           );
           return;
         }
@@ -8976,6 +9239,44 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       /no\s+(?:es\s+)?(?:una\s+)?correcci[oó]n\s+(?:puntual|localizable)/,
     ];
     return structuralPatterns.some(re => re.test(r));
+  }
+
+  // Guarda anti-destructiva para feasibleParts del Traductor estructural.
+  // El prompt del Traductor le pide que NO emita instrucciones de prosa cuyo
+  // efecto neto sea borrar todo el contenido (eso debería ir como administrativa
+  // delete_chapter). Pero el modelo puede colarse y emitir una "feasiblePart"
+  // tipo "vacía completamente este capítulo" o "elimina todo el contenido".
+  // Esta guarda detecta esas instrucciones y las rechaza ANTES de aplicarlas,
+  // forzando a que la operación destructiva pase por confirmación humana.
+  private isDestructiveProseInstruction(instruction: string): boolean {
+    const raw = (instruction || "").toLowerCase().trim();
+    if (!raw) return true; // instrucción vacía = no aplicable, también la rechazamos
+    // Normalizamos quitando diacríticos (NFD + filtrar marcas) para que las
+    // regex funcionen igual con o sin acentos. Esto es esencial para variantes
+    // con pronombre enclítico acentuado: "elimínalo", "déjalo", "vacíalo"…
+    // que de otro modo escaparían a la guarda y permitirían que una operación
+    // destructiva se ejecutase como si fuera prosa normal.
+    const i = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const destructivePatterns = [
+      // Vaciar capítulo (incluye "vacialo" / "vacíalo")
+      /vacia(r|lo|los|la|las)?\s+(completamente\s+|por\s+completo\s+|totalmente\s+|integramente\s+)?(el\s+|este\s+)?capitulo/,
+      /\bvacia(lo|los|la|las)\b/,
+      // Eliminar/borrar/suprimir todo el contenido (con o sin "capítulo")
+      /(elimina(r)?|borra(r)?|suprime|suprimir|quita(r)?)\s+(todo\s+(el\s+)?(contenido|texto|capitulo)|el\s+(contenido|texto|capitulo)\s+(entero|completo|integro))/,
+      // Eliminar/borrar/suprimir este/el capítulo "completo|entero|íntegro|por completo|íntegramente"
+      /(elimina(r)?|borra(r)?|suprime|suprimir|quita(r)?)\s+(este\s+|el\s+)?capitulo\s+(completo|entero|integro|por\s+completo|integramente)/,
+      // Borra/elimina/suprime "todo" con o sin enclítico: "borra todo", "elimínalo todo", "quítalo todo"
+      /\b(borra(r)?|elimina(r)?|suprim[ei]r?|quita(r)?)(lo|los|la|las)?\s+todo\b/,
+      // Reducir el capítulo a cero/vacío
+      /(reduc[ei]r?|recorta(r)?)\s+(el\s+|este\s+)?capitulo\s+a\s+(cero|nada|0\s+palabras|vacio|nada\s+de\s+contenido)/,
+      // Dejar el capítulo vacío / en blanco / sin texto / sin contenido (incluye "déjalo sin texto")
+      /deja(r)?(lo|los|la|las)?\s+(el\s+|este\s+)?(capitulo\s+)?(vacio|en\s+blanco|sin\s+contenido|sin\s+texto)/,
+      // Reescribir el capítulo como vacío/nada
+      /reescrib[ei]r?\s+(el\s+|este\s+)?capitulo\s+como\s+(vacio|nada|cadena\s+vacia|sin\s+(contenido|texto))/,
+      // Convertir el capítulo en algo vacío
+      /convert[ei]r?\s+(el\s+|este\s+)?capitulo\s+en\s+(vacio|nada|sin\s+(contenido|texto))/,
+    ];
+    return destructivePatterns.some(re => re.test(i));
   }
 
   // Heurística: la razón del cirujano deja claro que la instrucción está dirigida
