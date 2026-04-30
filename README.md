@@ -1,8 +1,18 @@
-# LitAgents v6.7 — Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v6.8 — Sistema de Orquestacion de Agentes Literarios IA
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando **DeepSeek V4** como unico backend de IA.
 
 **PWA instalable** — se puede instalar en escritorio y movil directamente desde el navegador.
+
+## Novedades v6.8 — Revisor Holistico, Beta-Reader y Fix Critico de Escaleta
+
+- **Nuevo agente Revisor Holistico (severo)**: Lee la novela completa en una sola pasada y devuelve un dictamen editorial duro estilo editor profesional (problemas estructurales, agujeros de trama, arcos rotos, ritmo, voz, riesgos de publicacion). Endpoint `POST /api/projects/:id/holistic-review`, integrado en el dashboard como boton morado.
+- **Nuevo agente Beta-Reader (lector cualificado)**: Lee la novela completa y entrega una resena en primera persona desde la perspectiva de un lector exigente (que funciono, que aburrio, que personajes engancharon, donde queria abandonar). Endpoint `POST /api/projects/:id/beta-review`, integrado en el dashboard como boton verde. Complementa al Revisor Holistico: uno juzga la obra como editor, el otro como publico.
+- **Limite de notas editoriales 50K → 200K caracteres**: Para que las criticas largas del Revisor Holistico, Beta-Reader o editores externos quepan completas en el textarea sin truncado.
+- **SSE robusto en revisiones**: Los handlers `onerror` resetean correctamente los flags `isHolisticReviewing` / `isBetaReviewing` / `isParsingEditorial` y muestran toast destructivo si la conexion cae a mitad de proceso, evitando que la UI quede bloqueada en estado de "procesando" eterno.
+- **FIX CRITICO — Escaleta perdida en agentes de revision**: Bug latente en 8 sitios duplicados de `server/orchestrator.ts` donde se construia `escaleta_capitulos: worldBible.plotOutline as any[] || []`. El campo `plotOutline` se persiste en BD como **objeto** `PlotOutline` (con la escaleta dentro de `.chapterOutlines`), no como array. El cast TypeScript no protegia en runtime: el resultado era que el Reescritor, el QA, el Editor de notas, el Revisor Final, el Holistico y el Beta-Reader recibian `escaleta_capitulos: {}` y operaban **sin la planificacion del Arquitecto**. Ahora todos los call-sites usan el helper centralizado `reconstructWorldBibleData(worldBible, project)` que extrae correctamente `chapterOutlines` y mapea cada entrada al formato esperado en espanol (numero, titulo, objetivo_narrativo, beats, continuidad_salida, etc.).
+- **FIX colateral — Asignacion correcta de escaleta por capitulo**: `buildSectionsListFromChapters` indexaba la escaleta por **posicion del array** (`escaleta[index]`), no por numero de capitulo. Funcionaba "por suerte" cuando todo coincidia, pero en proyectos con prologo, epilogo o nota de autor habria inyectado los datos del capitulo equivocado en cada `SectionData`. Ahora resuelve por `chapterNumber`, igual que `buildSectionsList`.
+- **Robustez defensiva de `reconstructWorldBibleData`**: Se anaden guardas `Array.isArray` para `timeline`, `characters` y `worldRules` (antes si llegaban como `{}` o `null` por bibles a medio inicializar, `.map` reventaba). Tambien soporta `plotOutline` en formato array (compatibilidad con proyectos legacy anteriores al refactor a objeto).
 
 ## Novedades v6.7 — Migracion a DeepSeek V4
 
@@ -35,6 +45,8 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 - **Gestion de Series**: Continuidad inter-libros con snapshots automaticos y verificacion de arcos narrativos
 - **Spin-offs**: Creacion de series derivadas con protagonista de la serie original y guia auto-generada
 - **Critica Editorial**: Inyeccion de feedback externo (editores, beta-readers) como guia prioritaria en re-ediciones
+- **Revisor Holistico**: Editor severo que lee la novela completa de una vez y emite un dictamen estructural duro (agujeros de trama, arcos rotos, ritmo, voz, riesgos de publicacion)
+- **Beta-Reader**: Lector cualificado que lee la novela completa y entrega una resena en primera persona, complementando al Revisor Holistico desde la perspectiva del publico
 - **Autenticacion**: Proteccion con contrasena para instalaciones en servidor propio
 - **Audiolibros**: Conversion de novelas a audiolibro con voces TTS de Fish Audio (modelo speech-1.6), portadas personalizadas (subida manual) y descarga en ZIP
 - **Metadatos KDP**: Generacion automatica de metadata para Amazon KDP (descripcion HTML, keywords, categorias BISAC)
@@ -54,6 +66,8 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 | Editor | DeepSeek V4-Flash | 8192 | Evaluacion de calidad y plan quirurgico de correcciones (thinking: 4K) |
 | Corrector (Copyeditor) | DeepSeek V4-Flash | 65536 | Reescritura y correccion de capitulos rechazados (thinking: 8K) |
 | Revisor Final | DeepSeek V4-Flash | 16384 | Evaluacion completa del manuscrito con auditoria forense (thinking: 4K) |
+| Revisor Holistico | DeepSeek V4-Flash | 16384 | Lectura integral severa estilo editor profesional (problemas estructurales, arcos, ritmo, riesgos) |
+| Beta-Reader | DeepSeek V4-Flash | 16384 | Resena en primera persona desde la perspectiva de un lector cualificado |
 | Centinela de Continuidad | DeepSeek V4-Flash | 4096 | Validacion de consistencia post-escritura |
 | Auditor de Voz y Ritmo | DeepSeek V4-Flash | 4096 | Deteccion de problemas de ritmo narrativo |
 | Detector de Repeticiones | DeepSeek V4-Flash | 4096 | Deteccion de repeticiones semanticas y lexicas |
