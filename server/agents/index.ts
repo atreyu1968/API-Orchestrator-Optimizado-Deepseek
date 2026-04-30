@@ -17,3 +17,4 @@ export { SurgicalPatcherAgent, type PatchOperation, type SurgicalPatchResult, ty
 export { WorldBibleArbiterAgent, type WorldBiblePatch, type WorldBibleArbiterResult, type WorldBibleSection } from "./world-bible-arbiter";
 export { OriginalityCriticAgent, type OriginalityCriticResult, type OriginalityCluster, type OriginalityClusterType } from "./originality-critic";
 export { HolisticReviewerAgent, type HolisticReviewerResult } from "./holistic-reviewer";
+export { BetaReaderAgent, type BetaReaderResult } from "./beta-reader";

@@ -15,6 +15,8 @@ import {
   OriginalityCriticAgent,
   HolisticReviewerAgent,
   type HolisticReviewerResult,
+  BetaReaderAgent,
+  type BetaReaderResult,
   type EditorialInstruction,
   type EditorialNotesParseResult,
   type WorldBiblePatch,
@@ -129,6 +131,7 @@ export class Orchestrator {
   private surgicalPatcher = new SurgicalPatcherAgent();
   private wbArbiter = new WorldBibleArbiterAgent();
   private holisticReviewer = new HolisticReviewerAgent();
+  private betaReader = new BetaReaderAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
@@ -3968,7 +3971,16 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
    * flujo normal de parse-editorial-notes / apply-editorial-notes.
    * NO modifica el proyecto. Tracking de tokens activado.
    */
-  async runHolisticReview(project: Project): Promise<HolisticReviewerResult> {
+  /**
+   * Helper compartido por las dos lecturas full-novel (Holístico y Beta):
+   * carga capítulos ordenados, contenido de la guía de estilo (si existe)
+   * y un resumen compacto de la World Bible. Resetea this.cumulativeTokens.
+   */
+  private async loadFullNovelContext(project: Project): Promise<{
+    chapters: Array<{ numero: number; titulo: string; contenido: string }>;
+    styleGuideContent?: string;
+    worldBibleSummary?: string;
+  }> {
     this.cumulativeTokens = {
       inputTokens: project.totalInputTokens || 0,
       outputTokens: project.totalOutputTokens || 0,
@@ -3980,21 +3992,18 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       throw new Error("El proyecto no tiene capítulos generados todavía.");
     }
 
-    // Load style guide content (project only stores the FK)
     let styleGuideContent: string | undefined;
     if (project.styleGuideId) {
       try {
         const sg = await storage.getStyleGuide(project.styleGuideId);
         if (sg?.content) styleGuideContent = sg.content;
       } catch (e) {
-        console.warn(`[HolisticReview] Could not load style guide ${project.styleGuideId}:`, e);
+        console.warn(`[FullNovelReview] Could not load style guide ${project.styleGuideId}:`, e);
       }
     }
 
     const worldBible = await storage.getWorldBibleByProject(project.id);
-
-    // Build a compact world bible summary (characters + key rules + outline beats)
-    let worldBibleSummary = "";
+    let worldBibleSummary: string | undefined;
     if (worldBible) {
       const characters = (worldBible.characters as any[]) || [];
       const rules = (worldBible.worldRules as any[]) || [];
@@ -4013,39 +4022,86 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       worldBibleSummary = `### PERSONAJES PRINCIPALES\n${charLines || "(no hay personajes registrados)"}\n\n### REGLAS DEL MUNDO\n${ruleLines || "(no hay reglas registradas)"}\n\n### ESCALETA ORIGINAL\n${outlineLines || "(no hay escaleta registrada)"}`;
     }
 
-    await storage.createActivityLog({
-      projectId: project.id,
-      level: "info",
-      message: `Iniciando revisión holística de la novela completa (${allChapters.length} capítulos).`,
-      agentRole: "editor",
-    });
-
-    const result = await this.holisticReviewer.runReview({
-      projectTitle: project.title,
+    return {
       chapters: allChapters.map(c => ({
         numero: c.chapterNumber || 0,
         titulo: c.title || "",
         contenido: c.content || "",
       })),
-      guiaEstilo: styleGuideContent,
-      worldBibleSummary: worldBibleSummary || undefined,
+      styleGuideContent,
+      worldBibleSummary,
+    };
+  }
+
+  async runHolisticReview(project: Project): Promise<HolisticReviewerResult> {
+    const ctx = await this.loadFullNovelContext(project);
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "info",
+      message: `Iniciando revisión holística de la novela completa (${ctx.chapters.length} capítulos).`,
+      agentRole: "editor",
+    });
+
+    const result = await this.holisticReviewer.runReview({
+      projectTitle: project.title,
+      chapters: ctx.chapters,
+      guiaEstilo: ctx.styleGuideContent,
+      worldBibleSummary: ctx.worldBibleSummary,
       generoObjetivo: project.genre || undefined,
       longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
     }, project.id);
 
     await this.trackTokenUsage(
-      project.id,
-      result.tokenUsage,
-      "Lector Holístico",
-      "deepseek-v4-flash",
-      undefined,
-      "holistic_review"
+      project.id, result.tokenUsage,
+      "Lector Holístico", "deepseek-v4-flash", undefined, "holistic_review"
     );
 
     await storage.createActivityLog({
       projectId: project.id,
       level: "info",
       message: `Revisión holística completada: ${result.totalChaptersRead} capítulos / ${result.totalWordsRead.toLocaleString("es-ES")} palabras leídas. Informe de ${result.notesText.length.toLocaleString("es-ES")} caracteres generado.`,
+      agentRole: "editor",
+    });
+
+    return result;
+  }
+
+  /**
+   * LECTOR BETA: misma idea que la revisión holística (lee la novela entera de
+   * una sentada) pero la perspectiva es la de un lector cualificado, no la de
+   * un editor profesional. Devuelve impresiones en primera persona, reacciones
+   * emocionales, qué funcionó y qué aburrió. Complementa al holístico, no lo
+   * sustituye. NO modifica el proyecto. Tracking de tokens activado.
+   */
+  async runBetaReview(project: Project): Promise<BetaReaderResult> {
+    const ctx = await this.loadFullNovelContext(project);
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "info",
+      message: `Iniciando lectura beta de la novela completa (${ctx.chapters.length} capítulos).`,
+      agentRole: "editor",
+    });
+
+    const result = await this.betaReader.runReview({
+      projectTitle: project.title,
+      chapters: ctx.chapters,
+      guiaEstilo: ctx.styleGuideContent,
+      worldBibleSummary: ctx.worldBibleSummary,
+      generoObjetivo: project.genre || undefined,
+      longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
+    }, project.id);
+
+    await this.trackTokenUsage(
+      project.id, result.tokenUsage,
+      "Lector Beta", "deepseek-v4-flash", undefined, "beta_review"
+    );
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "info",
+      message: `Lectura beta completada: ${result.totalChaptersRead} capítulos / ${result.totalWordsRead.toLocaleString("es-ES")} palabras leídas. Impresiones de ${result.notesText.length.toLocaleString("es-ES")} caracteres generadas.`,
       agentRole: "editor",
     });
 

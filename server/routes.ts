@@ -1228,6 +1228,74 @@ export async function registerRoutes(
     }
   });
 
+  // BETA REVIEW: same async pattern as holistic-review but with the BetaReader agent
+  // (reader perspective, not editor). Output also lands in the editorial-notes textarea.
+  app.post("/api/projects/:id/beta-review", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProject(id);
+
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      if (project.status !== "completed") {
+        return res.status(400).json({ error: "Solo se puede pedir lectura beta de proyectos completados" });
+      }
+
+      res.status(202).json({
+        accepted: true,
+        projectId: id,
+        message: "Lectura beta iniciada. Las impresiones se entregarán por el canal de progreso del proyecto.",
+      });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => {
+            try {
+              stream.write(message);
+            } catch (e) {
+              console.error("Error writing to stream:", e);
+            }
+          });
+        }
+      };
+
+      const orchestrator = new Orchestrator({
+        onAgentStatus: async () => {},
+        onChapterComplete: async () => {},
+        onChapterRewrite: async () => {},
+        onChapterStatusChange: () => {},
+        onProjectComplete: async () => {},
+        onError: async () => {},
+      });
+
+      orchestrator.runBetaReview(project)
+        .then((result) => {
+          sendToStreams({
+            type: "beta_review_complete",
+            payload: {
+              notesText: result.notesText,
+              totalChaptersRead: result.totalChaptersRead,
+              totalWordsRead: result.totalWordsRead,
+            },
+          });
+        })
+        .catch(async (err) => {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error("Background beta review failed:", err);
+          await persistActivityLog(id, "error", `Error en lectura beta: ${errMsg}`, "editor");
+          sendToStreams({ type: "beta_review_error", message: errMsg });
+        });
+    } catch (error) {
+      console.error("Error starting beta review:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: error instanceof Error ? error.message : "Failed to start beta review" });
+      }
+    }
+  });
+
   // STEP 2 (apply): apply editorial notes. Accepts EITHER:
   //  - { notes }                     → legacy mode: parse + apply in one shot
   //  - { instructions: [...] }       → preview mode: apply pre-parsed instructions filtered by the user

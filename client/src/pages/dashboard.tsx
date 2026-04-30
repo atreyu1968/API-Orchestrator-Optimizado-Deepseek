@@ -353,6 +353,7 @@ export default function Dashboard() {
   // isPending no representa el estado real de carga; este flag sí.
   const [isParsingEditorial, setIsParsingEditorial] = useState(false);
   const [isHolisticReviewing, setIsHolisticReviewing] = useState(false);
+  const [isBetaReviewing, setIsBetaReviewing] = useState(false);
 
   // Diff dialog state for "Ver cambios" per chapter
   const [diffChapter, setDiffChapter] = useState<Chapter | null>(null);
@@ -506,6 +507,30 @@ export default function Dashboard() {
       toast({
         title: "Error iniciando revisión holística",
         description: err?.message || "No se pudo iniciar la revisión holística",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const betaReviewMutation = useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/beta-review`, {});
+      return response.json();
+    },
+    onMutate: () => {
+      setIsBetaReviewing(true);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Lector beta trabajando",
+        description: "Esto puede tomar 3-5 minutos. Las impresiones aparecerán en el cuadro de notas al terminar.",
+      });
+    },
+    onError: (err: any) => {
+      setIsBetaReviewing(false);
+      toast({
+        title: "Error iniciando lectura beta",
+        description: err?.message || "No se pudo iniciar la lectura beta",
         variant: "destructive",
       });
     },
@@ -727,6 +752,31 @@ export default function Dashboard() {
               description: data.message || "No se pudo completar la revisión",
               variant: "destructive",
             });
+          } else if (data.type === "beta_review_complete") {
+            // Impresiones del Lector Beta: misma lógica de inyección que el holístico.
+            setIsBetaReviewing(false);
+            const incoming: string = data.payload?.notesText || "";
+            if (incoming.trim()) {
+              setEditorialNotesOpen(true);
+              setEditorialNotes(prev => {
+                if (!prev.trim()) return incoming;
+                return `${prev}\n\n--- Lectura beta ---\n\n${incoming}`;
+              });
+              const chapters = data.payload?.totalChaptersRead;
+              const words = data.payload?.totalWordsRead;
+              toast({
+                title: "Impresiones del lector beta listas",
+                description: `Leído: ${chapters} capítulos, ${(words || 0).toLocaleString("es-ES")} palabras. El informe está en el cuadro de notas; revísalo y luego pulsa "Analizar notas" para procesarlo.`,
+              });
+            }
+          } else if (data.type === "beta_review_error") {
+            setIsBetaReviewing(false);
+            addLog("error", data.message || "Error en lectura beta", "editor");
+            toast({
+              title: "Error en lectura beta",
+              description: data.message || "No se pudo completar la lectura beta",
+              variant: "destructive",
+            });
           }
         } catch (e) {
           console.error("Error parsing SSE:", e);
@@ -735,6 +785,40 @@ export default function Dashboard() {
 
       eventSource.onerror = () => {
         eventSource.close();
+        // Si la conexión SSE se cae a mitad de una lectura full-novel, el resultado
+        // se pierde (no hay persistencia ni recuperación). Limpiamos los flags para
+        // que la UI no se quede bloqueada esperando un evento que nunca llegará.
+        // El usuario tendrá que volver a lanzar la lectura si quiere las notas.
+        setIsHolisticReviewing(prev => {
+          if (prev) {
+            toast({
+              title: "Conexión perdida durante la lectura",
+              description: "Se cortó la conexión con el servidor. Si la lectura llegó a terminar en el backend los tokens se gastaron, pero el informe se ha perdido. Vuelve a lanzar la lectura holística cuando quieras.",
+              variant: "destructive",
+            });
+          }
+          return false;
+        });
+        setIsBetaReviewing(prev => {
+          if (prev) {
+            toast({
+              title: "Conexión perdida durante la lectura",
+              description: "Se cortó la conexión con el servidor. Si la lectura llegó a terminar en el backend los tokens se gastaron, pero las impresiones se han perdido. Vuelve a lanzar la lectura beta cuando quieras.",
+              variant: "destructive",
+            });
+          }
+          return false;
+        });
+        setIsParsingEditorial(prev => {
+          if (prev) {
+            toast({
+              title: "Conexión perdida durante el análisis",
+              description: "Se cortó la conexión. Vuelve a pulsar 'Analizar notas' si quieres reintentar.",
+              variant: "destructive",
+            });
+          }
+          return false;
+        });
       };
 
       return () => {
@@ -1110,32 +1194,58 @@ export default function Dashboard() {
                               y al final se recalcula la puntuación global para ver el impacto neto.
                             </p>
 
-                            {/* Lector Holístico: genera el informe automáticamente leyendo la novela entera */}
-                            <div className="rounded-md border border-purple-300 dark:border-purple-700 bg-purple-50 dark:bg-purple-950/30 p-3 space-y-2">
+                            {/* Generadores automáticos de notas: Lector Holístico (editor severo) + Lector Beta (lector cualificado) */}
+                            <div className="rounded-md border border-muted-foreground/20 bg-muted/30 p-3 space-y-3">
                               <p className="text-xs leading-relaxed">
-                                <strong>¿No tienes notas todavía?</strong> El <strong>Lector Holístico</strong> lee la novela completa
-                                de una sentada y redacta un informe editorial severo (problemas estructurales, arcos, continuidad,
-                                ritmo, sugerencias concretas). Tarda 3-5 minutos. Cuando termine, su informe aparecerá en este cuadro;
-                                podrás editarlo y luego pulsar "Analizar notas".
+                                <strong>¿No tienes notas todavía?</strong> Dos lectores automáticos pueden leerse la novela completa de una sentada
+                                y volcar sus impresiones en este cuadro. Son perspectivas <strong>complementarias</strong>: lanzas uno, esperas a que termine,
+                                y si quieres lanzas el otro (no se pueden ejecutar a la vez para no mezclar tokens; el segundo informe se apila debajo del primero
+                                con un separador). Cada uno tarda 3-5 minutos. Después editas, depuras y pulsas "Analizar notas".
                               </p>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => holisticReviewMutation.mutate({ id: currentProject.id })}
-                                disabled={
-                                  isHolisticReviewing ||
-                                  isParsingEditorial ||
-                                  applyEditorialNotesMutation.isPending ||
-                                  currentProject.status !== "completed"
-                                }
-                                data-testid="button-holistic-review"
-                                className="w-full border-purple-400 dark:border-purple-600 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40"
-                              >
-                                <FilePen className="h-4 w-4 mr-2" />
-                                {isHolisticReviewing
-                                  ? "Leyendo la novela completa (3-5 min)..."
-                                  : "Pedir revisión holística automatizada"}
-                              </Button>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => holisticReviewMutation.mutate({ id: currentProject.id })}
+                                  disabled={
+                                    isHolisticReviewing ||
+                                    isBetaReviewing ||
+                                    isParsingEditorial ||
+                                    applyEditorialNotesMutation.isPending ||
+                                    currentProject.status !== "completed"
+                                  }
+                                  data-testid="button-holistic-review"
+                                  className="border-purple-400 dark:border-purple-600 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40"
+                                >
+                                  <FilePen className="h-4 w-4 mr-2 shrink-0" />
+                                  <span className="truncate">
+                                    {isHolisticReviewing ? "Leyendo (3-5 min)..." : "Lector Holístico (editor severo)"}
+                                  </span>
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => betaReviewMutation.mutate({ id: currentProject.id })}
+                                  disabled={
+                                    isHolisticReviewing ||
+                                    isBetaReviewing ||
+                                    isParsingEditorial ||
+                                    applyEditorialNotesMutation.isPending ||
+                                    currentProject.status !== "completed"
+                                  }
+                                  data-testid="button-beta-review"
+                                  className="border-emerald-400 dark:border-emerald-600 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40"
+                                >
+                                  <FilePen className="h-4 w-4 mr-2 shrink-0" />
+                                  <span className="truncate">
+                                    {isBetaReviewing ? "Leyendo (3-5 min)..." : "Lector Beta (lector cualificado)"}
+                                  </span>
+                                </Button>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground italic leading-relaxed">
+                                <strong className="text-purple-700 dark:text-purple-300">Holístico</strong>: diagnostica problemas estructurales, arcos, continuidad y ritmo. Voz de editor profesional, formato clínico.
+                                {" "}<strong className="text-emerald-700 dark:text-emerald-300">Beta</strong>: cuenta cómo le sentó la novela como lector. Reacciones emocionales, qué enganchó, qué aburrió, expectativas. Voz en primera persona.
+                              </p>
                             </div>
                             <div className="flex items-center justify-between gap-2">
                               <Label htmlFor="editorial-notes-textarea" className="text-xs">
