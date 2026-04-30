@@ -4963,6 +4963,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
       let appliedCount = 0;
       let revertedCount = 0;
+      // Capítulos cuya nota se reenrutó automáticamente desde otro capítulo
+      // (mismatch detectado por el cirujano + reenrutado en `rewriteChapterForQA`).
+      // Se usa para: (1) saltar el target en el bucle si también estaba en
+      // sortedChapters (evita doble proceso) y (2) sumar correctamente al
+      // contador appliedCount al final del bucle.
+      const reroutedTargets = new Set<number>();
       let skippedCount = 0;
       let cancelled = false;
 
@@ -4987,6 +4993,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
 
         const chapterNum = sortedChapters[i];
+
+        // Si una iteración anterior reenrutó una nota a este chapter, ya
+        // quedó modificado por la llamada recursiva. Procesarlo otra vez
+        // ahora gastaría tokens y podría revertir el cambio recién hecho.
+        if (reroutedTargets.has(chapterNum)) {
+          console.log(`[ApplyEditorialNotes] Chapter ${chapterNum} ya fue procesado por reenrutado automático en una iter previa; saltando para evitar doble proceso.`);
+          continue;
+        }
+
         const chapter = allChapters.find(c => c.chapterNumber === chapterNum);
         const sectionData = allSections.find(s => s.numero === chapterNum);
 
@@ -5192,7 +5207,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             chapter.wordCount = workingContent.split(/\s+/).filter(w => w.length > 0).length;
           }
 
-          await this.rewriteChapterForQA(
+          const rewriteResult = await this.rewriteChapterForQA(
             project,
             chapter,
             sectionData,
@@ -5202,11 +5217,20 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             estructuralesFormatted
           );
 
-          const refreshedChapters = await storage.getChaptersByProject(project.id);
-          const refreshedChapter = refreshedChapters.find(c => c.id === chapter.id);
-          if (refreshedChapter && refreshedChapter.content && refreshedChapter.content !== workingContent) {
-            chapterModified = true;
-            workingContent = refreshedChapter.content;
+          // Si la nota fue reenrutada a otro capítulo (parser editorial enrutó
+          // mal), el chapter actual no se ha tocado: el cambio real ocurrió en
+          // `rewriteResult.reroutedTo`. Lo registramos como aplicado en ese
+          // capítulo y lo memorizamos para evitar reprocesarlo si también
+          // estaba en `sortedChapters` (el bucle externo lo saltará).
+          if (rewriteResult && typeof rewriteResult.reroutedTo === "number") {
+            reroutedTargets.add(rewriteResult.reroutedTo);
+          } else {
+            const refreshedChapters = await storage.getChaptersByProject(project.id);
+            const refreshedChapter = refreshedChapters.find(c => c.id === chapter.id);
+            if (refreshedChapter && refreshedChapter.content && refreshedChapter.content !== workingContent) {
+              chapterModified = true;
+              workingContent = refreshedChapter.content;
+            }
           }
         }
 
@@ -5228,6 +5252,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             message: `${sectionLabel}: notas editoriales aplicadas (${tipoMsg}). Snapshot anterior guardado para comparación.`,
             agentRole: "ghostwriter",
           });
+        } else if (reroutedTargets.size > 0 && reroutedTargets.has(chapterNum) === false) {
+          // Caso: este chapter NO fue modificado pero el flujo SÍ produjo un
+          // reenrutado en este iter (la cirugía mandó la nota a otro cap).
+          // No es ni "aplicado" ni "revertido" para este chapter — lo dejamos
+          // sin contar para no inflar revertedCount con falsos positivos. La
+          // contabilidad del cap reenrutado se hace abajo, fuera del bucle.
         } else {
           revertedCount++;
           await storage.createActivityLog({
@@ -5237,6 +5267,31 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             agentRole: "ghostwriter",
           });
         }
+      }
+
+      // Contabilidad de capítulos modificados por reenrutado automático.
+      // Estos NO se procesaron a través del bucle principal (su contenido
+      // cambió por la llamada recursiva desde otro chapter), así que los
+      // sumamos aquí para que appliedCount refleje TODOS los cambios reales.
+      // Esto también garantiza que recalculateFinalScoreAfterEdits se ejecute
+      // si hubo cambios (la condición es appliedCount > 0).
+      for (const reroutedNum of reroutedTargets) {
+        // Si el target ya estaba en sortedChapters Y entró al bucle, ya lo
+        // contamos por la vía normal. Solo sumamos los targets que NO se
+        // procesaron por el bucle.
+        const alreadyProcessedByLoop = sortedChapters.includes(reroutedNum);
+        if (!alreadyProcessedByLoop) {
+          appliedCount++;
+        }
+      }
+      if (reroutedTargets.size > 0) {
+        const list = Array.from(reroutedTargets).join(", ");
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `Reenrutado automático: ${reroutedTargets.size} nota(s) editorial(es) se aplicaron al capítulo correcto tras detectar mal-enrutado del parser. Capítulo(s) destino: ${list}.`,
+          agentRole: "editor",
+        });
       }
 
       await storage.createActivityLog({
@@ -8000,8 +8055,13 @@ Responde SOLO con un JSON válido con la estructura:
     worldBibleData: ParsedWorldBible,
     guiaEstilo: string,
     qaSource: "continuity" | "voice" | "semantic" | "editorial",
-    correctionInstructions: string
-  ): Promise<void> {
+    correctionInstructions: string,
+    // Profundidad de reenrutado por mismatch de capítulo. El cirujano puede
+    // detectar que la nota no era para el capítulo recibido y, si conseguimos
+    // identificar el destino real, reinvocamos esta función sobre el capítulo
+    // correcto. Evitamos rebotes en cadena con un máximo de 1 reenrutado.
+    _rerouteDepth: number = 0
+  ): Promise<{ reroutedTo?: number } | void> {
     const qaLabels = {
       continuity: "Centinela de Continuidad",
       voice: "Auditor de Voz",
@@ -8139,6 +8199,91 @@ Responde SOLO con un JSON válido con la estructura:
           this.callbacks.onAgentStatus("surgical-patcher", "completed",
             `${sectionLabel}: instrucción solo afecta al WB; capítulo no tocado.`
           );
+          return;
+        }
+        // Detectar instrucciones cuyo TARGET REAL es OTRO capítulo (típico bug
+        // del parser editorial: la nota dice literalmente "en el Epílogo" pero
+        // capitulos_afectados llegó mal y la instrucción se enrutó al Cap N).
+        // Si el cirujano avisa de este mismatch, intentamos REENRUTAR la nota
+        // al capítulo correcto (extrayendo el destino del propio mensaje del
+        // cirujano). Si el reenrutado no es posible (target indeterminado, no
+        // existe en el proyecto, o ya hemos reenrutado una vez para evitar
+        // bucles), cancelamos sin tocar el capítulo actual.
+        if (this.isInstructionForOtherChapter(reason, sectionData.numero)) {
+          const targetChapterNumber = this.detectInstructionTargetChapter(reason, sectionData.numero);
+          let rerouted = false;
+
+          if (targetChapterNumber !== null && _rerouteDepth === 0) {
+            const allChaptersForReroute = await storage.getChaptersByProject(project.id);
+            const targetChapter = allChaptersForReroute.find(c => c.chapterNumber === targetChapterNumber);
+
+            if (targetChapter && targetChapter.content) {
+              const refreshedSections = this.buildSectionsListFromChapters(allChaptersForReroute, worldBibleData);
+              const targetSection = refreshedSections.find((s: any) => s.numero === targetChapterNumber);
+
+              if (targetSection) {
+                const targetLabel = this.getSectionLabel(targetSection);
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "info",
+                  message: `${sectionLabel}: la nota era para ${targetLabel} (parser editorial enrutó mal). Reenrutando la corrección al capítulo correcto en lugar de reescribir este por error.`,
+                  agentRole: "surgical-patcher",
+                });
+                // Liberar el capítulo actual: no se reescribe.
+                await storage.updateChapter(chapter.id, {
+                  status: "completed",
+                  needsRevision: false,
+                  revisionReason: null,
+                });
+                this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+                this.callbacks.onAgentStatus("surgical-patcher", "completed",
+                  `${sectionLabel}: nota reenrutada a ${targetLabel}.`
+                );
+                // Llamada recursiva con el capítulo correcto. _rerouteDepth=1
+                // bloquea más reenrutados en cadena.
+                await this.rewriteChapterForQA(
+                  project,
+                  targetChapter,
+                  targetSection,
+                  worldBibleData,
+                  guiaEstilo,
+                  qaSource,
+                  correctionInstructions,
+                  1
+                );
+                rerouted = true;
+                // Señalamos al caller (típicamente applyEditorialNotes) qué
+                // capítulo terminó modificado para que su contabilidad
+                // (appliedCount, recalculo de puntuación) lo refleje y para
+                // que pueda saltarse el target en su loop si también estaba
+                // en cola y así evitar doble procesamiento.
+                return { reroutedTo: targetChapterNumber };
+              }
+            }
+          }
+
+          if (!rerouted) {
+            const reasonNoReroute = targetChapterNumber === null
+              ? "no se pudo identificar el capítulo de destino real en el mensaje del cirujano"
+              : _rerouteDepth > 0
+                ? "ya se intentó reenrutar una vez; abortamos para evitar bucles"
+                : `el capítulo de destino (${targetChapterNumber}) no existe en este proyecto o está vacío`;
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              message: `${sectionLabel}: la nota está dirigida a OTRA sección del manuscrito (probable error de enrutado del parser editorial). Reescritura cancelada para no dañar este capítulo. Reenrutado automático no aplicable: ${reasonNoReroute}. Vuelve a emitir la nota indicando el capítulo correcto. Razón del cirujano: ${reason}`,
+              agentRole: "surgical-patcher",
+            });
+            await storage.updateChapter(chapter.id, {
+              status: "completed",
+              needsRevision: false,
+              revisionReason: null,
+            });
+            this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+            this.callbacks.onAgentStatus("surgical-patcher", "completed",
+              `${sectionLabel}: nota dirigida a otra sección; capítulo no tocado.`
+            );
+          }
           return;
         }
         // Detectar instrucciones basadas en contenido INEXISTENTE en el capítulo
@@ -8754,6 +8899,104 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
     ];
 
     return [...noExistencePatterns, ...alreadySatisfiedPatterns].some(re => re.test(r));
+  }
+
+  // Heurística: la razón del cirujano deja claro que la instrucción está dirigida
+  // a OTRO capítulo del manuscrito (no al que se está procesando). Caso típico:
+  // el parser editorial enrutó mal la nota — la nota literal dice "en el Epílogo"
+  // pero capitulos_afectados llegó como [6], y el cirujano detecta el mismatch.
+  // Si caemos al Narrador en este caso, reescribiríamos un capítulo SANO sin
+  // ningún beneficio (la instrucción no era para él), arruinando texto correcto.
+  // Discriminamos esto del caso "stale/already satisfied" porque el remedio es
+  // distinto: aquí hay que pedirle al usuario que re-emita la nota apuntando
+  // bien, no que reescriba este capítulo.
+  //
+  // Patrones detectados: el cirujano menciona "Epílogo", "Prólogo", "Nota del
+  // autor" o un "Capítulo N" distinto al actual junto a frases de "no dispongo
+  // del texto", "el texto proporcionado es del cap X", "se proporcionó únicamente
+  // el cap Y", "sin el texto de destino", etc.
+  private isInstructionForOtherChapter(surgeonReason: string, currentChapterNumber: number): boolean {
+    const r = (surgeonReason || "").toLowerCase().trim();
+    if (!r) return false;
+
+    // (a) Señales léxicas de "no tengo el texto que la instrucción pide" — el
+    //     cirujano deja claro que el contenido objetivo no está delante.
+    const lacksTargetTextPatterns = [
+      /no\s+dispongo\s+del\s+texto/,
+      /no\s+(se\s+)?(?:me\s+)?(?:ha\s+)?proporcion[oó]\s+(?:el\s+texto|el\s+contenido)/,
+      /no\s+(?:se\s+)?(?:me\s+)?(?:ha\s+)?(?:facilit[oó]|entreg[oó]|adjunt[oó]|brind[oó])\s+(?:el\s+)?(?:texto|contenido)/,
+      /sin\s+(?:el\s+)?texto\s+de\s+destino/,
+      /(?:texto|contenido)\s+(?:proporcionado|suministrado|facilitado|adjuntado|entregado|disponible)\s+(?:es|corresponde|pertenece)\s+(?:al|a\s+(?:el\s+|un\s+)?cap)/,
+      /(?:texto|contenido)\s+(?:proporcionado|suministrado|facilitado|disponible)\s+(?:es\s+)?(?:únicamente|solamente|solo)\s+(?:del?|el)\s+cap/,
+      /se\s+(?:proporcion[oó]|adjunt[oó]|facilit[oó]|entreg[oó])\s+(?:únicamente|solamente|solo)\s+(?:el\s+)?cap/,
+    ];
+    const lacksTargetText = lacksTargetTextPatterns.some(re => re.test(r));
+
+    // (b) Señales léxicas de "la nota es para una sección distinta" — el cirujano
+    //     nombra explícitamente otra sección como destino real de la corrección.
+    //     Detectamos: epílogo / prólogo / nota del autor / capítulo N (con N
+    //     distinto al actual). Aceptamos también la variante "Capítulo -1".
+    const mentionsEpilogue = /\b(?:el\s+)?ep[ií]logo\b/.test(r);
+    const mentionsPrologue = /\b(?:el\s+)?pr[oó]logo\b/.test(r);
+    const mentionsAuthorNote = /\bnota\s+(?:de|del)\s+(?:el\s+)?autor\b/.test(r);
+
+    let mentionsOtherChapterNumber = false;
+    const chapterNumRegex = /\bcap[ií]tulo\s*(-?\d+)\b|\bcap\.?\s*(-?\d+)\b/g;
+    let m: RegExpExecArray | null;
+    while ((m = chapterNumRegex.exec(r)) !== null) {
+      const n = Number(m[1] ?? m[2]);
+      if (Number.isFinite(n) && n !== currentChapterNumber) {
+        mentionsOtherChapterNumber = true;
+        break;
+      }
+    }
+    // Si el actual es 0 (Prólogo), una mención a "prólogo" NO indica otro destino;
+    // ídem para -1/Epílogo y -2/Nota del autor.
+    const currentIsPrologue = currentChapterNumber === 0;
+    const currentIsEpilogue = currentChapterNumber === -1;
+    const currentIsAuthorNote = currentChapterNumber === -2;
+    const mentionsOtherSection =
+      (mentionsEpilogue && !currentIsEpilogue) ||
+      (mentionsPrologue && !currentIsPrologue) ||
+      (mentionsAuthorNote && !currentIsAuthorNote) ||
+      mentionsOtherChapterNumber;
+
+    // Disparamos solo cuando AMBAS señales coinciden: el cirujano dice que le
+    // falta el texto de destino Y nombra otra sección como destino real.
+    // Esto evita falsos positivos cuando la razón del cirujano simplemente
+    // referencia otro capítulo como contexto sin que la nota esté mal enrutada.
+    return lacksTargetText && mentionsOtherSection;
+  }
+
+  // Acompaña a isInstructionForOtherChapter: extrae del mensaje del cirujano
+  // el número del capítulo de destino REAL (al que la nota debería haberse
+  // enrutado). Convención del proyecto: 0=Prólogo, -1=Epílogo, -2=Nota del
+  // autor; el resto son capítulos por número. Si hay varias menciones y todas
+  // son distintas al actual, devolvemos la primera. Si no hay mención
+  // identificable distinta al capítulo actual, devolvemos null y el caller
+  // cancela en lugar de reenrutar.
+  private detectInstructionTargetChapter(surgeonReason: string, currentChapterNumber: number): number | null {
+    const r = (surgeonReason || "").toLowerCase().trim();
+    if (!r) return null;
+
+    // 1. Buscamos primero menciones explícitas a número de capítulo.
+    const chapterNumRegex = /\bcap[ií]tulo\s*(-?\d+)\b|\bcap\.?\s*(-?\d+)\b/g;
+    let m: RegExpExecArray | null;
+    while ((m = chapterNumRegex.exec(r)) !== null) {
+      const n = Number(m[1] ?? m[2]);
+      if (Number.isFinite(n) && n !== currentChapterNumber) {
+        return n;
+      }
+    }
+
+    // 2. Si no aparece número, buscamos secciones con nombre. Solo cuentan si
+    //    el actual NO es esa misma sección (si el actual ya es el epílogo, una
+    //    mención a "epílogo" no es un destino distinto).
+    if (/\bep[ií]logo\b/.test(r) && currentChapterNumber !== -1) return -1;
+    if (/\bpr[oó]logo\b/.test(r) && currentChapterNumber !== 0) return 0;
+    if (/\bnota\s+(?:de|del)\s+(?:el\s+)?autor\b/.test(r) && currentChapterNumber !== -2) return -2;
+
+    return null;
   }
 
   // Versión instrumentada: devuelve un objeto con `ok` y la razón de fallo
