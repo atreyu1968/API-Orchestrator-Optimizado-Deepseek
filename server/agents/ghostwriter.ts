@@ -1,5 +1,6 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
 import { repairJson } from "../utils/json-repair";
+import { extractStyleDirectives, buildGhostwriterDirectiveBlock } from "../utils/style-directives";
 
 interface GhostwriterInput {
   chapterNumber: number;
@@ -710,8 +711,14 @@ export class GhostwriterAgent extends BaseAgent {
 
   async execute(input: GhostwriterInput): Promise<AgentResponse> {
     const worldBibleFormatted = this.formatWorldBibleForPrompt(input.worldBible);
-    
-    let prompt = `
+
+    // Voz narrativa canónica extraída de la guía (POV, tiempo verbal). Se prepende
+    // al prompt en bloque destacado para que el modelo no la pase por alto entre
+    // los miles de tokens del world bible y la guía completa.
+    const combinedGuide = `${input.guiaEstilo}\n${input.extendedGuideContent || ""}`;
+    const narrativeDirective = buildGhostwriterDirectiveBlock(extractStyleDirectives(combinedGuide));
+
+    let prompt = `${narrativeDirective}
     ${worldBibleFormatted}
     GUÍA DE ESTILO: ${input.guiaEstilo}
     

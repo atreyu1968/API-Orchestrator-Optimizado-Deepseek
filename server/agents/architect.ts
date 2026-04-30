@@ -1,6 +1,7 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
 import { repairJson } from "../utils/json-repair";
 import { storage } from "../storage";
+import { extractStyleDirectives, buildArchitectDirectiveBlock } from "../utils/style-directives";
 
 interface ArchitectInput {
   title: string;
@@ -334,7 +335,11 @@ export class ArchitectAgent extends BaseAgent {
     if (input.hasEpilogue) sectionsInfo.push("EPÍLOGO");
     if (input.hasAuthorNote) sectionsInfo.push("NOTA DEL AUTOR");
 
-    const commonContext = `
+    // Extrae voz narrativa canónica (POV, tiempo) desde la guía de estilo y la
+    // prepende como bloque destacado para garantizar atención del modelo.
+    const narrativeDirective = buildArchitectDirectiveBlock(extractStyleDirectives(guiaEstilo));
+
+    const commonContext = `${narrativeDirective}
     Idea: "${ideaInicial}" 
     Guía de Estilo: "${guiaEstilo}"
     TÍTULO: ${input.title}

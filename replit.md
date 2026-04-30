@@ -21,6 +21,21 @@ Triggered by analysis of an 803-line generation log ("Cenizas de Terciopelo Copi
    - **Anti-POV filter**: regex-based detection of global POV-conversion requests in `instrucciones_correccion` / `descripcion`; matched issues are dropped with a warning activity log. Defence-in-depth in case the prompt change is bypassed.
    - **Anti-hallucination filter**: extracts double-quoted fragments from the issue, normalises (lowercase + collapsed whitespace), and verifies that EVERY auditable quote (≥30 chars / ~6 words) appears literally in at least one of the affected chapters' content. Issues with any fabricated long quote are dropped (uses `.every()`, not `.some()`, so a real-quote-plus-fake-quote combo cannot bypass the filter). Short quotes (<30 chars) are not auditable and pass automatically. Categories `arco_incompleto`, `capitulo_huerfano`, `tension_insuficiente`, `hook_debil` are exempt because they may legitimately describe absence rather than cite text.
 
+#### Phase 1 — Narrative Voice Injection (Apr 30, 2026)
+Root cause of repeated POV mismatches: the style guide is a single `text` blob (no structured `pov` field), buried among thousands of tokens of world bible / extended guide content; no agent system prompt explicitly mentions "POV" or "narrative persona". Result: writers ignore explicit duals/first-person directives.
+
+- **New `server/utils/style-directives.ts`**: pure regex extractor for Spanish style guides. Detects POV (`first` / `third` / `dual_first` / `dual_third`), narrator type (omnisciente/limitado/testigo), tense (present/past), and named POV characters (patterns: `POV de X`, `perspectiva de X`, `punto de vista de X`). Includes a **negation guard** (rejects matches preceded within ~25 chars by `evitar`/`prohibido`/`no usar`/`nunca`/`sin`/`jamás`) so a guide saying "evitar narración dual" doesn't activate dual=true. Filters pronouns (`él`/`ella`) from name extraction. Conservative philosophy: returns `detected: false` if confidence is low → no injection happens.
+- Three builders produce a highlighted `INVIOLABLE NARRATIVE VOICE` block prepended to each agent's prompt:
+  - `buildArchitectDirectiveBlock` — adds rule to mark POV in chapter titles when dual.
+  - `buildGhostwriterDirectiveBlock` — strict prose-writing directive.
+  - `buildFinalReviewerDirectiveBlock` — tells reviewer how to report POV deviations (CRITICAL "trama" issue if global mismatch, MAYOR + observation to regenerate manually if chapter-specific; never request surgical chapter rewrites).
+- **Wiring**: each agent calls the extractor internally on its own `guiaEstilo` input (Ghostwriter additionally concatenates `extendedGuideContent`). Zero changes to the 13 orchestrator call sites.
+  - `architect.ts` (L3 + L341-345): prepended to `commonContext`.
+  - `ghostwriter.ts` (L2 + L717-723): prepended before `worldBibleFormatted`.
+  - `final-reviewer.ts` (L2 + L676-681): prepended before TÍTULO line.
+- **Orchestrator log enrichment** (`orchestrator.ts` L3062-3107): the anti-POV filter now extracts the canonical voice and includes it in both the console log and the activity log. When an issue is dropped, the user sees e.g. "Voz canónica del proyecto según la guía: PRIMERA PERSONA con NARRACIÓN DUAL (alternando entre Dante y Elena). Si los capítulos NO están en esta voz, deberás regenerarlos manualmente — la cirugía no puede convertir capítulos enteros." → distinguishes spurious reviewer hallucinations from real upstream drift.
+- **Phase 2 (not implemented)**: would require schema with per-chapter `pov` field plus a regeneration pipeline. Phase 1 prevents the bug at the source by ensuring agents see the directive at the top of every prompt.
+
 #### Originality Critic Agent (v6.7)
 - **New agent**: `server/agents/originality-critic.ts` — `OriginalityCriticAgent`. Reads the Architect's outline (premise, characters, chapter beats) and scores originality 1-10. Detects 6 cluster types: `premisa_generica`, `personaje_arquetipico`, `tropo_trama`, `giro_predecible`, `setpiece_cliche`, `dialogo_topico`. Uses `thinkingBudget: 8192` (max reasoning).
 - **Verdicts**: `aprobado` (score ≥7, proceed), `revisar` (5-6, proceed with warning), `rechazado` (≤4 or 3+ major clusters, re-run Architect).

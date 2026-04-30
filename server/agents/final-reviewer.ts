@@ -1,5 +1,6 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
 import { repairJson } from "../utils/json-repair";
+import { extractStyleDirectives, buildFinalReviewerDirectiveBlock } from "../utils/style-directives";
 
 interface FinalReviewerInput {
   projectTitle: string;
@@ -669,7 +670,12 @@ la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad sufici
     issue con categoría apropiada y severidad "alta" o "critica".
     ═══════════════════════════════════════════════════════════════════` : "";
 
-    const prompt = `
+    // Voz narrativa canónica derivada de la guía: se prepende como bloque
+    // destacado para que el reviewer la use como criterio de validación
+    // (en vez de inventar quejas de POV o ignorar desviaciones reales).
+    const narrativeDirective = buildFinalReviewerDirectiveBlock(extractStyleDirectives(input.guiaEstilo));
+
+    const prompt = `${narrativeDirective}
     TÍTULO DE LA NOVELA: ${input.projectTitle}
     
     WORLD BIBLE (Datos Canónicos):

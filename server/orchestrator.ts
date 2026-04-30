@@ -29,6 +29,7 @@ import type { TokenUsage } from "./agents/base-agent";
 import type { FinalReviewIssue } from "./agents/final-reviewer";
 import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, TimelineEvent } from "@shared/schema";
 import { ensureChapterNumbers } from "./utils/extract-chapters";
+import { extractStyleDirectives } from "./utils/style-directives";
 import { calculateRealCost } from "./cost-calculator";
 
 interface OrchestratorCallbacks {
@@ -3055,6 +3056,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // Estas peticiones siempre fallan en cirugía por estructurales y
       // las reescrituras posteriores suelen introducir errores nuevos.
       // ──────────────────────────────────────────────────────────────
+      // Detecta la voz canónica del proyecto desde la guía: nos sirve
+      // para enriquecer el log y pistar al usuario sobre desajustes reales
+      // entre lo escrito y lo que pide la guía (que requerirían regenerar
+      // el capítulo manualmente, no cirugía).
+      const canonicalDirective = extractStyleDirectives(`${styleGuideContent || ""}\n${guiaEstilo || ""}`);
+      const canonicalLabel = canonicalDirective.detected && canonicalDirective.humanText
+        ? canonicalDirective.humanText
+        : "no detectada en la guía (la guía no especifica POV con claridad)";
+
       if (result?.issues && result.issues.length > 0) {
         const povBefore = result.issues.length;
         const povDropped: Array<{ caps: number[]; cat: string; reason: string }> = [];
@@ -3084,11 +3094,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         const povFiltered = povBefore - result.issues.length;
         if (povFiltered > 0) {
           const detail = povDropped.map(d => `cap(s) ${d.caps.join(",") || "?"} [${d.cat}]: "${d.reason}..."`).join(" | ");
-          console.log(`[Orchestrator] Filtered ${povFiltered} global-POV-conversion issue(s) (no son cirugía localizada): ${detail}`);
+          console.log(`[Orchestrator] Filtered ${povFiltered} global-POV-conversion issue(s) (no son cirugía localizada). Voz canónica: ${canonicalLabel}. Detalle: ${detail}`);
+          const guidanceMsg = canonicalDirective.detected
+            ? `Voz canónica del proyecto según la guía: ${canonicalLabel}. Si los capítulos NO están en esta voz, deberás regenerarlos manualmente — la cirugía no puede convertir capítulos enteros.`
+            : `La guía no especifica una voz narrativa con claridad, así que la queja del reviewer es probablemente espuria.`;
           await storage.createActivityLog({
             projectId: project.id,
             level: "warning",
-            message: `${povFiltered} issue(s) descartado(s): pedían conversión total de voz narrativa (3ª↔1ª persona). El POV es canon del proyecto y no se reescribe capítulo a capítulo.`,
+            message: `${povFiltered} issue(s) descartado(s) por pedir conversión total de voz narrativa (cirugía no aplicable). ${guidanceMsg}`,
             agentRole: "final-reviewer",
           });
         }
