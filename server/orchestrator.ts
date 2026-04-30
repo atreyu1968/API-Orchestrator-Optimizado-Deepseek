@@ -8286,6 +8286,32 @@ Responde SOLO con un JSON válido con la estructura:
           }
           return;
         }
+        // Detectar instrucciones que piden una operación ESTRUCTURAL del
+        // manuscrito (eliminar capítulo, fusionar capítulos, dividir, mover
+        // contenido entre capítulos, reordenar). El cirujano las rechaza
+        // correctamente porque no son corregibles con find/replace. Pero
+        // caer al Narrador es peor: intentaría "reescribir" el capítulo para
+        // cumplir la nota (ej. eliminarlo) y casi siempre falla en QA o
+        // genera un capítulo degradado. Cancelamos limpiamente y avisamos
+        // al usuario que debe usar una herramienta de reestructuración.
+        if (this.isStructuralRestructureInstruction(reason)) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `${sectionLabel}: la nota solicita una operación ESTRUCTURAL del manuscrito (eliminar/fusionar/dividir/mover/reordenar capítulos), no una corrección de texto localizable dentro de un capítulo. Reescritura cancelada — el Narrador no puede reestructurar el manuscrito desde un único capítulo y lo dañaría. Realiza esta operación desde el chat editorial (que sí puede aplicar cambios estructurales) o ajustando el plan/manuscrito manualmente. Razón del cirujano: ${reason}`,
+            agentRole: "surgical-patcher",
+          });
+          await storage.updateChapter(chapter.id, {
+            status: "completed",
+            needsRevision: false,
+            revisionReason: null,
+          });
+          this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+          this.callbacks.onAgentStatus("surgical-patcher", "completed",
+            `${sectionLabel}: operación estructural — fuera del alcance de la cirugía y la reescritura del capítulo.`
+          );
+          return;
+        }
         // Detectar instrucciones basadas en contenido INEXISTENTE en el capítulo
         // (versión obsoleta de la nota / referencia alucinada) o instrucciones
         // que el capítulo YA SATISFACE. En ambos casos la reescritura completa
@@ -8899,6 +8925,57 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
     ];
 
     return [...noExistencePatterns, ...alreadySatisfiedPatterns].some(re => re.test(r));
+  }
+
+  // Heurística: la razón del cirujano deja claro que la nota pide una operación
+  // ESTRUCTURAL del manuscrito (eliminar capítulo, fusionar capítulos, dividir,
+  // mover contenido entre capítulos, reordenar) en lugar de una corrección de
+  // texto localizable. El cirujano correctamente las rechaza porque su contrato
+  // es find/replace dentro de un capítulo, pero si caemos al Narrador este
+  // intentaría "reescribir" el capítulo para cumplir una orden imposible (no se
+  // puede eliminar un capítulo desde dentro de él, ni fusionarlo con otro), y
+  // termina o bien fallando el QA o degradando el contenido. Cancelamos para
+  // que el usuario realice la operación con la herramienta correcta.
+  //
+  // Casos vistos en producción: «eliminar el capítulo X y fusionar su contenido
+  // en el capítulo Y», «dividir el capítulo en dos», «mover la escena del cap A
+  // al cap B», «reordenar los capítulos», «reestructuración global del
+  // manuscrito».
+  private isStructuralRestructureInstruction(surgeonReason: string): boolean {
+    const r = (surgeonReason || "").toLowerCase().trim();
+    if (!r) return false;
+    const structuralPatterns = [
+      // Eliminar/borrar un capítulo entero
+      /(eliminar|borrar|suprimir|quitar)\s+(el\s+|este\s+|un\s+)?cap[ií]tulo/,
+      /cap[ií]tulo\s+(?:completo\s+|entero\s+)?(como\s+entidad|completo|entero)/,
+      // Fusionar/unir capítulos o contenido entre capítulos
+      /fusionar\s+(?:su\s+|el\s+|los?\s+)?(?:contenido|cap[ií]tulos?)/,
+      /unir\s+(?:el\s+|los?\s+)?cap[ií]tulos?/,
+      /fusi[oó]n\s+(?:de\s+(?:los?\s+)?cap[ií]tulos?|con\s+(?:el\s+|otro\s+)?cap[ií]tulo)/,
+      /combinar\s+(?:el\s+|los?\s+)?cap[ií]tulos?/,
+      /consolidar\s+(?:los?\s+|varios?\s+|\d+\s+)?cap[ií]tulos?/,
+      // Mover/trasladar/extraer contenido entre capítulos
+      /mover\s+(?:su\s+|el\s+|este\s+)?(?:contenido|texto|escena|secci[oó]n|p[aá]rrafo)\s+(?:al?|hacia|a\s+otro)\s+cap[ií]tulo/,
+      /trasladar\s+(?:el\s+|este\s+)?(?:contenido|texto|escena|secci[oó]n|p[aá]rrafo)\s+(?:al?|a\s+otro)\s+cap[ií]tulo/,
+      /(extraer|sacar)\s+(?:el\s+|este\s+|su\s+)?(?:contenido|texto|escena|secci[oó]n|p[aá]rrafo)\s+(?:del?\s+|de\s+este\s+)?cap[ií]tulo\s+(?:para|hacia|al?\s+cap)/,
+      // Dividir/partir un capítulo (acotado a partición ESTRUCTURAL: en N
+      // capítulos/partes/secciones independientes — NO matchea "dividir en
+      // párrafos/escenas/bloques" que sí es una corrección de prosa válida)
+      /(dividir|partir)\s+(?:el\s+|este\s+)?cap[ií]tulo\s+en\s+(?:dos|tres|cuatro|cinco|seis|varios?|m[uú]ltiples?|\d+)\s+(?:partes?|cap[ií]tulos?|secciones?\s+independientes?)/,
+      // Convertir/rebajar capítulo a sección/escena dentro de otro
+      /(convertir|rebajar|degradar)\s+(?:el\s+|este\s+)?cap[ií]tulo\s+(?:en\s+|a\s+)(?:una?\s+)?(secci[oó]n|escena|sub-?cap[ií]tulo)/,
+      // Reordenar/renumerar capítulos
+      /reordenar\s+(?:los?\s+)?cap[ií]tulos?/,
+      /renumerar\s+(?:los?\s+)?cap[ií]tulos?/,
+      // Insertar/intercalar capítulo nuevo (no es texto, es estructura)
+      /(insertar|intercalar|añadir)\s+(?:un\s+)?cap[ií]tulo\s+(?:nuevo|adicional|entre)/,
+      // Etiquetas explícitas que el propio LLM-cirujano usa para describir el caso
+      /reestructuraci[oó]n\s+(global|estructural|del\s+manuscrito)/,
+      /edici[oó]n\s+estructural/,
+      /a\s+nivel\s+de\s+(?:edici[oó]n\s+)?estructural/,
+      /no\s+(?:es\s+)?(?:una\s+)?correcci[oó]n\s+(?:puntual|localizable)/,
+    ];
+    return structuralPatterns.some(re => re.test(r));
   }
 
   // Heurística: la razón del cirujano deja claro que la instrucción está dirigida
