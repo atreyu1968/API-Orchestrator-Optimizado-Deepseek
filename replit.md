@@ -12,6 +12,15 @@ Preferred communication style: Simple, everyday language.
 
 ### v6.7 — DeepSeek V4-Flash Migration (Apr 2026)
 
+#### Final Review Robustness — three bug fixes (Apr 30, 2026)
+Triggered by analysis of an 803-line generation log ("Cenizas de Terciopelo Copia") that showed 4-hour, 7-cycle generations ending unapproved due to systemic agent issues:
+
+1. **WB Arbiter parser hardening** (`server/agents/world-bible-arbiter.ts` L165-225): the previous parser required both `wb_patches` AND `resolved_issue_indices` to be arrays in the model's response, which silently rejected most valid responses (~20 fallback events per generation). Rewritten to require only `wb_patches` array; `resolved_issue_indices` and `unresolved_issue_indices` are derived from the patches when missing. On parse failure, the rejection reason and a 300-char snippet of the raw response are now logged, eliminating the "Parser fallback" black-box behaviour.
+2. **Final Reviewer anti-POV-conversion prompt** (`server/agents/final-reviewer.ts` L417-435): added an explicit prohibition section forbidding chapter-wide POV conversions (3rd↔1st person, narrator type, tense). The reviewer was repeatedly requesting whole-chapter rewrites (caps 4, 9, 10, 13, 15 in one log), which the surgical patcher correctly rejects as structural; legitimate intra-chapter POV slips are still allowed but as `severidad: "menor"` issues with a literal ≤25-word quote.
+3. **Defensive filters in orchestrator** (`server/orchestrator.ts` L3055-3170, in `runFinalReview`): two new filters run before the existing `HIGH_FP_CATEGORIES` filter:
+   - **Anti-POV filter**: regex-based detection of global POV-conversion requests in `instrucciones_correccion` / `descripcion`; matched issues are dropped with a warning activity log. Defence-in-depth in case the prompt change is bypassed.
+   - **Anti-hallucination filter**: extracts double-quoted fragments from the issue, normalises (lowercase + collapsed whitespace), and verifies that EVERY auditable quote (≥30 chars / ~6 words) appears literally in at least one of the affected chapters' content. Issues with any fabricated long quote are dropped (uses `.every()`, not `.some()`, so a real-quote-plus-fake-quote combo cannot bypass the filter). Short quotes (<30 chars) are not auditable and pass automatically. Categories `arco_incompleto`, `capitulo_huerfano`, `tension_insuficiente`, `hook_debil` are exempt because they may legitimately describe absence rather than cite text.
+
 #### Originality Critic Agent (v6.7)
 - **New agent**: `server/agents/originality-critic.ts` — `OriginalityCriticAgent`. Reads the Architect's outline (premise, characters, chapter beats) and scores originality 1-10. Detects 6 cluster types: `premisa_generica`, `personaje_arquetipico`, `tropo_trama`, `giro_predecible`, `setpiece_cliche`, `dialogo_topico`. Uses `thinkingBudget: 8192` (max reasoning).
 - **Verdicts**: `aprobado` (score ≥7, proceed), `revisar` (5-6, proceed with warning), `rechazado` (≤4 or 3+ major clusters, re-run Architect).

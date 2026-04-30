@@ -411,6 +411,26 @@ Cada issue DEBE estar anclado en texto LITERAL VERIFICABLE del manuscrito que se
 
 Tu credibilidad depende de no inventar. Un solo issue alucinado descalifica la pasada entera.
 
+═══════════════════════════════════════════════════════════════════
+🚫 PROHIBIDO: SOLICITAR CONVERSIONES TOTALES DE VOZ NARRATIVA / POV
+═══════════════════════════════════════════════════════════════════
+
+La voz narrativa (1ª persona vs 3ª persona, narrador omnisciente vs limitado, presente vs pasado) es una decisión CANÓNICA del proyecto fijada en el plan inicial. El Ghostwriter NO PUEDE convertir un capítulo entero de tercera a primera persona (o viceversa) porque eso requiere reescribir el 100% del texto narrativo, viola la regla de cirugía localizada, y suele introducir errores nuevos peores que el supuesto problema.
+
+PROHIBIDO emitir issues con instrucciones del tipo:
+  - "convertir el capítulo X de tercera a primera persona"
+  - "narrar todo el capítulo desde el POV de [personaje]"
+  - "cambiar la voz narrativa del capítulo a primera persona"
+  - "reescribir en primera persona desde la perspectiva de Y"
+  - cualquier solicitud que implique cambiar pronombres, conjugaciones y referencias narrativas en TODO el capítulo.
+
+Si percibes una INCONSISTENCIA REAL de POV intra-capítulo (un párrafo concreto se desliza a la persona equivocada en medio de un capítulo que es coherente), repórtalo así:
+  - severidad: "menor"
+  - descripcion: cita LITERAL ENTRE COMILLAS del párrafo problemático (≤ 25 palabras).
+  - instrucciones_correccion: "SOLO modificar ese párrafo concreto para que use la persona narrativa del resto del capítulo. NO tocar más texto."
+
+Si la sensación es que "el capítulo entero debería estar en otra persona narrativa", NO ES UN ISSUE: es una decisión de diseño que ya está tomada. OMÍTELO.
+
 SALIDA OBLIGATORIA (JSON):
 {
   "veredicto": "APROBADO" | "APROBADO_CON_RESERVAS" | "REQUIERE_REVISION",

@@ -161,15 +161,54 @@ Decide. Recuerda: ante la duda, unresolved. JSON limpio, sin markdown.`;
 
     const response = await this.generateContent(userPrompt);
 
+    const allIndices = input.issues.map(i => i.index);
     let parsed: WorldBibleArbiterResult | undefined;
-    try {
-      const repaired = repairJson(response.content || "");
-      const candidate = JSON.parse(repaired);
-      if (Array.isArray(candidate?.wb_patches) && Array.isArray(candidate?.resolved_issue_indices)) {
-        parsed = candidate;
+    let parseDiagnostic = "";
+
+    const raw = response.content || "";
+    if (!raw.trim()) {
+      parseDiagnostic = "respuesta vacía del modelo (posible truncado por thinking).";
+    } else {
+      try {
+        const candidate = repairJson(raw);
+        if (candidate && typeof candidate === "object" && Array.isArray(candidate.wb_patches)) {
+          // Derivar índices resueltos/no resueltos a partir de los parches si no vienen explícitos
+          // o vienen mal formados. Mucho mejor que tirar toda la respuesta a fallback.
+          const resolvedFromPatches = Array.from(new Set(
+            candidate.wb_patches
+              .map((p: any) => p?.resolves_issue_index)
+              .filter((n: any) => typeof n === "number")
+          )) as number[];
+
+          const resolved = Array.isArray(candidate.resolved_issue_indices)
+            ? candidate.resolved_issue_indices.filter((n: any) => typeof n === "number")
+            : resolvedFromPatches;
+
+          const unresolved = Array.isArray(candidate.unresolved_issue_indices)
+            ? candidate.unresolved_issue_indices.filter((n: any) => typeof n === "number")
+            : allIndices.filter(i => !resolved.includes(i));
+
+          parsed = {
+            wb_patches: candidate.wb_patches,
+            resolved_issue_indices: resolved,
+            unresolved_issue_indices: unresolved,
+            reasoning: typeof candidate.reasoning === "string"
+              ? candidate.reasoning
+              : (candidate.wb_patches.length === 0
+                  ? "Árbitro decidió no aplicar parches (sin razonamiento explícito)."
+                  : `Árbitro propuso ${candidate.wb_patches.length} parche(s) al WB.`),
+          };
+        } else {
+          parseDiagnostic = `respuesta JSON sin campo "wb_patches" array (claves recibidas: ${candidate && typeof candidate === "object" ? Object.keys(candidate).slice(0, 8).join(", ") : typeof candidate}).`;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        parseDiagnostic = `JSON parse failed: ${msg.slice(0, 160)}.`;
+        console.warn("[WBArbiter] JSON parse failed:", err);
+        // Snippet de la respuesta para diagnóstico (sin filtrar tokens sensibles porque el WB es interno).
+        const snippet = raw.slice(0, 300).replace(/\s+/g, " ");
+        console.warn(`[WBArbiter] Raw response snippet (300 chars): "${snippet}"`);
       }
-    } catch (err) {
-      console.warn("[WBArbiter] JSON parse failed:", err);
     }
 
     return {
@@ -177,8 +216,8 @@ Decide. Recuerda: ante la duda, unresolved. JSON limpio, sin markdown.`;
       result: parsed || {
         wb_patches: [],
         resolved_issue_indices: [],
-        unresolved_issue_indices: input.issues.map(i => i.index),
-        reasoning: "Parser fallback: no se pudo interpretar respuesta del árbitro; todos los issues quedan como unresolved.",
+        unresolved_issue_indices: allIndices,
+        reasoning: `Parser fallback: ${parseDiagnostic || "no se pudo interpretar respuesta del árbitro"}; todos los issues quedan como unresolved.`,
       },
     };
   }

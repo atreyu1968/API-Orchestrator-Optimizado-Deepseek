@@ -3049,6 +3049,124 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
       }
 
+      // ──────────────────────────────────────────────────────────────
+      // FILTRO ANTI-POV: descartar issues que pidan conversión total
+      // de la voz narrativa (3ª↔1ª persona) sobre el capítulo entero.
+      // Estas peticiones siempre fallan en cirugía por estructurales y
+      // las reescrituras posteriores suelen introducir errores nuevos.
+      // ──────────────────────────────────────────────────────────────
+      if (result?.issues && result.issues.length > 0) {
+        const povBefore = result.issues.length;
+        const povDropped: Array<{ caps: number[]; cat: string; reason: string }> = [];
+        result.issues = result.issues.filter(issue => {
+          const corr = (issue.instrucciones_correccion || "").toLowerCase();
+          const desc = (issue.descripcion || "").toLowerCase();
+          const blob = `${corr} ${desc}`;
+          // Patrones explícitos que indican conversión total de POV (no localizada).
+          const povPatterns: RegExp[] = [
+            /(reescribir|convertir|cambiar|narrar|pasar)[^.]{0,80}(de\s+)?(tercera|primera)\s*persona[^.]{0,60}(a|al)\s+(primera|tercera)\s*persona/,
+            /(reescribir|convertir|narrar)[^.]{0,40}todo[^.]{0,40}(en\s+)?(primera|tercera)\s+persona/,
+            /(cambiar|modificar)\s+(la\s+)?voz\s+narrativa/,
+            /(cambiar|modificar)\s+(el\s+)?(pov|punto\s+de\s+vista)\s+(de|del)\s+(todo\s+el\s+)?cap/,
+            /reescribir\s+(todo\s+)?el\s+cap[íi]tulo[^.]{0,40}(en\s+)?(primera|tercera)\s+persona/,
+          ];
+          const isGlobalPOV = povPatterns.some(p => p.test(blob));
+          if (isGlobalPOV) {
+            povDropped.push({
+              caps: issue.capitulos_afectados || [],
+              cat: issue.categoria,
+              reason: (issue.instrucciones_correccion || "").slice(0, 120),
+            });
+            return false;
+          }
+          return true;
+        });
+        const povFiltered = povBefore - result.issues.length;
+        if (povFiltered > 0) {
+          const detail = povDropped.map(d => `cap(s) ${d.caps.join(",") || "?"} [${d.cat}]: "${d.reason}..."`).join(" | ");
+          console.log(`[Orchestrator] Filtered ${povFiltered} global-POV-conversion issue(s) (no son cirugía localizada): ${detail}`);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `${povFiltered} issue(s) descartado(s): pedían conversión total de voz narrativa (3ª↔1ª persona). El POV es canon del proyecto y no se reescribe capítulo a capítulo.`,
+            agentRole: "final-reviewer",
+          });
+        }
+      }
+
+      // ──────────────────────────────────────────────────────────────
+      // FILTRO ANTI-ALUCINACIÓN: descartar issues cuyo fragmento entre
+      // comillas dobles NO aparezca literalmente en ninguno de los
+      // capítulos afectados. El prompt obliga a citar texto real; si la
+      // cita no existe, el issue está alucinado o es obsoleto.
+      // Excepciones: arco_incompleto y capitulo_huerfano (problema de
+      // ausencia, no de cita).
+      // ──────────────────────────────────────────────────────────────
+      if (result?.issues && result.issues.length > 0) {
+        const halBefore = result.issues.length;
+        const halDropped: Array<{ caps: number[]; cat: string; quote: string }> = [];
+        const QUOTE_EXEMPT_CATS = new Set(["arco_incompleto", "capitulo_huerfano", "tension_insuficiente", "hook_debil"]);
+        const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+
+        const chapterContentByNum = new Map<number, string>();
+        for (const c of chaptersForReview) {
+          chapterContentByNum.set(c.numero, norm(c.contenido));
+        }
+
+        result.issues = result.issues.filter(issue => {
+          if (QUOTE_EXEMPT_CATS.has(issue.categoria)) return true;
+
+          const blob = `${issue.descripcion || ""} ${issue.instrucciones_correccion || ""}`;
+          // Extraer fragmentos entre comillas dobles (rectas o tipográficas).
+          const quoteMatches = Array.from(blob.matchAll(/[""]([^""]{12,200})[""]/g)).map(m => m[1]);
+          // Si no hay ninguna cita, no podemos auditar — pasamos.
+          if (quoteMatches.length === 0) return true;
+
+          const affected = (issue.capitulos_afectados || []).filter(n => chapterContentByNum.has(n));
+          // Si no hay capítulos afectados con contenido cargado, no podemos auditar — pasamos.
+          if (affected.length === 0) return true;
+
+          const targetTexts = affected.map(n => chapterContentByNum.get(n)!);
+
+          // Separamos citas en "auditables" (≥30 chars / ~6 palabras) e "inauditables" (cortas).
+          // Las cortas pasan auto (no podemos verificarlas con confianza). Las auditables
+          // deben TODAS aparecer literalmente en al menos uno de los capítulos afectados.
+          // Estricto: con UNA sola cita auditable inventada se descarta el issue.
+          // Esto evita el truco de "una cita real + una alucinada en el mismo issue".
+          const auditableQuotes = quoteMatches.map(q => norm(q)).filter(nq => nq.length >= 30);
+
+          // Si todas las citas eran cortas → no podemos auditar, pasamos.
+          if (auditableQuotes.length === 0) return true;
+
+          const allAuditableFound = auditableQuotes.every(nq =>
+            targetTexts.some(t => t.includes(nq))
+          );
+
+          if (!allAuditableFound) {
+            const failingQuote = auditableQuotes.find(nq => !targetTexts.some(t => t.includes(nq))) || auditableQuotes[0];
+            halDropped.push({
+              caps: issue.capitulos_afectados || [],
+              cat: issue.categoria,
+              quote: failingQuote.slice(0, 80),
+            });
+            return false;
+          }
+          return true;
+        });
+
+        const halFiltered = halBefore - result.issues.length;
+        if (halFiltered > 0) {
+          const detail = halDropped.map(d => `cap(s) ${d.caps.join(",") || "?"} [${d.cat}]: cita "${d.quote}..." no aparece`).join(" | ");
+          console.log(`[Orchestrator] Filtered ${halFiltered} hallucinated issue(s): ${detail}`);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `${halFiltered} issue(s) descartado(s) por alucinación: citaban texto que no aparece en los capítulos afectados (instrucción obsoleta o inventada).`,
+            agentRole: "final-reviewer",
+          });
+        }
+      }
+
       const HIGH_FP_CATEGORIES = new Set(["trama", "repeticion_lexica", "identidad_confusa"]);
       if (result?.issues && result.issues.length > 0) {
         const beforeCount = result.issues.length;
