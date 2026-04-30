@@ -1094,8 +1094,8 @@ export async function registerRoutes(
       if (!notes || typeof notes !== "string" || !notes.trim()) {
         return res.status(400).json({ error: "Debes proporcionar las notas editoriales en el campo 'notes'" });
       }
-      if (notes.length > 50000) {
-        return res.status(400).json({ error: "Las notas son demasiado largas (máximo 50.000 caracteres)" });
+      if (notes.length > 200000) {
+        return res.status(400).json({ error: "Las notas son demasiado largas (máximo 200.000 caracteres)" });
       }
 
       // Responder al cliente de inmediato (HTTP 202). El parsing puede tomar
@@ -1156,6 +1156,78 @@ export async function registerRoutes(
     }
   });
 
+  // HOLISTIC REVIEW: read the whole novel in one shot and emit an editorial report
+  // formatted as if it were free-form notes from a human editor. The frontend then
+  // injects the result into the editorial notes textarea so the user can edit/apply
+  // it through the existing parse → preview → apply flow.
+  // Same async pattern as parse-editorial-notes (HTTP 202 + SSE event) because
+  // reading 100k+ words with reasoning takes 3-5 minutes.
+  app.post("/api/projects/:id/holistic-review", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProject(id);
+
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      if (project.status !== "completed") {
+        return res.status(400).json({ error: "Solo se puede revisar holísticamente proyectos completados" });
+      }
+
+      res.status(202).json({
+        accepted: true,
+        projectId: id,
+        message: "Revisión holística iniciada. El informe se entregará por el canal de progreso del proyecto.",
+      });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => {
+            try {
+              stream.write(message);
+            } catch (e) {
+              console.error("Error writing to stream:", e);
+            }
+          });
+        }
+      };
+
+      const orchestrator = new Orchestrator({
+        onAgentStatus: async () => {},
+        onChapterComplete: async () => {},
+        onChapterRewrite: async () => {},
+        onChapterStatusChange: () => {},
+        onProjectComplete: async () => {},
+        onError: async () => {},
+      });
+
+      orchestrator.runHolisticReview(project)
+        .then((result) => {
+          sendToStreams({
+            type: "holistic_review_complete",
+            payload: {
+              notesText: result.notesText,
+              totalChaptersRead: result.totalChaptersRead,
+              totalWordsRead: result.totalWordsRead,
+            },
+          });
+        })
+        .catch(async (err) => {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error("Background holistic review failed:", err);
+          await persistActivityLog(id, "error", `Error en revisión holística: ${errMsg}`, "editor");
+          sendToStreams({ type: "holistic_review_error", message: errMsg });
+        });
+    } catch (error) {
+      console.error("Error starting holistic review:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: error instanceof Error ? error.message : "Failed to start holistic review" });
+      }
+    }
+  });
+
   // STEP 2 (apply): apply editorial notes. Accepts EITHER:
   //  - { notes }                     → legacy mode: parse + apply in one shot
   //  - { instructions: [...] }       → preview mode: apply pre-parsed instructions filtered by the user
@@ -1178,8 +1250,8 @@ export async function registerRoutes(
         if (!notes || typeof notes !== "string" || !notes.trim()) {
           return res.status(400).json({ error: "Debes proporcionar 'notes' o un array 'instructions'" });
         }
-        if (notes.length > 50000) {
-          return res.status(400).json({ error: "Las notas son demasiado largas (máximo 50.000 caracteres)" });
+        if (notes.length > 200000) {
+          return res.status(400).json({ error: "Las notas son demasiado largas (máximo 200.000 caracteres)" });
         }
       } else {
         if (instructions.length > 200) {

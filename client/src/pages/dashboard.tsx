@@ -352,6 +352,7 @@ export default function Dashboard() {
   // por SSE. La mutation HTTP responde casi al instante (202), así que su
   // isPending no representa el estado real de carga; este flag sí.
   const [isParsingEditorial, setIsParsingEditorial] = useState(false);
+  const [isHolisticReviewing, setIsHolisticReviewing] = useState(false);
 
   // Diff dialog state for "Ver cambios" per chapter
   const [diffChapter, setDiffChapter] = useState<Chapter | null>(null);
@@ -417,10 +418,10 @@ export default function Dashboard() {
     }
     try {
       const text = await file.text();
-      if (text.length > 50000) {
+      if (text.length > 200000) {
         toast({
           title: "Archivo demasiado largo",
-          description: `El archivo tiene ${text.length.toLocaleString()} caracteres (máximo 50.000). Recorta el contenido.`,
+          description: `El archivo tiene ${text.length.toLocaleString()} caracteres (máximo 200.000). Recorta el contenido.`,
           variant: "destructive",
         });
         return;
@@ -481,6 +482,30 @@ export default function Dashboard() {
       toast({
         title: "Error analizando notas",
         description: err?.message || "No se pudieron analizar las notas editoriales",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const holisticReviewMutation = useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/holistic-review`, {});
+      return response.json();
+    },
+    onMutate: () => {
+      setIsHolisticReviewing(true);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Lector holístico trabajando",
+        description: "Esto puede tomar 3-5 minutos. El informe aparecerá en el cuadro de notas al terminar.",
+      });
+    },
+    onError: (err: any) => {
+      setIsHolisticReviewing(false);
+      toast({
+        title: "Error iniciando revisión holística",
+        description: err?.message || "No se pudo iniciar la revisión holística",
         variant: "destructive",
       });
     },
@@ -674,6 +699,32 @@ export default function Dashboard() {
             toast({
               title: "Error analizando notas",
               description: data.message || "No se pudieron analizar las notas editoriales",
+              variant: "destructive",
+            });
+          } else if (data.type === "holistic_review_complete") {
+            // Informe del Lector Holístico: lo inyectamos en el textarea de notas.
+            // Si el usuario ya tenía algo escrito, lo añadimos al final con separador.
+            setIsHolisticReviewing(false);
+            const incoming: string = data.payload?.notesText || "";
+            if (incoming.trim()) {
+              setEditorialNotesOpen(true);
+              setEditorialNotes(prev => {
+                if (!prev.trim()) return incoming;
+                return `${prev}\n\n--- Revisión automática ---\n\n${incoming}`;
+              });
+              const chapters = data.payload?.totalChaptersRead;
+              const words = data.payload?.totalWordsRead;
+              toast({
+                title: "Informe holístico listo",
+                description: `Leído: ${chapters} capítulos, ${(words || 0).toLocaleString("es-ES")} palabras. El informe está en el cuadro de notas; revísalo, edítalo y pulsa "Analizar notas" para procesarlo.`,
+              });
+            }
+          } else if (data.type === "holistic_review_error") {
+            setIsHolisticReviewing(false);
+            addLog("error", data.message || "Error en revisión holística", "editor");
+            toast({
+              title: "Error en revisión holística",
+              description: data.message || "No se pudo completar la revisión",
               variant: "destructive",
             });
           }
@@ -1058,9 +1109,37 @@ export default function Dashboard() {
                               revisas, desmarcas las que no quieras y aplicas. Cada capítulo se reescribe quirúrgicamente,
                               y al final se recalcula la puntuación global para ver el impacto neto.
                             </p>
+
+                            {/* Lector Holístico: genera el informe automáticamente leyendo la novela entera */}
+                            <div className="rounded-md border border-purple-300 dark:border-purple-700 bg-purple-50 dark:bg-purple-950/30 p-3 space-y-2">
+                              <p className="text-xs leading-relaxed">
+                                <strong>¿No tienes notas todavía?</strong> El <strong>Lector Holístico</strong> lee la novela completa
+                                de una sentada y redacta un informe editorial severo (problemas estructurales, arcos, continuidad,
+                                ritmo, sugerencias concretas). Tarda 3-5 minutos. Cuando termine, su informe aparecerá en este cuadro;
+                                podrás editarlo y luego pulsar "Analizar notas".
+                              </p>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => holisticReviewMutation.mutate({ id: currentProject.id })}
+                                disabled={
+                                  isHolisticReviewing ||
+                                  isParsingEditorial ||
+                                  applyEditorialNotesMutation.isPending ||
+                                  currentProject.status !== "completed"
+                                }
+                                data-testid="button-holistic-review"
+                                className="w-full border-purple-400 dark:border-purple-600 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40"
+                              >
+                                <FilePen className="h-4 w-4 mr-2" />
+                                {isHolisticReviewing
+                                  ? "Leyendo la novela completa (3-5 min)..."
+                                  : "Pedir revisión holística automatizada"}
+                              </Button>
+                            </div>
                             <div className="flex items-center justify-between gap-2">
                               <Label htmlFor="editorial-notes-textarea" className="text-xs">
-                                Notas editoriales (máx. 50.000 caracteres)
+                                Notas editoriales (máx. 200.000 caracteres)
                               </Label>
                               <label className="text-[11px] text-primary hover:underline cursor-pointer flex items-center gap-1" data-testid="label-upload-editorial-notes">
                                 <FileUp className="h-3 w-3" />
@@ -1084,11 +1163,11 @@ export default function Dashboard() {
                               onChange={(e) => setEditorialNotes(e.target.value)}
                               placeholder="Ej: '1. Veredicto Editorial Riguroso. El manuscrito presenta una premisa de alto impacto... ⚠️ Debilidades críticas: La aparición de Vasco Carballo en la cripta de Guadalupe resulta demasiado providencial...'"
                               className="min-h-[200px] text-xs font-mono resize-y"
-                              maxLength={50000}
+                              maxLength={200000}
                               data-testid="textarea-editorial-notes"
                             />
                             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                              <span>{editorialNotes.length.toLocaleString()} / 50.000 caracteres</span>
+                              <span>{editorialNotes.length.toLocaleString()} / 200.000 caracteres</span>
                               {editorialNotes.length > 0 && (
                                 <button
                                   type="button"

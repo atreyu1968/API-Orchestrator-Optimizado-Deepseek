@@ -13,6 +13,8 @@ import {
   SurgicalPatcherAgent,
   WorldBibleArbiterAgent,
   OriginalityCriticAgent,
+  HolisticReviewerAgent,
+  type HolisticReviewerResult,
   type EditorialInstruction,
   type EditorialNotesParseResult,
   type WorldBiblePatch,
@@ -126,6 +128,7 @@ export class Orchestrator {
   private editorialNotesParser = new EditorialNotesParser();
   private surgicalPatcher = new SurgicalPatcherAgent();
   private wbArbiter = new WorldBibleArbiterAgent();
+  private holisticReviewer = new HolisticReviewerAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
@@ -3955,6 +3958,98 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     });
 
     return { resumen_general: summary, instrucciones: refinedInstructions, instructions: refinedInstructions };
+  }
+
+  /**
+   * REVISIÓN HOLÍSTICA: lee la novela completa de una sentada (aprovechando el contexto
+   * de 1M tokens de DeepSeek V4-Flash) y emite un informe editorial severo en prosa.
+   * El informe se devuelve como texto listo para inyectarse en el textarea de
+   * "Notas del Editor Humano" — el usuario puede luego editarlo y aplicarlo con el
+   * flujo normal de parse-editorial-notes / apply-editorial-notes.
+   * NO modifica el proyecto. Tracking de tokens activado.
+   */
+  async runHolisticReview(project: Project): Promise<HolisticReviewerResult> {
+    this.cumulativeTokens = {
+      inputTokens: project.totalInputTokens || 0,
+      outputTokens: project.totalOutputTokens || 0,
+      thinkingTokens: project.totalThinkingTokens || 0,
+    };
+
+    const allChapters = await storage.getChaptersByProject(project.id);
+    if (!allChapters || allChapters.length === 0) {
+      throw new Error("El proyecto no tiene capítulos generados todavía.");
+    }
+
+    // Load style guide content (project only stores the FK)
+    let styleGuideContent: string | undefined;
+    if (project.styleGuideId) {
+      try {
+        const sg = await storage.getStyleGuide(project.styleGuideId);
+        if (sg?.content) styleGuideContent = sg.content;
+      } catch (e) {
+        console.warn(`[HolisticReview] Could not load style guide ${project.styleGuideId}:`, e);
+      }
+    }
+
+    const worldBible = await storage.getWorldBibleByProject(project.id);
+
+    // Build a compact world bible summary (characters + key rules + outline beats)
+    let worldBibleSummary = "";
+    if (worldBible) {
+      const characters = (worldBible.characters as any[]) || [];
+      const rules = (worldBible.worldRules as any[]) || [];
+      const outline = (worldBible.plotOutline as any[]) || [];
+
+      const charLines = characters.slice(0, 20).map((c: any) =>
+        `- ${c.nombre || c.name || "?"}: ${(c.descripcion || c.description || "").slice(0, 200)}`
+      ).join("\n");
+      const ruleLines = rules.slice(0, 15).map((r: any) =>
+        `- ${(r.regla || r.rule || r.descripcion || "").slice(0, 200)}`
+      ).join("\n");
+      const outlineLines = outline.slice(0, 80).map((o: any) =>
+        `Cap ${o.numero || o.chapter || "?"}: ${(o.resumen || o.summary || "").slice(0, 250)}`
+      ).join("\n");
+
+      worldBibleSummary = `### PERSONAJES PRINCIPALES\n${charLines || "(no hay personajes registrados)"}\n\n### REGLAS DEL MUNDO\n${ruleLines || "(no hay reglas registradas)"}\n\n### ESCALETA ORIGINAL\n${outlineLines || "(no hay escaleta registrada)"}`;
+    }
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "info",
+      message: `Iniciando revisión holística de la novela completa (${allChapters.length} capítulos).`,
+      agentRole: "editor",
+    });
+
+    const result = await this.holisticReviewer.runReview({
+      projectTitle: project.title,
+      chapters: allChapters.map(c => ({
+        numero: c.chapterNumber || 0,
+        titulo: c.title || "",
+        contenido: c.content || "",
+      })),
+      guiaEstilo: styleGuideContent,
+      worldBibleSummary: worldBibleSummary || undefined,
+      generoObjetivo: project.genre || undefined,
+      longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
+    }, project.id);
+
+    await this.trackTokenUsage(
+      project.id,
+      result.tokenUsage,
+      "Lector Holístico",
+      "deepseek-v4-flash",
+      undefined,
+      "holistic_review"
+    );
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "info",
+      message: `Revisión holística completada: ${result.totalChaptersRead} capítulos / ${result.totalWordsRead.toLocaleString("es-ES")} palabras leídas. Informe de ${result.notesText.length.toLocaleString("es-ES")} caracteres generado.`,
+      agentRole: "editor",
+    });
+
+    return result;
   }
 
   /**
