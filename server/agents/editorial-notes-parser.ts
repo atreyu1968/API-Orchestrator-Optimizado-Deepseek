@@ -10,8 +10,12 @@ export interface EditorialInstruction {
   prioridad?: "alta" | "media" | "baja";
   // "puntual": resoluble con find/replace localizados (cirugía de texto sin tocar el resto).
   // "estructural": requiere reescribir párrafos/escenas enteras (cae en el flujo de reescritura completa).
-  tipo?: "puntual" | "estructural";
-  // Cuando capitulos_afectados.length > 1: rol específico de cada capítulo en el arco multi-capítulo
+  // "eliminar": el editor pide BORRAR el/los capítulo(s) por completo. NO se reescribe; se elimina y se
+  //   renumeran los posteriores. Solo se acepta cuando la petición es inequívoca ("elimina el cap X",
+  //   "el cap Y sobra", "borra el prólogo"). Ante cualquier duda → marcar "estructural", no "eliminar".
+  tipo?: "puntual" | "estructural" | "eliminar";
+  // Cuando capitulos_afectados.length > 1: rol específico de cada capítulo en el arco multi-capítulo.
+  // No aplica para tipo "eliminar".
   plan_por_capitulo?: Record<string, string>;
 }
 
@@ -74,7 +78,16 @@ REGLAS:
 10. TIPO (CAMPO CRÍTICO): clasifica cada instrucción como:
    - "puntual": se resuelve modificando frases o párrafos concretos sin alterar la arquitectura del capítulo. Ejemplos: "añadir 1-2 párrafos justificando la aparición", "eliminar la mención al cuchillo", "corregir el color de los ojos", "reformular el diálogo del minuto 3 para que no parezca casual".
    - "estructural": requiere reescribir escenas enteras, reordenar la secuencia, cambiar el tono global del clímax o redistribuir material entre capítulos. Ejemplos: "haz que el desenlace sea menos idealista", "el segundo acto necesita otro ritmo", "el final debe ser fruto de una negociación, no de armonía espontánea".
-   Sé RIGUROSO: si dudas, marca como "estructural". Las puntuales se aplican como cirugía determinista; las estructurales requieren reescritura completa del capítulo (más caras y arriesgadas).
+   - "eliminar": el editor pide BORRAR el/los capítulo(s) ENTERO(S) del manuscrito. Se eliminan y los posteriores se renumeran automáticamente. SOLO se admite cuando la nota lo pide de forma INEQUÍVOCA. Frases que SÍ disparan "eliminar": "elimina/borra/suprime/quita el capítulo X", "el capítulo Y sobra y debe desaparecer", "fuera el cap Z", "el prólogo no aporta nada, eliminarlo", "los capítulos 12 y 13 son redundantes, recórtalos del manuscrito". Frases que NO son "eliminar" (son "estructural"): "el cap X es flojo", "este capítulo necesita más impacto", "reduce mucho la longitud del capítulo Y", "este capítulo debería fusionarse con el siguiente". ANTE LA MÍNIMA DUDA → "estructural", NUNCA "eliminar".
+   Sé RIGUROSO: si dudas entre "puntual" y "estructural", marca como "estructural". Las puntuales se aplican como cirugía determinista; las estructurales requieren reescritura completa del capítulo (más caras y arriesgadas); las de eliminar son destructivas e irreversibles para el usuario, así que solo cuando el editor lo pide LITERALMENTE.
+
+11. CAMPOS PARA TIPO "eliminar":
+   - "capitulos_afectados": lista de números de los capítulos a borrar. Permitido pedir varios a la vez si la nota lo dice ("elimina los capítulos 7 y 8").
+   - "descripcion": "Eliminar [capítulo X / prólogo / epílogo]: motivo breve" (máx 1 frase).
+   - "instrucciones_correccion": JUSTIFICACIÓN del borrado en 1-2 frases, basada en lo que dijo el editor (qué problema resuelve eliminarlo, por qué sobra). El usuario lo verá en la previsualización y decidirá si confirma.
+   - NO rellenes "plan_por_capitulo" para tipo "eliminar".
+   - "categoria": usa "trama" o "estructura" (mejor "trama" si no estás seguro).
+   - "prioridad": casi siempre "alta" (un borrado de capítulo es un cambio estructural mayor).
 
 🔑 CASO ESPECIAL — INSTRUCCIONES MULTI-CAPÍTULO (arcos):
 Cuando una corrección se desarrolla A LO LARGO DE VARIOS CAPÍTULOS (ej: "redistribuye la pérdida del cuaderno entre caps 8-10 para que no sea abrupta", "el villano debe aparecer mencionado en caps 3, 5 y 7 antes del encuentro del 9", "acelera el ritmo del segundo acto, caps 7 a 12"), DEBES además rellenar el campo "plan_por_capitulo" con un mini-plan específico por capítulo:
@@ -95,6 +108,14 @@ FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
       "elementos_a_preservar": "El diálogo del encuentro, la atmósfera de la cripta, las acciones de Lara.",
       "prioridad": "alta",
       "tipo": "puntual"
+    },
+    {
+      "capitulos_afectados": [12],
+      "categoria": "trama",
+      "descripcion": "Eliminar capítulo 12: redundante respecto al 11 y rompe el ritmo del tercer acto.",
+      "instrucciones_correccion": "El editor pide retirar el capítulo del manuscrito porque repite información ya entregada en el 11 y demora innecesariamente el clímax. Tras la eliminación, los capítulos 13 en adelante se renumeran automáticamente.",
+      "prioridad": "alta",
+      "tipo": "eliminar"
     },
     {
       "capitulos_afectados": [8, 9, 10],
@@ -209,9 +230,15 @@ REGLAS DE REFINAMIENTO:
    - Citas literales del texto (entre comillas) cuando ayuden a localizar el cambio.
    - Indicación clara de elementos a preservar tomada del propio capítulo.
    - Reclasificación tipo "puntual" / "estructural" según lo que ahora ves en el texto (si es un retoque a una frase, es puntual; si requiere reescribir varias escenas, es estructural).
-4. NO añadas instrucciones nuevas que el editor humano no pidió. Solo refinas o descartas las del borrador.
-5. Conserva los campos: capitulos_afectados, categoria, descripcion, instrucciones_correccion, elementos_a_preservar (mejorado), prioridad, tipo, plan_por_capitulo (si aplica).
-6. Para cada instrucción descartada, registra: descripcion (breve), capitulos_afectados, motivo (frase concreta del porqué).
+4. INSTRUCCIONES TIPO "eliminar" (BORRADO DE CAPÍTULO COMPLETO):
+   - Verifica que el editor PIDE LITERALMENTE eliminar el capítulo (no que lo critique o que pida reescribirlo). Busca en las notas frases como "elimina/borra/suprime/quita/fuera el capítulo X", "el cap Y sobra", "no aporta nada, retíralo".
+   - Lee el capítulo entero. Si tiene material claramente útil (revelación de la trama principal, escena de personaje insustituible, beats que enganchan al siguiente capítulo) Y la nota del editor es VAGA o solo expresa disgusto sin pedir el borrado → DESCARTA con motivo "el editor no pide explícitamente eliminar el capítulo, sugiere mejoras pero el capítulo aporta material crítico (X, Y)".
+   - Si el editor sí lo pide explícitamente Y el capítulo es razonablemente prescindible (redundante, ralentiza sin aportar, repite información) → CONSERVA la instrucción tal cual y mejora "instrucciones_correccion" añadiendo en 1 frase qué se pierde y qué se gana al borrarlo (info útil para que el usuario decida en la previsualización).
+   - Si el editor pide eliminar PERO el capítulo contiene revelaciones de trama insustituibles que romperían la continuidad → MANTÉN la instrucción pero reclasifícala como "estructural" y reescribe instrucciones_correccion como: "El editor pide eliminar este capítulo pero contiene [revelación X / personaje Y]. En lugar de borrar, condensar a la mitad fusionando elementos esenciales en el siguiente capítulo." Esto convierte un borrado peligroso en una reescritura segura.
+   - NUNCA inventes una instrucción de tipo "eliminar" que no estuviera en el borrador. Solo refinar/descartar.
+5. NO añadas instrucciones nuevas que el editor humano no pidió. Solo refinas o descartas las del borrador.
+6. Conserva los campos: capitulos_afectados, categoria, descripcion, instrucciones_correccion, elementos_a_preservar (mejorado), prioridad, tipo, plan_por_capitulo (si aplica).
+7. Para cada instrucción descartada, registra: descripcion (breve), capitulos_afectados, motivo (frase concreta del porqué).
 
 FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
 {

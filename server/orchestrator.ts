@@ -3958,6 +3958,52 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       allChapters,
     );
 
+    // ── GATE DETERMINISTA ANTI-FALSO-POSITIVO PARA tipo:"eliminar" ──────────
+    // El parser es un LLM y los prompts solo son "instrucciones blandas". Si el
+    // modelo malinterpreta "recorta el capítulo 7 a la mitad" como tipo:"eliminar",
+    // borraríamos contenido sin que el editor lo pidiera realmente.
+    // Defensa server-side: una instrucción solo puede sobrevivir como tipo:"eliminar"
+    // si en el TEXTO ORIGINAL de las notas aparece explícitamente un verbo de
+    // eliminación (elimina/borra/quita/suprime/elimínalo/bórralo/etc.) en la
+    // misma frase/párrafo que mencione el capítulo afectado. Si no, downgrade
+    // a tipo:"estructural" para que el flujo lo trate como reescritura/condensación.
+    const DELETE_VERBS_RE = /\b(elimin[aáeé]\w*|borr[aáeé]\w*|quit[aáeé]\w*|suprim[aáei]\w*|elimín[ae]\w*|bórr[ae]\w*|quít[ae]\w*|elimínen\w*|bórrenl\w*)\b/i;
+    const normalizedNotes = notesText.toLowerCase();
+    const downgradedDelete: number[] = [];
+    for (const ins of refinedInstructions) {
+      if (ins.tipo !== "eliminar") continue;
+      // Buscamos el verbo de eliminación en cualquier parte de las notas. Si
+      // no aparece ninguno, no hubo intención explícita de borrar — downgrade.
+      if (!DELETE_VERBS_RE.test(normalizedNotes)) {
+        ins.tipo = "estructural";
+        downgradedDelete.push(...(ins.capitulos_afectados || []));
+        continue;
+      }
+      // Caso más estricto: hay verbos pero no cerca del número del capítulo.
+      // Aceptamos como mínimo proximidad de párrafo (mismo bloque separado por \n\n).
+      const bloques = normalizedNotes.split(/\n\s*\n/);
+      const targetCaps = (ins.capitulos_afectados || []).filter(n => n > 0);
+      let foundProximity = targetCaps.length === 0; // si no hay caps específicos, basta con el verbo en el texto
+      for (const cap of targetCaps) {
+        const capPattern = new RegExp(`\\bcap[ií]tulo\\s*${cap}\\b|\\bcap\\.\\s*${cap}\\b|\\bcap\\s*${cap}\\b`, "i");
+        const blockHit = bloques.find(b => capPattern.test(b) && DELETE_VERBS_RE.test(b));
+        if (blockHit) { foundProximity = true; break; }
+      }
+      if (!foundProximity) {
+        ins.tipo = "estructural";
+        downgradedDelete.push(...targetCaps);
+      }
+    }
+    if (downgradedDelete.length > 0) {
+      const unique = Array.from(new Set(downgradedDelete));
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        message: `Gate anti-falso-positivo: ${unique.length} instrucción(es) marcada(s) como "eliminar" por el LLM se han bajado a "estructural" (condensación) porque las notas originales no contenían un verbo de borrado explícito cerca del capítulo afectado. Capítulos: ${unique.join(", ")}. Si querías borrarlos, reescribe la nota con "elimina el capítulo X" / "borra el capítulo X".`,
+        agentRole: "editor",
+      });
+    }
+
     await storage.createActivityLog({
       projectId: project.id,
       level: "info",
@@ -4219,6 +4265,419 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     }
   }
 
+  /**
+   * FASE 0 de applyEditorialNotes — eliminación de capítulos completos.
+   *
+   * Se ejecuta antes de la fase de reescritura porque borrar un capítulo es
+   * MUCHO más barato que reescribirlo y, además, modifica la numeración del
+   * resto de capítulos. Si lo dejásemos para después, las instrucciones de
+   * reescritura apuntarían a números obsoletos y reventarían el flujo.
+   *
+   * Garantías:
+   *  - Mantiene siempre ≥1 capítulo "principal" (positivo) en el manuscrito.
+   *    Si la lista de eliminaciones dejaría 0 capítulos positivos, se descartan
+   *    eliminaciones (en orden inverso) hasta que quede al menos uno.
+   *  - Solo renumera capítulos POSITIVOS (>0). Prólogo (0), epílogo (-1) y
+   *    nota del autor (-2) conservan su numeración especial.
+   *  - Actualiza `worldBible.plotOutline.chapterOutlines` (filtra + renumera)
+   *    y `worldBible.timeline` para que la canon refleje el nuevo manuscrito.
+   *  - Remapea las instrucciones restantes: descarta las que apuntaban a un
+   *    capítulo eliminado (o quedan vacías) y renumera los capítulos posteriores
+   *    en `capitulos_afectados` y en `plan_por_capitulo` (las claves son strings).
+   *
+   * NO toca: aiUsageEvents (histórico de costes — se conserva la pista del cap
+   * antiguo) ni audiobookChapters (tabla independiente; si el usuario tiene
+   * audiolibro generado, lo notificamos en el log para que lo regenere).
+   */
+  private async applyChapterDeletions(
+    project: Project,
+    worldBible: WorldBible,
+    allChapters: Chapter[],
+    deletionInstructions: EditorialInstruction[],
+    otherInstructions: EditorialInstruction[],
+  ): Promise<{
+    deletedNumbers: number[];
+    renumberMap: Map<number, number>; // viejo → nuevo (solo para capítulos positivos)
+    remappedInstructions: EditorialInstruction[];
+    refreshedChapters: Chapter[];
+    audiobookWarning: boolean;
+  }> {
+    // 1. Recopilar todos los números de capítulo solicitados, deduplicados.
+    const requestedNumbers = new Set<number>();
+    for (const ins of deletionInstructions) {
+      for (const n of (ins.capitulos_afectados || [])) {
+        if (typeof n === "number" && Number.isFinite(n)) requestedNumbers.add(n);
+      }
+    }
+
+    // 2. Filtrar a los que realmente existen como capítulo del proyecto.
+    //    PROTECCIÓN EXPLÍCITA DE ESPECIALES: nunca borramos prólogo (0), epílogo (-1)
+    //    ni nota del autor (-2) por nota editorial — solo capítulos positivos.
+    //    Si el editor pide eliminar uno, se ignora con activity log y el usuario
+    //    debe usar el botón manual "Eliminar capítulo" desde la UI (consciente).
+    const existingNumbers = new Set(allChapters.map(c => c.chapterNumber));
+    const SPECIAL_NUMBERS = new Set([0, -1, -2]);
+    const requestedSpecials = Array.from(requestedNumbers).filter(n => SPECIAL_NUMBERS.has(n));
+    if (requestedSpecials.length > 0) {
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        message: `Eliminación: ignorando solicitud(es) de borrado para capítulo(s) especial(es) ${requestedSpecials.map(n => n === 0 ? "Prólogo" : n === -1 ? "Epílogo" : "Nota del autor").join(", ")}. Usa el botón manual desde la lista de capítulos si realmente quieres borrarlos.`,
+        agentRole: "editor",
+      });
+    }
+    let toDelete = Array.from(requestedNumbers)
+      .filter(n => existingNumbers.has(n))
+      .filter(n => !SPECIAL_NUMBERS.has(n)); // protege prólogo/epílogo/nota
+    const ghostNumbers = Array.from(requestedNumbers)
+      .filter(n => !existingNumbers.has(n) && !SPECIAL_NUMBERS.has(n));
+    if (ghostNumbers.length > 0) {
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        message: `Eliminación: ignorando ${ghostNumbers.length} solicitud(es) de borrado para capítulo(s) inexistente(s): ${ghostNumbers.join(", ")}.`,
+        agentRole: "editor",
+      });
+    }
+
+    // 3. Garantizar que queda al menos UN capítulo principal (positivo) tras el borrado.
+    //    Si todas las eliminaciones afectarían a TODOS los capítulos positivos, descartamos
+    //    eliminaciones (de mayor número de capítulo a menor) hasta dejar al menos uno.
+    const positiveExisting = Array.from(existingNumbers).filter(n => n > 0).sort((a, b) => a - b);
+    const positiveToDelete = toDelete.filter(n => n > 0).sort((a, b) => b - a); // descendente
+    const minRemainingPositive = positiveExisting.length - positiveToDelete.length;
+    if (positiveExisting.length > 0 && minRemainingPositive < 1) {
+      // Vamos a tener que descartar eliminaciones empezando por el último capítulo solicitado.
+      const keptForSafety: number[] = [];
+      let toRescue = 1 - minRemainingPositive; // cuántos capítulos hay que rescatar
+      while (toRescue > 0 && positiveToDelete.length > 0) {
+        const rescued = positiveToDelete.shift()!; // el de mayor número (rescatamos el último)
+        keptForSafety.push(rescued);
+        toRescue--;
+      }
+      if (keptForSafety.length > 0) {
+        const rescuedSet = new Set(keptForSafety);
+        toDelete = toDelete.filter(n => !rescuedSet.has(n));
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `Eliminación: se han rescatado ${keptForSafety.length} capítulo(s) (${keptForSafety.join(", ")}) para que el manuscrito no se quede sin capítulos principales.`,
+          agentRole: "editor",
+        });
+      }
+    }
+
+    if (toDelete.length === 0) {
+      return {
+        deletedNumbers: [],
+        renumberMap: new Map(),
+        remappedInstructions: otherInstructions,
+        refreshedChapters: allChapters,
+        audiobookWarning: false,
+      };
+    }
+
+    // 4. Mapa para encontrar el id del chapter por número (solo válido antes del borrado).
+    const chapterByNumber = new Map<number, Chapter>();
+    for (const c of allChapters) chapterByNumber.set(c.chapterNumber, c);
+
+    // 5. Borrar capítulos uno por uno, registrando título + razón en el log.
+    //    FAIL-FAST: si UN borrado falla, abortamos toda la fase y propagamos el error.
+    //    No hacemos best-effort/continue porque dejaría el manuscrito en estado mixto
+    //    (algunos capítulos borrados, otros no, sin renumerar). El caller (Phase 0)
+    //    captura la excepción, la registra como activity log error y aborta el flujo
+    //    sin tocar las nonDeletionInstructions, dejando el proyecto en su estado
+    //    pre-deletion para que el usuario reintente.
+    const deletedDetails: Array<{ numero: number; titulo: string; razon: string }> = [];
+    for (const num of toDelete) {
+      const ch = chapterByNumber.get(num);
+      if (!ch) continue;
+      const matchingInstr = deletionInstructions.find(ins =>
+        (ins.capitulos_afectados || []).includes(num)
+      );
+      const razon = matchingInstr?.instrucciones_correccion || matchingInstr?.descripcion || "(sin motivo)";
+      try {
+        await storage.deleteChapter(ch.id);
+        deletedDetails.push({
+          numero: num,
+          titulo: ch.title || `Capítulo ${num}`,
+          razon: razon.slice(0, 300),
+        });
+      } catch (e) {
+        const msg = `Error eliminando capítulo ${num} (id=${ch.id}): ${e instanceof Error ? e.message : String(e)}. Se aborta toda la fase de eliminación tras borrar ${deletedDetails.length}/${toDelete.length}. El proyecto puede quedar parcialmente modificado.`;
+        console.error(`[applyChapterDeletions] ${msg}`);
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "error",
+          message: msg,
+          agentRole: "editor",
+        });
+        throw new Error(msg);
+      }
+    }
+    const deletedNumbers = deletedDetails.map(d => d.numero);
+    const deletedSet = new Set(deletedNumbers);
+
+    // 6. Construir mapa de renumeración SOLO para capítulos positivos:
+    //    los positivos restantes se compactan en orden ascendente conservando su orden relativo.
+    const remainingPositiveOld = allChapters
+      .map(c => c.chapterNumber)
+      .filter(n => n > 0 && !deletedSet.has(n))
+      .sort((a, b) => a - b);
+    const renumberMap = new Map<number, number>();
+    remainingPositiveOld.forEach((oldNum, idx) => {
+      const newNum = idx + 1; // 1-based
+      if (newNum !== oldNum) renumberMap.set(oldNum, newNum);
+    });
+
+    // 7. Aplicar la renumeración a la tabla `chapters`. Importante: para evitar choques de UNIQUE
+    //    (proyecto+chapter_number) sin restricción, hacemos los UPDATE en dos pasadas:
+    //    (a) shift a un rango temporal alto (10000+) para los que se mueven,
+    //    (b) shift al destino final.
+    //    SHIFT_BASE=10000 asume que ningún proyecto tendrá >9999 capítulos positivos.
+    //    Defensivo: si alguien construyera una novela con 10000+ capítulos esto colisionaría
+    //    con sus propios números reales — comprobamos y elevamos la base si hace falta.
+    const maxPositive = Math.max(0, ...allChapters.map(c => c.chapterNumber).filter(n => n > 0));
+    const SHIFT_BASE = Math.max(10000, maxPositive + 1);
+    if (renumberMap.size > 0) {
+      // (a) temporal — fail-fast
+      for (const [oldNum, newNum] of renumberMap.entries()) {
+        const ch = chapterByNumber.get(oldNum);
+        if (!ch) continue;
+        try {
+          await storage.updateChapter(ch.id, { chapterNumber: SHIFT_BASE + newNum });
+        } catch (e) {
+          const msg = `Error en renumeración (paso temporal) del capítulo ${oldNum}→${SHIFT_BASE + newNum}: ${e instanceof Error ? e.message : String(e)}. Se aborta la fase. Los capítulos ya borrados NO se restauran; los pendientes de renumerar quedan con su número original.`;
+          console.error(`[applyChapterDeletions] ${msg}`);
+          await storage.createActivityLog({ projectId: project.id, level: "error", message: msg, agentRole: "editor" });
+          throw new Error(msg);
+        }
+      }
+      // (b) destino final — fail-fast (más crítico aún: mitad temporal/mitad final = colisiones futuras)
+      for (const [oldNum, newNum] of renumberMap.entries()) {
+        const ch = chapterByNumber.get(oldNum);
+        if (!ch) continue;
+        try {
+          await storage.updateChapter(ch.id, { chapterNumber: newNum });
+        } catch (e) {
+          const msg = `Error en renumeración (paso final) del capítulo id=${ch.id} → ${newNum}: ${e instanceof Error ? e.message : String(e)}. ATENCIÓN: el capítulo está actualmente en el rango temporal ${SHIFT_BASE}+; revisa la BD manualmente.`;
+          console.error(`[applyChapterDeletions] ${msg}`);
+          await storage.createActivityLog({ projectId: project.id, level: "error", message: msg, agentRole: "editor" });
+          throw new Error(msg);
+        }
+      }
+    }
+
+    // 8. Refrescar listado de capítulos desde BD (post borrado + renumeración).
+    const refreshedChapters = await storage.getChaptersByProject(project.id);
+
+    // 9. Actualizar el world bible en BD: chapterOutlines + timeline.
+    try {
+      const plot: any = worldBible.plotOutline || {};
+      let plotOutlineUpdated: any = plot;
+      if (plot && typeof plot === "object" && !Array.isArray(plot)) {
+        const outlineArrayKey = Array.isArray(plot.chapterOutlines)
+          ? "chapterOutlines"
+          : Array.isArray(plot.chapter_outlines)
+            ? "chapter_outlines"
+            : Array.isArray(plot.escaleta)
+              ? "escaleta"
+              : null;
+        if (outlineArrayKey) {
+          const original: any[] = plot[outlineArrayKey];
+          const filtered = original
+            .filter((co: any) => {
+              const num = co?.number ?? co?.numero;
+              return typeof num !== "number" || !deletedSet.has(num);
+            })
+            .map((co: any) => {
+              const num = co?.number ?? co?.numero;
+              if (typeof num === "number" && renumberMap.has(num)) {
+                const newNum = renumberMap.get(num)!;
+                return { ...co, number: newNum, numero: newNum };
+              }
+              return co;
+            });
+          plotOutlineUpdated = { ...plot, [outlineArrayKey]: filtered };
+        }
+      }
+
+      const timelineArr: any[] = Array.isArray(worldBible.timeline) ? (worldBible.timeline as any[]) : [];
+      const timelineUpdated = timelineArr
+        .filter((ev: any) => {
+          const num = ev?.chapter ?? ev?.capitulo;
+          return typeof num !== "number" || !deletedSet.has(num);
+        })
+        .map((ev: any) => {
+          const num = ev?.chapter ?? ev?.capitulo;
+          if (typeof num === "number" && renumberMap.has(num)) {
+            const newNum = renumberMap.get(num)!;
+            return { ...ev, chapter: newNum };
+          }
+          return ev;
+        });
+
+      await storage.updateWorldBible(worldBible.id, {
+        plotOutline: plotOutlineUpdated,
+        timeline: timelineUpdated as any,
+      });
+    } catch (e) {
+      console.error(`[applyChapterDeletions] Error updating world bible after deletions:`, e);
+    }
+
+    // 10. Remapear las instrucciones restantes (no-eliminar) para que apunten a los nuevos números.
+    const remapNum = (n: number): number | null => {
+      if (deletedSet.has(n)) return null;
+      if (renumberMap.has(n)) return renumberMap.get(n)!;
+      return n;
+    };
+    const remappedInstructions: EditorialInstruction[] = [];
+    for (const ins of otherInstructions) {
+      const newCaps: number[] = [];
+      for (const n of (ins.capitulos_afectados || [])) {
+        const remapped = remapNum(n);
+        if (remapped !== null) newCaps.push(remapped);
+      }
+      if (newCaps.length === 0) {
+        // La instrucción solo apuntaba a capítulos eliminados → descartar con log.
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `Eliminación: instrucción descartada porque todos sus capítulos objetivo fueron borrados — "${(ins.descripcion || "").slice(0, 120)}".`,
+          agentRole: "editor",
+        });
+        continue;
+      }
+      let newPlan: Record<string, string> | undefined;
+      if (ins.plan_por_capitulo && typeof ins.plan_por_capitulo === "object") {
+        newPlan = {};
+        for (const [k, v] of Object.entries(ins.plan_por_capitulo)) {
+          const oldNum = parseInt(k, 10);
+          if (!Number.isFinite(oldNum)) continue;
+          const remapped = remapNum(oldNum);
+          if (remapped === null) continue;
+          newPlan[String(remapped)] = v;
+        }
+        if (Object.keys(newPlan).length === 0) newPlan = undefined;
+      }
+      remappedInstructions.push({
+        ...ins,
+        capitulos_afectados: newCaps,
+        plan_por_capitulo: newPlan,
+      });
+    }
+
+    // 11. Detectar si hay audiolibros para avisar al usuario (no los tocamos).
+    let audiobookWarning = false;
+    try {
+      const anyStorage = storage as any;
+      if (typeof anyStorage.getAudiobookProjectsByProject === "function") {
+        const ab = await anyStorage.getAudiobookProjectsByProject(project.id);
+        if (Array.isArray(ab) && ab.length > 0) audiobookWarning = true;
+      }
+    } catch {
+      /* opcional, no rompe el flujo */
+    }
+
+    // 12. Log de cierre con el dictamen completo de la fase.
+    const detailLines = deletedDetails.map(d =>
+      `  • Cap ${d.numero === 0 ? "Prólogo" : d.numero === -1 ? "Epílogo" : d.numero === -2 ? "Nota del autor" : d.numero} — "${d.titulo}": ${d.razon}`
+    ).join("\n");
+    const renumLines = renumberMap.size > 0
+      ? `\n  Renumeración aplicada: ${Array.from(renumberMap.entries()).map(([o, n]) => `${o}→${n}`).join(", ")}.`
+      : "";
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "success",
+      message: `Eliminación de capítulos completada: ${deletedNumbers.length} capítulo(s) borrado(s).\n${detailLines}${renumLines}${audiobookWarning ? "\n⚠️ El proyecto tiene audiolibros generados que apuntan a la numeración antigua; regenéralos cuando puedas." : ""}`,
+      agentRole: "editor",
+    });
+
+    return {
+      deletedNumbers,
+      renumberMap,
+      remappedInstructions,
+      refreshedChapters,
+      audiobookWarning,
+    };
+  }
+
+  /**
+   * Re-evalúa la novela completa con el FinalReviewer para refrescar la puntuación
+   * global tras una sesión de notas editoriales (eliminaciones y/o reescrituras).
+   * Encapsula el bloque que antes vivía inline al final de applyEditorialNotes para
+   * que el flujo "solo eliminaciones" pueda reusarlo sin duplicar 80 líneas.
+   */
+  private async recalculateFinalScoreAfterEdits(
+    project: Project,
+    worldBibleData: ParsedWorldBible,
+    guiaEstilo: string,
+    previousFinalScore: number | null,
+  ): Promise<void> {
+    void guiaEstilo; // se mantiene en la firma para futuras necesidades del FinalReviewer.
+    this.callbacks.onAgentStatus("final-reviewer", "reviewing",
+      "Recalculando puntuación global tras aplicar las notas editoriales..."
+    );
+
+    const updatedChaptersForReview = await storage.getChaptersByProject(project.id);
+    const chaptersForReview = updatedChaptersForReview
+      .filter(c => c.content)
+      .sort((a, b) => a.chapterNumber - b.chapterNumber)
+      .map(c => ({
+        numero: c.chapterNumber,
+        titulo: c.title || `Capítulo ${c.chapterNumber}`,
+        contenido: c.content || "",
+      }));
+
+    const reviewResult = await this.finalReviewer.execute({
+      projectTitle: project.title,
+      chapters: chaptersForReview,
+      worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+      guiaEstilo,
+      pasadaNumero: (project.revisionCycle || 0) + 1,
+      issuesPreviosCorregidos: [],
+      capitulosConLimitaciones: [],
+      seriesContext: undefined,
+    });
+
+    await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "deepseek-v4-flash", undefined, "final_review");
+
+    const newResult = reviewResult.result;
+    const newScoreRaw = newResult?.puntuacion_global ?? null;
+    const newScoreForDb = newScoreRaw != null ? Math.round(newScoreRaw) : null;
+
+    await storage.updateProject(project.id, {
+      finalReviewResult: newResult as any,
+      finalScore: newScoreForDb,
+    });
+
+    if (newScoreRaw != null) {
+      const delta = previousFinalScore != null ? (newScoreRaw - previousFinalScore) : null;
+      const arrow = delta == null ? "" : delta > 0 ? " ⬆️" : delta < 0 ? " ⬇️" : " =";
+      const beforeLabel = previousFinalScore != null ? `${previousFinalScore}/10` : "sin puntuación previa";
+      const summaryMsg = `Puntuación global tras notas editoriales: ${beforeLabel} → ${newScoreRaw}/10${arrow}${delta != null ? ` (${delta > 0 ? "+" : ""}${delta.toFixed(1)})` : ""}`;
+
+      const level = delta != null && delta < -0.5
+        ? "warning"
+        : (delta != null && delta > 0 ? "success" : "info");
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level,
+        message: summaryMsg + (delta != null && delta < -0.5
+          ? " ⚠️ La puntuación ha bajado tras las correcciones. Revisa los cambios y considera revertir capítulos sensibles desde el botón 'Ver cambios'."
+          : ""),
+        agentRole: "final-reviewer",
+      });
+
+      this.callbacks.onAgentStatus("final-reviewer", "completed", summaryMsg);
+    } else {
+      this.callbacks.onAgentStatus("final-reviewer", "completed",
+        "Revisión final completada (sin puntuación)."
+      );
+    }
+  }
+
   async applyEditorialNotes(
     project: Project,
     notesText: string,
@@ -4323,6 +4782,110 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           return;
         }
       }
+
+      // ── FASE 0: ELIMINACIÓN DE CAPÍTULOS COMPLETOS ─────────────────────────
+      // Se ejecuta antes del agrupamiento por capítulo porque borrar un capítulo
+      // (a) es muchísimo más barato que reescribirlo, (b) modifica la numeración
+      // del resto de capítulos, así que las instrucciones posteriores tienen que
+      // remapearse antes de entrar al loop principal.
+      const deletionInstructions = instructions.filter(ins => ins.tipo === "eliminar");
+      let nonDeletionInstructions = instructions.filter(ins => ins.tipo !== "eliminar");
+      let totalDeleted = 0;
+
+      if (deletionInstructions.length > 0) {
+        this.callbacks.onAgentStatus("editor", "thinking",
+          `Eliminando ${deletionInstructions.length} capítulo(s) marcados para borrar...`
+        );
+
+        // Si applyChapterDeletions lanza (fail-fast), abortamos toda la sesión
+        // editorial: no aplicamos reescrituras sobre un manuscrito en estado
+        // mixto. El usuario verá los activity logs de error y podrá reintentar.
+        let deletionResult;
+        try {
+          deletionResult = await this.applyChapterDeletions(
+            project,
+            worldBible,
+            allChapters,
+            deletionInstructions,
+            nonDeletionInstructions,
+          );
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "error",
+            message: `Aplicación de notas editoriales abortada: la fase de eliminación falló (${errMsg.slice(0, 200)}). Las reescrituras NO se aplicaron. Revisa el estado del manuscrito y reintenta.`,
+            agentRole: "editor",
+          });
+          await storage.updateProject(project.id, { status: "completed" });
+          this.callbacks.onAgentStatus("editor", "error",
+            "Eliminación de capítulos falló — sesión editorial abortada para preservar el resto del manuscrito."
+          );
+          this.callbacks.onProjectComplete();
+          return;
+        }
+
+        totalDeleted = deletionResult.deletedNumbers.length;
+        nonDeletionInstructions = deletionResult.remappedInstructions;
+
+        // Actualizamos el estado en memoria con los capítulos refrescados desde BD
+        // y reconstruimos la lista de secciones para que el resto del flujo opere
+        // sobre la numeración nueva.
+        allChapters.length = 0;
+        deletionResult.refreshedChapters.forEach(c => allChapters.push(c));
+        const refreshedWorldBible = await storage.getWorldBibleByProject(project.id);
+        if (refreshedWorldBible) {
+          // Recargamos la versión actualizada de plotOutline/timeline para que el
+          // ground/contexto posterior vea los outlines correctos.
+          Object.assign(worldBible, refreshedWorldBible);
+        }
+        const refreshedWorldBibleData: ParsedWorldBible = this.reconstructWorldBibleData(worldBible, project);
+        worldBibleData.escaleta_capitulos = refreshedWorldBibleData.escaleta_capitulos;
+        worldBibleData.world_bible = refreshedWorldBibleData.world_bible;
+        const refreshedSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
+        allSections.length = 0;
+        refreshedSections.forEach(s => allSections.push(s));
+      }
+
+      // Si TRAS las eliminaciones no queda nada por reescribir, terminamos
+      // limpiamente: el manuscrito ya quedó modificado, recalculamos puntuación
+      // global para reflejar el nuevo estado y devolvemos control al usuario.
+      if (nonDeletionInstructions.length === 0) {
+        const previousFinalScore = project.finalScore ?? null;
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "success",
+          message: `Aplicación de notas editoriales completada: ${totalDeleted} capítulo(s) eliminado(s), 0 reescrituras solicitadas. Recalculando puntuación global...`,
+          agentRole: "editor",
+        });
+        try {
+          await this.recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore);
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          console.error("[ApplyEditorialNotes] Error recalculating global score after deletion-only flow:", e);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `Eliminaciones aplicadas correctamente, pero la revisión final falló: ${errMsg.slice(0, 200)}. La puntuación global puede estar desactualizada; reabre las notas editoriales para reintentar.`,
+            agentRole: "final-reviewer",
+          });
+          this.callbacks.onAgentStatus("final-reviewer", "error",
+            "Recalculación de puntuación global falló tras la eliminación."
+          );
+        }
+        await storage.updateProject(project.id, { status: "completed" });
+        this.callbacks.onAgentStatus("ghostwriter", "completed",
+          `Notas editoriales procesadas: ${totalDeleted} capítulo(s) eliminado(s).`
+        );
+        this.callbacks.onProjectComplete();
+        return;
+      }
+
+      // A partir de aquí el resto del flujo opera SOLO sobre las instrucciones
+      // de reescritura (puntual / estructural) ya remapeadas a la nueva numeración.
+      // Sustituimos la variable local `instructions` para no tener que cambiar
+      // el resto del flujo aguas abajo.
+      instructions = nonDeletionInstructions;
 
       // Group instructions by chapter so we make one surgical pass per chapter with all its issues combined.
       // Multi-chapter (arc) instructions: each chapter receives the same instruction but with its own role
@@ -4669,67 +5232,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
       if (appliedCount > 0 && !cancelled) {
         try {
-          this.callbacks.onAgentStatus("final-reviewer", "reviewing",
-            "Recalculando puntuación global tras aplicar las notas editoriales..."
-          );
-
-          const updatedChaptersForReview = await storage.getChaptersByProject(project.id);
-          const chaptersForReview = updatedChaptersForReview
-            .filter(c => c.content)
-            .sort((a, b) => a.chapterNumber - b.chapterNumber)
-            .map(c => ({
-              numero: c.chapterNumber,
-              titulo: c.title || `Capítulo ${c.chapterNumber}`,
-              contenido: c.content || "",
-            }));
-
-          const reviewResult = await this.finalReviewer.execute({
-            projectTitle: project.title,
-            chapters: chaptersForReview,
-            worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
-            guiaEstilo,
-            pasadaNumero: (project.revisionCycle || 0) + 1,
-            issuesPreviosCorregidos: [],
-            capitulosConLimitaciones: [],
-            seriesContext: undefined,
-          });
-
-          await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "deepseek-v4-flash", undefined, "final_review");
-
-          const newResult = reviewResult.result;
-          const newScoreRaw = newResult?.puntuacion_global ?? null;
-          const newScoreForDb = newScoreRaw != null ? Math.round(newScoreRaw) : null;
-
-          await storage.updateProject(project.id, {
-            finalReviewResult: newResult as any,
-            finalScore: newScoreForDb,
-          });
-
-          if (newScoreRaw != null) {
-            const delta = previousFinalScore != null ? (newScoreRaw - previousFinalScore) : null;
-            const arrow = delta == null ? "" : delta > 0 ? " ⬆️" : delta < 0 ? " ⬇️" : " =";
-            const beforeLabel = previousFinalScore != null ? `${previousFinalScore}/10` : "sin puntuación previa";
-            const summaryMsg = `Puntuación global tras notas editoriales: ${beforeLabel} → ${newScoreRaw}/10${arrow}${delta != null ? ` (${delta > 0 ? "+" : ""}${delta.toFixed(1)})` : ""}`;
-
-            const level = delta != null && delta < -0.5
-              ? "warning"
-              : (delta != null && delta > 0 ? "success" : "info");
-
-            await storage.createActivityLog({
-              projectId: project.id,
-              level,
-              message: summaryMsg + (delta != null && delta < -0.5
-                ? " ⚠️ La puntuación ha bajado tras las correcciones. Revisa los cambios y considera revertir capítulos sensibles desde el botón 'Ver cambios'."
-                : ""),
-              agentRole: "final-reviewer",
-            });
-
-            this.callbacks.onAgentStatus("final-reviewer", "completed", summaryMsg);
-          } else {
-            this.callbacks.onAgentStatus("final-reviewer", "completed",
-              "Revisión final completada (sin puntuación)."
-            );
-          }
+          await this.recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore);
         } catch (reviewErr) {
           console.error("[ApplyEditorialNotes] Error en revisión final post-editorial:", reviewErr);
           await storage.createActivityLog({

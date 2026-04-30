@@ -17,6 +17,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp, Eye, ArrowLeft, FileUp, Undo2, RotateCcw } from "lucide-react";
 import { diffWords } from "diff";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
 import type { Project, AgentStatus, Chapter, ReeditProject, Pseudonym } from "@shared/schema";
@@ -341,6 +342,9 @@ export default function Dashboard() {
     instrucciones_correccion: string;
     elementos_a_preservar?: string;
     prioridad?: "alta" | "media" | "baja";
+    // "eliminar" → el editor pide BORRAR el/los capítulo(s) por completo. Es destructivo
+    // e irreversible, así que la UI exige confirmación adicional antes de aplicar.
+    tipo?: "puntual" | "estructural" | "eliminar";
     plan_por_capitulo?: Record<string, string>;
   };
   const [editorialPreview, setEditorialPreview] = useState<{
@@ -348,6 +352,13 @@ export default function Dashboard() {
     instrucciones: EditorialInstructionPreview[];
   } | null>(null);
   const [selectedInstructionIdxs, setSelectedInstructionIdxs] = useState<Set<number>>(new Set());
+  // Confirmación para eliminaciones: cuando el usuario pulsa "Aplicar" y entre las
+  // instrucciones seleccionadas hay alguna de tipo "eliminar", abrimos un AlertDialog
+  // con el detalle de qué se va a borrar antes de disparar la mutation.
+  const [pendingEditorialApply, setPendingEditorialApply] = useState<{
+    selected: EditorialInstructionPreview[];
+    deletions: EditorialInstructionPreview[];
+  } | null>(null);
   // El parseo de notas editoriales corre en background y entrega el resultado
   // por SSE. La mutation HTTP responde casi al instante (202), así que su
   // isPending no representa el estado real de carga; este flag sí.
@@ -1377,10 +1388,16 @@ export default function Dashboard() {
                                   ins.prioridad === "alta" ? "bg-red-500/20 text-red-700 dark:text-red-300"
                                   : ins.prioridad === "media" ? "bg-yellow-500/20 text-yellow-700 dark:text-yellow-300"
                                   : "bg-zinc-500/20 text-zinc-700 dark:text-zinc-300";
+                                const isDeletion = ins.tipo === "eliminar";
+                                // Estilo destacado para eliminaciones: borde rojo, fondo rojizo,
+                                // visualmente claro que NO es una reescritura sino un borrado.
+                                const containerClass = isDeletion
+                                  ? `p-2 rounded-md border-2 border-red-500/60 text-[11px] space-y-1 ${checked ? "bg-red-50 dark:bg-red-950/30" : "bg-muted/50 opacity-60"}`
+                                  : `p-2 rounded-md border text-[11px] space-y-1 ${checked ? "bg-background" : "bg-muted/50 opacity-60"}`;
                                 return (
                                   <div
                                     key={idx}
-                                    className={`p-2 rounded-md border text-[11px] space-y-1 ${checked ? "bg-background" : "bg-muted/50 opacity-60"}`}
+                                    className={containerClass}
                                     data-testid={`instruction-preview-${idx}`}
                                   >
                                     <div className="flex items-start gap-2">
@@ -1399,25 +1416,40 @@ export default function Dashboard() {
                                       />
                                       <div className="flex-1 min-w-0">
                                         <div className="flex flex-wrap items-center gap-1">
+                                          {isDeletion && (
+                                            <Badge variant="destructive" className="text-[10px] uppercase font-semibold">
+                                              <Trash2 className="h-3 w-3 mr-0.5" />
+                                              Eliminar
+                                            </Badge>
+                                          )}
                                           <Badge variant="outline" className="text-[10px] uppercase">{ins.categoria || "otro"}</Badge>
                                           {ins.prioridad && (
                                             <span className={`text-[10px] px-1.5 py-0.5 rounded ${priorityColor}`}>{ins.prioridad}</span>
                                           )}
-                                          {isArc && (
+                                          {isArc && !isDeletion && (
                                             <Badge variant="default" className="text-[10px] bg-purple-600 hover:bg-purple-700">
                                               ARCO {ins.capitulos_afectados.length} caps
+                                            </Badge>
+                                          )}
+                                          {isDeletion && ins.capitulos_afectados.length > 1 && (
+                                            <Badge variant="destructive" className="text-[10px]">
+                                              {ins.capitulos_afectados.length} capítulos
                                             </Badge>
                                           )}
                                           <span className="text-muted-foreground">
                                             {(ins.capitulos_afectados || []).map(sectionLabel).join(", ")}
                                           </span>
                                         </div>
-                                        <p className="font-medium mt-1">{ins.descripcion}</p>
-                                        <p className="text-muted-foreground italic mt-1">✏️ {ins.instrucciones_correccion}</p>
-                                        {ins.elementos_a_preservar && (
+                                        <p className={`font-medium mt-1 ${isDeletion ? "text-red-700 dark:text-red-300" : ""}`}>
+                                          {ins.descripcion}
+                                        </p>
+                                        <p className="text-muted-foreground italic mt-1">
+                                          {isDeletion ? "🗑️" : "✏️"} {ins.instrucciones_correccion}
+                                        </p>
+                                        {ins.elementos_a_preservar && !isDeletion && (
                                           <p className="text-amber-700 dark:text-amber-400 mt-1">⚠️ Preservar: {ins.elementos_a_preservar}</p>
                                         )}
-                                        {isArc && ins.plan_por_capitulo && Object.keys(ins.plan_por_capitulo).length > 0 && (
+                                        {isArc && !isDeletion && ins.plan_por_capitulo && Object.keys(ins.plan_por_capitulo).length > 0 && (
                                           <details className="mt-1">
                                             <summary className="cursor-pointer text-purple-700 dark:text-purple-300 text-[10px]">
                                               Ver plan distributivo del arco
@@ -1429,6 +1461,11 @@ export default function Dashboard() {
                                             </ul>
                                           </details>
                                         )}
+                                        {isDeletion && (
+                                          <p className="text-[10px] text-red-700/80 dark:text-red-400/90 mt-1 font-medium">
+                                            ⚠️ Acción irreversible: el capítulo se borra y los posteriores se renumeran.
+                                          </p>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -1436,31 +1473,49 @@ export default function Dashboard() {
                               })}
                             </div>
 
-                            <Button
-                              variant="default"
-                              size="sm"
-                              onClick={() => {
-                                const selected = Array.from(selectedInstructionIdxs)
-                                  .sort((a, b) => a - b)
-                                  .map(i => editorialPreview.instrucciones[i]);
-                                applyEditorialNotesMutation.mutate({
-                                  id: currentProject.id,
-                                  instructions: selected,
-                                });
-                              }}
-                              disabled={
-                                selectedInstructionIdxs.size === 0 ||
-                                applyEditorialNotesMutation.isPending ||
-                                currentProject.status !== "completed"
-                              }
-                              data-testid="button-apply-selected-instructions"
-                              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                            >
-                              <FilePen className="h-4 w-4 mr-2" />
-                              {applyEditorialNotesMutation.isPending
-                                ? "Procesando..."
-                                : `Aplicar ${selectedInstructionIdxs.size} instrucciones seleccionadas`}
-                            </Button>
+                            {(() => {
+                              // Cuento eliminaciones seleccionadas para mostrarlas en el botón
+                              // y para decidir si abrimos el AlertDialog antes de aplicar.
+                              const selectedItems = Array.from(selectedInstructionIdxs)
+                                .sort((a, b) => a - b)
+                                .map(i => editorialPreview.instrucciones[i]);
+                              const deletionsSelected = selectedItems.filter(s => s.tipo === "eliminar");
+                              const hasDeletions = deletionsSelected.length > 0;
+                              const totalChaptersToDelete = new Set(
+                                deletionsSelected.flatMap(d => d.capitulos_afectados || []).filter(n => n > 0)
+                              ).size;
+                              return (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (hasDeletions) {
+                                      // Confirmación obligatoria: la mutation se dispara desde el AlertDialog.
+                                      setPendingEditorialApply({ selected: selectedItems, deletions: deletionsSelected });
+                                    } else {
+                                      applyEditorialNotesMutation.mutate({
+                                        id: currentProject.id,
+                                        instructions: selectedItems,
+                                      });
+                                    }
+                                  }}
+                                  disabled={
+                                    selectedInstructionIdxs.size === 0 ||
+                                    applyEditorialNotesMutation.isPending ||
+                                    currentProject.status !== "completed"
+                                  }
+                                  data-testid="button-apply-selected-instructions"
+                                  className={`w-full text-white ${hasDeletions ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}`}
+                                >
+                                  {hasDeletions ? <Trash2 className="h-4 w-4 mr-2" /> : <FilePen className="h-4 w-4 mr-2" />}
+                                  {applyEditorialNotesMutation.isPending
+                                    ? "Procesando..."
+                                    : hasDeletions
+                                      ? `Aplicar ${selectedInstructionIdxs.size} (incluye borrar ${totalChaptersToDelete} cap.)`
+                                      : `Aplicar ${selectedInstructionIdxs.size} instrucciones seleccionadas`}
+                                </Button>
+                              );
+                            })()}
                             <p className="text-[10px] text-muted-foreground italic">
                               ⓘ Tras aplicar: cada capítulo se reescribe quirúrgicamente, se guarda un snapshot del original
                               (botón "Ver cambios" en la lista de capítulos) y al final se recalcula la puntuación global.
@@ -1890,6 +1945,70 @@ export default function Dashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* AlertDialog de confirmación para ELIMINAR capítulos vía notas editoriales.
+          Se abre desde el botón "Aplicar" cuando entre las instrucciones seleccionadas
+          hay alguna con tipo "eliminar". Borrar capítulos es destructivo e irreversible
+          (renumera los siguientes), así que pedimos confirmación explícita. */}
+      <AlertDialog
+        open={pendingEditorialApply !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingEditorialApply(null);
+        }}
+      >
+        <AlertDialogContent data-testid="dialog-confirm-deletion">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-700 dark:text-red-300">
+              <Trash2 className="h-5 w-5" />
+              Confirmar eliminación de capítulos
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Vas a aplicar <strong>{pendingEditorialApply?.selected.length ?? 0}</strong> instrucciones,
+                  de las cuales <strong className="text-red-700 dark:text-red-300">
+                    {pendingEditorialApply?.deletions.length ?? 0} son eliminaciones definitivas
+                  </strong> de capítulos.
+                </p>
+                <div className="bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 rounded p-3 space-y-2 max-h-48 overflow-y-auto">
+                  {(pendingEditorialApply?.deletions ?? []).map((d, i) => (
+                    <div key={i} className="text-xs" data-testid={`confirm-deletion-${i}`}>
+                      <div className="font-semibold text-red-700 dark:text-red-300">
+                        Caps. {(d.capitulos_afectados || []).join(", ")}
+                      </div>
+                      <div className="text-muted-foreground">{d.descripcion}</div>
+                    </div>
+                  ))}
+                </div>
+                <ul className="text-xs space-y-1 list-disc pl-5 text-amber-700 dark:text-amber-400">
+                  <li>El contenido de los capítulos eliminados se pierde de forma permanente.</li>
+                  <li>Los capítulos posteriores se renumeran automáticamente.</li>
+                  <li>Si tienes audiolibros generados, sus números pueden quedar desincronizados.</li>
+                  <li>Esta acción <strong>no se puede deshacer</strong> desde la interfaz.</li>
+                </ul>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-deletion">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 text-white"
+              data-testid="button-confirm-deletion"
+              onClick={() => {
+                if (!pendingEditorialApply) return;
+                const selected = pendingEditorialApply.selected;
+                setPendingEditorialApply(null);
+                applyEditorialNotesMutation.mutate({
+                  id: currentProject!.id,
+                  instructions: selected,
+                });
+              }}
+            >
+              Sí, eliminar y aplicar el resto
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Extend Project Dialog */}
       <Dialog open={showExtendDialog} onOpenChange={setShowExtendDialog}>

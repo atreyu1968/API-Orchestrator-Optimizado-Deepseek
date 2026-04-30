@@ -1,4 +1,4 @@
-# LitAgents v6.7 - Autonomous Literary Agent Orchestration System
+# LitAgents v6.8 - Autonomous Literary Agent Orchestration System
 
 ## Overview
 
@@ -9,6 +9,35 @@ LitAgents is a Node.js application that orchestrates autonomous AI literary agen
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
+
+### v6.8 — Editorial-Driven Chapter Deletion (Apr 30, 2026)
+The two-step editorial-notes flow could already rewrite chapters surgically (puntual) and reorganise content across multiple chapters (estructural), but the only way to **delete** a chapter was the manual "Eliminar capítulo" button — disconnected from the editorial-notes pipeline. If the Beta-Reader, Holistic Reviewer or a human editor wrote "el capítulo 7 es relleno, elimínalo", the system parsed it as an estructural rewrite and tried to condense rather than remove, wasting tokens. v6.8 closes this gap so the system is fully autosuficiente: the same notes pipeline can now propose deletions, the user confirms once, and the orchestrator handles renumbering/world-bible/timeline updates atomically.
+
+- **Parser** (`server/agents/editorial-notes-parser.ts`):
+  - `EditorialInstruction.tipo` extended with `"eliminar"` (was `"puntual" | "estructural"`).
+  - System prompt rules #10 + #11: tipo "eliminar" only when notes use unequivocal `elimina/borra/quita/suprime` against a specific chapter; "condensa/recorta/abrevia" remain estructural rewrites.
+  - Refiner second-pass rule #4: validates the chapter is truly prescindible (no plot beats land elsewhere). If risky, the refiner downgrades to `tipo: "estructural"` with a "condense" plan instead — defence in depth so a hallucinated delete doesn't reach the orchestrator.
+- **Orchestrator** (`server/orchestrator.ts`):
+  - New `applyChapterDeletions(project, worldBible, allChapters, deletionInstructions, otherInstructions)` (~L4249):
+    1. Dedupes target chapter numbers, refuses to touch specials (prologue=0/epilogue=-1/author_note=-2), keeps ≥1 positive chapter alive.
+    2. Deletes via `storage.deleteChapter` (cascade auto-cleans `thoughtLogs.chapterId`).
+    3. Renumbers surviving positives in **two passes** with `SHIFT_BASE = 10000` to avoid UNIQUE-constraint collisions on `(projectId, chapterNumber)`.
+    4. Updates `worldBible.plotOutline.chapterOutlines` and `worldBible.timeline[].chapter` to the new numbering.
+    5. Remaps the remaining (non-deletion) instructions' `capitulos_afectados` and `plan_por_capitulo` keys so the downstream loop operates on the new numbering.
+    6. Logs warnings about audiobookChapters (NOT renumbered — historical audio assets stay tied to the original number; user is told).
+    7. `aiUsageEvents.chapterNumber` also kept historical (audit trail).
+  - New `recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore)` (~L4527): extracted from the previously-inline post-editorial recalc block so the deletion-only fast path can reuse it.
+  - `applyEditorialNotes` gains a **Phase 0** (~L4626) right after instructions are obtained: splits `deletionInstructions` from the rest, calls `applyChapterDeletions`, refreshes `allChapters`/`allSections`/`worldBible`, and if no rewrites remain it short-circuits to `recalculateFinalScoreAfterEdits` + `status: "completed"`. The downstream byChapter loop is unchanged because `instructions` is reassigned to `nonDeletionInstructions` before reaching it.
+  - The previously-inline final-review recalc block (~L5106) is replaced by a single call to `recalculateFinalScoreAfterEdits` — same behaviour, no duplication.
+- **Frontend** (`client/src/pages/dashboard.tsx`):
+  - `EditorialInstructionPreview` type adds `tipo?: "puntual" | "estructural" | "eliminar"`.
+  - Each instruction card with `tipo === "eliminar"` renders with a 2-px red border, red Trash2 "Eliminar" badge, red title text, 🗑️ glyph instead of ✏️, and an inline warning "Acción irreversible: el capítulo se borra y los posteriores se renumeran". The "ARCO" purple badge and the per-chapter plan accordion are suppressed for deletions (irrelevant).
+  - The "Aplicar" button counts deletions in the selected set: if any are present it turns red, switches the icon to Trash2, and displays "Aplicar N (incluye borrar K cap.)". Clicking it does **not** fire the mutation directly — it opens an `AlertDialog` listing every deletion (chapter numbers + reviewer description) and four explicit warnings (irreversible / renumbering cascades / audiobook desync / cannot undo from UI). Only after "Sí, eliminar y aplicar el resto" does the mutation fire.
+  - New `pendingEditorialApply` state holds `{ selected, deletions }` while the AlertDialog is open; cancel resets it without mutating anything.
+- **Cost / failure modes**:
+  - Deletion phase costs 0 tokens (pure DB work). The post-editorial Final Reviewer pass remains, so a deletion-only batch still consumes one final-review call to produce the new score delta — same cost as before.
+  - If the user deletes every positive chapter at once (e.g. selects "borra todos los capítulos"), the safeguard keeps the lowest-numbered positive chapter and logs a warning rather than leaving the project with zero chapters.
+  - Existing audiobook files keep their original chapter number embedded in metadata; the user is warned and must regenerate audio if the order matters to them.
 
 ### v6.7 — DeepSeek V4-Flash Migration (Apr 2026)
 
