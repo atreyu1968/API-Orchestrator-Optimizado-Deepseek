@@ -607,8 +607,17 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (activeProject) {
-      const eventSource = new EventSource(`/api/projects/${activeProject.id}/stream`);
+    // El SSE se abre para CUALQUIER proyecto seleccionado, no solo los que
+    // están generando. Esto es necesario porque flujos como "aplicar notas
+    // del editor" se disparan sobre proyectos completados y emiten eventos
+    // (editorial_parse_complete, chapter_rewrite, etc.) que el cliente debe
+    // escuchar. Limitar el SSE a status="generating" hacía que el evento
+    // editorial_parse_complete se emitiera hacia un canal vacío y el botón
+    // de análisis se quedara colgado en "Analizando..." para siempre.
+    const projectForStream = currentProject || activeProject;
+    if (projectForStream) {
+      const projectId = projectForStream.id;
+      const eventSource = new EventSource(`/api/projects/${projectId}/stream`);
       
       eventSource.onmessage = (event) => {
         try {
@@ -632,16 +641,16 @@ export default function Dashboard() {
               `Reescribiendo capítulo ${data.chapterNumber}: "${data.chapterTitle}" (${data.currentIndex}/${data.totalToRewrite}) - ${data.reason}`,
               "final-reviewer"
             );
-            queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject.id, "chapters"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "chapters"] });
           } else if (data.type === "chapter_status_change") {
-            queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject.id, "chapters"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "chapters"] });
           } else if (data.type === "chapter_complete") {
             const sectionName = data.chapterTitle === "Prólogo" ? "Prólogo" :
                                data.chapterTitle === "Epílogo" ? "Epílogo" :
                                data.chapterTitle === "Nota del Autor" ? "Nota del Autor" :
                                `Capítulo ${data.chapterNumber}`;
             addLog("success", `${sectionName} completado (${data.wordCount} palabras)`);
-            queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject.id, "chapters"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "chapters"] });
           } else if (data.type === "project_complete") {
             addLog("success", "¡Manuscrito completado!");
             toast({
@@ -681,7 +690,7 @@ export default function Dashboard() {
         eventSource.close();
       };
     }
-  }, [activeProject?.id]);
+  }, [currentProject?.id, activeProject?.id]);
 
   const getAgentStatus = (role: AgentRole) => {
     const status = agentStatuses.find(s => s.agentName.toLowerCase() === role);
