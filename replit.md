@@ -36,6 +36,18 @@ Root cause of repeated POV mismatches: the style guide is a single `text` blob (
 - **Orchestrator log enrichment** (`orchestrator.ts` L3062-3107): the anti-POV filter now extracts the canonical voice and includes it in both the console log and the activity log. When an issue is dropped, the user sees e.g. "Voz canónica del proyecto según la guía: PRIMERA PERSONA con NARRACIÓN DUAL (alternando entre Dante y Elena). Si los capítulos NO están en esta voz, deberás regenerarlos manualmente — la cirugía no puede convertir capítulos enteros." → distinguishes spurious reviewer hallucinations from real upstream drift.
 - **Phase 2 (not implemented)**: would require schema with per-chapter `pov` field plus a regeneration pipeline. Phase 1 prevents the bug at the source by ensuring agents see the directive at the top of every prompt.
 
+#### Cloudflare 524 fix on `parse-editorial-notes` (Apr 30, 2026)
+The `POST /api/projects/:id/parse-editorial-notes` endpoint was synchronous: it awaited two consecutive AI calls with reasoning enabled (`editorialNotesParser.execute` + `groundEditorialInstructions` second-pass anchoring) before responding. With long notes or many chapters this routinely exceeded 100s, triggering Cloudflare's 524 timeout and showing the user an error page even though the parse succeeded server-side.
+
+- **Backend** (`server/routes.ts` L1083-1160): now validates synchronously, responds **HTTP 202 immediately** with `{ accepted, projectId, message }`, then runs `parseEditorialNotesOnly` in background via `.then/.catch`. On success emits `{ type: "editorial_parse_complete", payload: { resumen_general, instrucciones, count } }` to the project's SSE stream. On failure emits `{ type: "editorial_parse_error", message }` and persists an error activity log.
+- **Frontend** (`client/src/pages/dashboard.tsx`):
+  - New `isParsingEditorial` state separate from the mutation's `isPending` (the HTTP call is now near-instant, so `isPending` no longer reflects real progress).
+  - `parseEditorialNotesMutation.onMutate` sets the flag true; SSE `editorial_parse_complete` / `editorial_parse_error` set it false.
+  - Helper `applyEditorialParsePayload` extracted from the previous `onSuccess` handler — fills `editorialPreview`, default-selects all instructions, shows the "Vista previa lista" toast.
+  - SSE handler in the existing `useEffect` (already open when the dashboard is mounted) gains the two new event cases.
+  - The "Analizar notas" button now disables on `isParsingEditorial` and shows "Analizando notas (puede tardar 1-3 min)…" instead of relying on `mutation.isPending`.
+- **Known fragility (not addressed in this fix)**: if the SSE connection drops mid-parse (current `onerror` just closes without reconnecting) or the user navigates away from the dashboard before the parse finishes, the result is lost — the background job completes and burns tokens but has no listener. An optional follow-up would persist the preview to a `projects.editorialPreviewPending` column so the dashboard can recover it on remount/reconnect.
+
 #### Originality Critic Agent (v6.7)
 - **New agent**: `server/agents/originality-critic.ts` — `OriginalityCriticAgent`. Reads the Architect's outline (premise, characters, chapter beats) and scores originality 1-10. Detects 6 cluster types: `premisa_generica`, `personaje_arquetipico`, `tropo_trama`, `giro_predecible`, `setpiece_cliche`, `dialogo_topico`. Uses `thinkingBudget: 8192` (max reasoning).
 - **Verdicts**: `aprobado` (score ≥7, proceed), `revisar` (5-6, proceed with warning), `rechazado` (≤4 or 3+ major clusters, re-run Architect).

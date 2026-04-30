@@ -348,6 +348,10 @@ export default function Dashboard() {
     instrucciones: EditorialInstructionPreview[];
   } | null>(null);
   const [selectedInstructionIdxs, setSelectedInstructionIdxs] = useState<Set<number>>(new Set());
+  // El parseo de notas editoriales corre en background y entrega el resultado
+  // por SSE. La mutation HTTP responde casi al instante (202), así que su
+  // isPending no representa el estado real de carga; este flag sí.
+  const [isParsingEditorial, setIsParsingEditorial] = useState(false);
 
   // Diff dialog state for "Ver cambios" per chapter
   const [diffChapter, setDiffChapter] = useState<Chapter | null>(null);
@@ -428,33 +432,52 @@ export default function Dashboard() {
     }
   };
 
+  // Aplica el payload de vista previa que llega por SSE (o por el legacy
+  // sync response, si alguna vez se reinstala). Centralizado para reuso.
+  const applyEditorialParsePayload = (data: {
+    resumen_general: string | null;
+    instrucciones: EditorialInstructionPreview[];
+  }) => {
+    const instrucciones = data.instrucciones || [];
+    setEditorialPreview({
+      resumen_general: data.resumen_general || null,
+      instrucciones,
+    });
+    setSelectedInstructionIdxs(new Set(instrucciones.map((_, i) => i)));
+    if (instrucciones.length === 0) {
+      toast({
+        title: "No se extrajeron instrucciones",
+        description: data.resumen_general || "El sistema no encontró instrucciones aplicables en las notas.",
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Vista previa lista",
+        description: `${instrucciones.length} instrucciones extraídas. Revisa, desmarca las que no quieras y aplica.`,
+      });
+    }
+  };
+
   const parseEditorialNotesMutation = useMutation({
+    // El backend ahora responde 202 inmediato y entrega el resultado por SSE.
+    // Esta mutation solo confirma que el trabajo se ha encolado correctamente.
     mutationFn: async ({ id, notes }: { id: number; notes: string }) => {
       const response = await apiRequest("POST", `/api/projects/${id}/parse-editorial-notes`, { notes });
       return response.json();
     },
-    onSuccess: (data) => {
-      const instrucciones: EditorialInstructionPreview[] = data.instrucciones || [];
-      setEditorialPreview({
-        resumen_general: data.resumen_general || null,
-        instrucciones,
+    onMutate: () => {
+      setIsParsingEditorial(true);
+    },
+    onSuccess: () => {
+      // No hacemos nada con el preview aquí — llega por SSE.
+      // Solo informamos al usuario de que el trabajo arrancó.
+      toast({
+        title: "Analizando notas editoriales",
+        description: "Esto puede tomar un par de minutos. La vista previa aparecerá automáticamente al terminar.",
       });
-      // Default: all selected.
-      setSelectedInstructionIdxs(new Set(instrucciones.map((_, i) => i)));
-      if (instrucciones.length === 0) {
-        toast({
-          title: "No se extrajeron instrucciones",
-          description: data.resumen_general || "El sistema no encontró instrucciones aplicables en las notas.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Vista previa lista",
-          description: `${instrucciones.length} instrucciones extraídas. Revisa, desmarca las que no quieras y aplica.`,
-        });
-      }
     },
     onError: (err: any) => {
+      setIsParsingEditorial(false);
       toast({
         title: "Error analizando notas",
         description: err?.message || "No se pudieron analizar las notas editoriales",
@@ -629,6 +652,21 @@ export default function Dashboard() {
             setCurrentStage(null);
           } else if (data.type === "error") {
             addLog("error", data.message || "Error durante la generación");
+          } else if (data.type === "editorial_parse_complete") {
+            // Resultado del análisis de notas editoriales (background, vía SSE
+            // porque sobrepasaba el timeout de Cloudflare cuando era síncrono).
+            setIsParsingEditorial(false);
+            if (data.payload) {
+              applyEditorialParsePayload(data.payload);
+            }
+          } else if (data.type === "editorial_parse_error") {
+            setIsParsingEditorial(false);
+            addLog("error", data.message || "Error analizando notas editoriales", "editor");
+            toast({
+              title: "Error analizando notas",
+              description: data.message || "No se pudieron analizar las notas editoriales",
+              variant: "destructive",
+            });
           }
         } catch (e) {
           console.error("Error parsing SSE:", e);
@@ -1063,6 +1101,7 @@ export default function Dashboard() {
                               disabled={
                                 !editorialNotes.trim() ||
                                 parseEditorialNotesMutation.isPending ||
+                                isParsingEditorial ||
                                 applyEditorialNotesMutation.isPending ||
                                 currentProject.status !== "completed"
                               }
@@ -1070,8 +1109,8 @@ export default function Dashboard() {
                               className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                             >
                               <Eye className="h-4 w-4 mr-2" />
-                              {parseEditorialNotesMutation.isPending
-                                ? "Analizando notas..."
+                              {isParsingEditorial
+                                ? "Analizando notas (puede tardar 1-3 min)..."
                                 : "Analizar notas y mostrar vista previa"}
                             </Button>
                             <p className="text-[10px] text-muted-foreground italic">

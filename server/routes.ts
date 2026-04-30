@@ -1098,6 +1098,30 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Las notas son demasiado largas (máximo 50.000 caracteres)" });
       }
 
+      // Responder al cliente de inmediato (HTTP 202). El parsing puede tomar
+      // >100s con notas largas porque hace dos llamadas con razonamiento al
+      // modelo (extracción + anclaje), y eso supera el timeout de Cloudflare.
+      // El resultado se entrega por el canal SSE del proyecto al terminar.
+      res.status(202).json({
+        accepted: true,
+        projectId: id,
+        message: "Análisis iniciado. El resultado se entregará por el canal de progreso del proyecto.",
+      });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => {
+            try {
+              stream.write(message);
+            } catch (e) {
+              console.error("Error writing to stream:", e);
+            }
+          });
+        }
+      };
+
       const orchestrator = new Orchestrator({
         onAgentStatus: async () => {},
         onChapterComplete: async () => {},
@@ -1107,15 +1131,28 @@ export async function registerRoutes(
         onError: async () => {},
       });
 
-      const parsed = await orchestrator.parseEditorialNotesOnly(project, notes);
-      return res.json({
-        resumen_general: parsed.resumen_general || null,
-        instrucciones: parsed.instrucciones,
-        count: parsed.instrucciones.length,
-      });
+      orchestrator.parseEditorialNotesOnly(project, notes)
+        .then((parsed) => {
+          sendToStreams({
+            type: "editorial_parse_complete",
+            payload: {
+              resumen_general: parsed.resumen_general || null,
+              instrucciones: parsed.instrucciones,
+              count: parsed.instrucciones.length,
+            },
+          });
+        })
+        .catch(async (err) => {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error("Background parse editorial notes failed:", err);
+          await persistActivityLog(id, "error", `Error analizando notas editoriales: ${errMsg}`, "editor");
+          sendToStreams({ type: "editorial_parse_error", message: errMsg });
+        });
     } catch (error) {
-      console.error("Error parsing editorial notes:", error);
-      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to parse editorial notes" });
+      console.error("Error starting editorial notes parse:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: error instanceof Error ? error.message : "Failed to start editorial notes parse" });
+      }
     }
   });
 
