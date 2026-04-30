@@ -36,7 +36,7 @@ Acabas de cerrar el libro. Vas a redactar tu reacción ordenada. Sigue estas reg
    - Cuánto me creí el mundo y los personajes.
    - Si recomendaría el libro y a quién.
 
-3. **REFERENCIAS A CAPÍTULOS**: cuando reacciones a algo concreto, cita el capítulo entre paréntesis (cap N). No hace falta ser exhaustivo — tú no eres un editor catalogando incidencias, eres un lector compartiendo impresiones, pero anclar tus comentarios en capítulos concretos ayuda al autor a localizar el problema.
+3. **REFERENCIAS A CAPÍTULOS**: cuando reacciones a algo concreto, cita el capítulo entre paréntesis (cap N). No hace falta ser exhaustivo — tú no eres un editor catalogando incidencias, eres un lector compartiendo impresiones, pero anclar tus comentarios en capítulos concretos ayuda al autor a localizar el problema. Para las secciones especiales usa estas etiquetas literales en lugar de "cap N": **(prólogo)**, **(epílogo)**, **(nota del autor)**. El prólogo, el epílogo y la nota del autor SON parte del manuscrito y debes leerlos y reaccionar a ellos como a cualquier otro capítulo (especialmente al epílogo, que es la última imagen que se lleva el lector y a menudo decide la sensación final con la que cierras el libro).
 
 4. **FORMATO OBLIGATORIO** (respétalo escrupulosamente porque otro sistema parsea tu output):
 
@@ -101,7 +101,31 @@ export class BetaReaderAgent extends BaseAgent {
     input: BetaReaderInput,
     projectId?: number
   ): Promise<BetaReaderResult> {
-    const sortedChapters = [...input.chapters].sort((a, b) => a.numero - b.numero);
+    // Helper para etiqueta legible: el modelo no debe ver "## CAPÍTULO -1" ni
+    // "## CAPÍTULO 0" porque son convenciones internas; debe ver "PRÓLOGO",
+    // "EPÍLOGO" y "NOTA DEL AUTOR" para tratarlos como tales en su informe.
+    const getChapterLabel = (raw: unknown): string => {
+      const num = Number(raw);
+      if (!Number.isFinite(num)) return `SECCIÓN ${String(raw)}`;
+      if (num === 0) return "PRÓLOGO";
+      if (num === -1 || num === 998) return "EPÍLOGO";
+      if (num === -2 || num === 999) return "NOTA DEL AUTOR";
+      return `CAPÍTULO ${num}`;
+    };
+    // Orden narrativo real: prólogo primero, capítulos positivos en medio,
+    // epílogo y nota del autor al final. El sort numérico ingenuo (a.numero - b.numero)
+    // pondría -2, -1, 0, 1, 2... — colocando epílogo y nota ANTES del prólogo.
+    const getChapterSortOrder = (raw: unknown): number => {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return Number.MAX_SAFE_INTEGER;
+      if (n === 0) return -1000;
+      if (n === -1 || n === 998) return 1_000_000;
+      if (n === -2 || n === 999) return 1_000_001;
+      return n;
+    };
+    const sortedChapters = [...input.chapters].sort(
+      (a, b) => getChapterSortOrder(a.numero) - getChapterSortOrder(b.numero)
+    );
     const totalWords = sortedChapters.reduce((acc, c) => acc + (c.contenido?.split(/\s+/).length || 0), 0);
 
     const styleDir = extractStyleDirectives(input.guiaEstilo);
@@ -125,7 +149,7 @@ Capítulos entregados: ${sortedChapters.length}
 Palabras totales aproximadas: ${totalWords.toLocaleString("es-ES")}`;
 
     const chaptersBlock = sortedChapters
-      .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## CAPÍTULO ${c.numero}: ${c.titulo || "(sin título)"}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(capítulo vacío)"}`)
+      .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(sección vacía)"}`)
       .join("");
 
     const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}
