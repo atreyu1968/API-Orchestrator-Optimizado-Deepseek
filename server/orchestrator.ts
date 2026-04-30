@@ -4005,18 +4005,37 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     const worldBible = await storage.getWorldBibleByProject(project.id);
     let worldBibleSummary: string | undefined;
     if (worldBible) {
-      const characters = (worldBible.characters as any[]) || [];
-      const rules = (worldBible.worldRules as any[]) || [];
-      const outline = (worldBible.plotOutline as any[]) || [];
+      // IMPORTANTE: el schema define plotOutline como OBJETO (PlotOutline) cuya escaleta
+      // por capítulo vive en .chapterOutlines. Asumir que el campo entero es un array
+      // hace que .slice() reviente en runtime ("outline.slice is not a function").
+      // Además, characters/worldRules son jsonb con default []: en proyectos legacy
+      // pueden venir como objetos vacíos o null si el bible nunca se inicializó del todo.
+      // Por eso hacemos Array.isArray real, no solo el cast TS de antes.
+      const characters: any[] = Array.isArray(worldBible.characters) ? (worldBible.characters as any[]) : [];
+      const rules: any[] = Array.isArray(worldBible.worldRules) ? (worldBible.worldRules as any[]) : [];
+
+      const plot: any = worldBible.plotOutline;
+      let outline: any[] = [];
+      if (Array.isArray(plot)) {
+        // Forma legacy: el campo entero era un array de capítulos.
+        outline = plot;
+      } else if (plot && typeof plot === "object") {
+        // Forma actual: plotOutline.chapterOutlines es el array; aceptamos también
+        // chapter_outlines y la clave en español "escaleta" por compatibilidad.
+        const candidate = plot.chapterOutlines || plot.chapter_outlines || plot.escaleta;
+        if (Array.isArray(candidate)) outline = candidate;
+      }
+
+      const safeStr = (v: any): string => (typeof v === "string" ? v : v == null ? "" : String(v));
 
       const charLines = characters.slice(0, 20).map((c: any) =>
-        `- ${c.nombre || c.name || "?"}: ${(c.descripcion || c.description || "").slice(0, 200)}`
+        `- ${safeStr(c?.nombre || c?.name) || "?"}: ${safeStr(c?.descripcion || c?.description).slice(0, 200)}`
       ).join("\n");
       const ruleLines = rules.slice(0, 15).map((r: any) =>
-        `- ${(r.regla || r.rule || r.descripcion || "").slice(0, 200)}`
+        `- ${safeStr(r?.regla || r?.rule || r?.descripcion).slice(0, 200)}`
       ).join("\n");
       const outlineLines = outline.slice(0, 80).map((o: any) =>
-        `Cap ${o.numero || o.chapter || "?"}: ${(o.resumen || o.summary || "").slice(0, 250)}`
+        `Cap ${o?.numero ?? o?.number ?? o?.chapter ?? "?"}: ${safeStr(o?.resumen || o?.summary).slice(0, 250)}`
       ).join("\n");
 
       worldBibleSummary = `### PERSONAJES PRINCIPALES\n${charLines || "(no hay personajes registrados)"}\n\n### REGLAS DEL MUNDO\n${ruleLines || "(no hay reglas registradas)"}\n\n### ESCALETA ORIGINAL\n${outlineLines || "(no hay escaleta registrada)"}`;
