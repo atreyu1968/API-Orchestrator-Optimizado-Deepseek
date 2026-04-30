@@ -1,0 +1,74 @@
+---CONTINUITY_STATE---
+{
+  "characterStates": {
+    "Julián Almazán": {
+      "location": "Casa de Elena Corvalán, en el catre",
+      "status": "alive",
+      "hasItems": ["bolsa de monedas de Abreu", "croquis de Valerio (recibido de Elena)"],
+      "emotionalState": "Esperanza mezclada con miedo; agotado pero alerta al final",
+      "knowledgeGained": ["Elena conoció a Valerio y le debe una deuda", "Valerio le dio a Elena un croquis con una fórmula reveladora", "El croquis indica que hay un ojo en el margen del cuadro y menciona la posada 'El Mendigo que no Pide'", "Elena puede preparar el reactivo químico"],
+      "injuries": ["Quemadura química en dorso de mano derecha", "Insomnio crónico", "Fatiga extrema"]
+    },
+    "Elena Corvalán": {
+      "location": "Casa de Elena Corvalán, junto a la puerta, alerta",
+      "status": "alive",
+      "hasItems": ["cuchillo de cocina", "frascos y productos químicos para preparar el reactivo", "croquis de Valerio (en posesión de Julián ahora)"],
+      "emotionalState": "Desconfiada pero comprometida; alerta y tensa al final",
+      "knowledgeGained": ["Julián ha sido traicionado por Abreu", "Cárceles está involucrado", "El cuadro de Valerio ha sido robado o confiscado", "El croquis que guardaba es la clave para revelar el mensaje"],
+      "injuries": ["Mano izquierda magullada e inflamada (lesión persistente del capítulo 13, aunque aún no ha ocurrido cronológicamente - verificar coherencia temporal)"]
+    },
+    "Maestro Abreu": {
+      "location": "Taller de Abreu (no presente en el capítulo, mencionado)",
+      "status": "alive",
+      "hasItems": [],
+      "emotionalState": "Cobarde, ha traicionado a Julián",
+      "knowledgeGained": [],
+      "injuries": []
+    },
+    "Nemesio Cárceles": {
+      "location": "Desconocida (no presente en el capítulo, mencionado como posible acechador al final)",
+      "status": "alive",
+      "hasItems": ["bastón con punta de plomo"],
+      "emotionalState": "Implacable, profesional",
+      "knowledgeGained": [],
+      "injuries": []
+    }
+  },
+  "narrativeTime": "Anochecer del día siguiente al capítulo anterior (ha pasado aproximadamente un día desde la expulsión de Julián del taller)",
+  "keyReveals": [
+    "Elena Corvalán conoció a Valerio 'El Profeta' y le debe una deuda",
+    "Valerio le dio a Elena un croquis con la fórmula química para revelar mensajes ocultos en sus cuadros",
+    "El croquis incluye una pista: 'El ojo que todo lo ve no está en el centro. Está en el margen. Busca al mendigo que no pide'",
+    "La posada 'El Mendigo que no Pide' es un lugar frecuentado por Valerio, posible ubicación de una copia u otra pieza",
+    "Elena puede preparar el reactivo revelador, pero algunos ingredientes son difíciles de conseguir",
+    "El cuadro de Valerio ha sido llevado al Ministerio, no destruido"
+  ],
+  "pendingThreads": [
+    "¿Quién está al otro lado de la puerta de Elena?",
+    "Recuperar el cuadro original del Ministerio",
+    "Preparar el reactivo químico para revelar el mensaje",
+    "Investigar la posada 'El Mendigo que no Pide'",
+    "El paradero de Cárceles y su próxima acción",
+    "La traición de Abreu y sus consecuencias"
+  ],
+  "resolvedThreads": [
+    "Julián encuentra a Elena y obtiene ayuda",
+    "Elena revela su conexión con Valerio y entrega el croquis",
+    "Se descubre la naturaleza del mensaje oculto (requiere reactivo químico)"
+  ],
+  "locationState": {
+    "Casa de Elena Corvalán": "Puerta blindada, interior en penumbra; alguien merodea fuera sin golpear. Tensión máxima."
+  },
+  "scenePatterns": {
+    "openingType": "in-media-res (Julián sale del taller de Abreu, acción inmediata)",
+    "closingType": "cliffhanger (alguien está al otro lado de la puerta sin haber golpeado)",
+    "revelationMechanism": "confesión (Elena revela su pasado con Valerio y entrega el croquis)",
+    "mainSceneStructures": ["huida/desplazamiento", "confrontación/negociación", "descubrimiento/documento", "intimidad/confesión"]
+  },
+  "keyDecisions": [
+    "Julián decide buscar a Elena como única aliada posible",
+    "Elena decide confiar en Julián y entregarle el croquis de Valerio",
+    "Se establece que el cuadro original está en poder del Ministerio, no destruido",
+    "Se identifica la posada 'El Mendigo que no Pide' como siguiente ubicación clave"
+  ]
+}

@@ -8279,6 +8279,17 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
 
     await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "deepseek-v4-flash", sectionData.numero, "qa_rewrite");
 
+    // Sanea SIEMPRE el output del Narrador: extrae el bloque ---CONTINUITY_STATE---
+    // antes de cualquier otro cálculo (longitud, editor verify, copyeditor) para evitar
+    // que el JSON interno se filtre al texto del capítulo. Mismo patrón que el flujo
+    // de generación normal (líneas 1309, 1987, 5567, 5884).
+    let extractedContinuityState: any | null = null;
+    {
+      const cleaned = this.ghostwriter.extractContinuityState(writerResult.content || "");
+      writerResult.content = cleaned.cleanContent;
+      if (cleaned.continuityState) extractedContinuityState = cleaned.continuityState;
+    }
+
     // Primera red (permisiva): aceptamos cualquier cosa dentro del rango permitido con 5% de holgura.
     const firstTryLower = Math.round(surgicalMin * 0.95);
     const firstTryUpper = Math.round(surgicalMax * 1.05);
@@ -8309,6 +8320,13 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         surgicalEdit: true,
       } as any);
       await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "deepseek-v4-flash", sectionData.numero, "qa_rewrite_retry");
+
+      // Mismo saneo en el retry: extraer el bloque CONTINUITY_STATE antes de cualquier
+      // procesamiento posterior. Si el retry produce un estado válido, prevalece sobre
+      // el del primer intento.
+      const cleanedRetry = this.ghostwriter.extractContinuityState(writerResult.content || "");
+      writerResult.content = cleanedRetry.cleanContent;
+      if (cleanedRetry.continuityState) extractedContinuityState = cleanedRetry.continuityState;
     }
 
     if (!writerResult.content || !writerResult.content.trim()) {
@@ -8431,22 +8449,34 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
 
     const finalWordCount = finalContent.split(/\s+/).filter(w => w.length > 0).length;
 
+    // Saneo defensivo final: si por cualquier razón finalContent aún contuviera el
+    // separador (p. ej. el copyeditor lo dejó pasar), eliminarlo antes de persistir.
+    const safeFinalContent = finalContent.includes("---CONTINUITY_STATE---")
+      ? this.ghostwriter.extractContinuityState(finalContent).cleanContent
+      : finalContent;
+    const safeFinalWordCount = safeFinalContent.split(/\s+/).filter(w => w.length > 0).length;
+
+    // Si el Narrador devolvió un estado de continuidad nuevo y válido, lo persistimos
+    // para que los siguientes capítulos arranquen con la continuidad actualizada.
+    // Si no, conservamos el original.
+    const continuityToPersist = extractedContinuityState ?? originalContinuityState;
+
     await storage.updateChapter(chapter.id, {
-      content: finalContent,
+      content: safeFinalContent,
       status: "completed",
-      wordCount: finalWordCount,
+      wordCount: safeFinalWordCount,
       needsRevision: false,
       revisionReason: null,
       preEditContent: originalContent,
       preEditAt: new Date() as any,
+      continuityState: continuityToPersist as any,
     });
 
     this.chaptersRewrittenInCurrentCycle++;
     this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
     this.callbacks.onAgentStatus("copyeditor", "completed",
-      `${sectionLabel} corregido quirúrgicamente${editorScoreCandidate ? ` (verificado ${editorScoreCandidate}/10)` : ""} — ${finalWordCount} palabras (original ${originalWordCount}).`
+      `${sectionLabel} corregido quirúrgicamente${editorScoreCandidate ? ` (verificado ${editorScoreCandidate}/10)` : ""} — ${safeFinalWordCount} palabras (original ${originalWordCount}).`
     );
-    void originalContinuityState;
   }
 
   // ════════════════════════════════════════════════════════════════
