@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -363,6 +363,15 @@ export default function Dashboard() {
   // por SSE. La mutation HTTP responde casi al instante (202), así que su
   // isPending no representa el estado real de carga; este flag sí.
   const [isParsingEditorial, setIsParsingEditorial] = useState(false);
+  // Polling fallback: si Cloudflare cierra el SSE durante el parse, el evento
+  // editorial_parse_complete se pierde. El cliente sondea el endpoint
+  // /pending-editorial-parse cada 8s para recuperar el resultado desde BD.
+  // Usamos refs para los timers porque el efecto del SSE recrea su closure.
+  const editorialPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const editorialPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Guard contra doble consumo (puede llegar primero por SSE y luego por polling
+  // o viceversa). Cuando uno gana, deja el flag y el otro se cancela.
+  const editorialPayloadConsumedRef = useRef<boolean>(false);
   const [isHolisticReviewing, setIsHolisticReviewing] = useState(false);
   const [isBetaReviewing, setIsBetaReviewing] = useState(false);
 
@@ -451,6 +460,21 @@ export default function Dashboard() {
     resumen_general: string | null;
     instrucciones: EditorialInstructionPreview[];
   }) => {
+    // Guard: el resultado puede llegar tanto por SSE como por el polling fallback.
+    // El primero que llegue gana; el segundo se descarta para evitar pisar estado
+    // o disparar dos toasts.
+    if (editorialPayloadConsumedRef.current) return;
+    editorialPayloadConsumedRef.current = true;
+    // Cancelar polling si seguía vivo.
+    if (editorialPollIntervalRef.current) {
+      clearInterval(editorialPollIntervalRef.current);
+      editorialPollIntervalRef.current = null;
+    }
+    if (editorialPollTimeoutRef.current) {
+      clearTimeout(editorialPollTimeoutRef.current);
+      editorialPollTimeoutRef.current = null;
+    }
+    setIsParsingEditorial(false);
     const instrucciones = data.instrucciones || [];
     setEditorialPreview({
       resumen_general: data.resumen_general || null,
@@ -479,18 +503,82 @@ export default function Dashboard() {
     }
   };
 
+  // Helper: arranca el polling al endpoint de pending-editorial-parse como
+  // fallback al SSE. Cada 8s comprueba si hay un payload listo en BD; si lo
+  // hay, lo consume y dispara applyEditorialParsePayload (que internamente
+  // cancela el polling vía el guard). Timeout máximo: 10 minutos para no
+  // dejar el spinner colgado para siempre si algo va muy mal.
+  const startEditorialPolling = (projectId: number) => {
+    // Resetear guards y limpiar timers previos.
+    editorialPayloadConsumedRef.current = false;
+    if (editorialPollIntervalRef.current) clearInterval(editorialPollIntervalRef.current);
+    if (editorialPollTimeoutRef.current) clearTimeout(editorialPollTimeoutRef.current);
+
+    const tick = async () => {
+      if (editorialPayloadConsumedRef.current) return;
+      try {
+        const r = await fetch(`/api/projects/${projectId}/pending-editorial-parse?consume=true`);
+        if (!r.ok) return;
+        const json = await r.json();
+        const payload = json?.payload;
+        if (!payload || editorialPayloadConsumedRef.current) return;
+        if (payload.error) {
+          editorialPayloadConsumedRef.current = true;
+          if (editorialPollIntervalRef.current) clearInterval(editorialPollIntervalRef.current);
+          if (editorialPollTimeoutRef.current) clearTimeout(editorialPollTimeoutRef.current);
+          setIsParsingEditorial(false);
+          toast({
+            title: "Error analizando notas",
+            description: payload.error,
+            variant: "destructive",
+          });
+          return;
+        }
+        applyEditorialParsePayload({
+          resumen_general: payload.resumen_general || null,
+          instrucciones: payload.instrucciones || [],
+        });
+      } catch (e) {
+        // Silenciamos errores de red transitorios — el siguiente tick lo intentará
+        // de nuevo. Sin spam en consola para evitar ruido.
+      }
+    };
+
+    editorialPollIntervalRef.current = setInterval(tick, 8000);
+    editorialPollTimeoutRef.current = setTimeout(() => {
+      if (editorialPollIntervalRef.current) {
+        clearInterval(editorialPollIntervalRef.current);
+        editorialPollIntervalRef.current = null;
+      }
+      if (!editorialPayloadConsumedRef.current) {
+        setIsParsingEditorial(false);
+        toast({
+          title: "El análisis está tardando demasiado",
+          description: "El sistema lleva 10 minutos sin responder. Recarga la página y vuelve a intentarlo. Si el problema se repite con notas largas, divídelas en varios análisis más cortos.",
+          variant: "destructive",
+          duration: 15000,
+        });
+      }
+    }, 10 * 60 * 1000);
+  };
+
   const parseEditorialNotesMutation = useMutation({
-    // El backend ahora responde 202 inmediato y entrega el resultado por SSE.
-    // Esta mutation solo confirma que el trabajo se ha encolado correctamente.
+    // El backend ahora responde 202 inmediato y entrega el resultado por SSE
+    // o por polling fallback (lo que llegue antes). Esta mutation solo confirma
+    // que el trabajo se ha encolado correctamente.
     mutationFn: async ({ id, notes }: { id: number; notes: string }) => {
       const response = await apiRequest("POST", `/api/projects/${id}/parse-editorial-notes`, { notes });
       return response.json();
     },
-    onMutate: () => {
+    onMutate: ({ id }) => {
       setIsParsingEditorial(true);
+      // Arranca el polling fallback. Si el SSE entrega antes, el guard lo
+      // cancela; si el SSE muere por timeout de Cloudflare, este polling
+      // recoge el resultado desde BD.
+      startEditorialPolling(id);
     },
     onSuccess: () => {
-      // No hacemos nada con el preview aquí — llega por SSE.
+      // No hacemos nada con el preview aquí — llega por SSE o por polling.
       // Solo informamos al usuario de que el trabajo arrancó.
       toast({
         title: "Analizando notas editoriales",
@@ -499,6 +587,10 @@ export default function Dashboard() {
     },
     onError: (err: any) => {
       setIsParsingEditorial(false);
+      // Si la mutation HTTP falla (no llegó al backend), cancelamos el polling.
+      editorialPayloadConsumedRef.current = true;
+      if (editorialPollIntervalRef.current) clearInterval(editorialPollIntervalRef.current);
+      if (editorialPollTimeoutRef.current) clearTimeout(editorialPollTimeoutRef.current);
       toast({
         title: "Error analizando notas",
         description: err?.message || "No se pudieron analizar las notas editoriales",
@@ -686,6 +778,39 @@ export default function Dashboard() {
     const projectForStream = currentProject || activeProject;
     if (projectForStream) {
       const projectId = projectForStream.id;
+
+      // RECOVERY ON-MOUNT: si el usuario recargó la página mientras un parse de
+      // notas estaba corriendo, el resultado puede haber quedado persistido en
+      // BD esperando ser consumido. Lo recogemos al abrir el dashboard del
+      // proyecto. Si el usuario cambia de proyecto MIENTRAS esta promesa está
+      // en vuelo, el AbortController evita que apliquemos el payload del
+      // proyecto antiguo sobre el nuevo dashboard (race del effect cleanup).
+      const recoveryAbort = new AbortController();
+      fetch(`/api/projects/${projectId}/pending-editorial-parse`, { signal: recoveryAbort.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((json) => {
+          if (recoveryAbort.signal.aborted) return;
+          const payload = json?.payload;
+          if (!payload || editorialPayloadConsumedRef.current) return;
+          if (payload.error) return; // los errores se gestionan vía polling activo, no on-mount.
+          // Solo recuperamos si NO hay ya una vista previa visible. Si el usuario
+          // ya está mirando una previa, no la pisamos con una vieja.
+          if (editorialPreview) return;
+          // Marcar consumido y limpiar BD ahora que vamos a aplicarlo.
+          fetch(`/api/projects/${projectId}/pending-editorial-parse?consume=true`).catch(() => {});
+          applyEditorialParsePayload({
+            resumen_general: payload.resumen_general || null,
+            instrucciones: payload.instrucciones || [],
+          });
+          toast({
+            title: "Vista previa recuperada",
+            description: "Recuperamos un análisis de notas que terminó mientras la página estaba cerrada.",
+          });
+        })
+        .catch(() => {
+          // Silencioso — la recovery es best-effort. AbortError tampoco interesa.
+        });
+
       const eventSource = new EventSource(`/api/projects/${projectId}/stream`);
       
       eventSource.onmessage = (event) => {
@@ -841,6 +966,7 @@ export default function Dashboard() {
       };
 
       return () => {
+        recoveryAbort.abort();
         eventSource.close();
       };
     }

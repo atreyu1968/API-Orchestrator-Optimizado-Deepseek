@@ -1131,21 +1131,45 @@ export async function registerRoutes(
         onError: async () => {},
       });
 
+      // Limpiamos cualquier parse-pendiente anterior antes de empezar el nuevo,
+      // para que el polling del cliente no recoja un resultado obsoleto.
+      storage.updateProject(id, { pendingEditorialParse: null }).catch((e) => {
+        console.error("Failed to clear pendingEditorialParse before parse:", e);
+      });
+
       orchestrator.parseEditorialNotesOnly(project, notes)
-        .then((parsed) => {
-          sendToStreams({
-            type: "editorial_parse_complete",
-            payload: {
-              resumen_general: parsed.resumen_general || null,
-              instrucciones: parsed.instrucciones,
-              count: parsed.instrucciones.length,
-            },
-          });
+        .then(async (parsed) => {
+          const payload = {
+            resumen_general: parsed.resumen_general || null,
+            instrucciones: parsed.instrucciones,
+            count: parsed.instrucciones.length,
+          };
+          // PERSISTIR el resultado en BD para que el cliente pueda recuperarlo
+          // mediante polling si el SSE se cayó durante el análisis. El cliente
+          // limpia esta columna al consumirla (con ?consume=true).
+          try {
+            await storage.updateProject(id, {
+              pendingEditorialParse: { ...payload, completedAt: new Date().toISOString() },
+            });
+          } catch (persistErr) {
+            console.error("Failed to persist pendingEditorialParse:", persistErr);
+          }
+          // También emitimos por SSE para clientes que sigan conectados (camino
+          // rápido — el polling es solo el fallback).
+          sendToStreams({ type: "editorial_parse_complete", payload });
         })
         .catch(async (err) => {
           const errMsg = err instanceof Error ? err.message : String(err);
           console.error("Background parse editorial notes failed:", err);
           await persistActivityLog(id, "error", `Error analizando notas editoriales: ${errMsg}`, "editor");
+          // Persistimos el error también para que el polling lo recoja.
+          try {
+            await storage.updateProject(id, {
+              pendingEditorialParse: { error: errMsg, completedAt: new Date().toISOString(), instrucciones: [], resumen_general: null, count: 0 },
+            });
+          } catch (persistErr) {
+            console.error("Failed to persist pendingEditorialParse error:", persistErr);
+          }
           sendToStreams({ type: "editorial_parse_error", message: errMsg });
         });
     } catch (error) {
@@ -1153,6 +1177,33 @@ export async function registerRoutes(
       if (!res.headersSent) {
         res.status(500).json({ error: error instanceof Error ? error.message : "Failed to start editorial notes parse" });
       }
+    }
+  });
+
+  // POLLING FALLBACK para parse-editorial-notes y holistic-review.
+  // El cliente lo llama cada N segundos tras lanzar un análisis. Si el SSE se
+  // cae a mitad del trabajo (Cloudflare cierra conexiones SSE inactivas a los
+  // ~100s) y el cliente reconecta tarde, el evento ya emitido se pierde para
+  // siempre. Este endpoint deja recuperar el resultado desde la BD.
+  // Si se llama con ?consume=true, además limpia el campo (one-shot).
+  app.get("/api/projects/:id/pending-editorial-parse", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
+      const project = await storage.getProject(id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      const payload = (project as any).pendingEditorialParse || null;
+      if (payload && req.query.consume === "true") {
+        try {
+          await storage.updateProject(id, { pendingEditorialParse: null });
+        } catch (e) {
+          console.error("Failed to clear pendingEditorialParse on consume:", e);
+        }
+      }
+      res.json({ payload });
+    } catch (err) {
+      console.error("Error in pending-editorial-parse endpoint:", err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Failed to read pending parse" });
     }
   });
 
@@ -1845,6 +1896,11 @@ export async function registerRoutes(
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
+      // Cloudflare/proxies que reescriben buffering a veces "comen" eventos hasta
+      // tener un chunk grande. Este header desactiva buffering en nginx/proxies
+      // afines y reduce mucho los streams "fantasma" que el cliente abre pero que
+      // nunca reciben ningún evento aunque el backend escriba.
+      res.setHeader("X-Accel-Buffering", "no");
       res.flushHeaders();
 
       if (!activeStreams.has(id)) {
@@ -1854,7 +1910,23 @@ export async function registerRoutes(
 
       res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
 
+      // HEARTBEAT cada 15s. Cloudflare cierra conexiones SSE inactivas a los
+      // ~100s. Sin heartbeat, un parse de notas largo (2-3 min de razonamiento
+      // del LLM sin emitir nada) provoca que Cloudflare cierre el canal y el
+      // resultado final (editorial_parse_complete, holistic_review_complete,
+      // etc.) se emita hacia un stream muerto. El cliente queda con el spinner
+      // colgado para siempre. El comentario que empieza por ":" es ignorado por
+      // el parser SSE pero mantiene la conexión viva.
+      const heartbeatInterval = setInterval(() => {
+        try {
+          res.write(`: heartbeat\n\n`);
+        } catch (e) {
+          clearInterval(heartbeatInterval);
+        }
+      }, 15000);
+
       req.on("close", () => {
+        clearInterval(heartbeatInterval);
         const streams = activeStreams.get(id);
         if (streams) {
           streams.delete(res);

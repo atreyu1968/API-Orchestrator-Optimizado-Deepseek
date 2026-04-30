@@ -99,6 +99,13 @@ export const projects = pgTable("projects", {
   architectInstructions: text("architect_instructions"),
   antiRepetitionGuidance: text("anti_repetition_guidance"),
   antiRepetitionUpdatedAt: timestamp("anti_repetition_updated_at"),
+  // Resultado del último parse de notas editoriales en background, persistido para
+  // que el cliente lo pueda recuperar mediante polling si el SSE se cae a mitad
+  // del análisis (Cloudflare cierra streams inactivos a los ~100s y el parse de
+  // notas largas suele tardar 2-3 minutos sin emitir eventos intermedios).
+  // Forma: { resumen_general: string|null, instrucciones: EditorialInstruction[], completedAt: string, error?: string } | null
+  // Se borra al consumirlo desde el cliente (apply o descartar).
+  pendingEditorialParse: jsonb("pending_editorial_parse"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
