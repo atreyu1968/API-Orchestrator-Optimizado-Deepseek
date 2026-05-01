@@ -13,6 +13,12 @@ interface GenerateGuideParams {
   pseudonymGenre?: string;
   pseudonymTone?: string;
   existingStyleGuides?: string[];
+  // Parámetros para la guía de novela basada en seudónimo (case "pseudonym_style"):
+  // condicionan cuántos capítulos planificar y si incluir prólogo/epílogo/nota.
+  chapterCountHint?: number;
+  hasPrologue?: boolean;
+  hasEpilogue?: boolean;
+  hasAuthorNote?: boolean;
   seriesTitle?: string;
   seriesDescription?: string;
   seriesTotalBooks?: number;
@@ -219,74 +225,115 @@ La guía debe cubrir TODOS estos apartados:
 ${langInstructions}
 Sé específico y práctico. Esta guía será usada por un sistema de IA para generar una novela.`;
 
-    case "pseudonym_style":
+    case "pseudonym_style": {
+      // NUEVO PROPÓSITO (mayo 2026): este case ya NO genera una guía de estilo
+      // del pseudónimo; ahora INVENTA una novela original COMPLETA y produce su
+      // guía de escritura, garantizando que la idea, género, tono y tratamiento
+      // encajen con el estilo ya establecido del seudónimo (su(s) guía(s) de
+      // estilo activa(s) + bio + género/tono por defecto).
+      const chapters = params.chapterCountHint && params.chapterCountHint > 0 ? params.chapterCountHint : 20;
+      const extras: string[] = [];
+      if (params.hasPrologue) extras.push("prólogo");
+      if (params.hasEpilogue) extras.push("epílogo");
+      if (params.hasAuthorNote) extras.push("nota del autor");
+      const extrasLine = extras.length > 0
+        ? `Además del cuerpo principal, la novela incluirá: ${extras.join(", ")}.`
+        : "La novela NO incluirá prólogo, epílogo ni nota del autor; planifica solo capítulos numerados.";
+
       return `${baseRole}
 
-Tu tarea es crear una GUÍA DE ESTILO PROFESIONAL para el pseudónimo literario "${params.pseudonymName}".
+Tu tarea es INVENTAR una novela original COMPLETA y producir su GUÍA DE ESCRITURA detallada, garantizando que el resultado sea apropiado para el pseudónimo literario "${params.pseudonymName}" — es decir, que case con su voz, géneros típicos, tono y reglas de estilo ya establecidos.
+
+NO te dan una idea ni una premisa: la inventas tú leyendo cuidadosamente el material del pseudónimo que aparece más abajo. La novela que propongas debe ser plausible dentro de lo que este autor publicaría: misma sensibilidad temática, mismo registro, mismas obsesiones narrativas.
 
 Información del pseudónimo:
-${params.pseudonymBio ? `- Biografía: ${params.pseudonymBio}` : ''}
-${params.pseudonymGenre ? `- Género principal: ${params.pseudonymGenre}` : ''}
-${params.pseudonymTone ? `- Tono narrativo: ${params.pseudonymTone}` : ''}
-${params.existingStyleGuides?.length ? `\nGuías de estilo existentes del pseudónimo:\n${params.existingStyleGuides.join('\n---\n')}` : ''}
+${params.pseudonymBio ? `- Biografía: ${params.pseudonymBio}` : '- (Sin biografía registrada)'}
+${params.pseudonymGenre ? `- Género principal habitual: ${params.pseudonymGenre}` : ''}
+${params.pseudonymTone ? `- Tono narrativo habitual: ${params.pseudonymTone}` : ''}
 
-Crea una guía de estilo COMPLETA y COHERENTE que defina la identidad literaria de este pseudónimo. La guía debe:
+${params.existingStyleGuides?.length
+  ? `GUÍA(S) DE ESTILO ACTIVA(S) DEL PSEUDÓNIMO (lectura OBLIGATORIA — la novela debe ajustarse a estas reglas):\n\n${params.existingStyleGuides.join('\n\n---\n\n')}`
+  : '⚠️ ATENCIÓN: este pseudónimo no tiene aún guía de estilo activa. Deduce su voz a partir de la biografía, el género y el tono indicados, y sé conservador.'}
 
-1. **IDENTIDAD LITERARIA**
-   - Voz autorial única y reconocible
-   - Filosofía narrativa del pseudónimo
-   - Marca personal en la escritura
-   - Elementos que lo distinguen de otros autores
+Parámetros del proyecto a planificar:
+- Número de capítulos: ${chapters}
+- ${extrasLine}
 
-2. **VOZ Y REGISTRO**
-   - Tipo de narrador preferido
-   - Tono emocional distintivo
-   - Registro lingüístico (formal, coloquial, técnico, poético)
-   - Personalidad que transmite la prosa
+REQUISITOS DE LA RESPUESTA:
 
-3. **PROSA CARACTERÍSTICA**
-   - Estructura de oraciones predilecta
-   - Ritmo y cadencia narrativa
-   - Uso de párrafos (cortos, largos, variados)
-   - Recursos estilísticos favoritos
-   - Manejo de transiciones
+La PRIMERA línea de tu respuesta DEBE ser exactamente:
+TÍTULO DE LA NOVELA: <título inventado>
 
-4. **DIÁLOGOS**
-   - Estilo de diálogo del pseudónimo
-   - Tratamiento de las acotaciones
-   - Voces diferenciadas de personajes
-   - Subtexto y silencios
+Una línea en blanco después, y a continuación la guía completa con TODOS estos apartados:
 
-5. **DESCRIPCIONES**
-   - Estilo descriptivo (sensorial, minimalista, barroco)
-   - Sentidos predominantes
-   - Integración de ambientación en la acción
-   - Metáforas y comparaciones típicas
+1. **PREMISA ORIGINAL DE LA NOVELA**
+   - Sinopsis de 2-3 párrafos (la idea inventada)
+   - Conflicto central
+   - Pregunta dramática principal
+   - Por qué esta historia encaja con el pseudónimo (justifica explícitamente)
 
-6. **TEMAS Y PREOCUPACIONES**
-   - Temas recurrentes en la obra del pseudónimo
-   - Motivos y símbolos frecuentes
-   - Posición moral/filosófica
-   - Mensajes que subyacen
+2. **GÉNERO Y SUBGÉNERO**
+   - Género principal coherente con el pseudónimo
+   - Subgénero específico
+   - Tono emocional dominante
 
-7. **LÉXICO AUTORIZADO Y PROHIBIDO**
-   - Vocabulario preferido
-   - Palabras y expresiones características
-   - Muletillas de IA a evitar (sin embargo, no obstante, a pesar de, etc.)
-   - Palabras prohibidas por sonar artificiales
+3. **VOZ Y NARRADOR**
+   - Tipo de narrador (debe ser el habitual del pseudónimo)
+   - Distancia narrativa
+   - Registro lingüístico
+   - Cómo aplicar las reglas de estilo del pseudónimo a este libro concreto
 
-8. **REGLAS DE ORO DEL PSEUDÓNIMO** (15-20 mandamientos)
-   - Directrices inquebrantables de estilo
-   - Lo que este autor SIEMPRE hace
-   - Lo que este autor NUNCA hace
-   - Criterios de calidad mínima
+4. **ESTRUCTURA**
+   - Modelo estructural recomendado (tres actos, viaje del héroe, etc.)
+   - Distribución aproximada de capítulos por acto
+   - Puntos de inflexión clave (capítulo aproximado de cada uno)
+   - Ritmo de revelaciones
 
-9. **EJEMPLO DE PROSA MODELO**
-    - Un fragmento original que defina la voz del pseudónimo
-    - Análisis de las técnicas empleadas
+5. **AMBIENTACIÓN Y WORLDBUILDING**
+   - Lugar(es) y atmósfera
+   - Reglas del mundo (si aplica)
+   - Detalles sensoriales prioritarios
+   - Coherencia con ambientaciones típicas del pseudónimo
+
+6. **SISTEMA DE PERSONAJES**
+   - Protagonista: nombre, edad, función, arco
+   - Secundarios principales (3-5): nombre, función, arco breve
+   - Antagonista o fuerza de oposición
+   - Dinámicas relacionales clave
+   ⚠️ Nombres COMPLETAMENTE NUEVOS, nunca reutilizar los de la lista de prohibidos si la hay.
+
+7. **TEMAS Y MOTIVOS**
+   - Temas centrales (deben resonar con las preocupaciones habituales del pseudónimo)
+   - Motivos visuales/simbólicos recurrentes
+   - Mensaje subyacente
+
+8. **PLAN DE CAPÍTULOS** (OBLIGATORIO — uno por uno, los ${chapters})
+   - Por cada capítulo: número, título sugerido (1 línea) y sinopsis breve (2-4 líneas) con qué pasa, dónde estamos en el arco, y qué punto de inflexión cubre si toca.
+   ${extras.length > 0 ? `- Si incluyes prólogo/epílogo/nota del autor, descríbelos también con la misma estructura.` : ''}
+
+9. **ÉPOCA HISTÓRICA DE LA NARRACIÓN** ⚠️ OBLIGATORIO
+   - Formato exacto: "Año(s) + Lugar geográfico" (ej. "1888, Londres victoriano"; "Contemporánea, Madrid (2024)").
+   - registro_linguistico: 1-2 frases.
+   - vocabulario_epoca_autorizado: 10-20 términos.
+   - terminos_anacronicos_prohibidos: 10-20 términos modernos prohibidos en esa época (omitir solo si la novela es estrictamente contemporánea).
+   - notas_voz_historica: 2-4 frases con el matiz histórico/cultural a mantener.
+   - Si hay líneas temporales paralelas, declara cada época con su ficha (id, época, registro, vocabulario, anacronismos, notas).
+
+10. **REGLAS DE ESCRITURA PARA ESTA NOVELA** (10-15 mandamientos)
+    - Reglas concretas para el ghostwriter, derivadas de las guías de estilo del pseudónimo aplicadas a esta historia concreta.
+    - Qué hacer y qué NO hacer.
+
+11. **TRAMPAS A EVITAR**
+    - Clichés del género
+    - Errores comunes con esta premisa
+    - Soluciones fáciles que empobrecerían la historia
+
+12. **EJEMPLO DE ESCENA MODELO**
+    - Una escena breve original (200-400 palabras) que ejemplifique cómo aplicar las reglas del pseudónimo a esta historia concreta.
 
 ${langInstructions}
-Esta guía será usada como directriz principal para todos los proyectos de este pseudónimo.`;
+Sé específico y práctico. Esta guía será usada por el sistema para generar la novela completa, capítulo a capítulo.`;
+    }
 
     case "series_writing":
       return `${baseRole}
@@ -427,7 +474,7 @@ Si necesitas sugerir nombres de personajes, inventa nombres COMPLETAMENTE NUEVOS
       userMessage = `Genera una guía de escritura completa para desarrollar esta idea: "${params.idea}".${params.genre ? ` Género: ${params.genre}.` : ''}${params.tone ? ` Tono deseado: ${params.tone}.` : ''} La guía debe proporcionar directrices concretas y prácticas para la generación de una novela.`;
       break;
     case "pseudonym_style":
-      userMessage = `Genera una guía de estilo profesional completa para el pseudónimo "${params.pseudonymName}". Define su identidad literaria, voz, y reglas de escritura de forma que cualquier texto generado bajo este pseudónimo sea coherente y reconocible.`;
+      userMessage = `Inventa una novela original apropiada para el pseudónimo "${params.pseudonymName}" basándote en su(s) guía(s) de estilo, biografía, género y tono indicados en el system prompt. Genera la guía de escritura completa de esa novela inventada (premisa, estructura, personajes, plan capítulo a capítulo, época, reglas de escritura, escena modelo). Recuerda comenzar con la línea "TÍTULO DE LA NOVELA: ..." obligatoriamente.`;
       break;
     case "series_writing":
       userMessage = `Genera una guía de escritura exhaustiva para la serie "${params.seriesTitle}"${params.seriesTotalBooks ? ` (${params.seriesTotalBooks} volúmenes planificados)` : ''}.${params.seriesIdea ? ` Concepto de la serie: ${params.seriesIdea}` : ''} La guía debe asegurar coherencia narrativa, estilística y argumental a lo largo de toda la serie.${params.seriesTotalBooks && params.seriesTotalBooks > 1 ? ` Incluye al final una sección "PLANIFICACIÓN DE VOLÚMENES" con título sugerido y sinopsis breve para cada uno de los ${params.seriesTotalBooks} libros planificados.` : ''}`;
@@ -458,9 +505,31 @@ Si necesitas sugerir nombres de personajes, inventa nombres COMPLETAMENTE NUEVOS
     case "idea_writing":
       title = `Guía: ${(params.idea || "").substring(0, 80)}${(params.idea || "").length > 80 ? '...' : ''}`;
       break;
-    case "pseudonym_style":
-      title = `Estilo de ${params.pseudonymName}`;
+    case "pseudonym_style": {
+      // Extrae el título inventado de la primera línea ("TÍTULO DE LA NOVELA: ...").
+      // Robusto frente a variantes razonables del modelo:
+      //   "TÍTULO DE LA NOVELA: Foo"
+      //   "**TÍTULO DE LA NOVELA: Foo**"
+      //   "**TÍTULO DE LA NOVELA:** Foo"
+      //   "# TÍTULO: Foo"
+      //   "- TÍTULO: Foo"
+      // Solo mira la PRIMERA línea no vacía (no usa el flag `m` por una razón:
+      // si el modelo se salta el formato en la primera línea no debe colarse
+      // un "Título: " posterior dentro de la guía como título del proyecto).
+      const firstNonEmpty = text.split(/\r?\n/).map(l => l.trim()).find(l => l.length > 0) || "";
+      const cleanedFirst = firstNonEmpty
+        .replace(/^[#>\-*•·\s]+/, "")  // prefijos markdown (encabezados, listas)
+        .replace(/\*+/g, "")            // marcas de negrita/cursiva
+        .trim();
+      const firstLineMatch = cleanedFirst.match(/^T[ÍI]TULO(?:\s+DE\s+LA\s+NOVELA)?\s*:\s*(.+)$/i);
+      const inventedTitle = firstLineMatch
+        ? firstLineMatch[1].trim().replace(/^[«"'`]+|[»"'`]+$/g, "")
+        : "";
+      title = inventedTitle.length > 0
+        ? inventedTitle.substring(0, 120)
+        : `Novela original para ${params.pseudonymName}`;
       break;
+    }
     case "series_writing":
       title = `Guía de Serie: ${params.seriesTitle}`;
       break;

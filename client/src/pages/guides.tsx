@@ -22,7 +22,7 @@ import type { GeneratedGuide, Pseudonym, Series, StyleGuide } from "@shared/sche
 const GUIDE_TYPE_LABELS: Record<string, { label: string; icon: typeof Pen; color: string }> = {
   author_style: { label: "Estilo de Autor", icon: Pen, color: "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200" },
   idea_writing: { label: "Guía por Idea", icon: Lightbulb, color: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200" },
-  pseudonym_style: { label: "Estilo de Pseudónimo", icon: Users, color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
+  pseudonym_style: { label: "Novela para Pseudónimo", icon: Users, color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
   series_writing: { label: "Guía de Serie", icon: Library, color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
 };
 
@@ -401,13 +401,32 @@ function PseudonymStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: a
   const { data: allStyleGuides = [] } = useQuery<StyleGuide[]>({ queryKey: ["/api/style-guides"] });
   const [selectedPseudonym, setSelectedPseudonym] = useState<string>("");
 
+  // Parámetros del proyecto a crear (la IA inventa la idea, pero el usuario
+  // sigue controlando estructura y formato del libro).
+  const [projectTitle, setProjectTitle] = useState("");
+  const [chapterCount, setChapterCount] = useState(20);
+  const [hasPrologue, setHasPrologue] = useState(false);
+  const [hasEpilogue, setHasEpilogue] = useState(false);
+  const [hasAuthorNote, setHasAuthorNote] = useState(false);
+  const [minWordsPerChapter, setMinWordsPerChapter] = useState(1500);
+  const [maxWordsPerChapter, setMaxWordsPerChapter] = useState(3500);
+  const [kindleUnlimitedOptimized, setKindleUnlimitedOptimized] = useState(false);
+
   const pseudonym = pseudonyms.find((p) => p.id.toString() === selectedPseudonym);
   const existingGuides = pseudonym
     ? allStyleGuides.filter((sg) => sg.pseudonymId === pseudonym.id && sg.isActive)
     : [];
+  const hasStyleGuide = existingGuides.length > 0;
 
   return (
     <div className="space-y-4">
+      <div className="rounded-md border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950 p-3 text-sm text-blue-900 dark:text-blue-100">
+        <p>
+          La IA inventará una novela original apropiada para el seudónimo seleccionado, leyendo su guía de estilo activa.
+          Tú solo eliges el seudónimo y los parámetros del proyecto: el argumento, los personajes y el plan de capítulos los crea el sistema.
+        </p>
+      </div>
+
       <div>
         <Label>Pseudónimo</Label>
         <Select value={selectedPseudonym} onValueChange={setSelectedPseudonym}>
@@ -423,24 +442,103 @@ function PseudonymStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: a
           </SelectContent>
         </Select>
       </div>
+
       {pseudonym && (
         <Card className="bg-muted/50">
           <CardContent className="pt-4 space-y-1 text-sm">
             {pseudonym.bio && <p><strong>Bio:</strong> {pseudonym.bio}</p>}
-            {pseudonym.defaultGenre && <p><strong>Género:</strong> {pseudonym.defaultGenre}</p>}
-            {pseudonym.defaultTone && <p><strong>Tono:</strong> {pseudonym.defaultTone}</p>}
-            {existingGuides.length > 0 && (
-              <div className="mt-2 pt-2 border-t">
+            {pseudonym.defaultGenre && <p><strong>Género habitual:</strong> {pseudonym.defaultGenre}</p>}
+            {pseudonym.defaultTone && <p><strong>Tono habitual:</strong> {pseudonym.defaultTone}</p>}
+            <div className="mt-2 pt-2 border-t">
+              {hasStyleGuide ? (
                 <p className="text-muted-foreground">
-                  <strong>{existingGuides.length}</strong> guía(s) de estilo existente(s). La IA las tendrá en cuenta para generar contenido complementario.
+                  <strong>{existingGuides.length}</strong> guía(s) de estilo activa(s).
+                  La IA las leerá completas para inventar una novela coherente con la voz del seudónimo.
                 </p>
-              </div>
-            )}
+              ) : (
+                <p className="text-amber-700 dark:text-amber-300" data-testid="text-no-style-guide-warning">
+                  ⚠️ Este seudónimo aún no tiene ninguna guía de estilo activa. La IA tendrá que improvisar a partir de la biografía y el género/tono. Para mejores resultados, crea primero una guía en la pestaña "Estilo de Autor" o impórtala en la sección de seudónimos.
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
+
+      <Separator />
+      <p className="text-sm font-medium text-muted-foreground">Datos del proyecto a crear</p>
+
+      <div>
+        <Label htmlFor="pseud-project-title">Título del proyecto (opcional)</Label>
+        <Input
+          id="pseud-project-title"
+          data-testid="input-pseud-project-title"
+          placeholder="Si lo dejas vacío, se usa el título inventado por la IA"
+          value={projectTitle}
+          onChange={(e) => setProjectTitle(e.target.value)}
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <Label htmlFor="pseud-chapter-count">Capítulos</Label>
+          <Input
+            id="pseud-chapter-count"
+            data-testid="input-pseud-chapter-count"
+            type="number"
+            min={1}
+            max={350}
+            value={chapterCount}
+            onChange={(e) => setChapterCount(parseInt(e.target.value) || 1)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="pseud-min-words">Min palabras/cap</Label>
+          <Input
+            id="pseud-min-words"
+            data-testid="input-pseud-min-words"
+            type="number"
+            min={500}
+            max={10000}
+            value={minWordsPerChapter}
+            onChange={(e) => setMinWordsPerChapter(parseInt(e.target.value) || 1500)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="pseud-max-words">Max palabras/cap</Label>
+          <Input
+            id="pseud-max-words"
+            data-testid="input-pseud-max-words"
+            type="number"
+            min={500}
+            max={15000}
+            value={maxWordsPerChapter}
+            onChange={(e) => setMaxWordsPerChapter(parseInt(e.target.value) || 3500)}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-4">
+        <label className="flex items-center gap-2 text-sm" data-testid="check-pseud-prologue">
+          <input type="checkbox" checked={hasPrologue} onChange={(e) => setHasPrologue(e.target.checked)} className="rounded" />
+          Prólogo
+        </label>
+        <label className="flex items-center gap-2 text-sm" data-testid="check-pseud-epilogue">
+          <input type="checkbox" checked={hasEpilogue} onChange={(e) => setHasEpilogue(e.target.checked)} className="rounded" />
+          Epílogo
+        </label>
+        <label className="flex items-center gap-2 text-sm" data-testid="check-pseud-author-note">
+          <input type="checkbox" checked={hasAuthorNote} onChange={(e) => setHasAuthorNote(e.target.checked)} className="rounded" />
+          Nota del Autor
+        </label>
+        <label className="flex items-center gap-2 text-sm" data-testid="check-pseud-kindle">
+          <input type="checkbox" checked={kindleUnlimitedOptimized} onChange={(e) => setKindleUnlimitedOptimized(e.target.checked)} className="rounded" />
+          Kindle Unlimited
+        </label>
+      </div>
+
       <Button
-        data-testid="button-generate-pseudonym-style"
+        data-testid="button-generate-pseudonym-novel"
         onClick={() => {
           if (!pseudonym) return;
           onGenerate({
@@ -450,13 +548,23 @@ function PseudonymStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: a
             pseudonymBio: pseudonym.bio,
             pseudonymGenre: pseudonym.defaultGenre,
             pseudonymTone: pseudonym.defaultTone,
+            // Asignación: el proyecto resultante queda vinculado al mismo pseudónimo.
+            assignPseudonymId: pseudonym.id,
+            projectTitle: projectTitle.trim() || undefined,
+            chapterCount,
+            hasPrologue,
+            hasEpilogue,
+            hasAuthorNote,
+            minWordsPerChapter,
+            maxWordsPerChapter,
+            kindleUnlimitedOptimized,
           });
         }}
         disabled={!selectedPseudonym || isGenerating}
         className="w-full"
       >
         {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-        {isGenerating ? "Generando guía..." : "Generar Guía de Estilo"}
+        {isGenerating ? "Inventando novela y creando proyecto..." : "Generar Guía de Novela y Crear Proyecto"}
       </Button>
     </div>
   );
@@ -850,7 +958,13 @@ function GuideLibrary() {
                   >
                     <Download className="w-4 h-4" />
                   </Button>
-                  {(guide.guideType === "author_style" || guide.guideType === "pseudonym_style") && (
+                  {/* "Aplicar a pseudónimo" solo tiene sentido para guías de
+                      estilo de autor. Las guías `pseudonym_style` ya no son
+                      guías de estilo (ahora son guías de novela), así que el
+                      botón se oculta para ellas. Si tienes guías legadas con
+                      ese tipo que SÍ son guías de estilo, descárgalas y crea
+                      la style_guide manualmente desde la sección de seudónimos. */}
+                  {guide.guideType === "author_style" && (
                   <Button
                     variant="outline"
                     size="sm"

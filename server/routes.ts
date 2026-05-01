@@ -9654,11 +9654,23 @@ CRITERIOS:
       const { generateStyleGuide } = await import("./agents/style-guide-generator");
       const params = { ...req.body };
       if (params.guideType === "pseudonym_style" && params.pseudonymId) {
+        // Carga las guías de estilo activas del pseudónimo: el agente las usa
+        // como input principal para inventar una novela apropiada al estilo.
         const existingGuides = await storage.getStyleGuidesByPseudonym(params.pseudonymId);
         const activeGuides = existingGuides.filter((g: any) => g.isActive);
         if (activeGuides.length > 0) {
           params.existingStyleGuides = activeGuides.map((g: any) => g.content);
         }
+        // Defaults de género/tono desde el pseudónimo si el cliente no los envió.
+        const pseud = await storage.getPseudonym(params.pseudonymId);
+        if (pseud) {
+          params.pseudonymName = params.pseudonymName || pseud.name;
+          params.pseudonymBio = params.pseudonymBio ?? pseud.bio ?? undefined;
+          params.pseudonymGenre = params.pseudonymGenre || pseud.defaultGenre || undefined;
+          params.pseudonymTone = params.pseudonymTone || pseud.defaultTone || undefined;
+        }
+        // Pistas para el plan de capítulos del agente.
+        params.chapterCountHint = params.chapterCount;
       }
 
       if (params.guideType === "series_writing" && params.seriesId) {
@@ -9743,7 +9755,12 @@ CRITERIOS:
       }
 
       let validatedStyleGuideId: number | null = null;
-      if (req.body.guideType === "idea_writing" || req.body.guideType === "series_writing") {
+      const isProjectCreatingGuide =
+        req.body.guideType === "idea_writing" ||
+        req.body.guideType === "series_writing" ||
+        req.body.guideType === "pseudonym_style";
+
+      if (isProjectCreatingGuide) {
         const minWords = Math.max(500, Math.min(10000, req.body.minWordsPerChapter || 1500));
         const maxWords = Math.max(500, Math.min(15000, req.body.maxWordsPerChapter || 3500));
         if (minWords > maxWords) {
@@ -9759,6 +9776,16 @@ CRITERIOS:
             return res.status(400).json({ error: "La guía de estilo no pertenece al pseudónimo seleccionado" });
           }
           validatedStyleGuideId = sg.id;
+        } else if (req.body.guideType === "pseudonym_style" && targetPseudonymId) {
+          // En "novela para pseudónimo" el styleGuide nunca lo elige el usuario:
+          // se vincula automáticamente la primera guía de estilo activa del
+          // pseudónimo, que es la que el agente usó como input para inventar la
+          // novela. Así el proyecto resultante hereda esa voz al ejecutarse.
+          const pseudGuides = await storage.getStyleGuidesByPseudonym(targetPseudonymId);
+          const activeSg = pseudGuides.find((g: any) => g.isActive);
+          if (activeSg) {
+            validatedStyleGuideId = activeSg.id;
+          }
         }
       }
 
@@ -9775,15 +9802,18 @@ CRITERIOS:
         outputTokens: result.outputTokens,
       });
 
-      if (req.body.guideType === "idea_writing" || req.body.guideType === "series_writing") {
+      if (isProjectCreatingGuide) {
         const chapterCount = Math.max(1, Math.min(350, req.body.chapterCount || 20));
         const minWords = Math.max(500, Math.min(10000, req.body.minWordsPerChapter || 1500));
         const maxWords = Math.max(500, Math.min(15000, req.body.maxWordsPerChapter || 3500));
 
         const isSeriesGuide = req.body.guideType === "series_writing";
+        const isPseudonymNovel = req.body.guideType === "pseudonym_style";
         const descSuffix = isSeriesGuide
           ? `serie: ${(req.body.seriesTitle || "").substring(0, 100)}`
-          : `idea: ${(req.body.idea || "").substring(0, 100)}`;
+          : isPseudonymNovel
+            ? `pseudónimo: ${(req.body.pseudonymName || "").substring(0, 100)}`
+            : `idea: ${(req.body.idea || "").substring(0, 100)}`;
 
         const extendedGuide = await storage.createExtendedGuide({
           title: result.title,
@@ -9912,13 +9942,20 @@ CRITERIOS:
             ? (createAllVolumes
               ? `Volumen ${volOrder || existingVolumeCount + i + 1} de la serie "${req.body.seriesTitle || ""}"`
               : `Continuación de la serie "${req.body.seriesTitle || ""}"`)
-            : (req.body.idea || null);
+            : isPseudonymNovel
+              ? `Novela original generada para el pseudónimo "${req.body.pseudonymName || params.pseudonymName || ""}" — premisa completa en la guía extendida.`
+              : (req.body.idea || null);
+
+          // Para pseudonym_style el género/tono no llegan del formulario:
+          // se toman del pseudónimo (ya hidratados en `params` arriba).
+          const projectGenre = req.body.genre || (isPseudonymNovel ? params.pseudonymGenre : undefined) || "fantasy";
+          const projectTone = req.body.tone || (isPseudonymNovel ? params.pseudonymTone : undefined) || "dramatic";
 
           const project = await storage.createProject({
             title: volTitle,
             premise: volPremise,
-            genre: req.body.genre || "fantasy",
-            tone: req.body.tone || "dramatic",
+            genre: projectGenre,
+            tone: projectTone,
             chapterCount,
             hasPrologue: req.body.hasPrologue || false,
             hasEpilogue: req.body.hasEpilogue || false,
@@ -9946,7 +9983,10 @@ CRITERIOS:
           seriesId,
         });
       } else {
-        if (targetPseudonymId && (req.body.guideType === "author_style" || req.body.guideType === "pseudonym_style")) {
+        // Solo `author_style` sigue creando una guía de estilo automática para
+        // el pseudónimo. `pseudonym_style` ya NO entra aquí porque ahora genera
+        // una guía de novela (entra por la rama isProjectCreatingGuide arriba).
+        if (targetPseudonymId && req.body.guideType === "author_style") {
           await storage.createStyleGuide({
             pseudonymId: targetPseudonymId,
             title: result.title,
@@ -9967,8 +10007,8 @@ CRITERIOS:
       const guide = await storage.getGeneratedGuide(parseInt(req.params.id));
       if (!guide) return res.status(404).json({ error: "Guide not found" });
 
-      if (guide.guideType !== "author_style" && guide.guideType !== "pseudonym_style") {
-        return res.status(400).json({ error: "Solo las guías de estilo de autor o pseudónimo pueden aplicarse como guía de estilo" });
+      if (guide.guideType !== "author_style") {
+        return res.status(400).json({ error: "Solo las guías de estilo de autor pueden aplicarse como guía de estilo del pseudónimo" });
       }
 
       const { pseudonymId } = req.body;
