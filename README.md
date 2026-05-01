@@ -4,6 +4,13 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 
 **PWA instalable** — se puede instalar en escritorio y movil directamente desde el navegador.
 
+## Novedades v6.9 — Taller de Guias: "Novela para Pseudonimo" (la IA inventa la novela)
+
+- **Cambio de proposito de la pestana "Estilo de Pseudonimo" → "Novela para Pseudonimo"**: Antes esta pestana generaba *otra* guia de estilo del seudonimo (algo redundante si ya tenia una). Ahora hace algo distinto y mas util: el usuario solo elige el seudonimo y los parametros del proyecto (capitulos, palabras por capitulo, prologo/epilogo/nota del autor, KU), y la IA **inventa una novela original completa** apropiada para ese seudonimo, leyendo su(s) guia(s) de estilo activa(s), su bio y su genero/tono habituales.
+- **Creacion automatica de proyecto**: Igual que "Guia por Idea", al terminar la generacion se crea el proyecto vinculado al seudonimo, con la guia extendida ya enlazada y la guia de estilo activa del seudonimo autoasociada para que la voz se aplique al escribir cada capitulo.
+- **Contrato del agente**: La primera linea de la respuesta del modelo debe ser `TÍTULO DE LA NOVELA: ...`. El extractor de titulo es robusto frente a variantes razonables (`**TÍTULO DE LA NOVELA:** ...`, `# TÍTULO ...`, `- TÍTULO ...`, comillas `«»"'`). Si la extraccion falla, fallback a `Novela original para {pseudonimo}`.
+- **Endpoint `apply-to-pseudonym` ahora solo acepta `author_style`**: Las guias generadas con `pseudonym_style` ya no son guias de estilo (son guias de novela), asi que no tiene sentido aplicarlas a un seudonimo. El boton "aplicar a pseudonimo" en la libreria se oculta para ese tipo. Las guias legadas con `pseudonym_style` que SI eran guias de estilo siguen guardadas: descargalas como `.md` y crea la `style_guide` manualmente desde la seccion de seudonimos si quieres reutilizarlas.
+
 ## Novedades v6.8 — Revisor Holistico, Beta-Reader y Fix Critico de Escaleta
 
 - **Nuevo agente Revisor Holistico (severo)**: Lee la novela completa en una sola pasada y devuelve un dictamen editorial duro estilo editor profesional (problemas estructurales, agujeros de trama, arcos rotos, ritmo, voz, riesgos de publicacion). Endpoint `POST /api/projects/:id/holistic-review`, integrado en el dashboard como boton morado.
@@ -36,7 +43,7 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 - **Generador de Novelas**: Pipeline completo con 13+ agentes especializados para escribir novelas de principio a fin
 - **Re-editor de Manuscritos (LitEditors)**: Importa y edita profesionalmente manuscritos externos en multiples idiomas con 12 agentes especializados
 - **Adaptacion Literaria Profesional (LitTranslators)**: Sistema de adaptacion literaria (no traduccion literal) con resultado listo para publicacion
-- **Taller de Guias**: Generacion de guias de estilo, escritura por idea, identidad de pseudonimo y guias extendidas de serie con creacion automatica de proyecto
+- **Taller de Guias**: Generacion de guias de estilo de autor, escritura por idea, novelas originales a medida de un pseudonimo y guias extendidas de serie, con creacion automatica de proyecto
 - **World Bible Progresiva**: Base de datos de consistencia que se enriquece automaticamente capitulo a capitulo
 - **Notas del Autor**: Instrucciones personalizadas para que los agentes eviten errores conocidos
 - **Zero Continuity Errors**: Validacion inmediata post-escritura, deteccion de personajes muertos, filtraciones de conocimiento y drift de apariencia
@@ -190,12 +197,12 @@ Todos los agentes usan **DeepSeek V4-Flash** como unico modelo via API compatibl
 - Disponible al subir manuscritos, al re-editar proyectos del sistema, al reanudar y al reiniciar
 
 ### Taller de Guias
-- **4 tipos de guia**: Estilo de autor, escritura por idea, identidad de pseudonimo, escritura de serie
+- **4 tipos de guia**: Estilo de autor, escritura por idea, novela para pseudonimo, escritura de serie
 - **Guia por Idea**: Genera guia extendida + crea proyecto automaticamente con todos los parametros (capitulos, palabras, pseudonimo, estilo)
+- **Novela para Pseudonimo**: Eliges un seudonimo y los parametros del proyecto. La IA inventa una novela original completa apropiada para ese seudonimo (premisa, genero/subgenero, voz, estructura, personajes, plan capitulo a capitulo, escena modelo) leyendo su guia de estilo activa, su bio y su genero/tono habituales. Crea automaticamente la guia extendida y el proyecto, vinculando la guia de estilo activa del seudonimo al proyecto. Si el seudonimo no tiene guia de estilo activa, se avisa con un banner ambar (los resultados son peores).
 - **Guia de Serie Extendida**: Selecciona una serie existente y un pseudonimo, configura el siguiente libro (titulo, capitulos, genero, tono, palabras por capitulo). El sistema analiza todos los libros de la serie para generar una guia contextualizada. Crea automaticamente la guia extendida, el proyecto vinculado a la serie con el orden correcto, y actualiza la guia de serie
 - **Estilo de Autor**: Emula el estilo de un autor conocido y lo vincula a un pseudonimo
-- **Estilo de Pseudonimo**: Define la identidad literaria unica de un pseudonimo existente
-- **Biblioteca**: Visualiza, descarga en Markdown, aplica a pseudonimos o elimina guias generadas
+- **Biblioteca**: Visualiza, descarga en Markdown, aplica a pseudonimos (solo `author_style`) o elimina guias generadas
 
 ### Gestion de Series
 - **Snapshots de continuidad automaticos**: Extrae sinopsis, estado de personajes, hilos pendientes y eventos clave al completar cada libro
