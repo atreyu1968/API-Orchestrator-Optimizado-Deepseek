@@ -1,4 +1,4 @@
-# LitAgents v6.8 - Autonomous Literary Agent Orchestration System
+# LitAgents v7.1 - Autonomous Literary Agent Orchestration System
 
 ## Overview
 

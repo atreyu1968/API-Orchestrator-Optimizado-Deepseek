@@ -110,6 +110,7 @@ export interface IStorage {
   getImportedChaptersByManuscript(manuscriptId: number): Promise<ImportedChapter[]>;
   getImportedChapter(id: number): Promise<ImportedChapter | undefined>;
   updateImportedChapter(id: number, data: Partial<ImportedChapter>): Promise<ImportedChapter | undefined>;
+  getAllImportedChapters(): Promise<ImportedChapter[]>;
 
   createExtendedGuide(data: InsertExtendedGuide): Promise<ExtendedGuide>;
   getExtendedGuide(id: number): Promise<ExtendedGuide | undefined>;
@@ -176,6 +177,7 @@ export interface IStorage {
   getReeditChapterByOriginalNumber(projectId: number, originalChapterNumber: number): Promise<ReeditChapter | undefined>;
   updateReeditChapter(id: number, data: Partial<ReeditChapter>): Promise<ReeditChapter | undefined>;
   deleteReeditChaptersByProject(projectId: number): Promise<void>;
+  getAllReeditChapters(): Promise<ReeditChapter[]>;
 
   // Reedit Audit Reports
   createReeditAuditReport(data: InsertReeditAuditReport): Promise<ReeditAuditReport>;
@@ -183,6 +185,7 @@ export interface IStorage {
   getReeditAuditReportByType(projectId: number, auditType: string): Promise<ReeditAuditReport | undefined>;
   getReeditAuditReportByTypeAndRange(projectId: number, auditType: string, chapterRange: string): Promise<ReeditAuditReport | undefined>;
   deleteReeditAuditReportsByType(projectId: number, auditType: string): Promise<void>;
+  getAllReeditAuditReports(): Promise<ReeditAuditReport[]>;
 
   // Reedit World Bibles
   createReeditWorldBible(data: InsertReeditWorldBible): Promise<ReeditWorldBible>;
@@ -549,6 +552,10 @@ export class DatabaseStorage implements IStorage {
   async createImportedChapter(data: InsertImportedChapter): Promise<ImportedChapter> {
     const [chapter] = await db.insert(importedChapters).values(data).returning();
     return chapter;
+  }
+
+  async getAllImportedChapters(): Promise<ImportedChapter[]> {
+    return db.select().from(importedChapters);
   }
 
   async getImportedChaptersByManuscript(manuscriptId: number): Promise<ImportedChapter[]> {
@@ -987,6 +994,14 @@ export class DatabaseStorage implements IStorage {
     return chapter;
   }
 
+  async getAllReeditChapters(): Promise<ReeditChapter[]> {
+    return db.select().from(reeditChapters);
+  }
+
+  async getAllReeditAuditReports(): Promise<ReeditAuditReport[]> {
+    return db.select().from(reeditAuditReports);
+  }
+
   async createReeditChapterIfNotExists(data: InsertReeditChapter): Promise<ReeditChapter> {
     // Check if chapter with same projectId + originalChapterNumber already exists
     if (data.originalChapterNumber !== undefined && data.originalChapterNumber !== null) {
@@ -1262,6 +1277,10 @@ export class DatabaseStorage implements IStorage {
     return chapter;
   }
 
+  async getAllAudiobookChapters(): Promise<AudiobookChapter[]> {
+    return db.select().from(audiobookChapters);
+  }
+
   async getAudiobookChaptersByProject(projectId: number): Promise<AudiobookChapter[]> {
     return db.select().from(audiobookChapters)
       .where(eq(audiobookChapters.projectId, projectId))
@@ -1416,6 +1435,10 @@ export class DatabaseStorage implements IStorage {
     return chapter;
   }
 
+  async getAllProofreadingChapters(): Promise<ProofreadingChapter[]> {
+    return db.select().from(proofreadingChapters);
+  }
+
   async getProofreadingChaptersByProject(projectId: number): Promise<ProofreadingChapter[]> {
     return db.select().from(proofreadingChapters).where(eq(proofreadingChapters.projectId, projectId)).orderBy(asc(proofreadingChapters.id));
   }
@@ -1423,6 +1446,11 @@ export class DatabaseStorage implements IStorage {
   async updateProofreadingChapter(id: number, data: Partial<ProofreadingChapter>): Promise<ProofreadingChapter | undefined> {
     const [updated] = await db.update(proofreadingChapters).set(data).where(eq(proofreadingChapters.id, id)).returning();
     return updated;
+  }
+
+  // Project Back Matter — read-all helper for data export.
+  async getAllProjectBackMatter(): Promise<ProjectBackMatter[]> {
+    return db.select().from(projectBackMatter);
   }
 }
 
