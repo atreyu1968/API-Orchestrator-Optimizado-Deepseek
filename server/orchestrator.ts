@@ -772,6 +772,126 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
     return header + body + footer;
   }
 
+  /**
+   * Construye el bloque de TEXTO ÍNTEGRO de los volúmenes anteriores de una serie
+   * para inyectarlo al Architect (1M de contexto DeepSeek V4). Igual que con el
+   * Narrador, usa eviction "newest first" cuando se excede el presupuesto.
+   *
+   * - Llama a `storage.getProjectsBySeries(seriesId)`.
+   * - Filtra los proyectos cuyo `seriesOrder < currentSeriesOrder` (excluye el actual).
+   * - Para cada volumen previo, concatena su título + texto narrativo de capítulos
+   *   completados en orden (Prólogo → Cap 1 → … → Epílogo → Nota autor).
+   * - Si excede budget, conserva los volúmenes más recientes (los más cercanos al
+   *   actual son los más relevantes para continuidad inmediata).
+   */
+  static async buildPreviousVolumesFullText(
+    seriesId: number,
+    currentProjectId: number,
+    currentSeriesOrder: number | null | undefined,
+    budgetTokens: number = 600_000
+  ): Promise<string> {
+    const allInSeries = await storage.getProjectsBySeries(seriesId);
+    const cutoff = typeof currentSeriesOrder === "number" && Number.isFinite(currentSeriesOrder)
+      ? currentSeriesOrder
+      : Number.POSITIVE_INFINITY;
+    // Volúmenes previos: distinto del actual y con seriesOrder menor.
+    const previousVolumes = allInSeries
+      .filter(p => p.id !== currentProjectId)
+      .filter(p => typeof p.seriesOrder === "number" && (p.seriesOrder as number) < cutoff)
+      .sort((a, b) => (a.seriesOrder ?? 0) - (b.seriesOrder ?? 0));
+
+    if (previousVolumes.length === 0) return "";
+
+    const budgetChars = budgetTokens * 4;
+    const renderedBlocks: { volume: typeof previousVolumes[number]; block: string; chars: number }[] = [];
+
+    for (const vol of previousVolumes) {
+      const chapters = await storage.getChaptersByProject(vol.id);
+      const chaptersText = Orchestrator.buildPreviousChaptersFullText(
+        chapters,
+        Number.POSITIVE_INFINITY, // incluye TODOS los capítulos (estamos en otro libro)
+        Math.floor(budgetTokens / Math.max(previousVolumes.length, 1))
+      );
+      if (!chaptersText.trim()) continue;
+      const header = `\n\n══════════════════════════════════════════════════════════\nVOLUMEN ${vol.seriesOrder ?? "?"}: ${vol.title}\n══════════════════════════════════════════════════════════\n`;
+      const block = header + chaptersText;
+      renderedBlocks.push({ volume: vol, block, chars: block.length });
+    }
+
+    if (renderedBlocks.length === 0) return "";
+
+    // Eviction "newest first": empezamos por el volumen más reciente y vamos hacia atrás.
+    let used = 0;
+    const kept: string[] = [];
+    const dropped: string[] = [];
+    for (let i = renderedBlocks.length - 1; i >= 0; i--) {
+      const r = renderedBlocks[i];
+      if (used + r.chars <= budgetChars) {
+        kept.unshift(r.block);
+        used += r.chars;
+      } else {
+        dropped.unshift(`Vol ${r.volume.seriesOrder ?? "?"}: "${r.volume.title}"`);
+      }
+    }
+
+    const placeholder = dropped.length > 0
+      ? `\n\n[VOLÚMENES PREVIOS OMITIDOS POR PRESUPUESTO DE TOKENS: ${dropped.join(", ")}. Su continuidad ya está condensada en el world bible y los snapshots de serie.]\n`
+      : "";
+
+    return placeholder + kept.join("");
+  }
+
+  /**
+   * Construye un catálogo del pseudónimo: títulos + premisas (y hasta los primeros
+   * 600 caracteres del prólogo/cap 1, si caben) de OTRAS novelas del mismo
+   * pseudónimo. Sirve para que el Architect evite repetirse a sí mismo.
+   *
+   * Excluye proyectos de la misma serie (la serie ya se cubre en buildPreviousVolumesFullText).
+   */
+  static async buildPseudonymCatalog(
+    pseudonymId: number,
+    currentProjectId: number,
+    currentSeriesId: number | null | undefined,
+    budgetTokens: number = 80_000
+  ): Promise<string> {
+    const all = await storage.getProjectsByPseudonym(pseudonymId).catch(() => [] as Project[]);
+    if (!Array.isArray(all) || all.length === 0) return "";
+    const otherProjects = all
+      .filter(p => p.id !== currentProjectId)
+      .filter(p => !currentSeriesId || p.seriesId !== currentSeriesId);
+    if (otherProjects.length === 0) return "";
+
+    const budgetChars = budgetTokens * 4;
+    let used = 0;
+    const blocks: string[] = [];
+
+    for (const p of otherProjects) {
+      const premise = (p.premise || "").trim();
+      const blockHeader = `\n--- "${p.title}" (${p.genre || "género?"}, ${p.tone || "tono?"}) ---`;
+      const premiseLine = premise ? `\nPremisa: ${premise.slice(0, 1500)}` : "";
+      let openingExcerpt = "";
+      try {
+        const chs = await storage.getChaptersByProject(p.id);
+        const opener = chs
+          .filter(c => c.status === "completed" && (c.content || c.originalContent || c.preEditContent))
+          .sort((a, b) => (a.chapterNumber ?? 0) - (b.chapterNumber ?? 0))[0];
+        if (opener) {
+          const text = opener.content || opener.originalContent || opener.preEditContent || "";
+          openingExcerpt = `\nApertura (~600 c.): ${text.trim().slice(0, 600).replace(/\s+/g, " ")}…`;
+        }
+      } catch { /* sin caps, sin extracto */ }
+      const block = blockHeader + premiseLine + openingExcerpt + "\n";
+      if (used + block.length > budgetChars) {
+        blocks.push(`\n[Catálogo truncado: ${otherProjects.length - blocks.length} novelas adicionales del pseudónimo no cupieron en el presupuesto.]\n`);
+        break;
+      }
+      blocks.push(block);
+      used += block.length;
+    }
+
+    return blocks.length > 0 ? blocks.join("") : "";
+  }
+
   async generateNovel(project: Project): Promise<void> {
     try {
       // Check if chapters already exist (recovery after crash)
@@ -961,6 +1081,41 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         ? `${project.premise || ""}${extendedGuideContent ? `\n\n--- GUÍA DE ESCRITURA EXTENDIDA ---\n${extendedGuideContent}` : ""}${seriesContextContent}`
         : (project.premise || "");
 
+      // 1M de contexto DeepSeek V4 — pasar texto íntegro de volúmenes previos
+      // de la serie (T001) y catálogo de OTRAS novelas del mismo pseudónimo (T004).
+      // Lo computamos UNA vez fuera del bucle de reintentos para no pagar el coste
+      // de I/O en cada intento.
+      let previousVolumesFullText = "";
+      if (project.seriesId) {
+        try {
+          previousVolumesFullText = await Orchestrator.buildPreviousVolumesFullText(
+            project.seriesId,
+            project.id,
+            (project as any).seriesOrder
+          );
+          if (previousVolumesFullText) {
+            console.log(`[Orchestrator] Inyectando texto íntegro de volúmenes previos al Architect (${previousVolumesFullText.length} chars).`);
+          }
+        } catch (e) {
+          console.warn(`[Orchestrator] Falló buildPreviousVolumesFullText: ${(e as Error).message}`);
+        }
+      }
+      let pseudonymCatalog = "";
+      if (project.pseudonymId) {
+        try {
+          pseudonymCatalog = await Orchestrator.buildPseudonymCatalog(
+            project.pseudonymId,
+            project.id,
+            project.seriesId
+          );
+          if (pseudonymCatalog) {
+            console.log(`[Orchestrator] Inyectando catálogo del pseudónimo al Architect (${pseudonymCatalog.length} chars).`);
+          }
+        } catch (e) {
+          console.warn(`[Orchestrator] Falló buildPseudonymCatalog: ${(e as Error).message}`);
+        }
+      }
+
       const MAX_ARCHITECT_RETRIES = 3;
       let architectAttempt = 0;
       let architectResult: any = null;
@@ -994,6 +1149,9 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
             forbiddenNames,
             projectId: project.id,
+            previousVolumesFullText,
+            pseudonymCatalog,
+            extendedGuideContent: extendedGuideContent || undefined,
           });
 
           // Architect call may take up to 5 minutes; if a heartbeat watchdog
@@ -1206,6 +1364,9 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                   kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
                   forbiddenNames,
                   projectId: project.id,
+                  previousVolumesFullText,
+                  pseudonymCatalog,
+                  extendedGuideContent: extendedGuideContent || undefined,
                 });
 
                 if (retryResult.tokenUsage) {
@@ -5600,6 +5761,43 @@ Responde SOLO con un JSON válido con la estructura:
         return;
       }
 
+      // 1M de contexto DeepSeek V4 — al extender una novela, el Architect
+      // ahora también ve volúmenes previos de la serie y el catálogo del
+      // pseudónimo (mismas razones que en generateNovel).
+      let extendPreviousVolumes = "";
+      if (project.seriesId) {
+        try {
+          extendPreviousVolumes = await Orchestrator.buildPreviousVolumesFullText(
+            project.seriesId,
+            project.id,
+            (project as any).seriesOrder
+          );
+        } catch (e) {
+          console.warn(`[Orchestrator:Extend] Falló buildPreviousVolumesFullText: ${(e as Error).message}`);
+        }
+      }
+      let extendPseudonymCatalog = "";
+      if (project.pseudonymId) {
+        try {
+          extendPseudonymCatalog = await Orchestrator.buildPseudonymCatalog(
+            project.pseudonymId,
+            project.id,
+            project.seriesId
+          );
+        } catch (e) {
+          console.warn(`[Orchestrator:Extend] Falló buildPseudonymCatalog: ${(e as Error).message}`);
+        }
+      }
+      let extendExtendedGuide: string | undefined;
+      if ((project as any).extendedGuideId) {
+        try {
+          const eg = await storage.getExtendedGuide((project as any).extendedGuideId);
+          extendExtendedGuide = eg?.content || undefined;
+        } catch (e) {
+          console.warn(`[Orchestrator:Extend] Falló getExtendedGuide: ${(e as Error).message}`);
+        }
+      }
+
       const architectResult = await this.architect.execute({
         title: project.title,
         premise: architectPrompt,
@@ -5610,6 +5808,9 @@ Responde SOLO con un JSON válido con la estructura:
         hasAuthorNote: false,
         tone: project.tone,
         projectId: project.id,
+        previousVolumesFullText: extendPreviousVolumes,
+        pseudonymCatalog: extendPseudonymCatalog,
+        extendedGuideContent: extendExtendedGuide,
       });
 
       if (this.aborted) {
@@ -5849,6 +6050,213 @@ Responde SOLO con un JSON válido con la estructura:
     } catch (error) {
       console.error("[Orchestrator:Extend] Error:", error);
       this.callbacks.onError(`Error en extensión: ${error instanceof Error ? error.message : "Error desconocido"}`);
+      await storage.updateProject(project.id, { status: "error" });
+    }
+  }
+
+  /**
+   * T003 — Re-arquitectura mid-novela.
+   * El Architect rediseña la escaleta DESDE `fromChapter` (inclusive) leyendo
+   * el texto íntegro de los capítulos ya escritos (1M ctx DeepSeek V4) más la
+   * escaleta original, y devuelve nuevos `chapterOutlines` para los capítulos
+   * pendientes. Los capítulos previos a `fromChapter` no se tocan.
+   */
+  async regenerateOutlineFromChapter(
+    project: Project,
+    fromChapter: number,
+    instructions?: string
+  ): Promise<void> {
+    try {
+      this.callbacks.onAgentStatus("architect", "thinking", `Rediseñando trama desde el capítulo ${fromChapter}...`);
+
+      const allChapters = await storage.getChaptersByProject(project.id);
+      // Permitimos prólogo (chapterNumber === 0) como base canónica; solo excluimos
+      // epílogo (-1) y nota del autor (-2) porque vienen narrativamente DESPUÉS de
+      // los capítulos regulares.
+      const completedBefore = allChapters
+        .filter(c => c.status === "completed"
+          && typeof c.chapterNumber === "number"
+          && c.chapterNumber >= 0
+          && c.chapterNumber < fromChapter);
+      if (completedBefore.length === 0) {
+        this.callbacks.onError(`No hay capítulos completados antes del capítulo ${fromChapter}; nada en qué basar el rediseño.`);
+        await storage.updateProject(project.id, { status: "completed" });
+        return;
+      }
+
+      const writtenChaptersFullText = Orchestrator.buildPreviousChaptersFullText(
+        allChapters,
+        fromChapter,
+        700_000
+      );
+
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      const plotOutlineData = (worldBible?.plotOutline as any) || {};
+      const existingOutlines: any[] = Array.isArray(plotOutlineData)
+        ? plotOutlineData
+        : (plotOutlineData.chapterOutlines || plotOutlineData.chapter_outlines || plotOutlineData.escaleta || []);
+
+      const originalOutlineText = existingOutlines.length > 0
+        ? "\n═══════════════════════════════════════════════════════════════════\nESCALETA ORIGINAL (referencia — los caps a partir de " + fromChapter + " serán rediseñados):\n═══════════════════════════════════════════════════════════════════\n" +
+          existingOutlines.map((c: any) => {
+            const num = c.number ?? c.numero ?? "?";
+            const title = c.titulo || c.title || "(sin título)";
+            const summary = c.summary || c.objetivo_narrativo || "";
+            const beats = (c.keyEvents || c.beats || []).slice(0, 3);
+            return `\nCap ${num} — ${title}\n  Objetivo: ${summary}\n  Beats: ${beats.join(" | ")}`;
+          }).join("\n") + "\n"
+        : "";
+
+      // T001 + T004 + T005: aprovechar 1M de contexto también aquí
+      let previousVolumesFullText = "";
+      if (project.seriesId) {
+        try {
+          previousVolumesFullText = await Orchestrator.buildPreviousVolumesFullText(
+            project.seriesId,
+            project.id,
+            (project as any).seriesOrder
+          );
+        } catch (e) {
+          console.warn(`[Orchestrator:Regen] previousVolumes falló: ${(e as Error).message}`);
+        }
+      }
+      let pseudonymCatalog = "";
+      if (project.pseudonymId) {
+        try {
+          pseudonymCatalog = await Orchestrator.buildPseudonymCatalog(
+            project.pseudonymId,
+            project.id,
+            project.seriesId
+          );
+        } catch (e) {
+          console.warn(`[Orchestrator:Regen] pseudonymCatalog falló: ${(e as Error).message}`);
+        }
+      }
+      let extendedGuideContent: string | undefined;
+      if ((project as any).extendedGuideId) {
+        try {
+          const eg = await storage.getExtendedGuide((project as any).extendedGuideId);
+          extendedGuideContent = eg?.content || undefined;
+        } catch (e) {
+          console.warn(`[Orchestrator:Regen] extendedGuide falló: ${(e as Error).message}`);
+        }
+      }
+
+      const remainingChapters = Math.max(1, project.chapterCount - (fromChapter - 1));
+      const userInstrBlock = instructions && instructions.trim()
+        ? `\n═══════════════════════════════════════════════════════════════════\nINSTRUCCIONES DEL AUTOR PARA EL REDISEÑO (MÁXIMA PRIORIDAD):\n═══════════════════════════════════════════════════════════════════\n${instructions.trim()}\n`
+        : "";
+
+      const redesignInstructions = `${userInstrBlock}\nObjetivo: Devuelve una NUEVA escaleta SOLO para los capítulos ${fromChapter} a ${project.chapterCount} (es decir, ${remainingChapters} capítulos), basándote en lo que realmente se ha escrito en los capítulos previos. Los capítulos 1..${fromChapter - 1} NO se tocan: respétalos como canon. Conserva consistencia con personajes, hilos abiertos, payoffs sembrados y voz.`;
+
+      const architectResult = await this.architect.execute({
+        title: project.title,
+        premise: project.premise || "",
+        genre: project.genre,
+        tone: project.tone,
+        chapterCount: project.chapterCount,
+        hasPrologue: project.hasPrologue,
+        hasEpilogue: project.hasEpilogue,
+        hasAuthorNote: project.hasAuthorNote,
+        architectInstructions: (project.architectInstructions || "") + originalOutlineText,
+        kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+        projectId: project.id,
+        previousVolumesFullText,
+        pseudonymCatalog,
+        extendedGuideContent,
+        writtenChaptersFullText,
+        redesignFromChapter: fromChapter,
+        redesignInstructions,
+      });
+
+      if (architectResult.tokenUsage) {
+        await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto (re-arquitectura mid-novela)", "deepseek-v4-flash", undefined, "world_bible");
+      }
+
+      if (!architectResult.content) {
+        this.callbacks.onError("El Arquitecto no devolvió contenido para el rediseño.");
+        await storage.updateProject(project.id, { status: "error" });
+        return;
+      }
+
+      const parsed = this.parseArchitectOutput(architectResult.content);
+      const newOutlines = parsed?.escaleta_capitulos || [];
+      if (!Array.isArray(newOutlines) || newOutlines.length === 0) {
+        this.callbacks.onError("El Arquitecto no produjo una escaleta válida para el rediseño.");
+        await storage.updateProject(project.id, { status: "error" });
+        return;
+      }
+
+      // Mezcla: conservar outlines previos a fromChapter, reemplazar el resto.
+      // Coerción robusta de chapter numbers: aceptamos number o string numérica
+      // (algunos modelos devuelven "3" en vez de 3) pero rechazamos NaN.
+      const coerceNum = (v: any): number | null => {
+        if (typeof v === "number" && Number.isFinite(v)) return v;
+        if (typeof v === "string" && v.trim() !== "") {
+          const n = Number(v);
+          if (Number.isFinite(n)) return n;
+        }
+        return null;
+      };
+      const keptOutlines = existingOutlines.filter((c: any) => {
+        const num = coerceNum(c.number ?? c.numero);
+        return num !== null && num < fromChapter;
+      });
+      const newOutlinesNormalized = newOutlines.map((c: any) => {
+        const n = coerceNum(c.numero ?? c.number);
+        return {
+          number: n,
+          summary: c.objetivo_narrativo || "",
+          keyEvents: c.beats || [],
+          titulo: c.titulo,
+          epoca_id: c.epoca_id ?? null,
+          cronologia: c.cronologia,
+          ubicacion: c.ubicacion,
+          elenco_presente: c.elenco_presente,
+          funcion_estructural: c.funcion_estructural,
+          informacion_nueva: c.informacion_nueva,
+          pregunta_dramatica: c.pregunta_dramatica,
+          conflicto_central: c.conflicto_central,
+          giro_emocional: c.giro_emocional,
+          recursos_literarios_sugeridos: c.recursos_literarios_sugeridos,
+          tono_especifico: c.tono_especifico,
+          prohibiciones_este_capitulo: c.prohibiciones_este_capitulo,
+          arcos_que_avanza: c.arcos_que_avanza,
+          continuidad_entrada: c.continuidad_entrada,
+          continuidad_salida: c.continuidad_salida,
+          riesgos_de_verosimilitud: c.riesgos_de_verosimilitud,
+        };
+      }).filter((c: any) => typeof c.number === "number" && c.number >= fromChapter);
+
+      // Dedup defensivo: si el modelo devolvió capítulos duplicados, gana el último.
+      const dedupedNew = new Map<number, any>();
+      for (const c of newOutlinesNormalized) {
+        if (typeof c.number === "number") dedupedNew.set(c.number, c);
+      }
+
+      const mergedOutlines = [...keptOutlines, ...dedupedNew.values()]
+        .sort((a: any, b: any) => ((coerceNum(a.number ?? a.numero) ?? 0) - (coerceNum(b.number ?? b.numero) ?? 0)));
+
+      const newPlotOutline = {
+        ...(typeof plotOutlineData === "object" && !Array.isArray(plotOutlineData) ? plotOutlineData : {}),
+        chapterOutlines: mergedOutlines,
+      };
+
+      if (worldBible) {
+        await storage.updateWorldBible(worldBible.id, { plotOutline: newPlotOutline });
+      } else {
+        await storage.createWorldBible({
+          projectId: project.id,
+          plotOutline: newPlotOutline,
+        } as any);
+      }
+
+      await storage.updateProject(project.id, { status: "completed" });
+      this.callbacks.onAgentStatus("architect", "complete", `Rediseño completado: ${newOutlinesNormalized.length} capítulos rediseñados (a partir del ${fromChapter}).`);
+      this.callbacks.onProjectComplete?.();
+    } catch (error) {
+      console.error("[Orchestrator:RegenerateOutline] Error:", error);
+      this.callbacks.onError(`Error al rediseñar la escaleta: ${error instanceof Error ? error.message : "Error desconocido"}`);
       await storage.updateProject(project.id, { status: "error" });
     }
   }

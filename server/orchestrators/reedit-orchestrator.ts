@@ -95,16 +95,28 @@ RESPONDE SOLO EN JSON:
   }
 
   async execute(input: any): Promise<any> {
-    return this.reviewChapter(input.content, input.chapterNumber, input.language, input.previousChapterSummary);
+    return this.reviewChapter(input.content, input.chapterNumber, input.language, input.previousChapterSummary, input.previousChaptersFullText);
   }
 
-  async reviewChapter(content: string, chapterNumber: number, language: string, previousChapterSummary?: string): Promise<any> {
+  async reviewChapter(content: string, chapterNumber: number, language: string, previousChapterSummary?: string, previousChaptersFullText?: string): Promise<any> {
     const prevContext = previousChapterSummary 
       ? `\nCONTEXTO DEL CAPÍTULO ANTERIOR:\n${previousChapterSummary}\n` 
       : "";
-    
+
+    const fullPrevSection = (previousChaptersFullText && previousChaptersFullText.trim().length > 0)
+      ? `
+═══════════════════════════════════════════════════════════════
+MANUSCRITO PREVIO COMPLETO (capítulos 1..${chapterNumber - 1}):
+═══════════════════════════════════════════════════════════════
+Usa este texto íntegro como referencia para detectar repeticiones reales (epítetos, muletillas, metáforas, ideas, escenas) que ya hayan aparecido en capítulos anteriores. Cuando marques "epítetos repetidos" o "muletillas repetidas", basa la severidad en el manuscrito completo, no solo en este capítulo.
+
+${previousChaptersFullText}
+═══════════════════════════════════════════════════════════════
+`
+      : "";
+
     const prompt = `Analiza en profundidad este capítulo (Capítulo ${chapterNumber}) escrito en ${language}:
-${prevContext}
+${prevContext}${fullPrevSection}
 CAPÍTULO COMPLETO:
 ${content}
 
@@ -215,7 +227,7 @@ RESPONDE SOLO EN JSON:
   }
 
   async execute(input: any): Promise<any> {
-    return this.editChapter(input.content, input.chapterNumber, input.language, input.worldBible, input.adjacentContext);
+    return this.editChapter(input.content, input.chapterNumber, input.language, input.worldBible, input.adjacentContext, input.previousChaptersFullText);
   }
 
   async editChapter(
@@ -223,7 +235,8 @@ RESPONDE SOLO EN JSON:
     chapterNumber: number, 
     language: string,
     worldBible?: any,
-    adjacentContext?: { previousExcerpt?: string; nextExcerpt?: string }
+    adjacentContext?: { previousExcerpt?: string; nextExcerpt?: string },
+    previousChaptersFullText?: string
   ): Promise<any> {
     const languageRules = this.getLanguageRules(language);
     
@@ -251,12 +264,28 @@ ${chars}
       }
     }
 
+    const fullPrevSection = (previousChaptersFullText && previousChaptersFullText.trim().length > 0)
+      ? `
+═══════════════════════════════════════════════════════════════
+MANUSCRITO PREVIO COMPLETO (capítulos 1..${chapterNumber - 1}):
+═══════════════════════════════════════════════════════════════
+Tienes acceso al texto íntegro del manuscrito anterior. ÚSALO para:
+- Eliminar epítetos físicos repetidos: si un rasgo (ojos, pelo, accesorio, cicatriz) ya fue descrito en cualquier capítulo anterior, ELIMÍNALO en este.
+- Variar muletillas fisiológicas: sustituye reacciones corporales que ya se usaron antes.
+- Variar metáforas y giros que ya hayan aparecido.
+- Mantener voz y estilo coherentes con todo el manuscrito previo.
+
+${previousChaptersFullText}
+═══════════════════════════════════════════════════════════════
+`
+      : "";
+
     const prompt = `Corrige y mejora este capítulo (Capítulo ${chapterNumber}) para calidad de publicación editorial.
 
 IDIOMA: ${language}
 ${languageRules}
 ${worldBibleSection}
-${adjacentSection}
+${adjacentSection}${fullPrevSection}
 CAPÍTULO A CORREGIR:
 ${content}
 
@@ -1157,7 +1186,9 @@ FORMATO DE RESPUESTA (JSON):
       input.problems,
       input.worldBible,
       input.adjacentContext,
-      input.language
+      input.language,
+      input.userInstructions,
+      input.previousChaptersFullText
     );
   }
 
@@ -1168,7 +1199,8 @@ FORMATO DE RESPUESTA (JSON):
     worldBible: any,
     adjacentContext: { previousChapter?: string; nextChapter?: string; previousSummary?: string; nextSummary?: string },
     language: string,
-    userInstructions?: string
+    userInstructions?: string,
+    previousChaptersFullText?: string
   ): Promise<any> {
     const worldBibleContext = this.buildWorldBibleContext(worldBible);
     const adjacentContextStr = this.buildAdjacentContext(adjacentContext);
@@ -1202,7 +1234,15 @@ ${worldBibleContext}
 CONTEXTO NARRATIVO (capítulos adyacentes):
 ═══════════════════════════════════════════════════════════════
 ${adjacentContextStr}
+${(previousChaptersFullText && previousChaptersFullText.trim().length > 0) ? `
+═══════════════════════════════════════════════════════════════
+MANUSCRITO PREVIO COMPLETO (capítulos 1..${chapterNumber - 1}):
+═══════════════════════════════════════════════════════════════
+Tienes acceso al texto íntegro del manuscrito anterior. Úsalo para mantener coherencia absoluta con lo escrito antes: voz narrativa, hechos establecidos, descripciones de personajes ya hechas (NO repetir epítetos físicos), payoffs ya planteados, metáforas ya usadas (NO repetirlas).
 
+${previousChaptersFullText}
+═══════════════════════════════════════════════════════════════
+` : ''}
 ═══════════════════════════════════════════════════════════════
 CAPÍTULO A REESCRIBIR:
 ═══════════════════════════════════════════════════════════════
@@ -1449,6 +1489,67 @@ export class ReeditOrchestrator {
       this.totalOutputTokens += response.tokenUsage.outputTokens || 0;
       this.totalThinkingTokens += response.tokenUsage.thinkingTokens || 0;
     }
+  }
+
+  /**
+   * T002 — Construye el texto íntegro de TODOS los capítulos previos del
+   * manuscrito (reedit_chapters) antes del capítulo objetivo. Pensado para
+   * aprovechar el 1M de contexto de DeepSeek V4 en los agentes de reedición
+   * (Editor, CopyEditor, NarrativeRewriter) y permitir detección real de
+   * repeticiones (epítetos, muletillas, metáforas, ideas).
+   *
+   * Política newest-first: incluye capítulos del más reciente al más antiguo
+   * hasta agotar el presupuesto. Si no caben, anota el truncamiento.
+   *
+   * @param projectId - id del proyecto de reedición
+   * @param beforeChapterNumber - sólo capítulos con chapterNumber < este valor
+   * @param budgetChars - presupuesto en caracteres (default 600 000 ≈ 150K toks)
+   */
+  private async buildPreviousReeditChaptersFullText(
+    projectId: number,
+    beforeChapterNumber: number,
+    budgetChars: number = 600_000
+  ): Promise<string> {
+    if (!Number.isFinite(beforeChapterNumber) || beforeChapterNumber <= 1) return "";
+    let allChapters: any[] = [];
+    try {
+      allChapters = await storage.getReeditChaptersByProject(projectId);
+    } catch (e) {
+      console.warn(`[ReeditOrchestrator] buildPreviousReeditChaptersFullText: storage falló: ${(e as Error).message}`);
+      return "";
+    }
+    const previous = allChapters
+      .filter(c => typeof c.chapterNumber === "number" && c.chapterNumber < beforeChapterNumber)
+      .filter(c => (c.editedContent && c.editedContent.trim()) || (c.originalContent && c.originalContent.trim()))
+      .sort((a, b) => (b.chapterNumber ?? 0) - (a.chapterNumber ?? 0)); // newest first
+
+    if (previous.length === 0) return "";
+
+    const blocks: string[] = [];
+    let used = 0;
+    let included = 0;
+    for (const c of previous) {
+      const text = (c.editedContent && c.editedContent.trim()) ? c.editedContent : (c.originalContent || "");
+      const header = `\n═══ CAPÍTULO ${c.chapterNumber}${c.title ? ` — ${c.title}` : ""} ═══\n`;
+      const block = header + text + "\n";
+      if (used + block.length > budgetChars) {
+        const remaining = previous.length - included;
+        if (remaining > 0) {
+          blocks.unshift(`\n[Truncado: ${remaining} capítulos previos no cupieron en el presupuesto de ${budgetChars} caracteres.]\n`);
+        }
+        break;
+      }
+      blocks.push(block);
+      used += block.length;
+      included += 1;
+    }
+    // Reordenamos para presentar en orden cronológico (1..N-1) que es más natural
+    // para el modelo cuando lee el "manuscrito previo".
+    const chronological = blocks
+      .filter(b => !b.startsWith("\n[Truncado"))
+      .reverse();
+    const truncationNote = blocks.find(b => b.startsWith("\n[Truncado"));
+    return (truncationNote || "") + chronological.join("");
   }
   
   /**
@@ -2662,12 +2763,19 @@ export class ReeditOrchestrator {
         const prevSummary = prevChapterForEditor 
           ? `Capítulo ${prevChapterForEditor.chapterNumber}: ${prevChapterForEditor.originalContent.substring(0, 1000)}...`
           : undefined;
-        
+
+        // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
+        const previousFullForEditor = await this.buildPreviousReeditChaptersFullText(
+          project.id,
+          chapter.chapterNumber
+        );
+
         const editorResult = await this.editorAgent.reviewChapter(
           chapter.originalContent,
           chapter.chapterNumber,
           detectedLang,
-          prevSummary
+          prevSummary,
+          previousFullForEditor
         );
         this.trackTokens(editorResult);
 
@@ -3163,7 +3271,9 @@ export class ReeditOrchestrator {
           
           try {
             const adjacentContext = this.buildAdjacentChapterContext(validChapters, chapNum);
-            
+            // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
+            const previousFullForRewrite = await this.buildPreviousReeditChaptersFullText(projectId, chapNum);
+
             const rewriteResult = await this.narrativeRewriter.rewriteChapter(
               chapter.editedContent || chapter.originalContent,
               chapNum,
@@ -3178,7 +3288,8 @@ export class ReeditOrchestrator {
               worldBibleResult,
               adjacentContext,
               detectedLang,
-              userRewriteInstructions || undefined
+              userRewriteInstructions || undefined,
+              previousFullForRewrite
             );
             this.trackTokens(rewriteResult);
             
@@ -3315,12 +3426,19 @@ export class ReeditOrchestrator {
           nextExcerpt: (nextChapter?.editedContent || nextChapter?.originalContent)?.substring(0, 1500),
         };
 
+        // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
+        const previousFullForCopyEditor = await this.buildPreviousReeditChaptersFullText(
+          projectId,
+          chapter.chapterNumber
+        );
+
         const copyEditorResult = await this.copyEditorAgent.editChapter(
           contentToEdit,
           chapter.chapterNumber,
           detectedLang,
           worldBibleResult,
-          adjacentContextCE
+          adjacentContextCE,
+          previousFullForCopyEditor
         );
         this.trackTokens(copyEditorResult);
 
@@ -3736,6 +3854,8 @@ export class ReeditOrchestrator {
                 previousChapter: prevChapter?.editedContent?.substring(0, 2000),
                 nextChapter: nextChapter?.editedContent?.substring(0, 2000),
               };
+              // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
+              const previousFullForRewrite = await this.buildPreviousReeditChaptersFullText(projectId, chapter.chapterNumber);
 
               const rewriteResult = await this.narrativeRewriter.rewriteChapter(
                 chapter.editedContent || chapter.originalContent,
@@ -3744,7 +3864,8 @@ export class ReeditOrchestrator {
                 worldBibleForReview || {},
                 adjacentContext,
                 detectedLang,
-                userInstructions || undefined
+                userInstructions || undefined,
+                previousFullForRewrite
               );
               this.trackTokens(rewriteResult);
               await this.updateHeartbeat(projectId);
@@ -4000,6 +4121,8 @@ export class ReeditOrchestrator {
             };
             
             const detectedLang = project.detectedLanguage || "es";
+            // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
+            const previousFullForRewrite = await this.buildPreviousReeditChaptersFullText(projectId, chapter.chapterNumber);
             const rewriteResult = await this.narrativeRewriter.rewriteChapter(
               chapter.editedContent || chapter.originalContent,
               chapter.chapterNumber,
@@ -4007,7 +4130,8 @@ export class ReeditOrchestrator {
               worldBibleForReview || {},
               adjacentContext,
               detectedLang,
-              userInstructions || undefined
+              userInstructions || undefined,
+              previousFullForRewrite
             );
             this.trackTokens(rewriteResult);
             await this.updateHeartbeat(projectId);
@@ -4387,6 +4511,8 @@ export class ReeditOrchestrator {
             };
 
             const detectedLangFRO = project.detectedLanguage || "es";
+            // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
+            const previousFullForRewriteFRO = await this.buildPreviousReeditChaptersFullText(projectId, chapter.chapterNumber);
             const rewriteResult = await this.narrativeRewriter.rewriteChapter(
               chapter.editedContent || chapter.originalContent,
               chapter.chapterNumber,
@@ -4394,7 +4520,8 @@ export class ReeditOrchestrator {
               worldBibleForReview || {},
               adjacentContext,
               detectedLangFRO,
-              userInstructions || undefined
+              userInstructions || undefined,
+              previousFullForRewriteFRO
             );
             this.trackTokens(rewriteResult);
             await this.updateHeartbeat(projectId);
@@ -4632,6 +4759,8 @@ export class ReeditOrchestrator {
         };
 
         const detectedLangARC = project.detectedLanguage || "es";
+        // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
+        const previousFullForRewriteARC = await this.buildPreviousReeditChaptersFullText(projectId, chapter.chapterNumber);
         const rewriteResult = await this.narrativeRewriter.rewriteChapter(
           chapter.editedContent || chapter.originalContent,
           chapter.chapterNumber,
@@ -4639,7 +4768,8 @@ export class ReeditOrchestrator {
           worldBible || {},
           adjacentContext,
           detectedLangARC,
-          userInstructions || undefined
+          userInstructions || undefined,
+          previousFullForRewriteARC
         );
         this.trackTokens(rewriteResult);
         await this.updateHeartbeat(projectId);

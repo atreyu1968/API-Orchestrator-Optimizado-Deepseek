@@ -17,6 +17,31 @@ interface ArchitectInput {
   kindleUnlimitedOptimized?: boolean;
   forbiddenNames?: string[];
   projectId?: number;
+
+  // Texto íntegro de los volúmenes anteriores de la misma serie, ordenados
+  // por seriesOrder ascendente. Aprovecha el contexto de 1M tokens de
+  // DeepSeek V4 para que el Arquitecto diseñe la nueva escaleta sin
+  // contradecir hechos, frases ni gestos concretos de los libros previos.
+  previousVolumesFullText?: string;
+
+  // Catálogo del pseudónimo: títulos + premisas (y, si caben, sinopsis
+  // breves) de OTRAS novelas del mismo pseudónimo. Sirve para que el
+  // Arquitecto evite repetirse a sí mismo en giros y estructuras.
+  pseudonymCatalog?: string;
+
+  // Contenido íntegro de la "Guía Extendida" (extended_guides.content):
+  // materiales de referencia del autor, manuscritos importados como
+  // ejemplo de voz, fuentes históricas, etc. Antes solo se inyectaba el
+  // resumen en `architectInstructions`; ahora se pasa entero.
+  extendedGuideContent?: string;
+
+  // Solo para el flujo de re-arquitectura mid-novela (T003):
+  // texto íntegro de los capítulos ya escritos hasta el corte del usuario.
+  // Si está presente, el Arquitecto debe rediseñar la escaleta DESDE
+  // `redesignFromChapter` SIN tocar los capítulos previos.
+  writtenChaptersFullText?: string;
+  redesignFromChapter?: number;
+  redesignInstructions?: string;
 }
 
 const PHASE1_SYSTEM_PROMPT = `
@@ -378,6 +403,61 @@ export class ArchitectAgent extends BaseAgent {
     ${input.forbiddenNames.join(", ")}
     
     Inventa nombres COMPLETAMENTE NUEVOS, originales y memorables para TODOS los personajes.
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.previousVolumesFullText ? `
+    ═══════════════════════════════════════════════════════════════════
+    📚 VOLÚMENES ANTERIORES DE LA SERIE (TEXTO ÍNTEGRO) 📚
+    ═══════════════════════════════════════════════════════════════════
+    A continuación tienes el texto literal de los libros previos de esta saga.
+    USO OBLIGATORIO:
+    - Respeta TODOS los hechos, frases dichas, gestos, relaciones y giros.
+    - Reutiliza personajes, lugares y léxico ESTABLECIDOS (no los reinventes con otros nombres).
+    - Continúa los hilos sueltos que dejaron los volúmenes previos.
+    - Tu nueva escaleta debe sentirse como continuación natural, no como un libro independiente.
+
+${input.previousVolumesFullText}
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.pseudonymCatalog ? `
+    ═══════════════════════════════════════════════════════════════════
+    🎭 CATÁLOGO DEL PSEUDÓNIMO — EVITA REPETIRTE A TI MISMO 🎭
+    ═══════════════════════════════════════════════════════════════════
+    Estas son OTRAS novelas publicadas bajo este mismo pseudónimo.
+    NO REPITAS sus premisas, giros, estructuras, arquetipos de protagonista
+    ni clímax. La nueva novela debe ser claramente DIFERENTE de las siguientes:
+
+${input.pseudonymCatalog}
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.extendedGuideContent ? `
+    ═══════════════════════════════════════════════════════════════════
+    📖 MATERIALES DE REFERENCIA DEL AUTOR (ÍNTEGROS) 📖
+    ═══════════════════════════════════════════════════════════════════
+    Material aportado por el autor (otra novela suya como ejemplo de voz,
+    fuentes de research, biografía, contexto histórico, etc.). Léelo entero
+    y usa lo que sea relevante para que la novela tenga DATOS REALES
+    cuando aplique y/o IMITE LA VOZ del autor cuando sea su material:
+
+${input.extendedGuideContent}
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.writtenChaptersFullText && typeof input.redesignFromChapter === "number" ? `
+    ═══════════════════════════════════════════════════════════════════
+    🔧 RE-ARQUITECTURA EN CURSO — RESPETA LO YA ESCRITO 🔧
+    ═══════════════════════════════════════════════════════════════════
+    El usuario quiere REDISEÑAR la escaleta DESDE el capítulo ${input.redesignFromChapter}.
+    Los capítulos anteriores YA ESTÁN ESCRITOS y NO SE TOCAN.
+    A continuación tienes el texto íntegro de esos capítulos ya escritos:
+
+${input.writtenChaptersFullText}
+
+    REGLAS:
+    - Tu nueva escaleta debe partir EXACTAMENTE del estado al final del último capítulo escrito.
+    - NO contradigas hechos, personajes, relaciones ni revelaciones de los capítulos previos.
+    - Mantén los nombres, lugares y léxico ya establecidos.
+    - Para la sección "seccion_por_capitulo", marca los capítulos previos como "YA_ESCRITO_NO_TOCAR" en su campo "objetivo_narrativo" (un placeholder corto basta) y diseña a fondo SOLO desde el capítulo ${input.redesignFromChapter} en adelante.
+    ${input.redesignInstructions ? `\n    INSTRUCCIONES DEL AUTOR PARA EL REDISEÑO (PRIORIDAD MÁXIMA):\n    ${input.redesignInstructions}\n    ` : ""}
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     `;

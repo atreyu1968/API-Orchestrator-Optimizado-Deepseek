@@ -1551,6 +1551,84 @@ export async function registerRoutes(
     }
   });
 
+  // T003: Re-arquitectura mid-novela
+  app.post("/api/projects/:id/regenerate-outline", async (req: Request, res: Response) => {
+    try {
+      // Validación estricta: rechaza "2abc", floats, NaN, etc.
+      const isStrictPositiveInt = (s: any): boolean =>
+        typeof s === "string" && /^[1-9]\d*$/.test(s);
+
+      if (!isStrictPositiveInt(req.params.id)) {
+        return res.status(400).json({ error: "id de proyecto inválido." });
+      }
+      const id = Number(req.params.id);
+
+      const rawFrom = req.body?.fromChapter;
+      const fromChapter = typeof rawFrom === "number" ? rawFrom
+        : (typeof rawFrom === "string" && /^\d+$/.test(rawFrom) ? Number(rawFrom) : NaN);
+      const instructions: string | undefined = typeof req.body?.instructions === "string"
+        ? req.body.instructions.slice(0, 5000)
+        : undefined;
+
+      if (!Number.isInteger(fromChapter) || fromChapter < 2) {
+        return res.status(400).json({ error: "fromChapter debe ser un entero >= 2 (no se puede rediseñar desde el primer capítulo)." });
+      }
+
+      const project = await storage.getProject(id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      if (project.status === "generating") {
+        return res.status(400).json({ error: "El proyecto ya está siendo procesado." });
+      }
+
+      if (typeof project.chapterCount === "number" && fromChapter > project.chapterCount) {
+        return res.status(400).json({ error: `fromChapter (${fromChapter}) excede el total de capítulos (${project.chapterCount}).` });
+      }
+
+      await storage.updateProject(id, { status: "generating" });
+
+      res.json({ message: "Re-arquitectura iniciada", projectId: id, fromChapter });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => {
+            try { stream.write(message); } catch (e) { console.error("stream write err:", e); }
+          });
+        }
+      };
+
+      const orchestrator = new Orchestrator({
+        onAgentStatus: async (role, status, message) => {
+          await storage.updateAgentStatus(id, role, { status, currentTask: message });
+          sendToStreams({ type: "agent_status", role, status, message });
+          if (message) await persistActivityLog(id, "info", message, role);
+        },
+        onChapterComplete: async () => {},
+        onChapterRewrite: async () => {},
+        onChapterStatusChange: () => {},
+        onProjectComplete: async () => {
+          sendToStreams({ type: "outline_regenerated", fromChapter });
+          await persistActivityLog(id, "success", `Escaleta rediseñada desde el capítulo ${fromChapter}`, "architect");
+        },
+        onError: async (error) => {
+          sendToStreams({ type: "error", message: error });
+          await persistActivityLog(id, "error", error, "architect");
+        },
+      });
+
+      orchestrator.regenerateOutlineFromChapter(project, fromChapter, instructions).catch(async (err) => {
+        console.error("[regenerate-outline] background failed:", err);
+        await storage.updateProject(id, { status: "error" });
+        await persistActivityLog(id, "error", `Error al rediseñar: ${err instanceof Error ? err.message : String(err)}`, "architect");
+      });
+    } catch (error) {
+      console.error("Error in /regenerate-outline:", error);
+      res.status(500).json({ error: "Failed to start outline regeneration" });
+    }
+  });
+
   app.post("/api/projects/:id/force-sentinel", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);

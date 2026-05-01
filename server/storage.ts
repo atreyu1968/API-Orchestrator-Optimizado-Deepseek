@@ -87,6 +87,7 @@ export interface IStorage {
   updateSeries(id: number, data: Partial<Series>): Promise<Series | undefined>;
   deleteSeries(id: number): Promise<void>;
   getProjectsBySeries(seriesId: number): Promise<Project[]>;
+  getProjectsByPseudonym(pseudonymId: number): Promise<Project[]>;
 
   createContinuitySnapshot(data: InsertContinuitySnapshot): Promise<ContinuitySnapshot>;
   getContinuitySnapshotByProject(projectId: number): Promise<ContinuitySnapshot | undefined>;
@@ -455,6 +456,12 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(projects)
       .where(eq(projects.seriesId, seriesId))
       .orderBy(projects.seriesOrder);
+  }
+
+  async getProjectsByPseudonym(pseudonymId: number): Promise<Project[]> {
+    return db.select().from(projects)
+      .where(eq(projects.pseudonymId, pseudonymId))
+      .orderBy(desc(projects.createdAt));
   }
 
   async createContinuitySnapshot(data: InsertContinuitySnapshot): Promise<ContinuitySnapshot> {

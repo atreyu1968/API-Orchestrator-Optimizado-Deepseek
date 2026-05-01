@@ -10,6 +10,42 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Cambio funcional — Aprovechar el 1M de contexto de DeepSeek V4 en el Arquitecto y la Reedición (May 1, 2026)
+
+Cinco mejoras coordinadas para que el Arquitecto y los agentes de reedición usen el 1M de tokens de DeepSeek V4. Pensado para sagas, manuscritos importados largos y autores con catálogo amplio. Coste estimado total ≈ +$0.30–0.90 por novela según cuántas piezas se activen.
+
+**T001 — Series: texto íntegro de volúmenes previos al Arquitecto.**
+- Nuevo helper estático `Orchestrator.buildPreviousVolumesFullText(seriesId, currentProjectId, currentSeriesOrder, budget=600_000 chars)` (server/orchestrator.ts L790+). Itera `getProjectsBySeries`, etiqueta cada volumen con `VOLUMEN N: título`, política newest-first dentro y entre volúmenes. Anota el truncamiento si no caben todos.
+- Nuevo campo `previousVolumesFullText?: string` en `ArchitectInput` (server/agents/architect.ts L9-48) renderizado como bloque dedicado en `commonContext` (L411+).
+- Cableado en 3 sitios: `generateNovel` inicial (~L1142), reintento tras Crítico de Originalidad (~L1357), `extendNovel` (~L5764).
+
+**T002 — Reedición: texto íntegro de capítulos previos del manuscrito.**
+- Nuevo helper privado `ReeditOrchestrator.buildPreviousReeditChaptersFullText(projectId, beforeChapterNumber, budget=600_000 chars)` (server/orchestrators/reedit-orchestrator.ts L1497+). Lee `reedit_chapters`, prefiere `editedContent → originalContent`, newest-first, presenta cronológicamente al modelo.
+- Nuevo parámetro opcional `previousChaptersFullText?: string` en los 3 agentes principales: `ReeditEditorAgent.reviewChapter`, `ReeditCopyEditorAgent.editChapter`, `NarrativeRewriterAgent.rewriteChapter`. Cada uno lo renderiza como bloque "MANUSCRITO PREVIO COMPLETO" con instrucciones específicas (detectar epítetos/muletillas/metáforas ya usados, mantener voz coherente).
+- Cableado en 7 call sites del orquestador de reedición: 1× editor (~L2776), 1× copyeditor (~L3435), 5× narrativeRewriter (~L3280, ~L3863, ~L4129, ~L4519, ~L4767).
+
+**T003 — Re-arquitectura mid-novela (NUEVO).** Permite al usuario rediseñar la trama desde un capítulo concreto basándose en lo realmente escrito.
+- Nuevo método `Orchestrator.regenerateOutlineFromChapter(project, fromChapter, instructions?)` (server/orchestrator.ts L6067+). Carga capítulos completados anteriores como `writtenChaptersFullText` (700K chars), lee la escaleta original como referencia, llama al Arquitecto con los nuevos campos `redesignFromChapter` + `redesignInstructions`, mezcla la respuesta: conserva outlines previos a `fromChapter`, reemplaza el resto. Persiste en `worldBibles.plotOutline.chapterOutlines`.
+- Nuevo endpoint `POST /api/projects/:id/regenerate-outline` con body `{ fromChapter, instructions? }` (server/routes.ts L1557+). Ejecuta en background, emite evento SSE `outline_regenerated` al completar.
+- Nueva UI en `client/src/components/chapter-list.tsx`: por cada capítulo ≥ 2 aparece (en hover) un icono varita mágica que abre un diálogo con textarea de instrucciones opcionales y dispara la mutación. `manuscript.tsx` pasa el nuevo prop `projectId` al componente.
+
+**T004 — Catálogo del pseudónimo (anti-self-repetition).**
+- Nuevo método `storage.getProjectsByPseudonym(pseudonymId)` (server/storage.ts L93/L464+).
+- Nuevo helper estático `Orchestrator.buildPseudonymCatalog(pseudonymId, currentProjectId, currentSeriesId, budget=80_000 chars)` (server/orchestrator.ts L820+). Para cada novela del mismo pseudónimo (excluyendo la actual y las de la misma serie), incluye título + premisa (1500 chars) + apertura del primer capítulo completado (600 chars).
+- Nuevo campo `pseudonymCatalog?: string` en `ArchitectInput` renderizado en `commonContext` con instrucción explícita de NO repetir giros, estructuras ni clímax del catálogo.
+- Cableado en los mismos 3 sitios del Arquitecto que T001.
+
+**T005 — Materiales de referencia íntegros (`extendedGuide`).** Antes solo se usaba la guía sintetizada; ahora la guía extendida (otras novelas del autor, fuentes históricas, research) se inyecta literal.
+- Nuevo campo `extendedGuideContent?: string` en `ArchitectInput` renderizado como "MATERIALES DE REFERENCIA DEL AUTOR (íntegros)".
+- Carga `project.extendedGuideId → extended_guides.content` justo antes del bucle del Arquitecto en `generateNovel` y también en `extendNovel` (~L5794) y `regenerateOutlineFromChapter`.
+
+**Bugfixes pre-existentes corregidos durante esta tanda**:
+- `OriginalityCriticAgent.execute()` renombrado a `analyze()` (mismatch de firma); call site único actualizado en orchestrator.ts L1163.
+- Bare `return;` con tipo de retorno incompatible en orchestrator.ts L7441 → `return { chaptersProcessed, totalChanges };`.
+- Cast `as unknown as AsyncIterable<any>` para el iterador de stream en server/services/chatService.ts L575.
+
+`npx tsc --noEmit` queda limpio. Ningún esquema cambia (no hace falta `db:push`).
+
 ### Cambio funcional — El Narrador ahora recibe el texto íntegro de TODOS los capítulos previos (1M de contexto DeepSeek V4) (May 1, 2026)
 Antes, el Ghostwriter solo veía un resumen sintético de capítulos previos (`previousContinuity`) más el texto completo del capítulo inmediatamente anterior (`previousChapterContent`). Esto causaba errores de coherencia cuando se referían a hechos, frases dichas, gestos o detalles concretos de capítulos antiguos (ej: cap 12 contradiciendo algo del cap 4). Ahora aprovechamos los 1M de tokens de contexto de DeepSeek V4-Flash/Pro para pasarle al Narrador el contenido literal de todos los capítulos previos completados, ordenados narrativamente (Prólogo → Cap 1 → … → Epílogo → Nota del autor).
 

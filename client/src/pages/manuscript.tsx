@@ -535,6 +535,7 @@ export default function ManuscriptPage() {
               chapters={sortChaptersForDisplay(chapters)}
               selectedChapterId={selectedChapter?.id}
               onSelectChapter={setSelectedChapter}
+              projectId={currentProject?.id}
             />
           </CardContent>
         </Card>
