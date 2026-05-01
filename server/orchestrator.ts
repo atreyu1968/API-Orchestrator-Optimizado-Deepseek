@@ -649,6 +649,129 @@ ${contextParts.join("\n")}
     return parts.join("\n\n");
   }
 
+  /**
+   * Construye el bloque de TEXTO COMPLETO de todos los capítulos anteriores
+   * para inyectarlo al Narrador. Aprovecha la ventana de 1M tokens de DeepSeek V4
+   * para evitar errores de continuidad por información perdida en resúmenes/JSON.
+   *
+   * Reglas:
+   *  - Incluye SOLO capítulos completados anteriores en orden narrativo (prólogo
+   *    primero, capítulos positivos, epílogo y nota del autor al final).
+   *  - El "anterior" se calcula con orden narrativo, no numérico — el Cap 5 NO
+   *    es anterior al Epílogo (-1) aunque su número sea mayor.
+   *  - Etiquetas legibles (PRÓLOGO/CAPÍTULO N/EPÍLOGO/NOTA DEL AUTOR), igual que
+   *    el holistic-reviewer, para que el modelo los trate semánticamente.
+   *  - Presupuesto por defecto: 700k tokens estimados (≈ 2.8M caracteres). Deja
+   *    margen para system prompt + world bible + guía de estilo + plan + output.
+   *  - Si el total proyectado supera el presupuesto, se preservan los capítulos
+   *    MÁS RECIENTES en texto completo (los inmediatamente anteriores son los
+   *    más críticos para continuidad) y los más antiguos se reemplazan por un
+   *    placeholder breve (su contenido sigue resumido en world bible + sliding
+   *    constraints derivadas de continuityState).
+   *  - Devuelve "" si no hay capítulos previos elegibles (cap 1 sin prólogo).
+   */
+  // Público y estático para que los endpoints manuales en `routes.ts`
+  // (regenerate-chapter, manual rewrite, structural-rewrite) puedan inyectar
+  // el mismo bloque de contexto sin acoplarse a una instancia del orquestador.
+  static buildPreviousChaptersFullText(
+    completedChapters: Chapter[],
+    currentChapterNumber: number,
+    budgetTokens: number = 700_000
+  ): string {
+    const getChapterLabel = (raw: number): string => {
+      if (!Number.isFinite(raw)) return `SECCIÓN ${raw}`;
+      if (raw === 0) return "PRÓLOGO";
+      if (raw === -1 || raw === 998) return "EPÍLOGO";
+      if (raw === -2 || raw === 999) return "NOTA DEL AUTOR";
+      return `CAPÍTULO ${raw}`;
+    };
+    const getChapterSortOrder = (raw: number): number => {
+      if (!Number.isFinite(raw)) return Number.MAX_SAFE_INTEGER;
+      if (raw === 0) return -1000;
+      if (raw === -1 || raw === 998) return 1_000_000;
+      if (raw === -2 || raw === 999) return 1_000_001;
+      return raw;
+    };
+
+    const currentOrder = getChapterSortOrder(currentChapterNumber);
+
+    const eligible = completedChapters
+      .filter(c => c.status === "completed")
+      .filter(c => {
+        const content = ((c as any).editedContent || c.originalContent || c.content || "") as string;
+        return content.trim().length > 0;
+      })
+      .filter(c => getChapterSortOrder(c.chapterNumber) < currentOrder)
+      .sort((a, b) => getChapterSortOrder(a.chapterNumber) - getChapterSortOrder(b.chapterNumber));
+
+    if (eligible.length === 0) return "";
+
+    // Estimación conservadora: 1 token ≈ 4 caracteres en español (los modelos
+    // BPE suelen dar ~1 token cada 3-5 chars; usamos 4 como punto medio).
+    const estimateTokens = (text: string): number => Math.ceil(text.length / 4);
+
+    type Block = { num: number; label: string; title: string; content: string; truncated: boolean };
+    const blocks: Block[] = [];
+    let totalTokens = 0;
+
+    // Recorremos desde el más reciente hacia atrás para preservar los críticos
+    // (los inmediatamente anteriores) cuando el presupuesto se agota.
+    for (let i = eligible.length - 1; i >= 0; i--) {
+      const ch = eligible[i];
+      const content = ((ch as any).editedContent || ch.originalContent || ch.content || "") as string;
+      const blockTokens = estimateTokens(content);
+
+      if (totalTokens + blockTokens <= budgetTokens) {
+        blocks.unshift({
+          num: ch.chapterNumber,
+          label: getChapterLabel(ch.chapterNumber),
+          title: ch.title || "",
+          content,
+          truncated: false,
+        });
+        totalTokens += blockTokens;
+      } else {
+        // Sin presupuesto: marcador de posición. La continuidad de este capítulo
+        // sigue cubierta por World Bible + restricciones derivadas del
+        // continuityState que se inyectan aparte (sliding window).
+        blocks.unshift({
+          num: ch.chapterNumber,
+          label: getChapterLabel(ch.chapterNumber),
+          title: ch.title || "",
+          content: `[Contenido de este capítulo omitido por presupuesto de contexto. Sus eventos clave, personajes y decisiones están sintetizados en el World Bible y en las restricciones de continuidad de arriba. Respétalos como canon.]`,
+          truncated: true,
+        });
+      }
+    }
+
+    const truncatedCount = blocks.filter(b => b.truncated).length;
+    const fullCount = blocks.length - truncatedCount;
+    const headerWarning = truncatedCount > 0
+      ? `\n⚠️ Nota: ${truncatedCount} capítulo(s) más antiguo(s) están resumidos por presupuesto de contexto (≥${Math.round(budgetTokens / 1000)}k tokens). Los ${fullCount} más recientes están en texto íntegro.`
+      : "";
+
+    const header = `
+
+═══════════════════════════════════════════════════════════════════
+📖 CAPÍTULOS ANTERIORES — TEXTO COMPLETO (CONTEXTO DE CONTINUIDAD)
+═══════════════════════════════════════════════════════════════════
+A continuación, los capítulos ya escritos de esta novela en orden cronológico.
+Léelos para conocer eventos previos, voz, decisiones de personajes y detalles
+concretos (nombres, lugares, objetos, frases dichas, gestos repetidos).
+Los hechos, nombres, lugares, diálogos y descripciones aquí establecidos son
+CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${headerWarning}
+═══════════════════════════════════════════════════════════════════
+`;
+
+    const body = blocks.map(b =>
+      `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${b.label}${b.title ? `: ${b.title}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${b.content}`
+    ).join("\n");
+
+    const footer = `\n\n═══════════════════════════════════════════════════════════════════\nFIN DE CAPÍTULOS ANTERIORES — Continúa la novela respetando todo lo anterior\n═══════════════════════════════════════════════════════════════════\n`;
+
+    return header + body + footer;
+  }
+
   async generateNovel(project: Project): Promise<void> {
     try {
       // Check if chapters already exist (recovery after crash)
@@ -1289,6 +1412,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             ? `\n\n⚠️ PERSPECTIVA FRESCA REQUERIDA: Los intentos anteriores se estancaron en 7/10. El editor detecta los mismos problemas repetidamente. NO sigas la misma estructura — reimagina las escenas desde un ángulo completamente diferente. Cambia las aperturas de escena, los patrones de diálogo, la distribución sensorial. Sorpréndeme.`
             : "";
 
+          // Texto íntegro de capítulos previos (1M de contexto de DeepSeek V4):
+          // el Narrador ve lo que de verdad se escribió, no solo extractos.
+          // Evita errores de continuidad por información perdida en resúmenes.
+          const previousChaptersFullText = Orchestrator.buildPreviousChaptersFullText(chapters, sectionData.numero);
+
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
@@ -1303,6 +1431,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             maxWordCount: perChapterMax,
             extendedGuideContent: extendedGuideContent || undefined,
             previousChapterContent: isStalled ? undefined : previousContent,
+            previousChaptersFullText,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -1933,6 +2062,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         const sectionLabel = this.getSectionLabel(sectionData);
         this.callbacks.onAgentStatus("ghostwriter", "writing", `El Narrador está escribiendo ${sectionLabel}...`);
 
+        // Recargamos los capítulos previos UNA sola vez por capítulo (no en cada
+        // intento de refinamiento) — los capítulos N-1 ya están finalizados y
+        // no cambian entre reintentos del capítulo actual.
+        const allChaptersForCtxResume = await storage.getChaptersByProject(project.id);
+        const previousChaptersFullTextResume = Orchestrator.buildPreviousChaptersFullText(
+          allChaptersForCtxResume,
+          sectionData.numero
+        );
+
         let chapterContent = "";
         let approved = false;
         let refinementAttempts = 0;
@@ -1981,6 +2119,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             maxWordCount: perChapterMaxResume,
             extendedGuideContent: extendedGuideContent || undefined,
             previousChapterContent: isStalledResume ? undefined : previousContent,
+            previousChaptersFullText: previousChaptersFullTextResume,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -5607,6 +5746,15 @@ Responde SOLO con un JSON válido con la estructura:
             : "";
 
           const enrichedWBExt = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesUnresolvedThreadsExt, seriesKeyEventsExt);
+
+          // Texto íntegro de capítulos previos (1M de contexto de DeepSeek V4)
+          // para mantener coherencia al expandir un manuscrito existente.
+          const allChaptersForCtxExt = await storage.getChaptersByProject(project.id);
+          const previousChaptersFullTextExt = Orchestrator.buildPreviousChaptersFullText(
+            allChaptersForCtxExt,
+            sectionData.numero
+          );
+
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
@@ -5620,6 +5768,7 @@ Responde SOLO con un JSON válido con la estructura:
             maxWordCount: perChapterMax,
             extendedGuideContent: extendedGuideContent || undefined,
             previousChapterContent: isStalledExt ? undefined : (isRewrite ? bestVersion.content : undefined),
+            previousChaptersFullText: previousChaptersFullTextExt,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -5918,6 +6067,15 @@ Responde SOLO con un JSON válido con la estructura:
         let successfulContent = "";
         let successfulWordCount = 0;
 
+        // Texto íntegro de capítulos previos (1M de contexto de DeepSeek V4)
+        // para regenerar un capítulo truncado siendo coherente con lo escrito.
+        // Se calcula UNA sola vez fuera del retry loop (los caps anteriores no
+        // cambian entre reintentos del mismo capítulo).
+        const previousChaptersFullTextRegen = Orchestrator.buildPreviousChaptersFullText(
+          chapters,
+          chapter.chapterNumber
+        );
+
         while (regenerationAttempt < MAX_REGEN_WORD_RETRIES) {
           regenerationAttempt++;
           
@@ -5935,6 +6093,7 @@ Responde SOLO con un JSON válido con la estructura:
             isRewrite: regenerationAttempt > 1,
             minWordCount: perChapterMinRegen,
             maxWordCount: perChapterMaxRegen,
+            previousChaptersFullText: previousChaptersFullTextRegen,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -8697,6 +8856,20 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
 
     const enrichedWBSurgical = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreadsRewrite, seriesEventsRewrite);
     const resolvedLexicoSurgical = this.resolveLexicoForChapter(worldBibleData, sectionData.numero);
+
+    // Texto íntegro de capítulos previos (1M de contexto de DeepSeek V4) para
+    // la corrección quirúrgica: el Narrador conserva la coherencia con todo lo
+    // ya escrito al editar este capítulo (nombres exactos, frases dichas,
+    // detalles concretos sembrados). El propio capítulo a corregir NO entra en
+    // este bloque — su versión original llega por `previousChapterContent` con
+    // semántica de "borrador a editar quirúrgicamente". El helper ya excluye
+    // por orden narrativo cualquier capítulo igual o posterior al actual.
+    const allChaptersForCtxRewrite = await storage.getChaptersByProject(project.id);
+    const previousChaptersFullTextRewrite = Orchestrator.buildPreviousChaptersFullText(
+      allChaptersForCtxRewrite,
+      sectionData.numero
+    );
+
     let writerResult = await this.ghostwriter.execute({
       chapterNumber: sectionData.numero,
       chapterData: sectionData,
@@ -8705,6 +8878,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       previousContinuity,
       refinementInstructions: surgicalInstructions,
       previousChapterContent: originalContent,
+      previousChaptersFullText: previousChaptersFullTextRewrite,
       minWordCount: surgicalMin,
       maxWordCount: surgicalMax,
       kindleUnlimitedOptimized: false,
@@ -8748,6 +8922,9 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         previousContinuity,
         refinementInstructions: retryInstructions,
         previousChapterContent: originalContent,
+        // Reutilizamos el bloque del primer intento (los caps anteriores no
+        // han cambiado entre intento y reintento del mismo capítulo).
+        previousChaptersFullText: previousChaptersFullTextRewrite,
         minWordCount: surgicalMin,
         maxWordCount: surgicalMax,
         kindleUnlimitedOptimized: false,

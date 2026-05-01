@@ -1779,6 +1779,14 @@ export async function registerRoutes(
         ? `Resumen de capítulos anteriores:\n${prevChapters.map(c => `Cap ${c.chapterNumber}: ${c.content?.slice(0, 500)}...`).join("\n\n")}`
         : "";
 
+      // Texto íntegro de capítulos previos (1M de contexto de DeepSeek V4) para
+      // que la regeneración manual mantenga coherencia con todo lo escrito.
+      const { Orchestrator: OrchestratorClass } = await import("./orchestrator");
+      const previousChaptersFullText = OrchestratorClass.buildPreviousChaptersFullText(
+        chapters,
+        chapterNumber
+      );
+
       // Guía de estilo
       let guiaEstilo = "";
       if (project.styleGuideId) {
@@ -1805,6 +1813,7 @@ export async function registerRoutes(
         refinementInstructions: "CRÍTICO: Escribe un capítulo COMPLETO de 2500-3500 palabras. NO truncar.",
         authorName: "",
         isRewrite: true,
+        previousChaptersFullText,
       });
 
       const result = await Promise.race([writerPromise, timeoutPromise]);
@@ -4673,7 +4682,15 @@ ${series.seriesGuide.substring(0, 50000)}`;
         worldRules: worldBible.worldRules,
         plotOutline: worldBible.plotOutline,
       } : {};
-      
+
+      // Texto íntegro de capítulos previos para preservar coherencia en
+      // reescrituras manuales con instrucciones del usuario.
+      const { Orchestrator: OrchestratorClassRw } = await import("./orchestrator");
+      const previousChaptersFullTextRw = OrchestratorClassRw.buildPreviousChaptersFullText(
+        chapters,
+        chapterNumber
+      );
+
       const result = await ghostwriter.execute({
         chapterNumber,
         chapterData,
@@ -4695,6 +4712,7 @@ IMPORTANTE:
 - El nuevo título debe ser: "${newTitle || chapter.title}"
 `,
         isRewrite: true,
+        previousChaptersFullText: previousChaptersFullTextRw,
       });
       
       if (result.content) {
@@ -5586,7 +5604,16 @@ Añade contenido narrativo explícito que cumpla este requisito, manteniendo tod
 
       const { GhostwriterAgent } = await import("./agents/ghostwriter");
       const ghostwriter = new GhostwriterAgent();
-      
+
+      // Pre-cargamos los capítulos del proyecto una sola vez para inyectar
+      // el texto íntegro de capítulos previos (1M de contexto DeepSeek V4)
+      // en cada iteración del bucle. Para volúmenes reedit/imported usamos
+      // sus propios flujos y no aplicamos este bloque (esquema distinto).
+      const { Orchestrator: OrchestratorClassSr } = await import("./orchestrator");
+      const projectChaptersForCtx = (volumeType === "reedit" || volumeType === "imported")
+        ? []
+        : await storage.getChaptersByProject(projectId);
+
       const results: any[] = [];
       
       for (const chapterNumber of chapterNumbers) {
@@ -5648,12 +5675,17 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
 
         console.log(`[StructuralRewrite] Rewriting ${chapterLabel} (${volumeType || "project"}) with instructions: ${structuralInstructions.substring(0, 100)}...`);
 
+        const previousChaptersFullTextSr = projectChaptersForCtx.length > 0
+          ? OrchestratorClassSr.buildPreviousChaptersFullText(projectChaptersForCtx, chapterNumber)
+          : "";
+
         const result = await ghostwriter.execute({
           chapterNumber,
           chapterData: rewriteData,
           worldBible: worldBible || {},
           guiaEstilo,
           isRewrite: true,
+          previousChaptersFullText: previousChaptersFullTextSr,
         });
 
         if ((result as any).result?.prose) {

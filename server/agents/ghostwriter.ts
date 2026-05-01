@@ -60,6 +60,16 @@ interface GhostwriterInput {
   previousChapterContent?: string;
   kindleUnlimitedOptimized?: boolean;
   surgicalEdit?: boolean;
+  /**
+   * Texto COMPLETO de todos los capítulos anteriores ya escritos en orden
+   * narrativo, formateado con etiquetas legibles (PRÓLOGO/CAPÍTULO N/EPÍLOGO/
+   * NOTA DEL AUTOR). Aprovecha la ventana de 1M tokens de DeepSeek V4 para que
+   * el Narrador conozca de primera mano nombres, lugares, gestos repetidos,
+   * frases dichas y detalles concretos — evitando errores de continuidad por
+   * información perdida en resúmenes o JSON. Lo construye el Orquestador con
+   * `buildPreviousChaptersFullText`. Cadena vacía si no hay capítulos previos.
+   */
+  previousChaptersFullText?: string;
 }
 
 const SYSTEM_PROMPT = `
@@ -734,6 +744,7 @@ export class GhostwriterAgent extends BaseAgent {
     ⚠️ Si un personaje tiene heridas o limitaciones, DEBEN afectar sus acciones.
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
+    ${input.previousChaptersFullText ? input.previousChaptersFullText : ""}
     `;
 
     const minWords = input.minWordCount || 2500;
