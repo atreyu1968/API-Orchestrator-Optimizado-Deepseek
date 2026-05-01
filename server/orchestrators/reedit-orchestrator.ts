@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import { BaseAgent } from "../agents/base-agent";
+import { Orchestrator } from "../orchestrator";
 import type { ReeditProject, ReeditChapter } from "@shared/schema";
 import { 
   ChapterExpansionAnalyzer, 
@@ -95,12 +96,28 @@ RESPONDE SOLO EN JSON:
   }
 
   async execute(input: any): Promise<any> {
-    return this.reviewChapter(input.content, input.chapterNumber, input.language, input.previousChapterSummary, input.previousChaptersFullText);
+    return this.reviewChapter(input.content, input.chapterNumber, input.language, input.previousChapterSummary, input.previousChaptersFullText, input.previousVolumesFullText);
   }
 
-  async reviewChapter(content: string, chapterNumber: number, language: string, previousChapterSummary?: string, previousChaptersFullText?: string): Promise<any> {
+  async reviewChapter(content: string, chapterNumber: number, language: string, previousChapterSummary?: string, previousChaptersFullText?: string, previousVolumesFullText?: string): Promise<any> {
     const prevContext = previousChapterSummary 
       ? `\nCONTEXTO DEL CAPÍTULO ANTERIOR:\n${previousChapterSummary}\n` 
+      : "";
+
+    // Series-level: volúmenes anteriores de la saga (si los hay).
+    const prevVolumesSection = (previousVolumesFullText && previousVolumesFullText.trim().length > 0)
+      ? `
+═══════════════════════════════════════════════════════════════
+VOLÚMENES ANTERIORES DE LA SERIE (texto íntegro):
+═══════════════════════════════════════════════════════════════
+Esta novela pertenece a una serie. A continuación tienes el texto íntegro (o newest-first si no cabe) de los volúmenes anteriores. Usa este contexto para:
+- Detectar epítetos físicos y descripciones ya establecidas en libros anteriores (deben mantenerse coherentes; las re-descripciones repetidas son repetición).
+- Verificar coherencia de personajes: nombres, edades, oficios, relaciones, arcos previos.
+- Detectar metáforas, giros y muletillas que el autor ya usó en libros anteriores y que aquí estén repitiéndose.
+- Validar continuidad de hilos abiertos y payoffs: lo establecido en libros previos debe respetarse.
+${previousVolumesFullText}
+═══════════════════════════════════════════════════════════════
+`
       : "";
 
     const fullPrevSection = (previousChaptersFullText && previousChaptersFullText.trim().length > 0)
@@ -116,7 +133,7 @@ ${previousChaptersFullText}
       : "";
 
     const prompt = `Analiza en profundidad este capítulo (Capítulo ${chapterNumber}) escrito en ${language}:
-${prevContext}${fullPrevSection}
+${prevContext}${prevVolumesSection}${fullPrevSection}
 CAPÍTULO COMPLETO:
 ${content}
 
@@ -227,7 +244,7 @@ RESPONDE SOLO EN JSON:
   }
 
   async execute(input: any): Promise<any> {
-    return this.editChapter(input.content, input.chapterNumber, input.language, input.worldBible, input.adjacentContext, input.previousChaptersFullText);
+    return this.editChapter(input.content, input.chapterNumber, input.language, input.worldBible, input.adjacentContext, input.previousChaptersFullText, input.previousVolumesFullText);
   }
 
   async editChapter(
@@ -236,7 +253,8 @@ RESPONDE SOLO EN JSON:
     language: string,
     worldBible?: any,
     adjacentContext?: { previousExcerpt?: string; nextExcerpt?: string },
-    previousChaptersFullText?: string
+    previousChaptersFullText?: string,
+    previousVolumesFullText?: string
   ): Promise<any> {
     const languageRules = this.getLanguageRules(language);
     
@@ -264,6 +282,21 @@ ${chars}
       }
     }
 
+    const prevVolumesSection = (previousVolumesFullText && previousVolumesFullText.trim().length > 0)
+      ? `
+═══════════════════════════════════════════════════════════════
+VOLÚMENES ANTERIORES DE LA SERIE (texto íntegro):
+═══════════════════════════════════════════════════════════════
+Esta novela pertenece a una serie. Tienes el texto íntegro (newest-first si no cabe) de los volúmenes anteriores. Úsalo para:
+- NO repetir epítetos físicos ya establecidos en libros anteriores (los rasgos clave del personaje ya se describieron; aquí basta nombre/cargo/relación).
+- NO repetir metáforas o giros que el autor ya usó en libros anteriores.
+- Mantener voz, registro y vocabulario coherentes con la serie completa.
+- Respetar nombres, oficios, edades y relaciones canónicas de los libros previos.
+${previousVolumesFullText}
+═══════════════════════════════════════════════════════════════
+`
+      : "";
+
     const fullPrevSection = (previousChaptersFullText && previousChaptersFullText.trim().length > 0)
       ? `
 ═══════════════════════════════════════════════════════════════
@@ -285,7 +318,7 @@ ${previousChaptersFullText}
 IDIOMA: ${language}
 ${languageRules}
 ${worldBibleSection}
-${adjacentSection}${fullPrevSection}
+${adjacentSection}${prevVolumesSection}${fullPrevSection}
 CAPÍTULO A CORREGIR:
 ${content}
 
@@ -1188,7 +1221,8 @@ FORMATO DE RESPUESTA (JSON):
       input.adjacentContext,
       input.language,
       input.userInstructions,
-      input.previousChaptersFullText
+      input.previousChaptersFullText,
+      input.previousVolumesFullText
     );
   }
 
@@ -1200,7 +1234,8 @@ FORMATO DE RESPUESTA (JSON):
     adjacentContext: { previousChapter?: string; nextChapter?: string; previousSummary?: string; nextSummary?: string },
     language: string,
     userInstructions?: string,
-    previousChaptersFullText?: string
+    previousChaptersFullText?: string,
+    previousVolumesFullText?: string
   ): Promise<any> {
     const worldBibleContext = this.buildWorldBibleContext(worldBible);
     const adjacentContextStr = this.buildAdjacentContext(adjacentContext);
@@ -1234,6 +1269,18 @@ ${worldBibleContext}
 CONTEXTO NARRATIVO (capítulos adyacentes):
 ═══════════════════════════════════════════════════════════════
 ${adjacentContextStr}
+${(previousVolumesFullText && previousVolumesFullText.trim().length > 0) ? `
+═══════════════════════════════════════════════════════════════
+VOLÚMENES ANTERIORES DE LA SERIE (texto íntegro):
+═══════════════════════════════════════════════════════════════
+Esta novela pertenece a una serie. Tienes el texto íntegro (newest-first si no cabe) de los volúmenes anteriores. RESPETA al pie de la letra:
+- Hechos canónicos de los libros previos (no contradigas eventos, muertes, revelaciones).
+- Descripciones físicas y de carácter ya establecidas para personajes recurrentes.
+- Voz narrativa y vocabulario consistentes con la serie.
+- NO repitas metáforas, giros estructurales ni epítetos ya usados en libros previos.
+${previousVolumesFullText}
+═══════════════════════════════════════════════════════════════
+` : ''}
 ${(previousChaptersFullText && previousChaptersFullText.trim().length > 0) ? `
 ═══════════════════════════════════════════════════════════════
 MANUSCRITO PREVIO COMPLETO (capítulos 1..${chapterNumber - 1}):
@@ -1465,6 +1512,11 @@ export class ReeditOrchestrator {
   private minAcceptableScore = 9; // Acepta 9+ como suficiente (antes era 10)
   private requiredConsecutiveHighScores = 1; // Solo necesita 1 puntuación 9+ sin issues críticos (antes eran 2)
 
+  // Cache por sesión: una sola lectura de volúmenes anteriores por projectId.
+  // El texto puede ser pesado (varios libros completos), no queremos releerlo
+  // en cada uno de los 7 call sites por capítulo.
+  private previousVolumesFullTextCache: Map<number, string> = new Map();
+
   constructor() {
     this.editorAgent = new ReeditEditorAgent();
     this.copyEditorAgent = new ReeditCopyEditorAgent();
@@ -1551,7 +1603,85 @@ export class ReeditOrchestrator {
     const truncationNote = blocks.find(b => b.startsWith("\n[Truncado"));
     return (truncationNote || "") + chronological.join("");
   }
-  
+
+  /**
+   * T002 (extensión series) — Si el proyecto de reedición pertenece a una
+   * serie, devuelve el texto íntegro de los volúmenes anteriores de esa serie
+   * (newest-first si no caben todos en presupuesto).
+   *
+   * - Lee `seriesId` y `seriesOrder` del reedit_project. Si no hay serie,
+   *   devuelve cadena vacía.
+   * - Reutiliza el helper estático `Orchestrator.buildPreviousVolumesFullText`
+   *   (mismo helper que usa el Architect en la generación de novelas T001).
+   * - Cachea el resultado por reedit_projectId para no releer los libros en
+   *   cada uno de los 7 call sites por capítulo.
+   *
+   * @param project - el reedit_project actual (puede tener seriesId/seriesOrder)
+   * @param budgetTokens - default 600_000 (≈ 2.4M chars). Igual que el Architect.
+   */
+  private async getPreviousVolumesFullTextForReedit(
+    project: ReeditProject,
+    budgetTokens: number = 600_000
+  ): Promise<string> {
+    // Standalone (sin saga): cachear "" es seguro — no es un fallo, es estado real.
+    if (!project?.seriesId) {
+      this.previousVolumesFullTextCache.set(project.id, "");
+      return "";
+    }
+    const cached = this.previousVolumesFullTextCache.get(project.id);
+    if (cached !== undefined) return cached;
+    try {
+      const text = await Orchestrator.buildPreviousVolumesFullText(
+        project.seriesId,
+        project.id,
+        project.seriesOrder ?? null,
+        budgetTokens
+      );
+      // Sólo cacheamos resultados confirmados (incluido "" si realmente no hay
+      // volúmenes previos). Un fallo lanzado abajo NO se cachea para permitir
+      // reintentos en el siguiente capítulo.
+      this.previousVolumesFullTextCache.set(project.id, text);
+      if (text) {
+        console.log(`[ReeditOrchestrator] Volúmenes previos de la serie cargados para reedición: ${text.length.toLocaleString()} chars`);
+      } else {
+        console.log(`[ReeditOrchestrator] Sin volúmenes previos de la serie para reedición (proyecto ${project.id}).`);
+      }
+      return text;
+    } catch (e) {
+      console.warn(`[ReeditOrchestrator] previousVolumes (series) falló para proyecto ${project.id}: ${(e as Error).message}. NO se cachea — se reintentará en el siguiente capítulo.`);
+      return "";
+    }
+  }
+
+  /**
+   * Variante por projectId — útil para los call sites que sólo tienen el id
+   * a mano. Usa el mismo cache, así que sólo lee storage la primera vez.
+   * Igual que el helper principal: NO cacheamos el resultado si la lectura
+   * de storage falla, así un error transitorio de DB no desactiva el contexto
+   * de saga para el resto del flujo.
+   */
+  private async getPreviousVolumesFullTextForReeditById(
+    projectId: number,
+    budgetTokens: number = 600_000
+  ): Promise<string> {
+    if (this.previousVolumesFullTextCache.has(projectId)) {
+      return this.previousVolumesFullTextCache.get(projectId) || "";
+    }
+    let project: ReeditProject | undefined;
+    try {
+      project = await storage.getReeditProject(projectId);
+    } catch (e) {
+      console.warn(`[ReeditOrchestrator] getReeditProject(${projectId}) falló: ${(e as Error).message}. NO se cachea — se reintentará.`);
+      return "";
+    }
+    if (!project) {
+      // Confirmado: no existe el proyecto. Sí es un estado estable, cacheamos.
+      this.previousVolumesFullTextCache.set(projectId, "");
+      return "";
+    }
+    return this.getPreviousVolumesFullTextForReedit(project, budgetTokens);
+  }
+
   /**
    * Generate a hash for an issue to track if it has been resolved.
    * Uses category + simplified description + affected chapters to create stable ID.
@@ -2769,13 +2899,17 @@ export class ReeditOrchestrator {
           project.id,
           chapter.chapterNumber
         );
+        // T002 series: si el reedit_project pertenece a una serie, también
+        // pasamos el texto íntegro de los volúmenes anteriores de la saga.
+        const previousVolumesForEditor = await this.getPreviousVolumesFullTextForReedit(project);
 
         const editorResult = await this.editorAgent.reviewChapter(
           chapter.originalContent,
           chapter.chapterNumber,
           detectedLang,
           prevSummary,
-          previousFullForEditor
+          previousFullForEditor,
+          previousVolumesForEditor
         );
         this.trackTokens(editorResult);
 
@@ -3273,6 +3407,8 @@ export class ReeditOrchestrator {
             const adjacentContext = this.buildAdjacentChapterContext(validChapters, chapNum);
             // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
             const previousFullForRewrite = await this.buildPreviousReeditChaptersFullText(projectId, chapNum);
+            // T002 series: volúmenes anteriores de la saga (si los hay).
+            const previousVolumesForRewrite = await this.getPreviousVolumesFullTextForReedit(project);
 
             const rewriteResult = await this.narrativeRewriter.rewriteChapter(
               chapter.editedContent || chapter.originalContent,
@@ -3289,7 +3425,8 @@ export class ReeditOrchestrator {
               adjacentContext,
               detectedLang,
               userRewriteInstructions || undefined,
-              previousFullForRewrite
+              previousFullForRewrite,
+              previousVolumesForRewrite
             );
             this.trackTokens(rewriteResult);
             
@@ -3431,6 +3568,8 @@ export class ReeditOrchestrator {
           projectId,
           chapter.chapterNumber
         );
+        // T002 series: volúmenes anteriores de la saga (si los hay).
+        const previousVolumesForCopyEditor = await this.getPreviousVolumesFullTextForReedit(project);
 
         const copyEditorResult = await this.copyEditorAgent.editChapter(
           contentToEdit,
@@ -3438,7 +3577,8 @@ export class ReeditOrchestrator {
           detectedLang,
           worldBibleResult,
           adjacentContextCE,
-          previousFullForCopyEditor
+          previousFullForCopyEditor,
+          previousVolumesForCopyEditor
         );
         this.trackTokens(copyEditorResult);
 
@@ -3856,6 +3996,8 @@ export class ReeditOrchestrator {
               };
               // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
               const previousFullForRewrite = await this.buildPreviousReeditChaptersFullText(projectId, chapter.chapterNumber);
+              // T002 series: volúmenes anteriores (saga).
+              const previousVolumesForRewrite = await this.getPreviousVolumesFullTextForReeditById(projectId);
 
               const rewriteResult = await this.narrativeRewriter.rewriteChapter(
                 chapter.editedContent || chapter.originalContent,
@@ -3865,7 +4007,8 @@ export class ReeditOrchestrator {
                 adjacentContext,
                 detectedLang,
                 userInstructions || undefined,
-                previousFullForRewrite
+                previousFullForRewrite,
+                previousVolumesForRewrite
               );
               this.trackTokens(rewriteResult);
               await this.updateHeartbeat(projectId);
@@ -4123,6 +4266,8 @@ export class ReeditOrchestrator {
             const detectedLang = project.detectedLanguage || "es";
             // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
             const previousFullForRewrite = await this.buildPreviousReeditChaptersFullText(projectId, chapter.chapterNumber);
+            // T002 series: volúmenes anteriores (saga).
+            const previousVolumesForRewrite = await this.getPreviousVolumesFullTextForReedit(project);
             const rewriteResult = await this.narrativeRewriter.rewriteChapter(
               chapter.editedContent || chapter.originalContent,
               chapter.chapterNumber,
@@ -4131,7 +4276,8 @@ export class ReeditOrchestrator {
               adjacentContext,
               detectedLang,
               userInstructions || undefined,
-              previousFullForRewrite
+              previousFullForRewrite,
+              previousVolumesForRewrite
             );
             this.trackTokens(rewriteResult);
             await this.updateHeartbeat(projectId);
@@ -4513,6 +4659,8 @@ export class ReeditOrchestrator {
             const detectedLangFRO = project.detectedLanguage || "es";
             // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
             const previousFullForRewriteFRO = await this.buildPreviousReeditChaptersFullText(projectId, chapter.chapterNumber);
+            // T002 series: volúmenes anteriores (saga).
+            const previousVolumesForRewriteFRO = await this.getPreviousVolumesFullTextForReedit(project);
             const rewriteResult = await this.narrativeRewriter.rewriteChapter(
               chapter.editedContent || chapter.originalContent,
               chapter.chapterNumber,
@@ -4521,7 +4669,8 @@ export class ReeditOrchestrator {
               adjacentContext,
               detectedLangFRO,
               userInstructions || undefined,
-              previousFullForRewriteFRO
+              previousFullForRewriteFRO,
+              previousVolumesForRewriteFRO
             );
             this.trackTokens(rewriteResult);
             await this.updateHeartbeat(projectId);
@@ -4761,6 +4910,8 @@ export class ReeditOrchestrator {
         const detectedLangARC = project.detectedLanguage || "es";
         // T002: texto íntegro del manuscrito previo (1M ctx DeepSeek V4)
         const previousFullForRewriteARC = await this.buildPreviousReeditChaptersFullText(projectId, chapter.chapterNumber);
+        // T002 series: volúmenes anteriores (saga).
+        const previousVolumesForRewriteARC = await this.getPreviousVolumesFullTextForReedit(project);
         const rewriteResult = await this.narrativeRewriter.rewriteChapter(
           chapter.editedContent || chapter.originalContent,
           chapter.chapterNumber,
@@ -4769,7 +4920,8 @@ export class ReeditOrchestrator {
           adjacentContext,
           detectedLangARC,
           userInstructions || undefined,
-          previousFullForRewriteARC
+          previousFullForRewriteARC,
+          previousVolumesForRewriteARC
         );
         this.trackTokens(rewriteResult);
         await this.updateHeartbeat(projectId);
