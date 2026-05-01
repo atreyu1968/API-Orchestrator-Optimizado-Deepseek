@@ -1,8 +1,23 @@
-# LitAgents v6.8 — Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v7.1 — Sistema de Orquestacion de Agentes Literarios IA
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando **DeepSeek V4** como unico backend de IA.
 
 **PWA instalable** — se puede instalar en escritorio y movil directamente desde el navegador.
+
+## Novedades v7.1 — Reedicion conectada a la saga
+
+- **Coherencia inter-libro al reeditar**: Cuando se reedita un libro que pertenece a una serie (`reedit_projects.seriesId` + `seriesOrder`), los tres agentes principales del flujo de reedicion (Editor estructural, Corrector Ortotipografico y Reescritor Narrativo) reciben ahora el **texto integro de los volumenes anteriores** de la saga, aprovechando el contexto de 1M de DeepSeek V4. Cada prompt incluye un bloque dedicado "VOLUMENES ANTERIORES DE LA SERIE" con instrucciones especificas: respetar eventos canonicos previos, mantener voz/tono coherentes y no contradecir lo ya publicado.
+- **Cache resiliente por proyecto**: Helper `getPreviousVolumesFullTextForReedit(project)` con cache `Map<projectId, string>` para no releer toda la saga en cada capitulo. Variante `...ById(projectId)` para los call-sites donde solo hay `projectId` en scope. **Politica resiliente**: solo se cachea cuando el resultado es un estado *confirmado* (standalone, lista vacia verificada o texto cargado). Los errores transitorios de DB **no se cachean**, asi un fallo puntual no desactiva el contexto de saga durante todo el proceso.
+- **Reuso del helper estatico** `Orchestrator.buildPreviousVolumesFullText` (presupuesto 600K chars, newest-first dentro y entre volumenes, etiqueta `VOLUMEN N: titulo`), evitando duplicar la logica entre el orquestador principal y el de reedicion.
+- **7 puntos de cableado**: 1x Editor, 1x Copyeditor y 5x Reescritor Narrativo (ciclo principal, revision final, parche estructural, FRO y ARC).
+
+## Novedades v7.0 — Aprovechar el 1M de contexto de DeepSeek V4
+
+- **T001 — Series en el Arquitecto**: Nuevo helper estatico `Orchestrator.buildPreviousVolumesFullText(seriesId, currentProjectId, currentSeriesOrder, budget=600_000 chars)` que carga el texto integro de los volumenes previos de la saga, etiquetado por volumen y con politica newest-first. Inyectado en los 3 puntos clave del Arquitecto: generacion inicial, reintento tras Critico de Originalidad y `extendNovel`. Resultado: la novela 4 de una saga ve el texto literal de los volumenes 1-3.
+- **T002 — Reedicion: capitulos previos del manuscrito al editor**: Nuevo helper privado `ReeditOrchestrator.buildPreviousReeditChaptersFullText(projectId, beforeChapterNumber, budget=600_000 chars)` que pasa el texto integro de los capitulos ya editados al Editor, Copyeditor y Reescritor Narrativo del flujo de reedicion. Asi, al reeditar el cap 10 de un manuscrito importado, los agentes ven el contexto completo de los caps 1-9 (epitetos, muletillas, metaforas y voz ya usados).
+- **T003 — Re-arquitectura mid-novela (NUEVO)**: Nuevo endpoint `POST /api/projects/:id/regenerate-outline` con body `{ fromChapter, instructions? }`. Permite al usuario rediseñar la trama desde un capitulo concreto basandose en lo realmente escrito: el Arquitecto recibe los capitulos completados anteriores como `writtenChaptersFullText` (700K chars), la escaleta original como referencia, y devuelve una nueva escaleta solo para los capitulos pendientes. La UI añade un icono de varita magica en cada capitulo ≥ 2 que abre un dialogo con instrucciones opcionales.
+- **T004 — Catalogo del pseudonimo (anti-self-repetition)**: Nuevo helper `Orchestrator.buildPseudonymCatalog(pseudonymId, currentProjectId, currentSeriesId, budget=80_000 chars)`. Para cada novela previa del mismo pseudonimo (excluyendo la actual y las de la misma serie), incluye titulo + premisa + apertura del primer capitulo. El Arquitecto evita repetirse en giros, estructuras y aperturas tipicas. Inyectado en los mismos 3 puntos que T001.
+- **T005 — Voz de referencia (extendedGuide) integra al Arquitecto**: Antes solo se inyectaba la `guiaEstilo` basica. Ahora se carga el contenido completo de `extended_guides.content` y se pasa como `extendedGuideContent?: string` al `ArchitectInput`, renderizado como bloque "MATERIALES DE REFERENCIA DEL AUTOR (integros)". Cuando el usuario tiene una guia extendida con otras novelas suyas, fuentes o research, el Arquitecto la ve completa.
 
 ## Novedades v6.9 — Taller de Guias: "Novela para Pseudonimo" (la IA inventa la novela)
 
