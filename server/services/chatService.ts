@@ -569,7 +569,7 @@ ${truncatedContent}
         stream_options: { include_usage: true },
         // DeepSeek-specific: keep thinking off for chat to minimize latency.
         ...({ thinking: { type: "disabled" } } as any),
-      });
+      }) as unknown as AsyncIterable<any>;
 
       for await (const chunk of stream) {
         const text = chunk.choices?.[0]?.delta?.content || "";

@@ -1157,7 +1157,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       try {
         if (!this.aborted) {
           this.callbacks.onAgentStatus("architect", "thinking", "El Crítico de Originalidad está revisando la trama antes de escribir...");
-          const criticOutcome = await this.originalityCritic.execute({
+          const criticOutcome = await this.originalityCritic.analyze({
             title: project.title,
             genre: project.genre,
             tone: project.tone,
@@ -7435,7 +7435,7 @@ Responde SOLO con un JSON válido con la estructura:
       for (let i = 0; i < completedChapters.length; i++) {
         if (this.aborted) {
           console.log(`[Orthotypographic] Aborted after ${chaptersProcessed}/${completedChapters.length} chapters (project ${project.id}). Exiting silently.`);
-          return;
+          return { chaptersProcessed, totalChanges };
         }
         const chapter = completedChapters[i];
 

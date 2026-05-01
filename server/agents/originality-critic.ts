@@ -147,7 +147,7 @@ export class OriginalityCriticAgent extends BaseAgent {
     this.timeoutMs = 6 * 60 * 1000;
   }
 
-  async execute(input: OriginalityCriticInput): Promise<{ result: OriginalityCriticResult | null; raw: AgentResponse }> {
+  async analyze(input: OriginalityCriticInput): Promise<{ result: OriginalityCriticResult | null; raw: AgentResponse }> {
     const condensedOutline = this.condenseOutline(input);
 
     const userPrompt = `
