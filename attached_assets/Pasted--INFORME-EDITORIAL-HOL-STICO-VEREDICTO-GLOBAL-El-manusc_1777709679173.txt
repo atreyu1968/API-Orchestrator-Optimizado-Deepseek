@@ -1,0 +1,97 @@
+# INFORME EDITORIAL HOLÍSTICO
+
+## VEREDICTO GLOBAL
+
+El manuscrito se encuentra en un estado de pre-ensamblaje que impide su publicación en las condiciones actuales. El problema más grave es un error de compaginación: el Capítulo 2 es una copia literal del Capítulo 1, lo que rompe cualquier posibilidad de lectura fluida. A esto se suma una inconsistencia mayúscula en el nombre de la protagonista (Iris Veland/Elin Ravn), que cruza toda la novela sin explicación diegética. El género declarado (*fantasy*) es una promesa incumplida: no hay un solo elemento sobrenatural activo; es un drama psicológico de posguerra con estructura de thriller atmosférico. La prosa es competente y la ambientación del fiordo está lograda, pero estas virtudes quedan sepultadas bajo una acumulación de errores estructurales que declaran que la novela no está lista ni para una primera ronda de correcciones seria, sino para una refundición quirúrgica del borrador.
+
+## PROBLEMAS ESTRUCTURALES (crítico)
+
+1. **COLAPSO DE LA MAQUETA** (Cap 1 y Cap 2): Tu Capítulo 2, titulado "Ecos en la memoria", es una copia textual del Capítulo 1 con cambios cosméticos (Henrik por Lars). El lector lee la misma escena del tren, el mismo flashback del Báltico, las mismas reflexiones, dos veces seguidas. Esto no es un problema de ritmo: es un error de entrega. Debes eliminar el duplicado y restaurar el texto correcto del Capítulo 2.
+
+2. **IDENTIDAD FRACTURADA DE LA PROTAGONISTA** (Caps 1-37): Tu personaje central se llama **Iris Veland** en el prólogo, capítulos 1, 3, 6 y varios otros, y **Elin Ravn** en los capítulos 4, 7, 9, 12, 15 y 17. No hay una razón narrativa para este cambio (no es un alias, no es un nombre de casada que se adopta). Esto indica una fusión incompleta de versiones del borrador. Publicar con esta inconsistencia es imposible. Debes elegir un nombre y unificar el texto completo.
+
+3. **PROMESA DE GÉNERO INCUMPLIDA** (Novela completa): El manuscrito se vende como *fantasy* y contiene cero elementos de género. El "Espejo Sami" es una leyenda que no se manifiesta, el "pacto" es una metáfora del silencio familiar, y la "Olla" es una depresión geológica. No hay magia, no hay seres sobrenaturales, no hay reglas del mundo fantástico que se activen en la trama. El lector que compra *fantasy* se sentirá estafado. Debes redefinir el género (Literary Fiction / Historical Thriller) o insertar el componente fantástico que falta.
+
+4. **ANTAGONISTA AUSENTE** (Actos II y III): Brandt/Steiner muere en 1944. No hay un oponente vivo que se interponga en la investigación de Iris. El conflicto se reduce a "el peso del silencio", una abstracción. Sin un agente externo que genere tensión activa (un descendiente de colaboracionistas, un familiar que quiere ocultar la verdad, alguien que sabotee su trabajo), las conversaciones en cocinas y salones se convierten en una serie de confesiones sin urgencia dramática.
+
+5. **CLÍMAX DESINFLADO** (Cap 19, Cap 27, Epílogo): La inmersión en la Olla (Cap 19) debía ser el clímax del misterio, pero Iris encuentra una hebilla oxidada y sube. El verdadero clímax —la carta de Lars explicando su elección— llega en el Cap 27 mediante un *deus ex machina* (aparece en el bolsillo de una chaqueta). Tras esto, el epílogo se alarga quince páginas más repitiendo la misma catarsis emocional. La novela tiene múltiples clímax falsos y ninguno resuelve la tensión externa que prometió el prólogo.
+
+## ARCOS DE PERSONAJE (mayor)
+
+- **Iris / Elin (Veland/Ravn)**: Arco plano. Llega a Odda buscando respuestas; las encuentra mediante entrevistas y diarios; decide quedarse. No hay una transformación interna real ni un precio que pague por su investigación. Su motivación ("descubrir la verdad sobre Lars") no evoluciona: se satisface sin conflicto. No hay un *flaw* de carácter que deba superar.
+
+- **Lars Torsen**: Es un mcguffin con diario. Su presencia es puramente epistolar. El lector conoce su historia a través de fragmentos, pero nunca siente su agencia en el presente narrativo. La novela le pide al lector que se emocione por un personaje que es un conjunto de notas póstumas.
+
+- **Sigrid Holmen**: Es el personaje mejor construido. Su confesión en el Cap 18 es el momento más potente del manuscrito. Sin embargo, su arco de culpa no tiene consecuencias externas: nadie la juzga, nadie la acusa, la comunidad no reacciona. La catarsis es puramente privada, lo que le resta peso dramático.
+
+- **Eirik Vold**: Introduce la subtrama de su padre ejecutado y el archivo ciego. Su odio hacia los silencios se resuelve en una conversación con vino casero (Cap 24). Su personaje no tiene un momento de acción que cierre su conflicto con el pasado.
+
+- **Marta Torsen**: Guardiana del secreto familiar. Su arco de culpa se resuelve entregando la carta de Lars en la cocina (Cap 20). Su potencial dramático (la tía que sabe y calla durante quince años) se desvanece en una confesión de tarde lluviosa sin confrontación.
+
+## CONTINUIDAD Y COHERENCIA INTERNA (mayor)
+
+1. **Nombre de la protagonista**: Iris Veland en prólogo y Cap 1; Elin Ravn en Cap 4, 7, 9, 15, 17. Vuelve a Iris en Cap 20-35. Sin explicación. Error crítico.
+
+2. **Apellidos de la familia**: El canon indica "Torsen" (Lars Torsen, Marta Torsen, Ingrid Torsen). Pero el abuelo paterno se llama "Harald Stang" y el bisabuelo "Torstein Stang". No hay una transición de apellido explicada. ¿Ingrid se casó con un Torsen después de la muerte de Harald? ¿Lars es hijo de un segundo matrimonio? La confusión genealógica rompe la inmersión en la mitología familiar.
+
+3. **El diario de Harald (Cap 17)**: Aparece sobre el escritorio sin que el lector vea quién lo puso allí. Marta dice "lo encontraste" como si lo hubiera dejado ella. La mecánica de la escena es confusa. ¿Lo dejó Marta? ¿Estaba siempre allí? La ambigüedad parece intencionada pero no funciona.
+
+4. **La hebilla de la resistencia (Cap 19)**: Iris encuentra una hebilla oxidada a treinta metros de profundidad. La saca a la superficie. No se explica por qué Lars no la cogió si él estuvo allí antes. ¿La dejó como marcador? ¿La perdió? La escena necesita una línea de pensamiento que aclare el significado de este hallazgo.
+
+5. **La muerte de Anders Rygh**: Se menciona que el periodista murió en un accidente de coche. Es una solución *off-screen* que cierra una línea de investigación que el propio texto presentó como relevante. Si lo introduces, debe pagar con una entrevista o un documento.
+
+## RITMO Y TENSIÓN (mayor)
+
+- **Arranque (Prólogo - Cap 1)**: Excelente. El prólogo es la mejor pieza de escritura del manuscrito. Tenso, visual, con una promesa de misterio sólida. El Cap 1 refuerza bien el tono.
+
+- **Desarrollo (Caps 2 - 15)**: Gravemente lastrado por el duplicado del Cap 2. Incluso ignorando ese error, la estructura se vuelve repetitiva: Iris visita a un personaje; ese personaje le cuenta una historia del pasado; Iris reflexiona. Sin un antagonista activo, cada entrevista se siente como una estación más en un tren de revelaciones sin urgencia.
+
+- **Tercer Acto (Caps 16 - 27)**: La inmersión en el fiordo (Cap 19) es un falso clímax. La tensión no se resuelve con el hallazgo de la hebilla. El verdadero clímax (la carta de Lars en el Cap 27) llega cuando el lector ya ha agotado su capacidad de sorpresa.
+
+- **Resolución (Caps 28 - Epílogo)**: Catarsis emocional pura que se alarga innecesariamente. Las últimas quince páginas repiten lo mismo: Iris acepta la muerte de Lars, Iris se queda en Odda, Iris suelta una flor. El epílogo es redundante.
+
+## ESCENAS Y CAPÍTULOS PROBLEMÁTICOS (mayor/menor)
+
+- **Cap 2 — Ecos en la memoria**: Duplicado del Cap 1. Eliminar por completo.
+- **Cap 19 — Bajo el espejo negro**: La inmersión carece de tensión real. Es pura descripción atmosférica sin un peligro concreto. Si no hay riesgo físico ni una revelación visual impactante, la escena no justifica su extensión.
+- **Cap 20 — La respiración bajo el agua**: Iris encuentra una carta de Lars en el bolsillo de la chaqueta. Es un *deus ex machina* emocional. Si Lars quería que ella la encontrara, ¿por qué no la dejó en un sobre con instrucciones claras? ¿Por qué aparece justo ahora y no en los quince años anteriores? La escena se siente tramposa.
+- **Cap 27 — La elección de Lars**: El mismo problema. La carta de despedida aparece cuando la trama ya no sabe cómo generar tensión. Es un recurso narrativo agotado.
+- **Epílogo (Cap -1)**: Poético pero redundante. La escena de la flor se repite tres veces en la novela (Cap 31, Cap 34, Epílogo). La tercera vez ya no añade nada.
+
+## REPETICIONES Y CLICHÉS (menor)
+
+1. **La palabra "silencio"**: Aparece aproximadamente cada dos páginas. "El silencio pesa", "rompió el silencio", "el silencio de los Stang", "el silencio era la única respuesta". Pierde significado por sobreexposición. Necesitas sinónimos o cortes quirúrgicos.
+
+2. **Personificación del fiordo**: "El fiordo espera", "el fiordo guarda", "el fiordo devora", "el fiordo mira". Efectivo al principio; agotador en el capítulo veinte. Reduce la geografía a un cliché de "lugar maldito".
+
+3. **Cliché del pueblo silencioso**: Odda no tiene personalidad colectiva más allá de "guardar secretos". Falta vida comunitaria, voces diversas, un carácter propio que no sea la resistencia pasiva.
+
+4. **Cliché del muerto iluminador**: Lars muere misteriosamente y deja pistas que la heroína descubre. Es el manual del thriller generacional. Muy transitado.
+
+## SUGERENCIAS CONCRETAS DE CORRECCIÓN
+
+1. **Eliminar el Capítulo 2** (el duplicado) y renumerar toda la novela. El Capítulo 2 real debe ser "Objetos personales" (el actual Cap 3).
+
+2. **Unificar el nombre de la protagonista**. Elegir "Iris Veland" o "Elin Ravn" y realizar un Buscar/Reemplazar en todo el documento. Sin excepciones. La inconsistencia es letal para la profesionalidad del texto.
+
+3. **Reescribir la escena de la inmersión (Cap 19)** para incluir un peligro concreto: una corriente que casi la ahoga, un tablón que cede atrapándola, o una alucinación/visión de Lars. Actualmente es una escena visual plana que no justifica su extensión ni su peso en la trama.
+
+4. **Cortar el epílogo (Cap -1) a un cuarto de su extensión**. Las últimas quince páginas repiten la misma catarsis. Una página de cierre, tras la flor en el agua, es suficiente. El resto es relleno emocional.
+
+5. **Revisar la genealogía de los Stang/Torsen y unificarla**. Si el canon dice que los personajes se llaman Torsen, explica en la novela por qué los abuelos paternos se apellidan Stang (¿matrimonio? ¿adopción? ¿error del registro?). La confusión rompe la credibilidad de la mitología familiar.
+
+6. **Podar la repetición de "silencio"**. En cada aparición, preguntarse si la palabra es necesaria o se puede sustituir por "hermetismo", "pacto de ocultación", "mudez", o eliminarse por completo.
+
+7. **Darle un antagonista vivo en el tercer acto**. No necesitas un villano de acción, pero sí alguien que se oponga a la publicación de la verdad: un nieto de colaboracionista que amenace a Iris, un editor que la presione para que calle. El conflicto contra una abstracción no sostiene la tensión.
+
+## LO QUE FUNCIONA
+
+1. **El Prólogo**: Es la pieza de escritura más sólida del manuscrito. Tono, atmósfera, tensión y promesa narrativa perfectamente alineados. El lector engancha al instante.
+
+2. **El personaje de Sigrid Holmen**: Bien construido, con una confesión (Cap 18) que es el pico dramático de la obra. Su arco de culpa y silencio tiene peso real.
+
+3. **La ambientación del fiordo de Hardanger**: Excelente trabajo sensorial. La luz perpetua del sol de medianoche, la humedad, la madera, el frío, el salitre. La geografía es un personaje más de la novela.
+
+4. **La prosa lírica contenida**: La voz narrativa respeta la guía de estilo de "Freda Mcpherson". El registro es culto sin ser barroco. Las metáforas del agua y el silencio, aunque sobreutilizadas, funcionan en sus primeras apariciones.
+
+5. **La estructura de revelación oral**: La idea de que Iris descubra la verdad a través de confesiones de personajes secundarios es conceptualmente sólida, aunque está mal ejecutada por la falta de urgencia externa. El esqueleto es correcto; la carne necesita reescritura.
