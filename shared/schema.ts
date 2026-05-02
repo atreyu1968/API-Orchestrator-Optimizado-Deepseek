@@ -106,6 +106,18 @@ export const projects = pgTable("projects", {
   // Forma: { resumen_general: string|null, instrucciones: EditorialInstruction[], completedAt: string, error?: string } | null
   // Se borra al consumirlo desde el cliente (apply o descartar).
   pendingEditorialParse: jsonb("pending_editorial_parse"),
+  // PUENTE A — Auto-loop holístico tras finalización natural.
+  // Si está activo, en cuanto el manuscrito alcance status="completed" por la vía
+  // natural (no extends ni reescrituras editoriales), el orquestador encadena
+  // runHolisticReview → parseEditorialNotesOnly y deja el resultado en
+  // pendingEditorialParse para que el dashboard ofrezca "aplicar todo" en 1 click.
+  // Off por defecto para no consumir tokens en proyectos existentes.
+  autoHolisticReview: boolean("auto_holistic_review").notNull().default(false),
+  // PUENTE C — Checkpoint holístico ligero cada N capítulos durante generación.
+  // Detecta capítulos duplicados (Jaccard local), drift de nombre del protagonista
+  // y promesa de género incumplida sin coste por capítulo. Si N <= 0 está
+  // desactivado. Off por defecto.
+  midGenCheckpointEvery: integer("mid_gen_checkpoint_every").default(0),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

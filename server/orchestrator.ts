@@ -43,6 +43,18 @@ interface OrchestratorCallbacks {
   onChapterStatusChange: (chapterNumber: number, status: string) => void;
   onProjectComplete: () => void;
   onError: (error: string) => void;
+  // PUENTE A — auto-loop holístico tras finalización natural.
+  // Cuando autoHolisticReview está activo, el orquestador encadena holistic→parser
+  // y persiste el resultado en projects.pendingEditorialParse. Este callback notifica
+  // al cliente para que el dashboard ofrezca aplicar las correcciones en 1 click.
+  // Opcional: si no se cablea, el resultado solo queda en BD y el cliente lo recoge
+  // por polling.
+  onAutoReviewReady?: (payload: { count: number; resumen?: string | null }) => void;
+  // PUENTE C — checkpoint holístico ligero durante la generación.
+  // Se dispara cada midGenCheckpointEvery capítulos completados. Detecta capítulos
+  // duplicados, drift de nombre del protagonista y promesa de género. NO pausa la
+  // generación: solo notifica para que el usuario decida cuándo intervenir.
+  onMidGenCheckpoint?: (payload: { atChapter: number; warnings: string[] }) => void;
 }
 
 interface ParsedWorldBible {
@@ -1873,6 +1885,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         // PREVENTIVO: cada 5 capítulos completados, escanear patrones repetidos para
         // alimentar al Ghostwriter en los próximos capítulos (evitar muletillas globales).
         await this.runProactiveSemanticScan(project, i + 1, allSections.length, worldBibleData);
+
+        // PUENTE C — Checkpoint holístico ligero cada N capítulos (configurable).
+        // Best-effort: detecta duplicados y drift de nombre del protagonista sin
+        // pausar la generación. Si midGenCheckpointEvery <= 0 está desactivado.
+        await this.runMidGenerationCheckpoint(project, sectionData.numero, worldBibleData);
         
         const completedChaptersCount = i + 1;
         if (completedChaptersCount > 0 && completedChaptersCount % this.continuityCheckpointInterval === 0) {
@@ -4928,6 +4945,650 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     };
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // PUENTE B — MACRO-OPERACIONES
+  // ════════════════════════════════════════════════════════════════════════
+  /**
+   * FASE 0.5 de applyEditorialNotes — aplica las macro-operaciones que no
+   * caben en la cirugía local: rename global del manuscrito, regeneración
+   * total de un capítulo y re-arquitectura de un arco desde un capítulo
+   * concreto.
+   *
+   * Orden de ejecución (importa):
+   *   1. global_rename   → barre texto + WB + escaleta. NO usa LLM. Barato.
+   *   2. regenerate_chapter → reescribe capítulos rotos al completo.
+   *   3. restructure_arc → regenera escaleta + caps a partir de N.
+   *
+   * Las instrucciones macro consumidas se filtran del array de salida; las
+   * "puntual"/"estructural" pasan intactas al flujo quirúrgico siguiente.
+   */
+  private async applyMacroOperations(
+    project: Project,
+    worldBible: WorldBible,
+    allChapters: Chapter[],
+    worldBibleData: ParsedWorldBible,
+    guiaEstilo: string,
+    instructions: EditorialInstruction[],
+  ): Promise<{
+    remainingInstructions: EditorialInstruction[];
+    refreshedChapters?: Chapter[];
+    refreshedWorldBibleData?: ParsedWorldBible;
+    summary: string;
+  }> {
+    const renameInstrs = instructions.filter(ins => ins.tipo === "global_rename");
+    const regenInstrs = instructions.filter(ins => ins.tipo === "regenerate_chapter");
+    const restrInstrs = instructions.filter(ins => ins.tipo === "restructure_arc");
+    const remaining = instructions.filter(ins =>
+      ins.tipo !== "global_rename" &&
+      ins.tipo !== "regenerate_chapter" &&
+      ins.tipo !== "restructure_arc"
+    );
+
+    if (renameInstrs.length === 0 && regenInstrs.length === 0 && restrInstrs.length === 0) {
+      return { remainingInstructions: remaining, summary: "0 macro-operaciones" };
+    }
+
+    let refreshedChapters: Chapter[] = allChapters;
+    let refreshedWB: WorldBible = worldBible;
+    let refreshedWBData: ParsedWorldBible = worldBibleData;
+    let totalRenames = 0;
+    let totalRegenerated = 0;
+    let totalRestructured = 0;
+
+    // ── FASE 1: global_rename ─────────────────────────────────────────
+    for (const ri of renameInstrs) {
+      const from = (ri.rename_from || "").trim();
+      const to = (ri.rename_to || "").trim();
+      if (!from || !to || from === to) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `global_rename ignorado: rename_from/rename_to vacíos o idénticos ("${from}" → "${to}").`,
+          agentRole: "editor",
+        });
+        continue;
+      }
+
+      // Word-boundary regex Unicode-aware (\b no maneja bien acentos en JS).
+      const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      let pattern: RegExp;
+      try {
+        pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "gu");
+      } catch (e) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `global_rename ignorado: no se pudo construir el patrón para "${from}" (${e instanceof Error ? e.message : String(e)}).`,
+          agentRole: "editor",
+        });
+        continue;
+      }
+
+      const chaptersTouched: number[] = [];
+      let occurrences = 0;
+      for (const ch of refreshedChapters) {
+        if (!ch.content) continue;
+        const matches = ch.content.match(pattern);
+        if (!matches || matches.length === 0) continue;
+        const newContent = ch.content.replace(pattern, to);
+        try {
+          await storage.updateChapter(ch.id, {
+            content: newContent,
+            preEditContent: ch.content,
+            preEditAt: new Date(),
+          } as any);
+          chaptersTouched.push(ch.chapterNumber);
+          occurrences += matches.length;
+        } catch (e) {
+          console.error(`[applyMacroOperations:rename] update chapter ${ch.id} failed:`, e);
+        }
+      }
+
+      // Actualizar World Bible: characters, plotOutline.chapterOutlines, timeline.
+      try {
+        const wb: any = refreshedWB as any;
+        const charsArr: any[] = Array.isArray(wb.characters) ? wb.characters : [];
+        const newChars = charsArr.map((c: any) => {
+          if (!c) return c;
+          const nm = typeof c.name === "string" ? c.name : "";
+          const aliases = Array.isArray(c.aliases) ? c.aliases : [];
+          const newAliases = aliases.map((a: string) => typeof a === "string" ? a.replace(pattern, to) : a);
+          return {
+            ...c,
+            name: nm.replace(pattern, to),
+            aliases: newAliases,
+            description: typeof c.description === "string" ? c.description.replace(pattern, to) : c.description,
+            backstory: typeof c.backstory === "string" ? c.backstory.replace(pattern, to) : c.backstory,
+          };
+        });
+        const plot: any = wb.plotOutline || {};
+        let newPlot = plot;
+        if (plot && typeof plot === "object" && !Array.isArray(plot)) {
+          const key = Array.isArray(plot.chapterOutlines) ? "chapterOutlines"
+            : Array.isArray(plot.chapter_outlines) ? "chapter_outlines"
+            : Array.isArray(plot.escaleta) ? "escaleta" : null;
+          if (key) {
+            const arr: any[] = plot[key];
+            const renamed = arr.map((co: any) => {
+              const replace = (s: any) => typeof s === "string" ? s.replace(pattern, to) : s;
+              const beats = Array.isArray(co?.beats) ? co.beats.map(replace) : co?.beats;
+              const keyEvents = Array.isArray(co?.keyEvents) ? co.keyEvents.map(replace) : co?.keyEvents;
+              return {
+                ...co,
+                titulo: replace(co?.titulo),
+                title: replace(co?.title),
+                summary: replace(co?.summary),
+                objetivo_narrativo: replace(co?.objetivo_narrativo),
+                beats,
+                keyEvents,
+              };
+            });
+            newPlot = { ...plot, [key]: renamed };
+          }
+        }
+        const timeline: any[] = Array.isArray(wb.timeline) ? wb.timeline : [];
+        const newTimeline = timeline.map((ev: any) => ({
+          ...ev,
+          description: typeof ev?.description === "string" ? ev.description.replace(pattern, to) : ev?.description,
+          actors: Array.isArray(ev?.actors) ? ev.actors.map((a: any) => typeof a === "string" ? a.replace(pattern, to) : a) : ev?.actors,
+        }));
+        await storage.updateWorldBible(refreshedWB.id, {
+          characters: newChars as any,
+          plotOutline: newPlot as any,
+          timeline: newTimeline as any,
+        });
+      } catch (e) {
+        console.error(`[applyMacroOperations:rename] WB update failed:`, e);
+      }
+
+      totalRenames += occurrences;
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "success",
+        message: `Rename global "${from}" → "${to}" aplicado: ${occurrences} ocurrencia(s) en ${chaptersTouched.length} capítulo(s) (${chaptersTouched.slice(0, 12).join(", ")}${chaptersTouched.length > 12 ? "…" : ""}) + World Bible.`,
+        agentRole: "editor",
+      });
+      this.callbacks.onAgentStatus("editor", "completed",
+        `Rename global "${from}" → "${to}": ${occurrences} sustituciones en ${chaptersTouched.length} capítulos.`
+      );
+
+      // FIX architect: si vienen 2+ renames, el siguiente debe operar sobre el
+      // estado YA reescrito (no sobre las copias en memoria del primer rename),
+      // o se pisaría el primero. Refrescamos en cada iteración.
+      refreshedChapters = await storage.getChaptersByProject(project.id);
+      const wbAfterRename = await storage.getWorldBibleByProject(project.id);
+      if (wbAfterRename) {
+        refreshedWB = wbAfterRename;
+        refreshedWBData = this.reconstructWorldBibleData(wbAfterRename, project);
+      }
+    }
+
+    // ── FASE 2: regenerate_chapter ────────────────────────────────────
+    for (const ri of regenInstrs) {
+      const targets = (ri.capitulos_afectados || []).filter(n => typeof n === "number");
+      if (targets.length === 0) continue;
+      let allSections = this.buildSectionsListFromChapters(refreshedChapters, refreshedWBData);
+      for (const num of targets) {
+        const chapter = refreshedChapters.find(c => c.chapterNumber === num);
+        const sectionData = allSections.find(s => s.numero === num);
+        if (!chapter || !sectionData) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `regenerate_chapter ignorado para cap ${num}: capítulo o entrada en escaleta no encontrados.`,
+            agentRole: "editor",
+          });
+          continue;
+        }
+        try {
+          await this.regenerateSingleChapter(
+            project,
+            chapter,
+            sectionData,
+            refreshedWBData,
+            guiaEstilo,
+            ri.instrucciones_correccion || ri.descripcion || "regeneración total solicitada por el editor",
+            "editorial_regenerate",
+          );
+          totalRegenerated++;
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          console.error(`[applyMacroOperations:regenerate] cap ${num} failed:`, e);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "error",
+            message: `regenerate_chapter cap ${num} falló: ${errMsg.slice(0, 240)}`,
+            agentRole: "ghostwriter",
+          });
+        }
+      }
+      // Refrescar entre instrucciones por si la siguiente cita beats reescritos.
+      refreshedChapters = await storage.getChaptersByProject(project.id);
+      allSections = this.buildSectionsListFromChapters(refreshedChapters, refreshedWBData);
+    }
+
+    // ── FASE 3: restructure_arc ────────────────────────────────────────
+    for (const ri of restrInstrs) {
+      const fromCh = ri.restructure_from_chapter;
+      const consigna = (ri.restructure_instructions || ri.instrucciones_correccion || "").trim();
+      if (typeof fromCh !== "number" || fromCh < 1 || consigna.length < 30) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `restructure_arc ignorado: restructure_from_chapter=${fromCh} o consigna demasiado corta (${consigna.length} chars).`,
+          agentRole: "editor",
+        });
+        continue;
+      }
+      try {
+        // 1) Re-arquitectura de escaleta (ya existente y testeado).
+        await this.regenerateOutlineFromChapter(project, fromCh, consigna);
+
+        // 2) Refrescar WB tras el rediseño.
+        const newWB = await storage.getWorldBibleByProject(project.id);
+        if (newWB) {
+          refreshedWB = newWB;
+          refreshedWBData = this.reconstructWorldBibleData(newWB, project);
+        }
+        refreshedChapters = await storage.getChaptersByProject(project.id);
+
+        // 3) Regenerar TODOS los capítulos positivos >= fromCh con la nueva escaleta.
+        const toRegen = refreshedChapters
+          .filter(c => c.chapterNumber >= fromCh && c.chapterNumber > 0)
+          .sort((a, b) => a.chapterNumber - b.chapterNumber);
+        const sections = this.buildSectionsListFromChapters(refreshedChapters, refreshedWBData);
+        for (const ch of toRegen) {
+          const sec = sections.find(s => s.numero === ch.chapterNumber);
+          if (!sec) continue;
+          try {
+            await this.regenerateSingleChapter(
+              project,
+              ch,
+              sec,
+              refreshedWBData,
+              guiaEstilo,
+              `Re-arquitectura desde cap ${fromCh}: ${consigna}`,
+              "restructure_regenerate",
+            );
+            totalRestructured++;
+            // Refresh para que el siguiente cap tenga el anterior YA reescrito como contexto.
+            refreshedChapters = await storage.getChaptersByProject(project.id);
+          } catch (e) {
+            console.error(`[applyMacroOperations:restructure] cap ${ch.chapterNumber} failed:`, e);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "error",
+              message: `restructure_arc cap ${ch.chapterNumber} falló: ${e instanceof Error ? e.message : String(e)}`,
+              agentRole: "ghostwriter",
+            });
+          }
+        }
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "success",
+          message: `restructure_arc desde cap ${fromCh} completado: escaleta rediseñada + ${toRegen.length} capítulo(s) regenerado(s).`,
+          agentRole: "architect",
+        });
+      } catch (e) {
+        console.error(`[applyMacroOperations:restructure] failed:`, e);
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "error",
+          message: `restructure_arc falló: ${e instanceof Error ? e.message : String(e)}`,
+          agentRole: "architect",
+        });
+      }
+    }
+
+    const summaryParts: string[] = [];
+    if (totalRenames > 0) summaryParts.push(`${totalRenames} renames`);
+    if (totalRegenerated > 0) summaryParts.push(`${totalRegenerated} cap(s) regenerado(s)`);
+    if (totalRestructured > 0) summaryParts.push(`${totalRestructured} cap(s) re-arquitecturado(s)`);
+    const summary = summaryParts.length > 0 ? summaryParts.join(", ") : "0 macro-operaciones aplicadas";
+
+    return {
+      remainingInstructions: remaining,
+      refreshedChapters,
+      refreshedWorldBibleData: refreshedWBData,
+      summary,
+    };
+  }
+
+  /**
+   * Helper: regenera UN capítulo desde cero usando ghostwriter con todo el
+   * contexto de capítulos previos como canon. NO ejecuta editor/copyeditor
+   * (es regeneración cruda); deja el capítulo como "completed". El usuario
+   * puede ejecutar después una nueva ronda de notas editoriales si necesita
+   * pulirlo. Guarda preEditContent para que el botón "deshacer cambios" del
+   * detalle de capítulo pueda revertir si la regeneración empeora la cosa.
+   */
+  private async regenerateSingleChapter(
+    project: Project,
+    chapter: Chapter,
+    sectionData: SectionData,
+    worldBibleData: ParsedWorldBible,
+    guiaEstilo: string,
+    motivo: string,
+    trackingPhase: string,
+  ): Promise<void> {
+    const sectionLabel = this.getSectionLabel(sectionData);
+    this.callbacks.onChapterRewrite(
+      chapter.chapterNumber,
+      chapter.title || sectionData.titulo || `Capítulo ${chapter.chapterNumber}`,
+      1, 1,
+      `Regeneración total: ${motivo.slice(0, 100)}`
+    );
+
+    let seriesThreads: string[] = [];
+    let seriesEvents: string[] = [];
+    if (project.seriesId) {
+      try {
+        const { threads, events } = await this.loadSeriesThreadsAndEvents(project);
+        seriesThreads = threads; seriesEvents = events;
+      } catch { /* opcional */ }
+    }
+
+    const allCh = await storage.getChaptersByProject(project.id);
+    const calculatedTarget = this.calculatePerChapterTarget((project as any).minWordCount, allCh.length || 1);
+    const perMin = (project as any).minWordsPerChapter || calculatedTarget;
+    const perMax = (project as any).maxWordsPerChapter || Math.round(perMin * 1.15);
+
+    const previousChapters = allCh
+      .filter(c => c.chapterNumber < chapter.chapterNumber)
+      .sort((a, b) => a.chapterNumber - b.chapterNumber);
+    const lastThree = previousChapters.slice(-3);
+    const previousContinuity = lastThree.length > 0
+      ? `Resumen de capítulos previos:\n${lastThree.map(c => `Cap ${c.chapterNumber} "${c.title}": ${(c.content || "").slice(0, 500)}...`).join("\n\n")}`
+      : "";
+
+    const previousFullText = Orchestrator.buildPreviousChaptersFullText(allCh, chapter.chapterNumber);
+
+    if (chapter.content) {
+      try {
+        await storage.updateChapter(chapter.id, {
+          preEditContent: chapter.content,
+          preEditAt: new Date(),
+        } as any);
+      } catch (e) {
+        console.error(`[regenerateSingleChapter] preEdit snapshot failed for cap ${chapter.chapterNumber}:`, e);
+      }
+    }
+    await storage.updateChapter(chapter.id, { status: "writing" });
+    this.callbacks.onChapterStatusChange(chapter.chapterNumber, "writing");
+    this.callbacks.onAgentStatus("ghostwriter", "writing", `Regenerando ${sectionLabel} desde cero...`);
+
+    const enrichedWB = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreads, seriesEvents);
+    const wbResolved = this.worldBibleWithResolvedLexico(enrichedWB, this.resolveLexicoForChapter(worldBibleData, chapter.chapterNumber));
+
+    // FIX architect: el bucle robusto de truncados (L6500+) tiene retries con
+    // expansión y fallback al "mejor borrador". Aquí lo simplificamos a 1
+    // intento + 1 reintento de expansión si el resultado queda < 70% del
+    // mínimo. Mantenemos el mejor borrador entre los dos.
+    const minAcceptable = Math.round(perMin * 0.7);
+    const wordsOf = (s: string) => s.split(/\s+/).filter((w: string) => w.length > 0).length;
+
+    let bestContent = "";
+    let bestWords = 0;
+    let bestContinuity: any = undefined;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const refinement = attempt === 1
+        ? `REGENERACIÓN COMPLETA — el capítulo anterior fue descartado por el editor humano. Motivo: ${motivo}\n\nEscribe este capítulo DESDE CERO respetando rigurosamente la escaleta planificada y los capítulos previos como canon inviolable. NO copies estructuras de otros capítulos.`
+        : `REGENERACIÓN COMPLETA — segundo intento. El borrador anterior quedó MUY por debajo del mínimo (${bestWords} palabras vs ${perMin} requeridas). Motivo original: ${motivo}\n\nDESARROLLA cada beat con detalle: descripciones sensoriales, diálogo natural, conflicto interno, gestos. NO añadas relleno vacío; densifica narrativamente. Objetivo: ${perMin}-${perMax} palabras.`;
+
+      const writerResult = await this.ghostwriter.execute({
+        chapterNumber: chapter.chapterNumber,
+        chapterData: sectionData,
+        worldBible: wbResolved,
+        guiaEstilo,
+        previousContinuity,
+        refinementInstructions: refinement,
+        authorName: "",
+        isRewrite: true,
+        minWordCount: perMin,
+        maxWordCount: perMax,
+        previousChaptersFullText: previousFullText,
+        kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+      });
+      const { cleanContent, continuityState } = this.ghostwriter.extractContinuityState(writerResult.content);
+      const w = wordsOf(cleanContent);
+      await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "deepseek-v4-flash", chapter.chapterNumber, `${trackingPhase}_attempt_${attempt}`);
+
+      // Mejor borrador = el de mayor word count (no perdemos un buen intento por
+      // un mal segundo).
+      if (w > bestWords) {
+        bestContent = cleanContent;
+        bestWords = w;
+        bestContinuity = continuityState;
+      }
+
+      if (w >= minAcceptable && cleanContent.trim().length > 0) break;
+    }
+
+    if (!bestContent || bestWords === 0) {
+      await storage.updateChapter(chapter.id, { status: "pending" });
+      this.callbacks.onChapterStatusChange(chapter.chapterNumber, "pending");
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "error",
+        message: `${sectionLabel} no se pudo regenerar (Narrador devolvió texto vacío en 2 intentos). Capítulo marcado como "pending" para revisión manual. Motivo: ${motivo.slice(0, 200)}.`,
+        agentRole: "ghostwriter",
+      });
+      return;
+    }
+
+    await storage.updateChapter(chapter.id, {
+      content: bestContent,
+      wordCount: bestWords,
+      status: "completed",
+      continuityState: bestContinuity,
+    });
+    this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+    this.callbacks.onChapterComplete(chapter.chapterNumber, bestWords, sectionData.titulo || `Capítulo ${chapter.chapterNumber}`);
+
+    const lengthFlag = bestWords < minAcceptable
+      ? ` (BAJO el mínimo aceptable de ${minAcceptable} — recomendado revisar manualmente)`
+      : "";
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: bestWords < minAcceptable ? "warning" : "success",
+      message: `${sectionLabel} regenerado desde cero (${bestWords} palabras${lengthFlag}). Motivo: ${motivo.slice(0, 200)}.`,
+      agentRole: "ghostwriter",
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // PUENTE C — CHECKPOINT MID-GENERACIÓN
+  // ════════════════════════════════════════════════════════════════════════
+  /**
+   * Checkpoint ligero invocado durante generateNovel cada N capítulos.
+   * NO bloquea. NO usa LLM (el coste por capítulo se mantiene a 0). Detecta:
+   *  - Capítulo duplicado (Jaccard > 0.35 con el inmediatamente anterior).
+   *  - Drift de nombre del protagonista (el nombre canónico del WB no aparece
+   *    o aparece menos veces que un nombre rival capitalizado en el último cap).
+   * Si encuentra algo, registra warning y emite onMidGenCheckpoint para el
+   * dashboard. La generación sigue: el usuario decide.
+   */
+  private async runMidGenerationCheckpoint(
+    project: Project,
+    currentChapterNumber: number,
+    worldBibleData: ParsedWorldBible,
+  ): Promise<void> {
+    const N = (project as any).midGenCheckpointEvery || 0;
+    if (typeof N !== "number" || N <= 0) return;
+    if (currentChapterNumber <= 0 || currentChapterNumber % N !== 0) return;
+
+    try {
+      const all = await storage.getChaptersByProject(project.id);
+      const completed = all
+        .filter(c => c.status === "completed" && c.chapterNumber > 0 && c.content)
+        .sort((a, b) => a.chapterNumber - b.chapterNumber);
+      if (completed.length < 2) return;
+
+      const warnings: string[] = [];
+
+      // (a) Duplicado: Jaccard de palabras únicas (>=4 chars) entre el último
+      // cap completado y el anterior. Umbral 0.35 = solapamiento alto.
+      const tokenize = (s: string): Set<string> => {
+        const out = new Set<string>();
+        const words = s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+          .split(/[^a-z0-9]+/);
+        for (const w of words) if (w.length >= 4) out.add(w);
+        return out;
+      };
+      const last = completed[completed.length - 1];
+      const prev = completed[completed.length - 2];
+      const setA = tokenize(last.content || "");
+      const setB = tokenize(prev.content || "");
+      let inter = 0;
+      for (const w of setA) if (setB.has(w)) inter++;
+      const union = setA.size + setB.size - inter;
+      const jaccard = union > 0 ? inter / union : 0;
+      if (jaccard > 0.35) {
+        warnings.push(`Cap ${last.chapterNumber} y cap ${prev.chapterNumber} comparten ${(jaccard * 100).toFixed(0)}% de vocabulario único — posible capítulo duplicado.`);
+      }
+
+      // (b) Drift de nombre del protagonista. Tomamos el primer personaje del WB.
+      const personajes: any[] = (worldBibleData.world_bible as any)?.personajes || [];
+      const protagonist = personajes.find(p => /protagon|principal/i.test(p?.rol || p?.role || ""))
+                       ?? personajes[0];
+      const canonName = (protagonist?.nombre || protagonist?.name || "").trim();
+      if (canonName && last.content) {
+        const escapeName = canonName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const canonRegex = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeName}(?![\\p{L}\\p{N}_])`, "gu");
+        const canonHits = (last.content.match(canonRegex) || []).length;
+        // Buscar nombres rivales: tokens capitalizados (3-15 chars) que aparezcan
+        // muchas veces y no formen parte del WB ya conocido.
+        const knownNames = new Set<string>();
+        for (const p of personajes) {
+          const nm = (p?.nombre || p?.name || "").trim();
+          if (nm) knownNames.add(nm.toLowerCase());
+          const aliases: string[] = Array.isArray(p?.aliases) ? p.aliases : [];
+          for (const a of aliases) if (typeof a === "string" && a.trim()) knownNames.add(a.trim().toLowerCase());
+        }
+        const candidates = new Map<string, number>();
+        const capRegex = /(?<![\p{L}])\p{Lu}[\p{Ll}]{2,14}(?![\p{L}])/gu;
+        const matches = last.content.match(capRegex) || [];
+        for (const m of matches) {
+          if (knownNames.has(m.toLowerCase())) continue;
+          // Filtrar palabras frecuentes que empiezan frase (heurística mínima).
+          if (/^(El|La|Los|Las|Un|Una|Y|Pero|Aunque|Cuando|Si|No|Sí|Ya|Mientras|Entonces|Después|Antes|Aquí|Allí|Allá|Hoy|Ayer|Mañana)$/.test(m)) continue;
+          candidates.set(m, (candidates.get(m) || 0) + 1);
+        }
+        const sortedCandidates = Array.from(candidates.entries()).sort((a, b) => b[1] - a[1]);
+        const topCandidate = sortedCandidates[0];
+        if (topCandidate && topCandidate[1] >= 5 && topCandidate[1] > canonHits) {
+          warnings.push(`Drift de nombre del protagonista: "${canonName}" aparece ${canonHits}× en cap ${last.chapterNumber}, pero "${topCandidate[0]}" aparece ${topCandidate[1]}×.`);
+        } else if (canonHits === 0 && (last.content.split(/\s+/).length > 800)) {
+          warnings.push(`El protagonista canónico "${canonName}" no aparece NUNCA en el cap ${last.chapterNumber} (${last.content.split(/\s+/).length} palabras).`);
+        }
+      }
+
+      if (warnings.length === 0) return;
+
+      const fullMsg = `Checkpoint cap ${currentChapterNumber}: ${warnings.length} aviso(s):\n${warnings.map(w => `  • ${w}`).join("\n")}`;
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        message: fullMsg,
+        agentRole: "editor",
+      });
+      this.callbacks.onMidGenCheckpoint?.({ atChapter: currentChapterNumber, warnings });
+      this.callbacks.onAgentStatus("editor", "warning",
+        `Checkpoint cap ${currentChapterNumber}: ${warnings.length} aviso(s) detectado(s).`
+      );
+    } catch (e) {
+      // Best-effort: nunca debe romper la generación.
+      console.error(`[runMidGenerationCheckpoint] cap ${currentChapterNumber} failed:`, e);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // PUENTE A — AUTO-LOOP HOLÍSTICO TRAS FINALIZACIÓN NATURAL
+  // ════════════════════════════════════════════════════════════════════════
+  /**
+   * Encadenado opcional tras finalizeCompletedProject cuando el proyecto tiene
+   * autoHolisticReview = true. Ejecuta:
+   *   1. runHolisticReview (informe del editor profesional).
+   *   2. parseEditorialNotesOnly (instrucciones estructuradas + grounding).
+   *   3. Persiste resultado en projects.pendingEditorialParse para que el
+   *      dashboard muestre la misma UI que tras una revisión manual.
+   *   4. Notifica vía callback para SSE en tiempo real.
+   *
+   * Best-effort: cualquier fallo se loguea pero NO revierte el status del
+   * proyecto (el manuscrito ya está completed). El usuario siempre puede
+   * lanzar la revisión manual desde el dashboard si esto falla.
+   */
+  private async runAutoHolisticReviewLoop(project: Project): Promise<void> {
+    try {
+      this.callbacks.onAgentStatus("editor", "thinking",
+        "Auto-revisión holística post-finalización en marcha..."
+      );
+
+      const review = await this.runHolisticReview(project);
+      const notes = (review?.notesText || "").trim();
+      if (!notes) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: "Auto-revisión holística completada sin notas: el manuscrito está limpio.",
+          agentRole: "editor",
+        });
+        this.callbacks.onAutoReviewReady?.({ count: 0, resumen: "Sin observaciones" });
+        return;
+      }
+
+      const parsed = await this.parseEditorialNotesOnly(project, notes);
+      const payload = {
+        resumen_general: parsed.resumen_general || null,
+        instrucciones: parsed.instrucciones,
+        count: parsed.instrucciones.length,
+        completedAt: new Date().toISOString(),
+        source: "auto_holistic",
+      };
+
+      // FIX architect: solo notificamos al cliente que las instrucciones están
+      // "listas" si la persistencia funcionó. De lo contrario, el dashboard
+      // recibiría un evento optimista sin nada que cargar al hacer click.
+      let persisted = false;
+      try {
+        await storage.updateProject(project.id, { pendingEditorialParse: payload as any });
+        persisted = true;
+      } catch (e) {
+        const errMsg = e instanceof Error ? e.message : String(e);
+        console.error("[AutoHolisticReview] persist pendingEditorialParse failed:", e);
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "error",
+          message: `Auto-revisión holística generó ${parsed.instrucciones.length} instrucción(es), pero NO se pudieron persistir: ${errMsg.slice(0, 240)}. Lanza la revisión manual desde el dashboard.`,
+          agentRole: "editor",
+        });
+      }
+
+      if (persisted) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `Auto-revisión holística lista: ${parsed.instrucciones.length} instrucción(es) detectada(s). Disponible en el dashboard para aplicar.`,
+          agentRole: "editor",
+        });
+        this.callbacks.onAutoReviewReady?.({
+          count: parsed.instrucciones.length,
+          resumen: parsed.resumen_general || null,
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[AutoHolisticReview] loop failed:", e);
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "error",
+        message: `Auto-revisión holística falló: ${msg.slice(0, 240)}. El manuscrito sigue marcado como completed; puedes lanzar la revisión manual desde el dashboard.`,
+        agentRole: "editor",
+      });
+    }
+  }
+
   /**
    * Re-evalúa la novela completa con el FinalReviewer para refrescar la puntuación
    * global tras una sesión de notas editoriales (eliminaciones y/o reescrituras).
@@ -5050,9 +5711,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // en .chapterOutlines, NO un array. Antes esto pasaba {} como escaleta_capitulos
       // y los agentes se quedaban sin la escaleta planificada. reconstructWorldBibleData
       // convierte correctamente el objeto al array de capítulos en formato español.
-      const worldBibleData: ParsedWorldBible = this.reconstructWorldBibleData(worldBible, project);
+      // NOTA: `worldBibleData` y `allChapters` son `let` (no `const`) porque la fase
+      // 0.5 de macro-operaciones (PUENTE B) puede regenerar capítulos enteros y
+      // mutar la canon (rename, restructure_arc), y el resto del flujo necesita
+      // operar sobre el estado refrescado.
+      let worldBibleData: ParsedWorldBible = this.reconstructWorldBibleData(worldBible, project);
 
-      const allChapters = await storage.getChaptersByProject(project.id);
+      let allChapters = await storage.getChaptersByProject(project.id);
       const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
       const guiaEstilo = styleGuideContent
         ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
@@ -5212,6 +5877,73 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // Sustituimos la variable local `instructions` para no tener que cambiar
       // el resto del flujo aguas abajo.
       instructions = nonDeletionInstructions;
+
+      // ── FASE 0.5: MACRO-OPERACIONES (PUENTE B) ────────────────────────
+      // Antes del agrupamiento por capítulo procesamos las operaciones que
+      // afectan a la novela entera (global_rename) o a un capítulo entero
+      // (regenerate_chapter / restructure_arc). Estas no son cirugía local,
+      // así que se ejecutan AHORA y se filtran del flujo quirúrgico
+      // posterior para que el SurgicalPatcher no las vea (las macros ya han
+      // tocado el texto en su totalidad y volver a parchearlo es contraproducente).
+      const macroResult = await this.applyMacroOperations(
+        project,
+        worldBible,
+        allChapters,
+        worldBibleData,
+        guiaEstilo,
+        instructions,
+      );
+      instructions = macroResult.remainingInstructions;
+      // Refrescamos referencias locales: las macros pueden haber regenerado
+      // capítulos enteros y reescrito plotOutline / characters del world bible.
+      let macroChangedState = false;
+      if (macroResult.refreshedChapters) {
+        allChapters = macroResult.refreshedChapters;
+        macroChangedState = true;
+      }
+      if (macroResult.refreshedWorldBibleData) {
+        worldBibleData = macroResult.refreshedWorldBibleData;
+        macroChangedState = true;
+      }
+      // FIX architect: tras restructure_arc la escaleta cambia (beats nuevos),
+      // y tras regenerate_chapter el contenido del capítulo cambia. allSections
+      // se construyó ANTES, así que el flujo quirúrgico siguiente vería beats
+      // viejos y reescribiría sobre escaleta obsoleta. Reconstruimos in-place.
+      if (macroChangedState) {
+        const refreshedSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
+        allSections.length = 0;
+        refreshedSections.forEach(s => allSections.push(s));
+      }
+
+      // Si tras macro ya no queda nada quirúrgico, cortamos como en el camino
+      // de "solo eliminaciones": recalculamos la nota global y terminamos.
+      if (instructions.length === 0) {
+        const previousFinalScore = project.finalScore ?? null;
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "success",
+          message: `Aplicación de notas editoriales completada (macro): ${macroResult.summary}. 0 reescrituras quirúrgicas pendientes. Recalculando puntuación global...`,
+          agentRole: "editor",
+        });
+        try {
+          await this.recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore);
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          console.error("[ApplyEditorialNotes] Error recalculating global score after macro-only flow:", e);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `Macro-operaciones aplicadas correctamente, pero la revisión final falló: ${errMsg.slice(0, 200)}.`,
+            agentRole: "final-reviewer",
+          });
+        }
+        await storage.updateProject(project.id, { status: "completed" });
+        this.callbacks.onAgentStatus("ghostwriter", "completed",
+          `Notas editoriales procesadas (macro): ${macroResult.summary}.`
+        );
+        this.callbacks.onProjectComplete();
+        return;
+      }
 
       // Group instructions by chapter so we make one surgical pass per chapter with all its issues combined.
       // Multi-chapter (arc) instructions: each chapter receives the same instruction but with its own role
@@ -7543,6 +8275,17 @@ Responde SOLO con un JSON válido con la estructura:
     await this.generateSeriesContinuitySnapshot(project);
     await this.runSeriesArcVerification(project);
     this.callbacks.onProjectComplete();
+
+    // PUENTE A — Auto-loop holístico tras finalización natural del manuscrito.
+    // Si el flag está activo, encadenamos en background:
+    //   runHolisticReview → parseEditorialNotesOnly → persistir en
+    //   pendingEditorialParse + emitir SSE auto_review_ready.
+    // Best-effort: si falla solo se loguea — el manuscrito ya está marcado
+    // como completed y el usuario puede lanzar la revisión manual desde el
+    // dashboard.
+    if ((project as any).autoHolisticReview) {
+      void this.runAutoHolisticReviewLoop(project);
+    }
   }
 
   private async runFinalContinuityAudit(project: Project): Promise<{ correctedCount: number; status: "clean" | "corrected" | "unresolved" | "error"; warnings: string[] }> {

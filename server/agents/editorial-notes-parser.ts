@@ -13,10 +13,27 @@ export interface EditorialInstruction {
   // "eliminar": el editor pide BORRAR el/los capítulo(s) por completo. NO se reescribe; se elimina y se
   //   renumeran los posteriores. Solo se acepta cuando la petición es inequívoca ("elimina el cap X",
   //   "el cap Y sobra", "borra el prólogo"). Ante cualquier duda → marcar "estructural", no "eliminar".
-  tipo?: "puntual" | "estructural" | "eliminar";
+  // ── MACRO-OPERACIONES (PUENTE B) ──
+  // "regenerate_chapter": el capítulo está roto a nivel global (duplicado de otro, fuera de género,
+  //   estructura totalmente equivocada) y la cirugía local no lo arregla. Se regenera DESDE CERO
+  //   respetando la escaleta planificada y los capítulos previos.
+  // "global_rename": un personaje/lugar/concepto aparece bajo dos nombres distintos a lo largo de
+  //   la novela (drift) y hay que unificar uno por otro en TODA la novela (capítulos + WB + escaleta).
+  //   Requiere `rename_from` y `rename_to`. NO usa LLM (find/replace word-boundary).
+  // "restructure_arc": la trama se desvía irreversiblemente desde el cap N. Re-arquitecto rediseña
+  //   la escaleta DESDE `restructure_from_chapter` con `restructure_instructions`, y los capítulos
+  //   posteriores se marcan para regeneración secuencial.
+  tipo?: "puntual" | "estructural" | "eliminar" | "regenerate_chapter" | "global_rename" | "restructure_arc";
   // Cuando capitulos_afectados.length > 1: rol específico de cada capítulo en el arco multi-capítulo.
-  // No aplica para tipo "eliminar".
+  // No aplica para tipo "eliminar" / macro-operaciones.
   plan_por_capitulo?: Record<string, string>;
+  // ── Campos para macro-operaciones ──
+  // Para "global_rename": nombre exacto a buscar y nombre por el que sustituirlo.
+  rename_from?: string;
+  rename_to?: string;
+  // Para "restructure_arc": capítulo desde el que rediseñar y consigna para el Architect.
+  restructure_from_chapter?: number;
+  restructure_instructions?: string;
 }
 
 export interface EditorialNotesParseResult {
@@ -86,7 +103,11 @@ REGLAS:
    - "puntual": se resuelve modificando frases o párrafos concretos sin alterar la arquitectura del capítulo. Ejemplos: "añadir 1-2 párrafos justificando la aparición", "eliminar la mención al cuchillo", "corregir el color de los ojos", "reformular el diálogo del minuto 3 para que no parezca casual".
    - "estructural": requiere reescribir escenas enteras, reordenar la secuencia, cambiar el tono global del clímax o redistribuir material entre capítulos. Ejemplos: "haz que el desenlace sea menos idealista", "el segundo acto necesita otro ritmo", "el final debe ser fruto de una negociación, no de armonía espontánea".
    - "eliminar": el editor pide BORRAR el/los capítulo(s) ENTERO(S) del manuscrito. Se eliminan y los posteriores se renumeran automáticamente. SOLO se admite cuando la nota lo pide de forma INEQUÍVOCA. Frases que SÍ disparan "eliminar": "elimina/borra/suprime/quita el capítulo X", "el capítulo Y sobra y debe desaparecer", "fuera el cap Z", "el prólogo no aporta nada, eliminarlo", "los capítulos 12 y 13 son redundantes, recórtalos del manuscrito". Frases que NO son "eliminar" (son "estructural"): "el cap X es flojo", "este capítulo necesita más impacto", "reduce mucho la longitud del capítulo Y", "este capítulo debería fusionarse con el siguiente". ANTE LA MÍNIMA DUDA → "estructural", NUNCA "eliminar".
-   Sé RIGUROSO: si dudas entre "puntual" y "estructural", marca como "estructural". Las puntuales se aplican como cirugía determinista; las estructurales requieren reescritura completa del capítulo (más caras y arriesgadas); las de eliminar son destructivas e irreversibles para el usuario, así que solo cuando el editor lo pide LITERALMENTE.
+   ─── MACRO-OPERACIONES (úsalas SOLO cuando aplique exactamente; en duda → "estructural") ───
+   - "regenerate_chapter": el capítulo está GLOBALMENTE roto y la cirugía no puede arreglarlo: es DUPLICADO de otro capítulo, está completamente fuera del género prometido, su estructura es totalmente equivocada, o el editor pide "reescribir entero desde cero". Se regenera ÍNTEGRO respetando la escaleta planificada y los capítulos previos como canon. Frases que disparan "regenerate_chapter": "el cap X es prácticamente una copia de cap Y", "cap N hay que reescribirlo entero", "este capítulo no se puede salvar, regenéralo", "cap N está duplicado", "cap N no encaja con el género de la novela y hay que rehacerlo". Si el editor solo dice "este capítulo es flojo" o "este capítulo necesita mejor ritmo" → "estructural", NO "regenerate_chapter".
+   - "global_rename": un mismo personaje/lugar/objeto aparece llamado de DOS formas distintas a lo largo de la novela (drift de nombre) y el editor pide UNIFICAR uno por otro en toda la obra. Requiere obligatoriamente los campos "rename_from" (el nombre que hay que sustituir) y "rename_to" (el nombre canónico ganador). Frases que disparan "global_rename": "el protagonista se llama Iris en unos capítulos y Elin en otros, unifica como Iris", "el personaje X aparece como Y en el cap N — corrige a X en toda la novela", "la ciudad Norvik también aparece como Norvyk, déjalo siempre Norvik". Para "global_rename": "capitulos_afectados" debe ser TODOS los capítulos positivos del índice (rango completo) — el barrido es global. NO requiere "instrucciones_correccion" detalladas, solo describe qué se unifica.
+   - "restructure_arc": la trama se ha desviado de forma IRREVERSIBLE a partir de un capítulo concreto y hay que rediseñar la escaleta de los capítulos posteriores y regenerarlos. Requiere "restructure_from_chapter" (número desde el que se rediseña, inclusive) y "restructure_instructions" (1-3 frases con la directriz para el Architect). Frases que disparan "restructure_arc": "la trama se va a la deriva desde el cap 12 — rediseña los caps 12-25 con un eje claro de venganza", "desde el cap N el género se rompe, replantea la segunda mitad como thriller psicológico". Reservada para casos en que NI cirugía NI regeneración puntual sirven; es la operación más cara, úsala solo si el editor lo pide explícitamente o si el daño es manifiestamente sistémico desde un punto concreto.
+   Sé RIGUROSO: si dudas entre "puntual" y "estructural", marca como "estructural". Las puntuales se aplican como cirugía determinista; las estructurales requieren reescritura completa del capítulo (más caras y arriesgadas); las de eliminar son destructivas e irreversibles para el usuario, así que solo cuando el editor lo pide LITERALMENTE. Las macro-operaciones (regenerate_chapter, global_rename, restructure_arc) son aún más caras y reservadas para los casos descritos arriba.
 
 11. CAMPOS PARA TIPO "eliminar":
    - "capitulos_afectados": lista de números de los capítulos a borrar. Permitido pedir varios a la vez si la nota lo dice ("elimina los capítulos 7 y 8").
@@ -137,6 +158,34 @@ FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
         "9": "Aprovecha esas notas/fotos parciales para que Lara avance en el descifrado del 'reloj de piedra' a partir de fragmentos. La frustración por lo perdido sigue ahí pero hay impulso narrativo.",
         "10": "Llega aquí la complicación real (intuición incompleta, interpretación errónea o pieza faltante crítica). Aquí es donde el arco bascula al thriller, pero ya con el lector enganchado al descifrado parcial."
       }
+    },
+    {
+      "capitulos_afectados": [2],
+      "categoria": "trama",
+      "descripcion": "Regenerar capítulo 2: es prácticamente una copia del capítulo 1, repite los mismos beats con personajes apenas cambiados.",
+      "instrucciones_correccion": "El capítulo 2 reproduce la apertura del 1 (Iris en el bosque, encuentro con la criatura, decisión de huir). Reescríbelo desde cero respetando la escaleta planificada del cap 2 (presentación de la academia, primer contacto con el mentor) y los capítulos previos como canon.",
+      "prioridad": "alta",
+      "tipo": "regenerate_chapter"
+    },
+    {
+      "capitulos_afectados": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "categoria": "personaje",
+      "descripcion": "Unificar nombre de la protagonista: aparece como 'Iris' en caps 1-15 y como 'Elin' a partir del 16. Mantener 'Iris' en toda la novela.",
+      "instrucciones_correccion": "El editor pide unificar el nombre de la protagonista como 'Iris' en toda la novela; las menciones a 'Elin' son drift y deben sustituirse.",
+      "prioridad": "alta",
+      "tipo": "global_rename",
+      "rename_from": "Elin",
+      "rename_to": "Iris"
+    },
+    {
+      "capitulos_afectados": [12, 13, 14, 15, 16, 17, 18, 19, 20],
+      "categoria": "trama",
+      "descripcion": "Re-arquitectura del segundo acto: desde el cap 12 la trama se va a la deriva sin eje claro y el género prometido (fantasy) se diluye en thriller policial.",
+      "instrucciones_correccion": "El editor pide rediseñar la escaleta desde el cap 12 para recuperar el eje fantasy de la sinopsis y dar al segundo acto una progresión clara hacia el clímax.",
+      "prioridad": "alta",
+      "tipo": "restructure_arc",
+      "restructure_from_chapter": 12,
+      "restructure_instructions": "Desde el cap 12, recupera el eje fantasy: introduce el conflicto con la Orden, escalada del poder mágico de Iris, y dirige los caps 12-20 hacia un clímax en la torre del mentor. Elimina el subhilo policial."
     }
   ]
 }
@@ -243,8 +292,12 @@ REGLAS DE REFINAMIENTO:
    - Si el editor sí lo pide explícitamente Y el capítulo es razonablemente prescindible (redundante, ralentiza sin aportar, repite información) → CONSERVA la instrucción tal cual y mejora "instrucciones_correccion" añadiendo en 1 frase qué se pierde y qué se gana al borrarlo (info útil para que el usuario decida en la previsualización).
    - Si el editor pide eliminar PERO el capítulo contiene revelaciones de trama insustituibles que romperían la continuidad → MANTÉN la instrucción pero reclasifícala como "estructural" y reescribe instrucciones_correccion como: "El editor pide eliminar este capítulo pero contiene [revelación X / personaje Y]. En lugar de borrar, condensar a la mitad fusionando elementos esenciales en el siguiente capítulo." Esto convierte un borrado peligroso en una reescritura segura.
    - NUNCA inventes una instrucción de tipo "eliminar" que no estuviera en el borrador. Solo refinar/descartar.
+4-bis. MACRO-OPERACIONES (regenerate_chapter, global_rename, restructure_arc):
+   - "regenerate_chapter": LEE el capítulo afectado. Si el editor afirma que es duplicado de otro y al verificarlo NO se parece (similitud estructural baja, beats distintos, personajes distintos) → DESCARTA con motivo "no es duplicado verificable: el cap N tiene beats X/Y/Z propios". Si se confirma que está roto a nivel global → CONSERVA y mejora "instrucciones_correccion" añadiendo una frase concreta sobre qué debería contener el capítulo según la escaleta planificada.
+   - "global_rename": OBLIGATORIO comprobar contra el texto que "rename_from" aparece literalmente en al menos UN capítulo (búsqueda case-sensitive, palabra completa). Si NO aparece → DESCARTA con motivo "el nombre 'rename_from' no aparece en el manuscrito; nada que renombrar". Si aparece, ajusta "capitulos_afectados" a la lista REAL de capítulos donde aparece (no a "todos") para que el usuario vea el alcance real. Si "rename_to" choca con un personaje DISTINTO ya existente en el World Bible → DESCARTA con motivo "rename_to colisiona con personaje distinto del WB".
+   - "restructure_arc": comprueba que "restructure_from_chapter" es un número de capítulo válido (>= 1, <= último capítulo positivo del índice). Si está fuera de rango → DESCARTA. Si las "restructure_instructions" están vacías o son demasiado vagas (< 30 caracteres) → DESCARTA con motivo "restructure_arc requiere directrices concretas para el Architect". NO inventes restructure_arc que el editor no pidió.
 5. NO añadas instrucciones nuevas que el editor humano no pidió. Solo refinas o descartas las del borrador.
-6. Conserva los campos: capitulos_afectados, categoria, descripcion, instrucciones_correccion, elementos_a_preservar (mejorado), prioridad, tipo, plan_por_capitulo (si aplica).
+6. Conserva los campos: capitulos_afectados, categoria, descripcion, instrucciones_correccion, elementos_a_preservar (mejorado), prioridad, tipo, plan_por_capitulo (si aplica), rename_from, rename_to, restructure_from_chapter, restructure_instructions (si aplican).
 7. Para cada instrucción descartada, registra: descripcion (breve), capitulos_afectados, motivo (frase concreta del porqué).
 
 FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:

@@ -10,6 +10,43 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Cambio funcional — 3 PUENTES sobre el HolisticReviewer (May 2, 2026)
+
+Cierre del bucle del revisor holístico para que **detección → corrección sea fluida** y para que las macro-roturas (capítulo duplicado, cambio de nombre global, re-arquitectura de un arco) tengan tratamiento dedicado y no obliguen al usuario a ediciones manuales pesadas. Tres puentes coordinados sobre el orquestador.
+
+**T001 — Parser editorial: 3 macro-tipos nuevos.**
+- `EditorialInstruction.tipo` ahora admite: `regenerate_chapter`, `global_rename`, `restructure_arc` (server/agents/editorial-notes-parser.ts).
+- Campos opcionales: `rename_from`/`rename_to` para `global_rename`; `restructure_from_chapter`/`restructure_instructions` para `restructure_arc`.
+- System prompts (principal + sección 4-bis de `refineWithContext`) actualizados con las definiciones, validaciones (rename_from debe aparecer realmente en el texto; restructure_from_chapter ≥ 1; consigna ≥ 30 chars) y 4 ejemplos JSON nuevos.
+
+**T002 — PUENTE B: macro-operaciones en applyEditorialNotes (server/orchestrator.ts).**
+- Nueva fase 0.5 (entre eliminaciones y cirugía local): `applyMacroOperations(project, worldBible, allChapters, worldBibleData, guiaEstilo, instructions)` filtra macros del flujo quirúrgico y las ejecuta en orden:
+  1. **global_rename** — Unicode-aware regex `(?<![\p{L}\p{N}_])${escaped}(?![\p{L}\p{N}_])` con flags `gu`. Sin LLM. Aplica a `chapters.content` (con `preEditContent` snapshot), `worldBibles.characters` (name + aliases + description + backstory), `worldBibles.plotOutline.chapterOutlines` (titulo + summary + beats), `worldBibles.timeline`. Refresca BD entre renames consecutivos para que el segundo opere sobre el estado del primero (fix architect: evita pisado).
+  2. **regenerate_chapter** — invoca `regenerateSingleChapter` (helper nuevo) que ejecuta ghostwriter con todo el contexto previo + escaleta + instrucción explícita "REGENERACIÓN COMPLETA desde cero". Snapshot `preEditContent` previo. Política de retries: 1 intento + 1 reintento de expansión si quedó <70% del mínimo, manteniendo el mejor borrador entre los dos. Si ambos intentos devuelven 0 palabras, marca el capítulo como `pending` y loguea error (fix architect: no pierde calidad respecto al bucle robusto del flujo principal).
+  3. **restructure_arc** — invoca `regenerateOutlineFromChapter` (helper preexistente) y luego regenera secuencialmente todos los capítulos `>= fromChapter`, refrescando entre capítulos para que el siguiente tenga el anterior reescrito como contexto.
+- Tras fase 0.5 reconstruye `allSections` in-place si las macros mutaron capítulos/WB (fix architect: el flujo quirúrgico siguiente no opera sobre escaleta obsoleta).
+- Si tras macros no quedan instrucciones quirúrgicas, recalcula nota global y sale por la rama "completed" (corte limpio, igual que el camino "solo eliminaciones").
+
+**T003 — PUENTE A: auto-loop holístico tras finalización (server/orchestrator.ts + shared/schema.ts).**
+- Nuevo campo `projects.autoHolisticReview` (boolean, default `false`).
+- Si está activo, `finalizeCompletedProject` encadena en background `runAutoHolisticReviewLoop(project)`:
+  1. `runHolisticReview` (informe del editor profesional).
+  2. `parseEditorialNotesOnly` (instrucciones estructuradas + grounding).
+  3. Persiste payload `{resumen_general, instrucciones, count, completedAt, source: "auto_holistic"}` en `projects.pendingEditorialParse` (campo ya preexistente).
+  4. Emite callback opcional `onAutoReviewReady({count, resumen})` SOLO si la persistencia tuvo éxito (fix architect: evita estado optimista en cliente sin datos en BD).
+- Best-effort: cualquier fallo se loguea en `activity_logs` pero el manuscrito ya está marcado `completed`.
+
+**T004 — PUENTE C: checkpoint mid-generación (server/orchestrator.ts + shared/schema.ts).**
+- Nuevo campo `projects.midGenCheckpointEvery` (integer, default `0` = desactivado).
+- `runMidGenerationCheckpoint(project, currentChapterNumber, worldBibleData)` se invoca tras `runProactiveSemanticScan` en el bucle principal de `generateNovel`. Si `midGenCheckpointEvery > 0` y `currentChapterNumber % N === 0`, ejecuta:
+  - **Detección de duplicado**: Jaccard de tokens únicos (≥4 chars, normalizados sin acentos) entre el último cap completado y el anterior. Umbral 0.35.
+  - **Drift de nombre del protagonista**: extrae el primer personaje del WB (rol "protagonista|principal" o el primero), cuenta ocurrencias del nombre canónico vs nombres rivales capitalizados (regex `(?<![\p{L}])\p{Lu}[\p{Ll}]{2,14}(?![\p{L}])` con stopwords iniciales filtradas). Avisa si un rival aparece ≥5× y más que el canónico, o si el canónico no aparece nunca en un cap >800 palabras.
+- NO usa LLM. NO bloquea la generación. Si encuentra avisos, loguea `warning` en `activity_logs` y emite `onMidGenCheckpoint?.({atChapter, warnings})`. Wrapping best-effort: si todo falla, la generación sigue.
+
+**OrchestratorCallbacks**: añadidos `onAutoReviewReady?` y `onMidGenCheckpoint?` (ambos opcionales — los 12 sitios donde se construye `callbacks` en routes.ts no se ven afectados).
+
+**Validación**: `npm run db:push` aplicado, `npx tsc --noEmit` limpio. Code review architect aplicado: 4 bugs reales detectados (rename no acumulativo, allSections obsoleto, regenerateSingleChapter sin retries, Puente A optimista) corregidos en esta misma sesión.
+
 ### Cambio funcional — Aprovechar el 1M de contexto de DeepSeek V4 en el Arquitecto y la Reedición (May 1, 2026)
 
 Cinco mejoras coordinadas para que el Arquitecto y los agentes de reedición usen el 1M de tokens de DeepSeek V4. Pensado para sagas, manuscritos importados largos y autores con catálogo amplio. Coste estimado total ≈ +$0.30–0.90 por novela según cuántas piezas se activen.
