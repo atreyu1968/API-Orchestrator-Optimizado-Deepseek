@@ -44,7 +44,26 @@ Inspección de la BD reveló que **ningún proyecto cumplía el contrato del Arq
 - Construcción de milestones desde `act1.incitingIncident`, `act2.midpoint`, `act2.complications`, `act3.climax`, `act3.resolution` (claves persistidas reales) más `puntos_de_giro` opcional como array.
 - Hilos desde `plotOutline.subplots` (Fix 4) con fallback a `matriz_arcos.subtramas` para invocaciones in-flight.
 
-**Validación**: `npx tsc --noEmit` limpio tras los 6 fixes. No requiere `db:push` (sin cambios de schema — `subplots` cabe en passthrough). Los fixes solo afectan a generaciones futuras — proyectos ya completados conservan su escaleta empobrecida.
+**Fix 7 — extendNovel persiste outlines nuevos + idempotencia (server/orchestrator.ts L6684+).**
+- Bug detectado en auditoría profunda: al extender una novela, `extendNovel` creaba registros de `chapters` con `status=pending` y los outlines vivían SOLO in-memory en `worldBibleData.escaleta_capitulos`. **Nunca se persistían en `plotOutline.chapterOutlines`**. Si la generación se interrumpía, al reanudar `reconstructWorldBibleData` no encontraba los outlines y los caps nuevos quedaban huérfanos (objetivo_narrativo y beats vacíos).
+- Ahora tras `createChapter` se ejecuta `storage.updateWorldBible` con los outlines nuevos mapeados al formato persistido (mismo mapping que `convertPlotOutline` y `regenerateOutlineFromChapter`) y mergeados con los existentes.
+- **Fix 7.1 (refinamiento tras code review)** — tres robusteces añadidas:
+  1. **Coerción numérica** de `c.numero` con `coerceNumExt`, igual que regenerateOutlineFromChapter, para evitar que un modelo que devuelva `"12"` (string) rompa el `===` de `findChapterByNumero` en `buildSectionsList`.
+  2. **Idempotencia en createChapter**: antes de cada `createChapter` se consulta el set de `chapterNumber` ya existentes en BD y se saltan los duplicados. Permite reintentos seguros tras crash sin generar capítulos huérfanos en BD.
+  3. **Dedup en merge de plotOutline**: en lugar de concatenar `[...existingArr, ...newOutlinesPersist]` (que duplicaría outlines en re-extensiones), se usa `Map<number, outline>` con last-write-wins, garantizando que `plotOutline.chapterOutlines` quede consistente sin importar cuántas veces se ejecute la extensión.
+
+**Fix 8 — regenerateOutlineFromChapter persiste subplots (server/orchestrator.ts L7121+).**
+- La re-arquitectura mid-novela (`regenerateOutlineFromChapter`) persistía `chapterOutlines` mergeados pero **descartaba `parsed.matriz_arcos.subtramas`** si el Architect rehacía los hilos. Ahora se persisten también como `plotOutline.subplots` cuando el array es no-vacío, manteniendo coherencia con Fix 4 (`convertPlotOutline`) para que el `ArcValidator` standalone audite la versión actualizada.
+
+**Auditoría completa del flujo planificación → escritura.** La revisión profunda confirmó que el sistema es robusto en 4 puntos críticos:
+- `reconstructWorldBibleData` (L2977-2998) mapea correctamente `summary → objetivo_narrativo` y `keyEvents → beats`, así que las rutas de reanudación (`resumeNovel`, `applyMacroOperations`, `regenerateSingleChapter`) reciben siempre la forma raw que el Narrador espera.
+- `buildSectionsList` (L7480) y `buildSectionsListFromChapters` (L7442) construyen `SectionData` desde `escaleta_capitulos` ya normalizada, propagando todos los campos extendidos (funcion_estructural, conflicto_central, giro_emocional, arcos_que_avanza, riesgos_de_verosimilitud, etc.).
+- Las 7 invocaciones del Ghostwriter (`generateNovel` L1690, `resumeNovel` L2383, `extendNovel` L6837, `regenerateSingleChapter` L5436, `applyMacroOperations` x2, holistic refinement) reciben siempre `chapterData` con la forma raw correcta.
+- Las 8 invocaciones del Editor/Copyeditor reciben `sectionData` desde la misma fuente — round-trip simétrico.
+
+**Limitación conocida (no es bug del código actual)**: proyectos creados antes de v7.2 tienen `summary: ""` y `keyEvents` cortos en BD. Al reanudarlos el Narrador recibe objetivo_narrativo vacío, mismo síntoma que motivó esta sesión. Se recomienda regenerar su escaleta con `restructure_arc` o re-arquitectar.
+
+**Validación**: `npx tsc --noEmit` limpio tras los 8 fixes. No requiere `db:push` (sin cambios de schema — `subplots` cabe en passthrough zod). Los fixes solo afectan a generaciones futuras — proyectos ya completados conservan su escaleta empobrecida.
 
 ### Cambio funcional — 3 PUENTES sobre el HolisticReviewer (May 2, 2026)
 

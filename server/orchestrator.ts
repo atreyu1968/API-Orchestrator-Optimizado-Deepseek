@@ -6678,8 +6678,53 @@ Responde SOLO con un JSON válido con la estructura:
         `Escaleta generada: ${newChapterOutlines.length} capítulos planificados`
       );
 
-      // Create chapter records for the new chapters
+      // v7.2 fix 7.1: coerción numérica defensiva igual que regenerateOutlineFromChapter.
+      // Algunos modelos devuelven `numero` como string ("12"), lo que rompería
+      // findChapterByNumero(===) en buildSectionsList → Ghostwriter recibiría
+      // objetivo_narrativo/beats vacíos.
+      const coerceNumExt = (v: any): number | null => {
+        if (typeof v === "number" && Number.isFinite(v)) return v;
+        if (typeof v === "string" && v.trim() !== "") {
+          const n = Number(v);
+          if (Number.isFinite(n)) return n;
+        }
+        return null;
+      };
+
+      // Idempotencia: si ya existen registros de chapters para los números
+      // entrantes (reintento de extendNovel, retry tras crash, etc.), no los
+      // duplicamos. Tomamos la lista actual y filtramos newChapterOutlines.
+      const existingChapterNums = new Set(
+        (await storage.getChaptersByProject(project.id))
+          .map(c => c.chapterNumber)
+          .filter(n => typeof n === "number")
+      );
+      const newOutlinesNormalizedExt: any[] = [];
+      const newOutlinesDedup = new Map<number, any>();
+      for (const c of newChapterOutlines) {
+        const n = coerceNumExt(c.numero ?? c.number);
+        if (n === null) {
+          console.warn(`[Orchestrator:Extend] Outline sin número válido descartado:`, c?.titulo);
+          continue;
+        }
+        const normalized = { ...c, numero: n };
+        newOutlinesNormalizedExt.push(normalized);
+        newOutlinesDedup.set(n, normalized); // dedup intra-respuesta del Architect
+      }
+      // Re-sincronizar newChapterOutlines con la versión normalizada+deduplicada
+      // para que el resto del pipeline (worldBibleData.escaleta_capitulos +
+      // pendingChapters loop) trabaje sobre datos consistentes.
+      newChapterOutlines = Array.from(newOutlinesDedup.values()).sort(
+        (a: any, b: any) => a.numero - b.numero
+      );
+
+      // Create chapter records for the new chapters (idempotente).
+      let createdCount = 0;
       for (const outline of newChapterOutlines) {
+        if (existingChapterNums.has(outline.numero)) {
+          console.log(`[Orchestrator:Extend] Saltando createChapter para cap ${outline.numero}: ya existe en BD.`);
+          continue;
+        }
         await storage.createChapter({
           projectId: project.id,
           chapterNumber: outline.numero,
@@ -6688,9 +6733,10 @@ Responde SOLO con un JSON válido con la estructura:
           wordCount: 0,
           status: "pending",
         });
+        createdCount++;
       }
 
-      console.log(`[Orchestrator:Extend] Created ${newChapterOutlines.length} new chapter records`);
+      console.log(`[Orchestrator:Extend] Created ${createdCount}/${newChapterOutlines.length} chapter records (resto ya existía)`);
 
       // v7.2 fix: persistir los nuevos outlines en plotOutline.chapterOutlines.
       // Antes solo se creaban registros en `chapters` (status=pending) y los
@@ -6726,8 +6772,20 @@ Responde SOLO con un JSON válido con la estructura:
           continuidad_salida: c.continuidad_salida,
           riesgos_de_verosimilitud: c.riesgos_de_verosimilitud,
         }));
-        const merged = [...existingArr, ...newOutlinesPersist].sort(
-          (a: any, b: any) => (Number(a.number ?? a.numero) || 0) - (Number(b.number ?? b.numero) || 0)
+        // Dedup por number contra existingArr: si extendNovel se ejecuta dos
+        // veces o si el Architect emite outlines que ya existían, prevalece
+        // la versión nueva (last-write-wins).
+        const dedupMap = new Map<number, any>();
+        for (const c of existingArr) {
+          const n = coerceNumExt(c?.number ?? c?.numero);
+          if (n !== null) dedupMap.set(n, { ...c, number: n });
+        }
+        for (const c of newOutlinesPersist) {
+          const n = coerceNumExt(c?.number);
+          if (n !== null) dedupMap.set(n, { ...c, number: n });
+        }
+        const merged = Array.from(dedupMap.values()).sort(
+          (a: any, b: any) => (a.number ?? 0) - (b.number ?? 0)
         );
         const mergedPlotOutline = {
           ...(typeof existingPlotOutline === "object" && !Array.isArray(existingPlotOutline) ? existingPlotOutline : {}),
@@ -6736,7 +6794,7 @@ Responde SOLO con un JSON válido con la estructura:
         if (worldBible) {
           await storage.updateWorldBible(worldBible.id, { plotOutline: mergedPlotOutline });
         }
-        console.log(`[Orchestrator:Extend] Persisted ${newOutlinesPersist.length} new chapterOutlines into plotOutline (total ahora: ${merged.length})`);
+        console.log(`[Orchestrator:Extend] Persisted plotOutline: +${newOutlinesPersist.length} nuevos / ${merged.length} totales tras dedup`);
       } catch (persistErr) {
         console.error(`[Orchestrator:Extend] Falló la persistencia de nuevos outlines:`, persistErr);
         // No abortamos: los registros de chapters ya existen y la generación
