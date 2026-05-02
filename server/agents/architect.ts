@@ -42,6 +42,12 @@ interface ArchitectInput {
   writtenChaptersFullText?: string;
   redesignFromChapter?: number;
   redesignInstructions?: string;
+
+  // v7.2 Fix 9: feedback estructurado del Lector Beta de Escaletas. Cuando
+  // el Lector Beta puntúa la escaleta < 8/10, el Orquestador re-ejecuta al
+  // Arquitecto pasándole estas instrucciones de revisión + el perfil del
+  // lector objetivo, para que rediseñe pensando explícitamente en él.
+  betaReaderFeedback?: string;
 }
 
 const PHASE1_SYSTEM_PROMPT = `
@@ -382,6 +388,22 @@ export class ArchitectAgent extends BaseAgent {
     ═══════════════════════════════════════════════════════════════════
     ${input.architectInstructions}
     Estas instrucciones tienen PRIORIDAD sobre las guías generales.
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.betaReaderFeedback ? `
+    ═══════════════════════════════════════════════════════════════════
+    📖 FEEDBACK DEL LECTOR BETA DE ESCALETAS (PRIORIDAD MÁXIMA) 📖
+    ═══════════════════════════════════════════════════════════════════
+    Tu escaleta anterior ya fue evaluada por un Lector Beta cualificado del género.
+    Su puntuación fue insuficiente (< 8/10). DEBES rediseñar la escaleta aplicando
+    LITERALMENTE las correcciones que vienen abajo, y diseñar pensando en el perfil
+    de lector objetivo que el Beta ha definido. NO ignores ningún punto.
+
+    ${input.betaReaderFeedback}
+
+    Mantén la premisa esencial, género y longitud pedidos, pero rediseña pacing,
+    arcos, hooks y subtramas según el feedback. La nueva escaleta debe sentirse
+    pensada para el lector objetivo definido arriba.
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     ${input.kindleUnlimitedOptimized ? `

@@ -18,3 +18,4 @@ export { WorldBibleArbiterAgent, type WorldBiblePatch, type WorldBibleArbiterRes
 export { OriginalityCriticAgent, type OriginalityCriticResult, type OriginalityCluster, type OriginalityClusterType } from "./originality-critic";
 export { HolisticReviewerAgent, type HolisticReviewerResult } from "./holistic-reviewer";
 export { BetaReaderAgent, type BetaReaderResult } from "./beta-reader";
+export { OutlineBetaReaderAgent, type OutlineBetaReaderResult, type OutlineBetaProblem, type OutlineBetaProblemType } from "./outline-beta-reader";

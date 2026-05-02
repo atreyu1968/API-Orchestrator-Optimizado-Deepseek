@@ -13,6 +13,7 @@ import {
   SurgicalPatcherAgent,
   WorldBibleArbiterAgent,
   OriginalityCriticAgent,
+  OutlineBetaReaderAgent,
   HolisticReviewerAgent,
   type HolisticReviewerResult,
   BetaReaderAgent,
@@ -144,6 +145,7 @@ export class Orchestrator {
   private wbArbiter = new WorldBibleArbiterAgent();
   private holisticReviewer = new HolisticReviewerAgent();
   private betaReader = new BetaReaderAgent();
+  private outlineBetaReader = new OutlineBetaReaderAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
@@ -1509,6 +1511,205 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         }
       } catch (criticErr) {
         console.error(`[Orchestrator] Crítico de Originalidad falló (no bloqueante): ${(criticErr as Error).message}`);
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      // v7.2 Fix 9: LECTOR BETA DE ESCALETAS — modo AUTOMÁTICO, umbral 8/10.
+      // Examina la escaleta desde la perspectiva del lector objetivo (pacing,
+      // arcos, hooks, promesa de género). Si puntúa < 8/10, re-ejecuta al
+      // Arquitecto inyectándole las instrucciones de revisión + el perfil
+      // del lector objetivo. Máximo 2 iteraciones (1 análisis inicial +
+      // 1 reintento). Best-effort: conserva la mejor escaleta vista.
+      // ═══════════════════════════════════════════════════════════════
+      try {
+        if (!this.aborted) {
+          const MAX_BETA_ITERATIONS = 2;
+          const BETA_THRESHOLD = 8;
+          let bestBetaScore = -1;
+          let bestBetaWorldBibleData = worldBibleData;
+          let bestBetaResult: any = null;
+
+          for (let betaIter = 1; betaIter <= MAX_BETA_ITERATIONS; betaIter++) {
+            if (this.aborted) break;
+
+            this.callbacks.onAgentStatus(
+              "architect",
+              "thinking",
+              betaIter === 1
+                ? "El Lector Beta está leyendo la escaleta como lo haría el lector objetivo..."
+                : `El Lector Beta está re-evaluando la escaleta rediseñada (iteración ${betaIter}/${MAX_BETA_ITERATIONS})...`
+            );
+
+            const betaOutcome = await this.outlineBetaReader.analyze({
+              title: project.title,
+              genre: project.genre,
+              tone: project.tone,
+              premise: effectivePremise,
+              chapterCount: project.chapterCount,
+              worldBible: worldBibleData.world_bible,
+              escaletaCapitulos: worldBibleData.escaleta_capitulos as any[],
+              matrizArcos: (worldBibleData as any).matriz_arcos,
+              momentumPlan: (worldBibleData as any).momentum_plan,
+              estructuraTresActos: (worldBibleData as any).estructura_tres_actos,
+              pseudonymCatalog,
+              extendedGuideContent: extendedGuideContent || undefined,
+              projectId: project.id,
+            });
+
+            if (betaOutcome.raw?.tokenUsage) {
+              await this.trackTokenUsage(project.id, betaOutcome.raw.tokenUsage, "El Lector Beta de Escaletas", "deepseek-v4-flash", undefined, "outline_review");
+            }
+
+            const beta = betaOutcome.result;
+            if (!beta) {
+              console.warn(`[Orchestrator] Lector Beta de Escaletas (iter ${betaIter}) no devolvió resultado válido. Saliendo del bucle.`);
+              break;
+            }
+
+            const mayores = beta.problemas.filter(p => p.severidad === "mayor").length;
+            const menores = beta.problemas.filter(p => p.severidad === "menor").length;
+            console.log(`[Orchestrator] Lector Beta (iter ${betaIter}): score ${beta.puntuacion_global}/10, veredicto "${beta.veredicto}", ${mayores} mayores + ${menores} menores. ${beta.resumen}`);
+
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: beta.veredicto === "reescribir" ? "warn" : "info",
+              agentRole: "architect",
+              message: `📖 Lector Beta de Escaletas (iter ${betaIter}/${MAX_BETA_ITERATIONS}) — Score ${beta.puntuacion_global}/10 (${beta.veredicto}). ${mayores} problemas mayores, ${menores} menores. ${beta.resumen}`,
+              metadata: {
+                betaScore: beta.puntuacion_global,
+                veredicto: beta.veredicto,
+                perfilLectorObjetivo: beta.perfil_lector_objetivo,
+                problemas: beta.problemas as any,
+                fortalezas: beta.fortalezas,
+                iteration: betaIter,
+              },
+            });
+
+            // Best-effort: conserva la mejor escaleta vista.
+            if (beta.puntuacion_global > bestBetaScore) {
+              bestBetaScore = beta.puntuacion_global;
+              bestBetaWorldBibleData = worldBibleData;
+              bestBetaResult = beta;
+            }
+
+            // Si pasa umbral, listo.
+            if (beta.puntuacion_global >= BETA_THRESHOLD) {
+              console.log(`[Orchestrator] Lector Beta APROBÓ la escaleta (score ${beta.puntuacion_global}/10 >= ${BETA_THRESHOLD}). Continuando.`);
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "info",
+                agentRole: "architect",
+                message: `✅ Lector Beta aprobó la escaleta (score ${beta.puntuacion_global}/10). Procediendo a escritura.`,
+              });
+              break;
+            }
+
+            // Si no es la última iteración, re-ejecutar Arquitecto con feedback.
+            if (betaIter < MAX_BETA_ITERATIONS) {
+              if (!beta.instrucciones_revision?.trim()) {
+                console.warn(`[Orchestrator] Lector Beta dio score bajo pero sin instrucciones_revision. Saliendo del bucle.`);
+                break;
+              }
+
+              console.log(`[Orchestrator] Lector Beta pidió revisión (score ${beta.puntuacion_global}/10 < ${BETA_THRESHOLD}). Re-ejecutando Arquitecto con feedback...`);
+              this.callbacks.onAgentStatus(
+                "architect",
+                "thinking",
+                `Escaleta con score ${beta.puntuacion_global}/10 según lector objetivo. El Arquitecto está rediseñando...`
+              );
+
+              // Componer feedback completo: perfil de lector + instrucciones.
+              const betaFeedback = `PERFIL DEL LECTOR OBJETIVO (diseña pensando explícitamente en este lector):
+${beta.perfil_lector_objetivo}
+
+INSTRUCCIONES DE REVISIÓN DEL LECTOR BETA:
+${beta.instrucciones_revision}
+
+PROBLEMAS DETECTADOS QUE DEBES RESOLVER:
+${beta.problemas.slice(0, 10).map((p, i) =>
+  `${i + 1}. [${p.tipo}/${p.severidad}] Caps ${p.capitulos_afectados.join(", ") || "—"}: ${p.descripcion}\n   Sugerencia: ${p.sugerencia_concreta}`
+).join("\n")}`;
+
+              try {
+                const retryResult = await this.architect.execute({
+                  title: project.title,
+                  premise: effectivePremise,
+                  genre: project.genre,
+                  tone: project.tone,
+                  chapterCount: project.chapterCount,
+                  hasPrologue: project.hasPrologue,
+                  hasEpilogue: project.hasEpilogue,
+                  hasAuthorNote: project.hasAuthorNote,
+                  architectInstructions: project.architectInstructions || undefined,
+                  betaReaderFeedback: betaFeedback,
+                  kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+                  forbiddenNames,
+                  projectId: project.id,
+                  previousVolumesFullText,
+                  pseudonymCatalog,
+                  extendedGuideContent: extendedGuideContent || undefined,
+                });
+
+                if (retryResult.tokenUsage) {
+                  await this.trackTokenUsage(project.id, retryResult.tokenUsage, "El Arquitecto (revisión beta-reader)", "deepseek-v4-flash", undefined, "world_bible");
+                }
+
+                if (!retryResult.error && !retryResult.timedOut && retryResult.content?.trim()) {
+                  const reviewedData = this.parseArchitectOutput(retryResult.content);
+                  const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
+                  const reviewedLen = reviewedData?.escaleta_capitulos?.length || 0;
+                  // Fix 9 (architect review): además de personajes y caps, exigir matriz_arcos
+                  // y estructura_tres_actos para evitar "escaletas fantasma" que solo tengan
+                  // la lista de capítulos pero pierdan la columna vertebral estructural.
+                  const hasMatrizArcos = !!(reviewedData as any)?.matriz_arcos;
+                  const hasEstructura = !!(reviewedData as any)?.estructura_tres_actos;
+                  if (reviewedData && reviewedData.world_bible?.personajes?.length && reviewedLen >= expectedChapters - 2 && hasMatrizArcos && hasEstructura) {
+                    console.log(`[Orchestrator] Arquitecto rediseñó tras feedback del Lector Beta (iter ${betaIter}): ${reviewedData.world_bible.personajes.length} personajes, ${reviewedLen}/${expectedChapters} capítulos, matriz_arcos✓, estructura_tres_actos✓. Re-evaluando...`);
+                    worldBibleData = reviewedData;
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "info",
+                      agentRole: "architect",
+                      message: `🔄 El Arquitecto rediseñó la escaleta aplicando el feedback del Lector Beta. Re-evaluando con el Lector Beta...`,
+                    });
+                    // Continúa el for: el siguiente iter analizará la nueva escaleta.
+                    continue;
+                  } else {
+                    console.warn(`[Orchestrator] Revisión del Arquitecto (beta-reader) produjo escaleta inválida (${reviewedLen}/${expectedChapters} caps). Manteniendo mejor versión vista.`);
+                    break;
+                  }
+                } else {
+                  console.warn(`[Orchestrator] Revisión del Arquitecto (beta-reader) falló: ${retryResult.error || "vacío/timeout"}. Manteniendo mejor versión vista.`);
+                  break;
+                }
+              } catch (retryErr) {
+                console.error(`[Orchestrator] Excepción en revisión del Arquitecto (beta-reader): ${(retryErr as Error).message}. Manteniendo mejor versión vista.`);
+                break;
+              }
+            } else {
+              // Última iteración: no re-ejecutamos. Aviso al usuario.
+              console.warn(`[Orchestrator] Lector Beta agotó iteraciones (${MAX_BETA_ITERATIONS}). Mejor score: ${bestBetaScore}/10. Procediendo con la mejor escaleta vista.`);
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                agentRole: "architect",
+                message: `⚠️ Lector Beta agotó ${MAX_BETA_ITERATIONS} iteraciones sin alcanzar score ${BETA_THRESHOLD}/10. Mejor score logrado: ${bestBetaScore}/10. Continuando con la mejor escaleta vista.`,
+                metadata: { bestBetaScore, finalVeredicto: bestBetaResult?.veredicto },
+              });
+            }
+          }
+
+          // Best-effort fallback: si la mejor escaleta no es la actual, restaurar.
+          if (bestBetaWorldBibleData !== worldBibleData && bestBetaScore > -1) {
+            const currentBetaScore = bestBetaResult?.puntuacion_global ?? -1;
+            if (bestBetaScore > currentBetaScore) {
+              console.log(`[Orchestrator] Restaurando mejor escaleta vista (score ${bestBetaScore}/10) sobre la actual.`);
+              worldBibleData = bestBetaWorldBibleData;
+            }
+          }
+        }
+      } catch (betaErr) {
+        console.error(`[Orchestrator] Lector Beta de Escaletas falló (no bloqueante): ${(betaErr as Error).message}`);
       }
 
       const worldBible = await storage.createWorldBible({
