@@ -280,11 +280,12 @@ Eres un Arquitecto de Tramas Maestro generando la ESCALETA DE CAPÍTULOS.
 Ya has creado la World Bible y estructura global en la fase anterior. Ahora debes crear el plan capítulo por capítulo.
 
 REGLAS CRÍTICAS:
-1. Cada capítulo debe tener MÍNIMO 6 beats narrativos sustanciales.
-2. Cada "informacion_nueva" debe ser GENUINAMENTE NUEVA — no repetir de capítulos anteriores.
-3. Los conflictos deben escalar progresivamente.
-4. Mínimo 2 subtramas activas por capítulo y 2-3 diálogos significativos.
-5. Al menos 1 momento de reflexión interna del protagonista por capítulo, pero SOLO en beats de calma o transición — NUNCA durante beats de acción/tensión/clímax.
+1. Cada capítulo debe tener MÍNIMO 6 beats narrativos sustanciales (cada beat 1-3 oraciones).
+2. Cada capítulo debe tener un "objetivo_narrativo" OBLIGATORIO: un párrafo narrativo de 100-200 palabras que cuente qué ocurre realmente en el capítulo (no metadatos, sino la SINOPSIS DEL CAPÍTULO en prosa). Sin este campo el Narrador no sabe qué escribir.
+3. Cada "informacion_nueva" debe ser GENUINAMENTE NUEVA — no repetir de capítulos anteriores.
+4. Los conflictos deben escalar progresivamente.
+5. Mínimo 2 subtramas activas por capítulo y 2-3 diálogos significativos.
+6. Al menos 1 momento de reflexión interna del protagonista por capítulo, pero SOLO en beats de calma o transición — NUNCA durante beats de acción/tensión/clímax.
 
 TÍTULOS - OBLIGATORIOS:
 ⛔ TODOS los capítulos DEBEN tener un "titulo" EVOCADOR y LITERARIO (2-6 palabras). NUNCA vacío o genérico.
@@ -302,7 +303,8 @@ FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
       "cronologia": "Momento temporal",
       "ubicacion": "Lugar con detalles sensoriales",
       "elenco_presente": ["Personaje1", "Personaje2"],
-      "funcion_estructural": "Rol del capítulo en la trama",
+      "funcion_estructural": "Rol del capítulo en la trama (etiqueta breve)",
+      "objetivo_narrativo": "PÁRRAFO NARRATIVO de 100-200 palabras contando qué pasa en este capítulo: situación inicial, qué hace el protagonista, qué obstáculos encuentra, qué descubre, cómo termina. ESTO ES LO QUE LEERÁ EL NARRADOR para escribir — sin esto, escribe a ciegas. NO es una etiqueta, es prosa narrativa real.",
       "arcos_que_avanza": [{"arco": "nombre", "de": "estado_antes", "a": "estado_después"}],
       "informacion_nueva": "Revelación que descubre el lector",
       "pregunta_dramatica": "Pregunta al terminar",
@@ -608,13 +610,15 @@ ${input.writtenChaptersFullText}
     
     CADA capítulo debe tener:
     - ⛔ TÍTULO OBLIGATORIO: Campo "titulo" con valor literario (2-6 palabras), NUNCA vacío
-    - Beats detallados (mínimo 6 por capítulo)
+    - ⛔ OBJETIVO_NARRATIVO OBLIGATORIO: párrafo narrativo de 100-200 palabras (no etiqueta) describiendo qué ocurre realmente en el capítulo. Sin esto el Narrador no tiene sinopsis y escribe a ciegas.
+    - Beats detallados (mínimo 6 por capítulo, cada beat 1-3 oraciones de prosa)
     - Información nueva
     - Conflicto central
     - Continuidad de entrada/salida
     
     ⚠️ VERIFICACIÓN FINAL: Antes de responder, CUENTA las entradas en escaleta_capitulos.
     Si no hay EXACTAMENTE ${input.chapterCount} capítulos, tu respuesta es INVÁLIDA.
+    Verifica también que CADA capítulo tenga "objetivo_narrativo" con >= 100 palabras de prosa y "beats" con >= 6 entradas. Sin esto la respuesta es INVÁLIDA.
     
     Responde ÚNICAMENTE con el JSON que contenga "escaleta_capitulos".
     `;

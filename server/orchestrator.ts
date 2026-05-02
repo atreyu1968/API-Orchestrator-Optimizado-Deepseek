@@ -1130,6 +1130,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
       const MAX_ARCHITECT_RETRIES = 3;
       let architectAttempt = 0;
+      // v7.2 best-effort buffer: si el Arquitecto reintenta y la calidad EMPEORA
+      // (failRate mayor en intento 2 que en intento 1) conservamos la mejor
+      // escaleta vista para usarla al agotar retries en lugar de la última.
+      let bestWorldBibleData: ParsedWorldBible | null = null;
+      let bestFailRate = 1.1;
       let architectResult: any = null;
       let worldBibleData: ParsedWorldBible | null = null;
       let lastArchitectError = "";
@@ -1259,7 +1264,97 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 continue;
               }
             } else {
-              console.log(`[Orchestrator] World Bible parsed successfully on attempt ${architectAttempt}: ${worldBibleData.world_bible?.personajes?.length || 0} characters, ${escaletaLength}/${expectedChapters} chapters`);
+              // VALIDACIÓN DE CALIDAD DE LA ESCALETA (v7.2):
+              // Antes de aceptar la World Bible, verificar que cada capítulo regular
+              // (numero >= 1) tenga la estructura mínima que necesita el Narrador:
+              //   - beats.length >= 5 (el prompt pide 6, toleramos 5 como mínimo)
+              //   - objetivo_narrativo.length >= 80 chars (sinopsis del capítulo)
+              // Si más del 20% de los capítulos regulares no cumple, marcamos como
+              // inválido y forzamos retry. Esto evita que el Narrador escriba a ciegas
+              // como ocurría hasta ahora (objetivo_narrativo siempre vacío y solo 1-5
+              // beats por cap en proyectos antiguos).
+              const regularCaps = (worldBibleData.escaleta_capitulos as any[])
+                .filter((c: any) => (c.numero ?? 0) >= 1);
+
+              // v7.2 GUARD: si esperábamos capítulos regulares pero no hay
+              // ninguno con `numero >= 1`, la escaleta está mal numerada (todos
+              // como prólogo, numero null, etc.). Forzar retry.
+              if (project.chapterCount > 0 && regularCaps.length === 0) {
+                lastArchitectError = `Escaleta mal numerada: 0 capítulos con numero >= 1 pero el proyecto pide ${project.chapterCount}`;
+                console.error(`[Orchestrator] Architect attempt ${architectAttempt}: ${lastArchitectError}`);
+                if (architectAttempt < MAX_ARCHITECT_RETRIES) {
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warn",
+                    message: `Escaleta mal numerada (intento ${architectAttempt}): 0 caps regulares pero esperaban ${project.chapterCount}. Reintentando...`,
+                    agentRole: "architect",
+                  });
+                  worldBibleData = null;
+                  await new Promise(resolve => setTimeout(resolve, 5000));
+                  continue;
+                }
+                // Si agotó retries con numeración rota, salir (no continuamos).
+                throw new Error(lastArchitectError);
+              }
+
+              const failingCaps = regularCaps.filter((c: any) => {
+                const beatsCount = Array.isArray(c.beats) ? c.beats.length : 0;
+                const objText = (c.objetivo_narrativo || "").trim();
+                return beatsCount < 5 || objText.length < 80;
+              });
+              const failRate = regularCaps.length > 0 ? failingCaps.length / regularCaps.length : 0;
+              const FAIL_THRESHOLD = 0.2;
+
+              // v7.2 best-effort buffer: guardar la mejor escaleta vista hasta ahora.
+              if (regularCaps.length > 0 && failRate < bestFailRate) {
+                bestFailRate = failRate;
+                bestWorldBibleData = worldBibleData;
+              }
+
+              if (failRate > FAIL_THRESHOLD) {
+                const sampleFails = failingCaps.slice(0, 3).map((c: any) => {
+                  const beatsCount = Array.isArray(c.beats) ? c.beats.length : 0;
+                  const objLen = (c.objetivo_narrativo || "").trim().length;
+                  return `cap.${c.numero}: ${beatsCount} beats, objetivo ${objLen} chars`;
+                }).join(" | ");
+                lastArchitectError = `Escaleta de baja calidad: ${failingCaps.length}/${regularCaps.length} caps (${Math.round(failRate * 100)}%) sin beats suficientes u objetivo_narrativo vacío. Muestra: ${sampleFails}`;
+                console.error(`[Orchestrator] Architect attempt ${architectAttempt}: ${lastArchitectError}`);
+
+                if (architectAttempt < MAX_ARCHITECT_RETRIES) {
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warn",
+                    message: `Escaleta empobrecida (intento ${architectAttempt}): ${failingCaps.length}/${regularCaps.length} capítulos sin beats u objetivo_narrativo suficientes. Reintentando para mejorar el plan...`,
+                    agentRole: "architect",
+                  });
+                  worldBibleData = null;
+                  await new Promise(resolve => setTimeout(resolve, 5000));
+                  continue;
+                }
+
+                // v7.2: si agotó retries y un intento previo era mejor, restaurarlo.
+                if (bestWorldBibleData && bestFailRate < failRate) {
+                  console.warn(`[Orchestrator] Restaurando mejor escaleta previa: failRate ${(bestFailRate*100).toFixed(0)}% < actual ${(failRate*100).toFixed(0)}%`);
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "info",
+                    message: `Restaurada mejor escaleta vista (failRate ${(bestFailRate*100).toFixed(0)}% vs último intento ${(failRate*100).toFixed(0)}%).`,
+                    agentRole: "architect",
+                  });
+                  worldBibleData = bestWorldBibleData;
+                }
+
+                // Si agotó retries: dejamos pasar lo mejor que tenemos pero logueamos warning.
+                console.warn(`[Orchestrator] Architect agotó retries con escaleta empobrecida. Continuando con lo disponible.`);
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  message: `⚠️ Escaleta empobrecida tras ${MAX_ARCHITECT_RETRIES} intentos: ${failingCaps.length}/${regularCaps.length} caps con estructura insuficiente. El Narrador escribirá con plan parcial.`,
+                  agentRole: "architect",
+                });
+              }
+
+              console.log(`[Orchestrator] World Bible parsed successfully on attempt ${architectAttempt}: ${worldBibleData.world_bible?.personajes?.length || 0} characters, ${escaletaLength}/${expectedChapters} chapters, ${regularCaps.length - failingCaps.length}/${regularCaps.length} caps con escaleta completa`);
               break;
             }
           }
@@ -7943,9 +8038,15 @@ Responde SOLO con un JSON válido con la estructura:
     const d = data as any;
     const acts = d.estructura_tres_actos || d.three_act_structure || d.estructura || {};
     const premise = d.premisa || d.premise || d.world_bible?.premisa || "";
-    
-    console.log(`[Orchestrator] Converting plot outline - Premise length: ${premise.length}, Chapters: ${(d.escaleta_capitulos || []).length}`);
-    
+
+    // v7.2: persistir subtramas de matriz_arcos (Phase 1 del Architect) — antes
+    // se descartaban silenciosamente y el ArcValidator standalone no podía
+    // auditar arcos. El schema PlotOutline es passthrough, así que esta clave
+    // adicional pasa la validación zod sin romper nada.
+    const subtramas = d.matriz_arcos?.subtramas || d.matrizArcos?.subtramas || d.subplots;
+
+    console.log(`[Orchestrator] Converting plot outline - Premise length: ${premise.length}, Chapters: ${(d.escaleta_capitulos || []).length}, Subplots: ${Array.isArray(subtramas) ? subtramas.length : 0}`);
+
     return {
       premise,
       threeActStructure: {
@@ -7963,6 +8064,7 @@ Responde SOLO con un JSON válido con la estructura:
           resolution: acts.acto3?.resolucion || "",
         },
       },
+      ...(Array.isArray(subtramas) && subtramas.length > 0 ? { subplots: subtramas } : {}),
       lexico_historico: data.world_bible?.lexico_historico || null,
       chapterOutlines: (data.escaleta_capitulos || []).map((c: any) => ({
         number: c.numero,
@@ -8274,6 +8376,11 @@ Responde SOLO con un JSON válido con la estructura:
     await storage.updateProject(project.id, { status: "completed" });
     await this.generateSeriesContinuitySnapshot(project);
     await this.runSeriesArcVerification(project);
+    // Para novelas standalone (sin seriesId) corremos un check de arcos sintético
+    // basado en la propia escaleta — detecta arcos prometidos que quedaron abiertos.
+    if (!project.seriesId) {
+      await this.runStandaloneArcCheck(project);
+    }
     this.callbacks.onProjectComplete();
 
     // PUENTE A — Auto-loop holístico tras finalización natural del manuscrito.
@@ -8943,6 +9050,185 @@ Responde SOLO con un JSON válido con la estructura:
         projectId: project.id,
         level: "warn",
         message: `Error en verificación de arco: ${error instanceof Error ? error.message : "Error desconocido"}`,
+        agentRole: "orchestrator",
+      });
+    }
+  }
+
+  /**
+   * runStandaloneArcCheck (v7.2):
+   * Para novelas individuales (sin seriesId) no había ningún agente verificando
+   * que los arcos prometidos en la escaleta del Arquitecto se cerraran al final.
+   * Esto causaba arcos abandonados que pasaban inadvertidos.
+   *
+   * Construye milestones e hilos sintéticos a partir de:
+   *  - threeActStructure (incidente incitador, midpoint, risingAction,
+   *    complications, climax, resolution) — claves persistidas reales por
+   *    convertPlotOutline.
+   *  - subplots (clave persistida en v7.2 desde matriz_arcos.subtramas) — cada
+   *    subtrama se traduce en un hilo argumental.
+   *
+   * Los pasa al ArcValidator y persiste el resultado en activity_logs.
+   * No requiere migrar datos a series_arc_milestones (los milestones son
+   * sintéticos, in-memory, con ids negativos para no chocar con BD).
+   *
+   * Nota: proyectos pre-v7.2 no tienen `subplots` persistido. En ese caso el
+   * check sigue corriendo con solo los milestones de 3 actos (sin hilos), y
+   * audita los puntos estructurales clave aunque no las subtramas.
+   */
+  private async runStandaloneArcCheck(project: Project): Promise<void> {
+    try {
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (!worldBible) {
+        console.log(`[Orchestrator] runStandaloneArcCheck: sin world bible, skip`);
+        return;
+      }
+
+      const plotOutline: any = worldBible.plotOutline || {};
+      // Claves persistidas reales (convertPlotOutline). Mantenemos fallback a
+      // las claves "raw" del Architect por si se llama sobre datos in-flight.
+      const tresActos = plotOutline.threeActStructure
+        || plotOutline.estructura_tres_actos
+        || plotOutline.estructuraTresActos
+        || {};
+
+      // Construcción de milestones sintéticos desde la estructura de 3 actos.
+      const syntheticMilestones: any[] = [];
+      let nextMid = -1; // ids negativos para no colisionar con BD si por error se persisten
+      const pushMilestone = (description: string | undefined | null, type: string) => {
+        const text = (description || "").toString().trim();
+        if (!text) return;
+        syntheticMilestones.push({
+          id: nextMid--,
+          volumeNumber: 1,
+          milestoneType: type,
+          description: text,
+          isRequired: true,
+          isFulfilled: false,
+        });
+      };
+
+      // Acto 1: setup + inciting incident (acepta ambas formas: la persistida
+      // por convertPlotOutline y la raw del Architect).
+      const act1: any = tresActos.act1 || tresActos.acto1 || {};
+      pushMilestone(act1.incitingIncident || act1.incidente_incitador, "plot_point");
+
+      // Acto 2: midpoint + complications (raw también: punto_medio,
+      // complicaciones, puntos_de_giro como array opcional).
+      const act2: any = tresActos.act2 || tresActos.acto2 || {};
+      pushMilestone(act2.midpoint || act2.punto_medio, "plot_point");
+      pushMilestone(act2.complications || act2.complicaciones, "conflict");
+      const turning = act2.puntos_de_giro || act2.puntosDeGiro || act2.turningPoints;
+      if (Array.isArray(turning)) {
+        for (const tp of turning) {
+          if (typeof tp === "string") pushMilestone(tp, "plot_point");
+          else if (tp && typeof tp === "object") pushMilestone(tp.descripcion || tp.description, "plot_point");
+        }
+      }
+
+      // Acto 3: clímax + resolución.
+      const act3: any = tresActos.act3 || tresActos.acto3 || {};
+      pushMilestone(act3.climax, "conflict");
+      pushMilestone(act3.resolution || act3.resolucion, "resolution");
+
+      // Construcción de hilos sintéticos desde subplots (persistido en v7.2)
+      // o, como fallback, matriz_arcos.subtramas (datos in-flight no persistidos).
+      const syntheticThreads: any[] = [];
+      let nextTid = -1;
+      const subtramas = plotOutline.subplots
+        || plotOutline.matriz_arcos?.subtramas
+        || plotOutline.matrizArcos?.subtramas
+        || plotOutline.matriz_arcos?.subplots;
+      if (Array.isArray(subtramas)) {
+        for (const st of subtramas) {
+          const name = st?.nombre || st?.name || st?.titulo;
+          if (!name) continue;
+          syntheticThreads.push({
+            id: nextTid--,
+            threadName: name,
+            description: st?.descripcion || st?.description || "",
+            introducedVolume: 1,
+            importance: st?.importancia || "medium",
+            status: "active",
+            resolvedVolume: null,
+          });
+        }
+      }
+
+      if (syntheticMilestones.length === 0 && syntheticThreads.length === 0) {
+        console.log(`[Orchestrator] runStandaloneArcCheck: no hay arcos extraíbles de la escaleta, skip`);
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: "Verificación de arcos: la escaleta no contiene estructura de 3 actos ni subtramas suficientes para auditar arcos.",
+          agentRole: "arc-validator",
+        });
+        return;
+      }
+
+      this.callbacks.onAgentStatus("arc-validator", "reviewing",
+        `Verificando cierre de arcos (${syntheticMilestones.length} hitos, ${syntheticThreads.length} hilos)...`
+      );
+
+      const chapters = await storage.getChaptersByProject(project.id);
+      const sortedChapters = sortChaptersNarrative(chapters);
+      const chaptersSummary = sortedChapters.map(c => {
+        const label = c.chapterNumber === 0 ? "Prólogo" : c.chapterNumber === -1 ? "Epílogo" : `Capítulo ${c.chapterNumber}`;
+        const content = ((c as any).editedContent || c.content || "");
+        const preview = content.substring(0, 8000);
+        return `${label}: ${c.title || ""} (${c.wordCount || 0} palabras)\n${preview}${content.length > 8000 ? "\n[...truncado...]" : ""}`;
+      }).join("\n\n---\n\n");
+
+      const { ArcValidatorAgent } = await import("./agents/arc-validator");
+      const arcValidator = new ArcValidatorAgent();
+
+      const result = await arcValidator.execute({
+        projectTitle: project.title,
+        seriesTitle: project.title, // novela standalone: la "serie" es la propia novela
+        volumeNumber: 1,
+        totalVolumes: 1,
+        chaptersSummary,
+        milestones: syntheticMilestones as any,
+        plotThreads: syntheticThreads as any,
+        worldBible: worldBible || {},
+      });
+
+      if (result.result) {
+        const r = result.result;
+        const statusMsg = r.passed
+          ? `Verificación de arcos APROBADA (${r.overallScore}/100). Hitos cerrados: ${r.milestonesFulfilled}/${r.milestonesChecked}. Hilos resueltos: ${r.threadsResolved}/${syntheticThreads.length}`
+          : `⚠️ Verificación de arcos REQUIERE ATENCIÓN (${r.overallScore}/100). Hitos cerrados: ${r.milestonesFulfilled}/${r.milestonesChecked}. ${r.findings && r.findings.length > 0 ? `Hallazgos: ${r.findings.slice(0, 3).join(" | ")}` : ""}`;
+
+        this.callbacks.onAgentStatus("arc-validator", r.passed ? "completed" : "warning", statusMsg);
+
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: r.passed ? "info" : "warn",
+          message: statusMsg,
+          agentRole: "arc-validator",
+        });
+
+        // Si hay findings estructurales, los listamos por separado para que sean
+        // visibles en el panel de actividad.
+        if (!r.passed && r.findings && r.findings.length > 0) {
+          for (const f of r.findings.slice(0, 5)) {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              message: `Arco abierto: ${f}`,
+              agentRole: "arc-validator",
+            });
+          }
+        }
+
+        console.log(`[Orchestrator] Standalone arc check complete for project ${project.id}: ${r.passed ? "PASSED" : "NEEDS_ATTENTION"} (${r.overallScore}/100)`);
+      }
+    } catch (error) {
+      console.error(`[Orchestrator] Error en runStandaloneArcCheck:`, error);
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warn",
+        message: `Error en verificación de arcos standalone: ${error instanceof Error ? error.message : "Error desconocido"}`,
         agentRole: "orchestrator",
       });
     }

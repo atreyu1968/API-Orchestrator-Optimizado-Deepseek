@@ -10,6 +10,42 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Bugfix v7.2 — Arquitecto: escaleta empobrecida + arcos abiertos (May 2, 2026)
+
+Inspección de la BD reveló que **ningún proyecto cumplía el contrato del Arquitecto**: los `chapterOutlines` persistidos siempre tenían `summary: ""` y solo 1-5 beats por capítulo (el prompt exige mínimo 6). El proyecto en curso 33 incluso tenía 0 beats en los 22 capítulos. Causa real: el formato del prompt Phase 2 no incluía `objetivo_narrativo` aunque `persistArchitectOutput` (L7969) intentaba leerlo. El Narrador y el Editor recibían sinopsis vacía y escribían/validaban a ciegas.
+
+**Fix 1 — Prompt del Arquitecto (server/agents/architect.ts).**
+- `objetivo_narrativo` añadido al ejemplo JSON de `PHASE2_SYSTEM_PROMPT` (campo: párrafo narrativo de 100-200 palabras, no etiqueta) — entre `funcion_estructural` y `arcos_que_avanza`.
+- Reglas críticas reforzadas: el campo es OBLIGATORIO y `beats` exige 6 mínimos con cláusula de longitud (1-3 oraciones cada uno).
+- Verificación final del prompt actualizada para auto-checkear `objetivo_narrativo >= 100 palabras` y `beats >= 6` antes de responder.
+
+**Fix 2 — Validación post-Architect (server/orchestrator.ts L1264+).**
+- Nueva rama de validación dentro del retry loop (`MAX_ARCHITECT_RETRIES = 3`): tras pasar `hasCharacters`, `hasChapters`, `hasEnoughChapters`, ahora se valida calidad de la escaleta.
+- Para cada cap regular (`numero >= 1`): exige `beats.length >= 5` (toleramos 5 aunque el prompt pida 6) y `objetivo_narrativo.trim().length >= 80` chars.
+- Si más del 20% (`FAIL_THRESHOLD`) de los caps regulares falla, marca inválido, loguea muestra de los fallos en `activity_logs` ("cap.X: N beats, objetivo Y chars") y reintenta.
+- Si tras 3 intentos sigue empobrecida, deja pasar (warning explícito) en lugar de fallar el proyecto: el Narrador escribirá con plan parcial pero el manuscrito no se bloquea.
+
+**Fix 3 — ArcValidator standalone (server/orchestrator.ts L9008+).**
+- Nuevo método `runStandaloneArcCheck(project)` invocado desde `finalizeCompletedProject` cuando `!project.seriesId` (justo después de `runSeriesArcVerification`, que sigue siendo no-op para standalone).
+- Construye milestones sintéticos in-memory desde `worldBible.plotOutline.estructura_tres_actos` (incidente incitador, puntos de giro de acto 2, clímax, resolución) e hilos sintéticos desde `matriz_arcos.subtramas`. IDs negativos para no chocar con BD.
+- Pasa todo al `ArcValidatorAgent` con `volumeNumber: 1, totalVolumes: 1`. Persiste resultado en `activity_logs` (info si pasa, warn con findings si requiere atención). No persiste en `series_arc_verifications` (esa tabla es series-only).
+- Si la escaleta no contiene estructura de 3 actos detectable, registra info y termina sin error.
+
+**Fix 4 — Persistencia de subtramas (server/orchestrator.ts `convertPlotOutline`).**
+- Antes solo se persistían `premise`, `threeActStructure`, `lexico_historico` y `chapterOutlines`. Las `matriz_arcos.subtramas` que el Architect Phase 1 produce se descartaban silenciosamente.
+- Ahora se persisten como `plotOutline.subplots` (cuando el array no esté vacío). El schema `PlotOutline` es passthrough en zod, así que la clave adicional pasa la validación sin romper compatibilidad.
+
+**Fix 5 — Hardening del retry loop (revisión architect aplicada).**
+- **Best-effort buffer**: nuevas variables `bestWorldBibleData` + `bestFailRate` mantienen la mejor escaleta vista entre intentos. Si tras agotar `MAX_ARCHITECT_RETRIES` el último intento es peor que uno previo, se restaura el mejor antes de continuar (loguea info en `activity_logs`).
+- **Guard de numeración**: si `project.chapterCount > 0` pero `regularCaps.length === 0` (escaleta mal numerada — todos como prólogo, número null), se fuerza retry. Si agota retries en este estado se lanza error (no se continúa con escaleta inservible).
+
+**Fix 6 — Claves reales en `runStandaloneArcCheck`.**
+- Lectura corregida de `plotOutline.threeActStructure` (no `estructura_tres_actos` — inexistente en BD) con fallback a las claves raw del Architect por si se invoca sobre datos in-flight.
+- Construcción de milestones desde `act1.incitingIncident`, `act2.midpoint`, `act2.complications`, `act3.climax`, `act3.resolution` (claves persistidas reales) más `puntos_de_giro` opcional como array.
+- Hilos desde `plotOutline.subplots` (Fix 4) con fallback a `matriz_arcos.subtramas` para invocaciones in-flight.
+
+**Validación**: `npx tsc --noEmit` limpio tras los 6 fixes. No requiere `db:push` (sin cambios de schema — `subplots` cabe en passthrough). Los fixes solo afectan a generaciones futuras — proyectos ya completados conservan su escaleta empobrecida.
+
 ### Cambio funcional — 3 PUENTES sobre el HolisticReviewer (May 2, 2026)
 
 Cierre del bucle del revisor holístico para que **detección → corrección sea fluida** y para que las macro-roturas (capítulo duplicado, cambio de nombre global, re-arquitectura de un arco) tengan tratamiento dedicado y no obliguen al usuario a ediciones manuales pesadas. Tres puentes coordinados sobre el orquestador.
