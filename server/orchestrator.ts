@@ -6692,9 +6692,60 @@ Responde SOLO con un JSON válido con la estructura:
 
       console.log(`[Orchestrator:Extend] Created ${newChapterOutlines.length} new chapter records`);
 
+      // v7.2 fix: persistir los nuevos outlines en plotOutline.chapterOutlines.
+      // Antes solo se creaban registros en `chapters` (status=pending) y los
+      // outlines vivían in-memory en `worldBibleData`. Si la generación se
+      // interrumpía, al reanudar reconstructWorldBibleData no encontraba los
+      // outlines y los caps nuevos quedaban huérfanos (objetivo_narrativo y
+      // beats vacíos → Narrador a ciegas). Mismo mapping que convertPlotOutline
+      // y regenerateOutlineFromChapter para mantener round-trip coherente.
+      try {
+        const existingPlotOutline = (worldBible?.plotOutline as any) || {};
+        const existingArr: any[] = Array.isArray(existingPlotOutline)
+          ? existingPlotOutline
+          : (existingPlotOutline.chapterOutlines || []);
+        const newOutlinesPersist = newChapterOutlines.map((c: any) => ({
+          number: c.numero,
+          summary: c.objetivo_narrativo || "",
+          keyEvents: c.beats || [],
+          titulo: c.titulo,
+          epoca_id: c.epoca_id ?? null,
+          cronologia: c.cronologia,
+          ubicacion: c.ubicacion,
+          elenco_presente: c.elenco_presente,
+          funcion_estructural: c.funcion_estructural,
+          informacion_nueva: c.informacion_nueva,
+          pregunta_dramatica: c.pregunta_dramatica,
+          conflicto_central: c.conflicto_central,
+          giro_emocional: c.giro_emocional,
+          recursos_literarios_sugeridos: c.recursos_literarios_sugeridos,
+          tono_especifico: c.tono_especifico,
+          prohibiciones_este_capitulo: c.prohibiciones_este_capitulo,
+          arcos_que_avanza: c.arcos_que_avanza,
+          continuidad_entrada: c.continuidad_entrada,
+          continuidad_salida: c.continuidad_salida,
+          riesgos_de_verosimilitud: c.riesgos_de_verosimilitud,
+        }));
+        const merged = [...existingArr, ...newOutlinesPersist].sort(
+          (a: any, b: any) => (Number(a.number ?? a.numero) || 0) - (Number(b.number ?? b.numero) || 0)
+        );
+        const mergedPlotOutline = {
+          ...(typeof existingPlotOutline === "object" && !Array.isArray(existingPlotOutline) ? existingPlotOutline : {}),
+          chapterOutlines: merged,
+        };
+        if (worldBible) {
+          await storage.updateWorldBible(worldBible.id, { plotOutline: mergedPlotOutline });
+        }
+        console.log(`[Orchestrator:Extend] Persisted ${newOutlinesPersist.length} new chapterOutlines into plotOutline (total ahora: ${merged.length})`);
+      } catch (persistErr) {
+        console.error(`[Orchestrator:Extend] Falló la persistencia de nuevos outlines:`, persistErr);
+        // No abortamos: los registros de chapters ya existen y la generación
+        // puede continuar in-memory. La reanudación quedaría degradada.
+      }
+
       // Build world bible data for ghostwriter
       const worldBibleData = this.reconstructWorldBibleData(worldBible, project);
-      
+
       // Add the new outlines to the world bible data
       worldBibleData.escaleta_capitulos = [
         ...(worldBibleData.escaleta_capitulos || []),
@@ -7064,9 +7115,15 @@ Responde SOLO con un JSON válido con la estructura:
       const mergedOutlines = [...keptOutlines, ...dedupedNew.values()]
         .sort((a: any, b: any) => ((coerceNum(a.number ?? a.numero) ?? 0) - (coerceNum(b.number ?? b.numero) ?? 0)));
 
-      const newPlotOutline = {
+      // v7.2 fix: si la re-arquitectura emite nueva matriz_arcos.subtramas
+      // (poco frecuente en redesign, pero posible si el Architect rehace los
+      // hilos), persistirla en plotOutline.subplots para que el ArcValidator
+      // standalone audite la versión actual.
+      const newSubtramas = (parsed as any)?.matriz_arcos?.subtramas;
+      const newPlotOutline: any = {
         ...(typeof plotOutlineData === "object" && !Array.isArray(plotOutlineData) ? plotOutlineData : {}),
         chapterOutlines: mergedOutlines,
+        ...(Array.isArray(newSubtramas) && newSubtramas.length > 0 ? { subplots: newSubtramas } : {}),
       };
 
       if (worldBible) {
