@@ -635,15 +635,22 @@ ${input.writtenChaptersFullText}
     
     CADA capítulo debe tener:
     - ⛔ TÍTULO OBLIGATORIO: Campo "titulo" con valor literario (2-6 palabras), NUNCA vacío
-    - ⛔ OBJETIVO_NARRATIVO OBLIGATORIO: párrafo narrativo de 100-200 palabras (no etiqueta) describiendo qué ocurre realmente en el capítulo. Sin esto el Narrador no tiene sinopsis y escribe a ciegas.
-    - Beats detallados (mínimo 6 por capítulo, cada beat 1-3 oraciones de prosa)
+    - ⛔ OBJETIVO_NARRATIVO OBLIGATORIO: párrafo narrativo de ${input.chapterCount > 25 ? "60-120" : "100-200"} palabras (no etiqueta) describiendo qué ocurre realmente en el capítulo. Sin esto el Narrador no tiene sinopsis y escribe a ciegas.
+    - Beats detallados (mínimo ${input.chapterCount > 25 ? "4" : "6"} por capítulo, cada beat 1-2 oraciones concisas)
     - Información nueva
     - Conflicto central
     - Continuidad de entrada/salida
+    ${input.chapterCount > 25 ? `
+    ⚡ ESCALETA LARGA (${input.chapterCount} capítulos) — concisión obligatoria:
+    Para que la respuesta no se trunque por output cap (65K tokens), cada capítulo
+    debe ser CONCISO. NO escribas 200 palabras de objetivo_narrativo si caben 80;
+    NO escribas 8 beats si bastan 4-5 bien elegidos. Calidad > extensión. El Narrador
+    luego expande cada capítulo a 2000-4000 palabras con esta semilla. Tu trabajo es
+    semilla narrativa, no la novela.` : ""}
     
     ⚠️ VERIFICACIÓN FINAL: Antes de responder, CUENTA las entradas en escaleta_capitulos.
     Si no hay EXACTAMENTE ${input.chapterCount} capítulos, tu respuesta es INVÁLIDA.
-    Verifica también que CADA capítulo tenga "objetivo_narrativo" con >= 100 palabras de prosa y "beats" con >= 6 entradas. Sin esto la respuesta es INVÁLIDA.
+    Verifica también que CADA capítulo tenga "objetivo_narrativo" con >= ${input.chapterCount > 25 ? "60" : "100"} palabras de prosa y "beats" con >= ${input.chapterCount > 25 ? "4" : "6"} entradas. Sin esto la respuesta es INVÁLIDA.
     
     Responde ÚNICAMENTE con el JSON que contenga "escaleta_capitulos".
     `;

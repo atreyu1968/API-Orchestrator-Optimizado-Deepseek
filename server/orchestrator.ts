@@ -1299,10 +1299,19 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 throw new Error(lastArchitectError);
               }
 
+              // Fix 11: para escaletas grandes (>25 caps), el Arquitecto opera en
+              // modo "concisión obligatoria" para no chocar con el cap de 65K
+              // tokens y el timeout de 12 min. Bajamos threshold acorde:
+              // beats >=4 (en lugar de >=5) y objetivo_narrativo >=50 chars
+              // (en lugar de >=80). Para escaletas pequeñas (<=25) mantenemos
+              // los umbrales originales más exigentes.
+              const isLargeOutline = project.chapterCount > 25;
+              const minBeats = isLargeOutline ? 4 : 5;
+              const minObjChars = isLargeOutline ? 50 : 80;
               const failingCaps = regularCaps.filter((c: any) => {
                 const beatsCount = Array.isArray(c.beats) ? c.beats.length : 0;
                 const objText = (c.objetivo_narrativo || "").trim();
-                return beatsCount < 5 || objText.length < 80;
+                return beatsCount < minBeats || objText.length < minObjChars;
               });
               const failRate = regularCaps.length > 0 ? failingCaps.length / regularCaps.length : 0;
               const FAIL_THRESHOLD = 0.2;

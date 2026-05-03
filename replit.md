@@ -52,6 +52,18 @@ Inspección de la BD reveló que **ningún proyecto cumplía el contrato del Arq
   2. **Idempotencia en createChapter**: antes de cada `createChapter` se consulta el set de `chapterNumber` ya existentes en BD y se saltan los duplicados. Permite reintentos seguros tras crash sin generar capítulos huérfanos en BD.
   3. **Dedup en merge de plotOutline**: en lugar de concatenar `[...existingArr, ...newOutlinesPersist]` (que duplicaría outlines en re-extensiones), se usa `Map<number, outline>` con last-write-wins, garantizando que `plotOutline.chapterOutlines` quede consistente sin importar cuántas veces se ejecute la extensión.
 
+**Fix 11 — Escaleta concisa para novelas grandes (>25 caps) (May 3, 2026).**
+- **Síntoma**: Fase 2 del Arquitecto tarda 36 min para 35 capítulos y resuelve fuera de tiempo. El frozen monitor del orquestador (15 min) marca el proyecto como FALLIDO al min 15, pero el Arquitecto sigue corriendo en background; cuando devuelve la escaleta a los 36 min, ya no hay orquestador escuchando y el trabajo se pierde.
+- **Causa raíz combinada**:
+  1. **Bug del AbortController**: `base-agent.ts:withTimeout` solo hace `Promise.race` con un setTimeout local; **no llama a `controller.abort()`** sobre la API call. Cuando expira el timeout interno (12 min), la fetch sigue en background y eventualmente resuelve.
+  2. **Reintento silencioso**: tras un TIMEOUT, `BaseAgent` reintenta hasta `MAX_RETRIES=3` veces sin notificar al orquestador. 12 min × 3 = 36 min, lo que coincide exactamente con los logs.
+  3. **Output volumen**: 35 caps × (objetivo_narrativo 100-200 palabras + beats >=6 × 1-3 oraciones) ≈ 50K+ tokens de salida, rozando el cap de 65K y forzando al modelo a generar muy lento.
+- **Fix (parche pragmático, no toca el bug del AbortController)**:
+  - **architect.ts Fase 2 prompt**: si `chapterCount > 25`, exigir objetivo_narrativo de 60-120 palabras (en lugar de 100-200) y beats >=4 (en lugar de >=6). Añadido bloque "ESCALETA LARGA — concisión obligatoria" recordando al modelo que su trabajo es semilla narrativa, no la novela.
+  - **orchestrator.ts validación de calidad (L1302+)**: threshold escalado — `minBeats=4, minObjChars=50` para escaletas grandes; conserva `minBeats=5, minObjChars=80` para escaletas <=25 caps.
+  - Resultado esperado: Fase 2 cabe en 5-8 min para 35 caps, dentro del watchdog de 15 min.
+- **Pendiente (no incluido en este fix)**: arreglar `withTimeout` para llamar a `controller.abort()` y propagar la cancelación a la API. Y bajar `MAX_RETRIES` para timeouts del Arquitecto a 1, evitando que un timeout se silencie con reintentos largos.
+
 **Fix 10 — Timeout del Arquitecto subido a 12 min (May 3, 2026).**
 - **Síntoma**: Fase 2 del Arquitecto timeoutea tras 8 min en proyectos de 35+ capítulos (escaleta densa con beats >=6 y `objetivo_narrativo` de 100-200 palabras por capítulo). El frozen monitor mata el proyecto a los 15 min y reintenta — bucle infinito.
 - **Causa raíz**: desfase histórico entre `architect.ts:timeoutMs = 8 * 60 * 1000` y el comentario explícito en `queue-manager.ts` (`HEARTBEAT_TIMEOUT_MS = 15min, must be > API timeout of 12 min`). El watchdog estaba diseñado para soportar 12 min de API timeout pero el agente nunca lo aprovechaba.
