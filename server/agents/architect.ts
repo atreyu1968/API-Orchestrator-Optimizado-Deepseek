@@ -352,10 +352,13 @@ export class ArchitectAgent extends BaseAgent {
       includeThoughts: false,      // el thoughtSignature solo se loguea, no lo usamos. Quitarlo reduce el tamaño de respuesta y baja el riesgo de drop a media generación.
     });
     // Override timeout: el Arquitecto genera JSON estructurado (no prosa larga).
-    // 8 min por fase: la Fase 2 (escaleta detallada de N capítulos, hasta 65k
-    // tokens de salida) chocaba contra los 5 min en novelas largas (>20 caps).
-    // Sigue cabiendo dentro del watchdog de 15 min: 8 min × 1 fase activa + holgura.
-    this.timeoutMs = 8 * 60 * 1000;
+    // 12 min por fase: la Fase 2 (escaleta detallada de N capítulos, hasta 65k
+    // tokens de salida) timeoutea a 8 min en novelas grandes (35+ caps con
+    // beats >=6 y objetivo_narrativo de 100-200 palabras cada uno). El watchdog
+    // del orquestador (queue-manager.ts HEARTBEAT_TIMEOUT_MS=15min) está
+    // explícitamente diseñado para soportar API timeout de hasta 12 min, así
+    // que esto cabe sin que el frozen monitor mate al proyecto.
+    this.timeoutMs = 12 * 60 * 1000;
   }
 
   async execute(input: ArchitectInput): Promise<AgentResponse> {
@@ -494,7 +497,7 @@ ${input.writtenChaptersFullText}
           projectId: input.projectId,
           level: "info",
           agentRole: "architect",
-          message: `📐 El Arquitecto — Fase 1/2: generando World Bible (personajes, lugares, arcos, estructura). Timeout: 8 min.`,
+          message: `📐 El Arquitecto — Fase 1/2: generando World Bible (personajes, lugares, arcos, estructura). Timeout: 12 min.`,
         });
       } catch (e) {
         console.warn(`[El Arquitecto] No se pudo escribir activity log Fase 1 inicio: ${(e as Error).message}`);
@@ -575,7 +578,7 @@ ${input.writtenChaptersFullText}
           projectId: input.projectId,
           level: "info",
           agentRole: "architect",
-          message: `📐 El Arquitecto — Fase 2/2: generando escaleta detallada de ${input.chapterCount} capítulos. Timeout: 8 min.`,
+          message: `📐 El Arquitecto — Fase 2/2: generando escaleta detallada de ${input.chapterCount} capítulos. Timeout: 12 min.`,
         });
       } catch (e) {
         console.warn(`[El Arquitecto] No se pudo escribir activity log Fase 2 inicio: ${(e as Error).message}`);
@@ -668,7 +671,7 @@ ${input.writtenChaptersFullText}
             projectId: input.projectId,
             level: "warning",
             agentRole: "architect",
-            message: `⚠️ El Arquitecto — Fase 2/2 falló tras ${phase2ElapsedSec}s: ${phase2Response.timedOut ? "timeout (8 min)" : (phase2Response.error || "respuesta vacía")}.`,
+            message: `⚠️ El Arquitecto — Fase 2/2 falló tras ${phase2ElapsedSec}s: ${phase2Response.timedOut ? "timeout (12 min)" : (phase2Response.error || "respuesta vacía")}.`,
           });
         } catch (e) {
           console.warn(`[El Arquitecto] No se pudo escribir activity log Fase 2 fallo: ${(e as Error).message}`);
