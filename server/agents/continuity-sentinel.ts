@@ -1,5 +1,6 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
 import { repairJson } from "../utils/json-repair";
+import { buildCanonNamesBlock } from "../utils/world-bible-format";
 
 interface ContinuitySentinelInput {
   projectTitle: string;
@@ -166,6 +167,7 @@ ${c.contenido}
       : "";
 
     const prompt = `
+${buildCanonNamesBlock(input.worldBible)}
 PROYECTO: ${input.projectTitle}
 CHECKPOINT #${input.checkpointNumber} - Análisis de continuidad
 

@@ -1,6 +1,7 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
 import { repairJson } from "../utils/json-repair";
 import { extractStyleDirectives, buildFinalReviewerDirectiveBlock } from "../utils/style-directives";
+import { buildCanonNamesBlock } from "../utils/world-bible-format";
 
 interface FinalReviewerInput {
   projectTitle: string;
@@ -676,6 +677,7 @@ la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad sufici
     const narrativeDirective = buildFinalReviewerDirectiveBlock(extractStyleDirectives(input.guiaEstilo));
 
     const prompt = `${narrativeDirective}
+    ${buildCanonNamesBlock(input.worldBible)}
     TÍTULO DE LA NOVELA: ${input.projectTitle}
     
     WORLD BIBLE (Datos Canónicos):

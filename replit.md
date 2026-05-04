@@ -10,6 +10,25 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Bugfix v7.2 [Fix15] — World Bible canónica en TODOS los agentes que tocan prosa (May 4, 2026)
+
+**Síntoma reportado**: el escritor (Narrador/Cirujano) no respetaba nombres canónicos de personajes establecidos en la World Bible, los abreviaba o inventaba variantes. Investigación reveló 7 puntos donde el WB se truncaba o llegaba sin formato útil.
+
+**Fix 1 — Cirujano de Texto en `applyEditorialNotes` (server/orchestrator.ts L6606-6621, L6755-6764).** El `surgicalPatcher.execute()` se llamaba SIN `worldBibleContext` para instrucciones puntuales — la regla #11 del system prompt prohíbe contradecir canon, pero sin canon contra el que validar. Ahora se computa `editorialWorldBibleContext` una vez antes del loop de capítulos con `serializeWorldBibleForSurgery(enrichedWB)` y se pasa a cada llamada del patcher.
+
+**Fix 2 — Reestructurador (server/agents/restructurer.ts).** Antes: `JSON.stringify(wb).substring(0, 5000)` cortaba personajes en elencos grandes. Ahora: nuevo helper `formatWorldBibleForRestructurer` lista TODOS los personajes (nombre + alias + apariencia inmutable + modismos + arco) antes de truncar lugares/reglas.
+
+**Fix 3 — ChapterExpander y NewChapterGenerator (server/agents/chapter-expander.ts).** Antes truncaban personajes a 5/10 con solo nombre+rol. Ahora ambos delegan en `buildExpanderWorldBibleContext` que lista TODOS con apariencia inmutable, aliases y modismos.
+
+**Fix 4 — Editor (server/agents/editor.ts L372+).** Se prepende un bloque "🔒 NOMBRES CANÓNICOS DE PERSONAJES" destacado antes del JSON.stringify, con instrucción explícita de reportar desviaciones en `errores_continuidad` y `plan_quirurgico`. El editor podía aprobar capítulos con nombres incorrectos porque en contextos largos el JSON crudo se le escapaba.
+
+**Fix 5 — Util compartido (server/utils/world-bible-format.ts).** Nueva función `buildCanonNamesBlock(wb)` que produce el bloque destacado de nombres canónicos. Usado por:
+- `series-thread-fixer.ts` — antes truncaba `characters.slice(0, 8)` y emite prosa nueva en `suggestedRevision`. Crítico: este agente escribe prosa que se inserta directamente.
+- `final-reviewer.ts` — su veredicto dispara reescrituras; sin nombres completos podía aprobar inventos.
+- `continuity-sentinel.ts` — sin elenco completo no detectaba desapariciones/reapariciones erróneas de personajes secundarios.
+
+**Marcador**: comentarios `[Fix15]` en código modificado.
+
 ### Bugfix v7.2 — Arquitecto: escaleta empobrecida + arcos abiertos (May 2, 2026)
 
 Inspección de la BD reveló que **ningún proyecto cumplía el contrato del Arquitecto**: los `chapterOutlines` persistidos siempre tenían `summary: ""` y solo 1-5 beats por capítulo (el prompt exige mínimo 6). El proyecto en curso 33 incluso tenía 0 beats en los 22 capítulos. Causa real: el formato del prompt Phase 2 no incluía `objetivo_narrativo` aunque `persistArchitectOutput` (L7969) intentaba leerlo. El Narrador y el Editor recibían sinopsis vacía y escribían/validaban a ciegas.

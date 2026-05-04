@@ -1,6 +1,69 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
 import { repairJson } from "../utils/json-repair";
 
+/**
+ * [Fix15] Antes truncábamos personajes a 5 (expander) o 10 (new chapter) y solo
+ * mostrábamos nombre+rol. Si la novela tenía 12 personajes, los últimos
+ * desaparecían y el agente inventaba al expandir. Ahora listamos TODOS, con
+ * apariencia inmutable, modismos y aliases para que el escritor no improvise.
+ */
+function buildExpanderWorldBibleContext(worldBible: any): string {
+  if (!worldBible) return "";
+  const sections: string[] = ["BIBLIA DEL MUNDO — CANON INVIOLABLE:"];
+
+  const personajes = worldBible.personajes || worldBible.characters || [];
+  if (Array.isArray(personajes) && personajes.length > 0) {
+    sections.push(`\nPERSONAJES (${personajes.length}) — usa SIEMPRE estos nombres exactos, NO los abrevies ni inventes:`);
+    for (const c of personajes) {
+      if (!c) continue;
+      const nombre = c.nombre || c.name || "?";
+      const rol = c.rol || c.role || "personaje";
+      const aliases = c.alias || c.nombre_alias || c.aliases || [];
+      const desc = c.descripcion || c.description || c.perfil_psicologico || "";
+      sections.push(`  - ${nombre} (${rol})${Array.isArray(aliases) && aliases.length ? ` [alias: ${aliases.join(", ")}]` : ""}${desc ? `: ${typeof desc === "string" ? desc.slice(0, 200) : ""}` : ""}`);
+      const ap = c.apariencia_inmutable || c.aparienciaInmutable;
+      if (ap && typeof ap === "object") {
+        const t: string[] = [];
+        if (ap.ojos) t.push(`ojos ${ap.ojos}`);
+        if (ap.cabello) t.push(`cabello ${ap.cabello}`);
+        if (ap.altura || ap.estatura) t.push(`altura ${ap.altura || ap.estatura}`);
+        if (ap.edad || ap.edad_aparente) t.push(`edad ${ap.edad || ap.edad_aparente}`);
+        const rd = ap.rasgos_distintivos || ap.rasgosDistintivos || [];
+        if (Array.isArray(rd) && rd.length) t.push(`rasgos: ${rd.join(", ")}`);
+        if (t.length) sections.push(`      🔒 Apariencia inmutable: ${t.join(" | ")}`);
+      }
+      const mod = c.modismos_habla || c.modismos || [];
+      if (Array.isArray(mod) && mod.length) sections.push(`      🗣️ Modismos: ${mod.join(", ")}`);
+    }
+  }
+
+  const lugares = worldBible.lugares || worldBible.locations || [];
+  if (Array.isArray(lugares) && lugares.length > 0) {
+    sections.push(`\nUBICACIONES (${lugares.length}):`);
+    for (const l of lugares) {
+      if (!l) continue;
+      const nombre = l.nombre || l.name || "?";
+      const desc = l.descripcion || l.description || l.ambiente || "";
+      const descStr = typeof desc === "string" ? desc : JSON.stringify(desc);
+      sections.push(`  - ${nombre}${descStr ? `: ${descStr.slice(0, 200)}` : ""}`);
+    }
+  }
+
+  const reglas = worldBible.reglas_lore || worldBible.world_rules || worldBible.worldRules || worldBible.rules || [];
+  if (Array.isArray(reglas) && reglas.length > 0) {
+    sections.push(`\nREGLAS DEL MUNDO:`);
+    for (const r of reglas.slice(0, 30)) {
+      if (!r) continue;
+      if (typeof r === "string") { sections.push(`  - ${r}`); continue; }
+      const cat = r.categoria || r.category || "";
+      const rule = r.regla || r.rule || r.descripcion || r.description || "";
+      if (cat !== "__narrative_threads") sections.push(`  - ${cat ? `[${cat}] ` : ""}${rule}`);
+    }
+  }
+
+  return sections.join("\n");
+}
+
 interface ChapterSummary {
   chapterNumber: number;
   title: string;
@@ -331,24 +394,7 @@ RESPONDE CON JSON:
   }
 
   private buildWorldBibleContext(worldBible: any): string {
-    if (!worldBible) return "";
-    
-    const sections: string[] = ["BIBLIA DEL MUNDO:"];
-    
-    if (worldBible.characters?.length > 0) {
-      const mainChars = worldBible.characters.slice(0, 5);
-      sections.push("Personajes principales: " + mainChars.map((c: any) => 
-      `${c.nombre || c.name} (${c.rol || c.role || 'personaje'})`
-      ).join(", "));
-    }
-    
-    if (worldBible.locations?.length > 0) {
-      sections.push("Ubicaciones: " + worldBible.locations.slice(0, 5).map((l: any) => 
-      l.nombre || l.name || l
-      ).join(", "));
-    }
-    
-    return sections.join("\n");
+    return buildExpanderWorldBibleContext(worldBible);
   }
 }
 
@@ -424,31 +470,6 @@ RESPONDE CON JSON:
   }
 
   private buildWorldBibleContext(worldBible: any): string {
-    if (!worldBible) return "";
-    
-    const sections: string[] = ["BIBLIA DEL MUNDO:"];
-    
-    if (worldBible.characters?.length > 0) {
-      sections.push("PERSONAJES:");
-      worldBible.characters.slice(0, 10).forEach((c: any) => {
-      sections.push(`  - ${c.nombre || c.name}: ${c.descripcion || c.description || c.rol || 'personaje'}`);
-      });
-    }
-    
-    if (worldBible.locations?.length > 0) {
-      sections.push("UBICACIONES:");
-      worldBible.locations.slice(0, 5).forEach((l: any) => {
-      sections.push(`  - ${l.nombre || l.name}: ${l.descripcion || l.description || ''}`);
-      });
-    }
-    
-    if (worldBible.rules?.length > 0) {
-      sections.push("REGLAS DEL MUNDO:");
-      worldBible.rules.slice(0, 5).forEach((r: any) => {
-      sections.push(`  - ${r.nombre || r.name || r}: ${r.descripcion || r.description || ''}`);
-      });
-    }
-    
-    return sections.join("\n");
+    return buildExpanderWorldBibleContext(worldBible);
   }
 }

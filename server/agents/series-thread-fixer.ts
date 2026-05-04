@@ -1,5 +1,6 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
 import { repairJson } from "../utils/json-repair";
+import { buildCanonNamesBlock } from "../utils/world-bible-format";
 import type { SeriesArcMilestone, SeriesPlotThread, Chapter } from "@shared/schema";
 
 interface ThreadFixerInput {
@@ -340,9 +341,10 @@ ${threadsText || "No hay hilos activos."}
 ═══════════════════════════════════════════════════════════════════
 PERSONAJES Y MUNDO:
 ═══════════════════════════════════════════════════════════════════
+${buildCanonNamesBlock(input.worldBible)}
+
 ${JSON.stringify({
-  characters: input.worldBible?.characters?.slice(0, 8) || [],
-  worldRules: input.worldBible?.worldRules || [],
+  worldRules: input.worldBible?.worldRules || input.worldBible?.reglas_lore || [],
 }, null, 2)}
 
 ═══════════════════════════════════════════════════════════════════

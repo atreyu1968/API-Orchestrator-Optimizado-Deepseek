@@ -1,6 +1,70 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
 import { repairJson } from "../utils/json-repair";
 
+/**
+ * [Fix15] Serializa el World Bible priorizando NOMBRES y rasgos canónicos.
+ * Garantiza que TODOS los personajes aparezcan completos antes de truncar
+ * cualquier otra sección. Antes JSON.stringify(...).substring(0, 5000) dejaba
+ * fuera la mitad de la canon en proyectos con elenco grande.
+ */
+function formatWorldBibleForRestructurer(wb: any): string {
+  if (!wb || typeof wb !== "object") return JSON.stringify(wb || {});
+  const out: string[] = [];
+
+  const personajes = wb.personajes || wb.characters || [];
+  if (Array.isArray(personajes) && personajes.length > 0) {
+    out.push(`PERSONAJES (${personajes.length}) — los nombres y rasgos siguientes son CANON; NO los cambies:`);
+    for (const p of personajes) {
+      if (!p) continue;
+      const nombre = p.nombre || p.name || "?";
+      const rol = p.rol || p.role || "";
+      const aliases = p.alias || p.nombre_alias || p.aliases || [];
+      out.push(`  ▸ ${nombre}${rol ? ` (${rol})` : ""}${Array.isArray(aliases) && aliases.length ? ` [alias: ${aliases.join(", ")}]` : ""}`);
+      const ap = p.apariencia_inmutable || p.aparienciaInmutable;
+      if (ap && typeof ap === "object") {
+        const t: string[] = [];
+        if (ap.ojos) t.push(`ojos ${ap.ojos}`);
+        if (ap.cabello) t.push(`cabello ${ap.cabello}`);
+        if (ap.altura || ap.estatura) t.push(`altura ${ap.altura || ap.estatura}`);
+        if (ap.edad || ap.edad_aparente) t.push(`edad ${ap.edad || ap.edad_aparente}`);
+        const rd = ap.rasgos_distintivos || ap.rasgosDistintivos || [];
+        if (Array.isArray(rd) && rd.length) t.push(`rasgos: ${rd.join(", ")}`);
+        if (t.length) out.push(`    🔒 Apariencia inmutable: ${t.join(" | ")}`);
+      }
+      const mod = p.modismos_habla || p.modismos || [];
+      if (Array.isArray(mod) && mod.length) out.push(`    🗣️ Modismos: ${mod.join(", ")}`);
+      const arco = p.arco || p.arc;
+      if (arco) out.push(`    Arco: ${typeof arco === "string" ? arco : JSON.stringify(arco)}`);
+    }
+  }
+
+  const lugares = wb.lugares || wb.locations || [];
+  if (Array.isArray(lugares) && lugares.length > 0) {
+    out.push(`\nLUGARES (${lugares.length}) — nombres canónicos:`);
+    for (const l of lugares) {
+      if (!l) continue;
+      const nombre = l.nombre || l.name || "?";
+      const desc = l.descripcion || l.description || l.ambiente || "";
+      const descStr = typeof desc === "string" ? desc : JSON.stringify(desc);
+      out.push(`  ▸ ${nombre}${descStr ? `: ${descStr.slice(0, 200)}` : ""}`);
+    }
+  }
+
+  const reglas = wb.reglas_lore || wb.world_rules || wb.worldRules || wb.rules || [];
+  if (Array.isArray(reglas) && reglas.length > 0) {
+    out.push(`\nREGLAS DEL MUNDO:`);
+    for (const r of reglas.slice(0, 30)) {
+      if (!r) continue;
+      if (typeof r === "string") { out.push(`  ▸ ${r}`); continue; }
+      const cat = r.categoria || r.category || "";
+      const rule = r.regla || r.rule || r.descripcion || "";
+      if (cat !== "__narrative_threads") out.push(`  ▸ ${cat ? `[${cat}] ` : ""}${rule}`);
+    }
+  }
+
+  return out.join("\n");
+}
+
 interface RestructurerInput {
   chapterNumber: number;
   chapterTitle: string;
@@ -112,9 +176,14 @@ export class RestructurerAgent extends BaseAgent {
   }
 
   async execute(input: RestructurerInput): Promise<AgentResponse & { result?: RestructurerResult }> {
+    // [Fix15] Antes truncábamos JSON.stringify(worldBible) a 5000 chars: con
+    // muchos personajes o perfiles largos, los últimos quedaban fuera y el
+    // Reestructurador inventaba nombres/rasgos al condensar. Ahora emitimos
+    // primero un bloque CANON con TODOS los personajes (nombre + alias + rasgos
+    // inmutables + modismos), y solo después truncamos los demás campos.
     const contextSection = input.worldBible ? `
-WORLD BIBLE (Referencia de personajes/lugares):
-${JSON.stringify(input.worldBible, null, 2).substring(0, 5000)}
+WORLD BIBLE — CANON INVIOLABLE (personajes y lugares):
+${formatWorldBibleForRestructurer(input.worldBible)}
 ` : "";
 
     const styleSection = input.guiaEstilo ? `

@@ -366,6 +366,44 @@ VALIDA que este capítulo sea COHERENTE con el estado anterior:
 ═══════════════════════════════════════════════════════════════════
 ` : "";
 
+    // [Fix15] Bloque destacado con NOMBRES canónicos antes del volcado JSON.
+    // Antes el editor recibía solo JSON.stringify(input.worldBible) y, en
+    // contextos largos, se le escapaban violaciones de nombre del Narrador.
+    let canonNamesBlock = "";
+    const personajesCanon = input.worldBible?.personajes || input.worldBible?.characters || [];
+    if (Array.isArray(personajesCanon) && personajesCanon.length > 0) {
+      const lines: string[] = [
+        "═══════════════════════════════════════════════════════════════════",
+        `🔒 NOMBRES CANÓNICOS DE PERSONAJES (${personajesCanon.length}) — verificación obligatoria`,
+        "═══════════════════════════════════════════════════════════════════",
+        "Si el capítulo usa NOMBRES, ALIAS, EDADES, RASGOS FÍSICOS o PARENTESCOS",
+        "que NO coincidan EXACTAMENTE con esta lista, repórtalo en `errores_continuidad`",
+        "y exige corrección en `plan_quirurgico`. NO permitas variantes ni inventos.",
+        "",
+      ];
+      for (const c of personajesCanon) {
+        if (!c) continue;
+        const nombre = c.nombre || c.name || "?";
+        const rol = c.rol || c.role || "";
+        const aliases = c.alias || c.nombre_alias || c.aliases || [];
+        const ap = c.apariencia_inmutable || c.aparienciaInmutable || {};
+        const traits: string[] = [];
+        if (ap.ojos) traits.push(`ojos ${ap.ojos}`);
+        if (ap.cabello) traits.push(`cabello ${ap.cabello}`);
+        if (ap.altura || ap.estatura) traits.push(`altura ${ap.altura || ap.estatura}`);
+        if (ap.edad || ap.edad_aparente) traits.push(`edad ${ap.edad || ap.edad_aparente}`);
+        const rd = ap.rasgos_distintivos || ap.rasgosDistintivos || [];
+        if (Array.isArray(rd) && rd.length) traits.push(`rasgos: ${rd.join(", ")}`);
+        lines.push(
+          `  ▸ ${nombre}${rol ? ` (${rol})` : ""}` +
+          `${Array.isArray(aliases) && aliases.length ? ` [alias: ${aliases.join(", ")}]` : ""}` +
+          `${traits.length ? ` — ${traits.join(" | ")}` : ""}`
+        );
+      }
+      lines.push("═══════════════════════════════════════════════════════════════════");
+      canonNamesBlock = lines.join("\n");
+    }
+
     let authorNotesSection = "";
     const authorNotes = input.worldBible?._author_notes;
     if (Array.isArray(authorNotes) && authorNotes.length > 0) {
@@ -380,6 +418,8 @@ VALIDA que este capítulo sea COHERENTE con el estado anterior:
     }
 
     const prompt = `
+${canonNamesBlock}
+
 DOCUMENTOS DE REFERENCIA:
 
 1. GUÍA DE ESTILO DEL AUTOR:

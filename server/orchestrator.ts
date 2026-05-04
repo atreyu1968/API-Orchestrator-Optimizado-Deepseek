@@ -6600,6 +6600,23 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         return orderA - orderB;
       });
 
+      // [Fix15] Contexto canónico del World Bible compartido por todos los capítulos
+      // del flujo editorial. Antes el Cirujano de Texto recibía instrucciones
+      // puntuales SIN canon, lo que le permitía inventar nombres, edades, lugares,
+      // etc. al aplicar correcciones. Lo computamos una vez aquí y lo pasamos a
+      // cada llamada surgicalPatcher.execute(...) dentro del bucle.
+      let editorialWorldBibleContext = "";
+      try {
+        const enrichedWBForEditorial = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
+        editorialWorldBibleContext = this.serializeWorldBibleForSurgery(enrichedWBForEditorial);
+      } catch {
+        try {
+          editorialWorldBibleContext = this.serializeWorldBibleForSurgery(worldBibleData.world_bible);
+        } catch {
+          editorialWorldBibleContext = "";
+        }
+      }
+
       this.callbacks.onAgentStatus("editor", "completed",
         `Notas editoriales analizadas: ${instructions.length} instrucciones para ${sortedChapters.length} capítulos.`
       );
@@ -6738,6 +6755,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
               originalContent: workingContent,
               instructions: puntualesFormatted,
+              // [Fix15] Canon compartido — sin esto el Cirujano podía cambiar
+              // nombres canónicos al ejecutar replace_with.
+              worldBibleContext: editorialWorldBibleContext,
             });
 
             await this.trackTokenUsage(project.id, patchResult.tokenUsage, "Cirujano de Texto", "deepseek-v4-flash", sectionData.numero, "surgical_patch");
