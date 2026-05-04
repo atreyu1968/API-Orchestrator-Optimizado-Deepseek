@@ -35,6 +35,7 @@ import type { FinalReviewIssue } from "./agents/final-reviewer";
 import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, TimelineEvent } from "@shared/schema";
 import { ensureChapterNumbers } from "./utils/extract-chapters";
 import { extractStyleDirectives } from "./utils/style-directives";
+import { repairJson } from "./utils/json-repair";
 import { calculateRealCost } from "./cost-calculator";
 
 interface OrchestratorCallbacks {
@@ -4560,16 +4561,38 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       agentRole: "editor",
     });
 
-    const parseResult = await this.editorialNotesParser.execute({
-      notas: notesText,
-      chapterIndex,
-      projectTitle: project.title,
-    });
+    // Fix 13: si las notas son un INFORME del propio sistema (Holístico o Beta),
+    // ya vienen con un bloque JSON estructurado al final. Usamos esas instrucciones
+    // directamente, saltándonos el parser LLM (que perdía la mitad porque trabajaba
+    // sobre texto libre). El refiner sigue corriendo después para anclar contra
+    // canon y descartar incompatibilidades, pero con fallback protegido.
+    const autoInstructions = this.extractAutoInstructionsFromReview(notesText, chapterIndex);
+    const isSystemReview = autoInstructions !== null;
 
-    await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "deepseek-v4-flash", undefined, "editorial_parse");
+    let draftInstructions: EditorialInstruction[];
+    let summary: string | undefined;
 
-    const draftInstructions: EditorialInstruction[] = parseResult.result?.instrucciones || [];
-    const summary = parseResult.result?.resumen_general;
+    if (autoInstructions !== null) {
+      draftInstructions = autoInstructions;
+      summary = `Informe automático del sistema (Holístico/Beta): ${autoInstructions.length} instrucción(es) auto-aplicable(s) extraída(s) del bloque JSON.`;
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "info",
+        message: `Detectado informe estructurado del sistema con ${autoInstructions.length} instrucción(es) auto-aplicable(s). Saltando parser LLM y pasando directamente al refiner para anclaje contra canon.`,
+        agentRole: "editor",
+      });
+    } else {
+      const parseResult = await this.editorialNotesParser.execute({
+        notas: notesText,
+        chapterIndex,
+        projectTitle: project.title,
+      });
+
+      await this.trackTokenUsage(project.id, parseResult.tokenUsage, "Analista de Notas Editoriales", "deepseek-v4-flash", undefined, "editorial_parse");
+
+      draftInstructions = parseResult.result?.instrucciones || [];
+      summary = parseResult.result?.resumen_general;
+    }
 
     // ── SEGUNDA PASADA: anclaje contra contenido real + canon ───────
     const refinedInstructions = await this.groundEditorialInstructions(
@@ -4578,6 +4601,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       draftInstructions,
       worldBibleData,
       allChapters,
+      isSystemReview,
     );
 
     // ── GATE DETERMINISTA ANTI-FALSO-POSITIVO PARA tipo:"eliminar" ──────────
@@ -4832,12 +4856,88 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
    * Bible. Devuelve solo las instrucciones que están ancladas en el texto y son
    * compatibles con la canon. Las descartadas se loguean con motivo.
    */
+  /**
+   * Fix 13: extrae instrucciones auto-aplicables de un informe del sistema
+   * (Holístico o Beta). El bloque vive entre los marcadores literales:
+   *   <!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->
+   *   ```json { "instrucciones": [...] } ```
+   *   <!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->
+   * Devuelve null si no hay marcadores (es decir, las notas son humanas y deben
+   * pasar por el parser LLM). Devuelve [] si los marcadores existen pero el
+   * informe no contenía sugerencias (manuscrito limpio).
+   */
+  private extractAutoInstructionsFromReview(
+    notesText: string,
+    chapterIndex: Array<{ numero: number; titulo: string }>,
+  ): EditorialInstruction[] | null {
+    const startMarker = "<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->";
+    const endMarker = "<!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->";
+    const startIdx = notesText.indexOf(startMarker);
+    const endIdx = notesText.indexOf(endMarker);
+    if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return null;
+
+    const block = notesText.slice(startIdx + startMarker.length, endIdx).trim();
+    // Quitar el wrapping ```json ... ``` si está presente.
+    const fenced = block.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const jsonRaw = (fenced ? fenced[1] : block).trim();
+    if (!jsonRaw) return [];
+
+    let parsed: any;
+    try {
+      parsed = repairJson(jsonRaw);
+    } catch {
+      try { parsed = JSON.parse(jsonRaw); } catch { return null; }
+    }
+    if (!parsed || !Array.isArray(parsed.instrucciones)) return [];
+
+    const validChapterNumbers = new Set(chapterIndex.map(c => c.numero));
+
+    const valid: EditorialInstruction[] = [];
+    for (const raw of parsed.instrucciones) {
+      if (!raw || typeof raw !== "object") continue;
+      // Coerción de capitulos_afectados: aceptamos números o strings numéricos.
+      const capsRaw: any[] = Array.isArray(raw.capitulos_afectados) ? raw.capitulos_afectados : [];
+      const caps = capsRaw
+        .map(n => (typeof n === "number" ? n : parseInt(String(n), 10)))
+        .filter(n => Number.isFinite(n) && validChapterNumbers.has(n));
+      if (caps.length === 0) continue;
+
+      const descripcion = String(raw.descripcion || "").trim();
+      const instrucciones_correccion = String(raw.instrucciones_correccion || "").trim();
+      if (!descripcion && !instrucciones_correccion) continue;
+
+      const tipoRaw = String(raw.tipo || "estructural").toLowerCase();
+      const tipo: EditorialInstruction["tipo"] =
+        tipoRaw === "eliminar" || tipoRaw === "puntual" || tipoRaw === "estructural"
+          ? (tipoRaw as any)
+          : "estructural";
+
+      const prioridadRaw = String(raw.prioridad || "media").toLowerCase();
+      const prioridad: EditorialInstruction["prioridad"] =
+        prioridadRaw === "alta" || prioridadRaw === "baja" ? (prioridadRaw as any) : "media";
+
+      const categoria = String(raw.categoria || "otro").toLowerCase();
+
+      valid.push({
+        capitulos_afectados: caps,
+        categoria,
+        descripcion: descripcion || instrucciones_correccion.slice(0, 120),
+        instrucciones_correccion: instrucciones_correccion || descripcion,
+        elementos_a_preservar: raw.elementos_a_preservar ? String(raw.elementos_a_preservar) : undefined,
+        prioridad,
+        tipo,
+      });
+    }
+    return valid;
+  }
+
   private async groundEditorialInstructions(
     project: Project,
     originalNotes: string,
     draftInstructions: EditorialInstruction[],
     worldBibleData: ParsedWorldBible,
     allChapters: Chapter[],
+    isSystemReview: boolean = false,
   ): Promise<EditorialInstruction[]> {
     if (draftInstructions.length === 0) return [];
 
@@ -4897,6 +4997,22 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           message: `Anclaje: ${dropped.length} instrucción(es) descartada(s) por no encontrar referencia real o contradecir la canon:\n${droppedSummary}`,
           agentRole: "editor",
         });
+      }
+
+      // Fix 13: si las instrucciones vienen del PROPIO SISTEMA (Holístico/Beta) y
+      // el refiner las descartó TODAS, casi siempre es porque el refiner exige
+      // "frase literal del texto" y los lectores tienen prohibido citar literal.
+      // En ese caso fallback a los borradores: vienen del propio sistema y son
+      // por construcción coherentes con la novela (nadie los inventó). Los caps
+      // que existen ya están filtrados en extractAutoInstructionsFromReview.
+      if (isSystemReview && refined.length === 0 && draftInstructions.length > 0) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `Refiner descartó las ${draftInstructions.length} instrucción(es) del informe automático (Holístico/Beta). Aplicando fallback: se usan tal cual porque vienen del propio sistema y referencian capítulos verificados (Fix 13). Si alguna no encaja con la canon, deselecciónala en la previsualización.`,
+          agentRole: "editor",
+        });
+        return draftInstructions;
       }
 
       return refined.length > 0 ? refined : draftInstructions;
@@ -6063,12 +6179,16 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         const draftInstructions = parseResult.result?.instrucciones || [];
 
         // ── SEGUNDA PASADA: anclaje contra contenido real + canon ───────
+        // Fix 13: detectamos también aquí si las notas son un informe del sistema
+        // (Holístico/Beta) para activar el fallback protector del refiner.
+        const isSystemReviewApply = notesText.includes("<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->");
         instructions = await this.groundEditorialInstructions(
           project,
           notesText,
           draftInstructions,
           worldBibleData,
           allChapters,
+          isSystemReviewApply,
         );
 
         if (instructions.length === 0) {

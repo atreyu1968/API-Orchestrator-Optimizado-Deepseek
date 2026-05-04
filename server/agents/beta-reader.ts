@@ -72,6 +72,41 @@ Acabas de cerrar el libro. Vas a redactar tu reacción ordenada. Sigue estas reg
 ## ¿LO RECOMENDARÍA?
 [Sí/no/condicional. Y a quién. Una o dos frases. Honestidad por encima de cortesía.]
 
+## INSTRUCCIONES AUTO-APLICABLES (JSON)
+
+Después de tus impresiones en lenguaje natural, REPITE los puntos de "## SI FUERA EL AUTOR, CAMBIARÍA..." en formato JSON estructurado entre estos marcadores (no los modifiques, no añadas otros):
+
+<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->
+\`\`\`json
+{
+  "instrucciones": [
+    {
+      "capitulos_afectados": [18],
+      "categoria": "ritmo",
+      "descripcion": "Cap 18 demasiado largo y expositivo, me sacó de la lectura.",
+      "instrucciones_correccion": "Acortar el cap 18 a la mitad eliminando exposición disfrazada de diálogo; condensar la información clave en una escena de acción.",
+      "tipo": "estructural",
+      "prioridad": "media"
+    }
+  ]
+}
+\`\`\`
+<!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->
+
+REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
+- Un objeto por cada punto que escribiste en "## SI FUERA EL AUTOR, CAMBIARÍA...". Si pusiste 5 puntos arriba, el JSON tiene 5 objetos.
+- "capitulos_afectados": array de NÚMEROS (no strings). Prólogo = 0, epílogo = -1, nota del autor = -2.
+- "categoria": exactamente una de: "trama", "personaje", "ritmo", "continuidad", "dialogo", "estilo", "descripcion", "otro".
+- "tipo":
+  - "estructural": lo habitual para un lector beta — acortar, fusionar, mover una escena, reescribir el clímax, dar más espacio a un personaje. Tu valor está en la sensación de lectura, casi siempre es estructural.
+  - "puntual": solo si pides un retoque concreto de 1-2 párrafos.
+  - "eliminar": SOLO si dijiste literalmente "me cargaría el cap X", "eliminaría/quitaría el cap Y entero". Si dijiste "haría más corto" → es "estructural", NO "eliminar".
+- "prioridad": "alta" para lo que más te sacó del libro, "media" para incomodidades, "baja" para pulidos.
+- "descripcion": 1 frase que el usuario verá en la previsualización.
+- "instrucciones_correccion": 1-3 frases con la orden concreta al narrador. Reformula tu impresión de lector como orden ejecutable.
+- Si no tienes sugerencias accionables, devuelve \`{"instrucciones": []}\` entre los marcadores.
+- NO añadas comentarios ni markdown dentro del JSON.
+
 5. **PROHIBIDO ABSOLUTO**:
    - NO uses emojis.
    - NO uses lenguaje de marketing ni blurb ("imperdible", "una joya", "magistral").

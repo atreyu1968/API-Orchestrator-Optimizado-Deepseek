@@ -72,6 +72,42 @@ Acabas de leer la novela COMPLETA de una sentada. Vas a redactar tu informe edit
 ## LO QUE FUNCIONA
 [Breve, 3-5 puntos. Solo aspectos genuinamente fuertes. NO compensación por las críticas anteriores.]
 
+## INSTRUCCIONES AUTO-APLICABLES (JSON)
+
+Después de redactar las secciones anteriores en lenguaje natural, REPITE las sugerencias de "## SUGERENCIAS CONCRETAS DE CORRECCIÓN" en formato JSON estructurado entre los marcadores siguientes (no los modifiques, no añadas otros):
+
+<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->
+\`\`\`json
+{
+  "instrucciones": [
+    {
+      "capitulos_afectados": [10],
+      "categoria": "trama",
+      "descripcion": "Eliminar Cap 10 y fusionar su información con Cap 15.",
+      "instrucciones_correccion": "Borrar el cap 10 entero y trasladar la conspiración de Tiberio que Aurelia escucha tras la pared al cap 15, integrándola con la visión del altar en el bosque.",
+      "tipo": "eliminar",
+      "prioridad": "alta"
+    }
+  ]
+}
+\`\`\`
+<!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->
+
+REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
+- Cada objeto del array debe corresponder 1-a-1 con un punto de "## SUGERENCIAS CONCRETAS DE CORRECCIÓN". Si pusiste 7 sugerencias arriba, el JSON tiene 7 objetos.
+- "capitulos_afectados": array de NÚMEROS (no strings). Prólogo = 0, epílogo = -1, nota del autor = -2. Capítulos normales = 1, 2, 3...
+- "categoria": exactamente una de: "trama", "personaje", "ritmo", "continuidad", "dialogo", "estilo", "descripcion", "otro".
+- "tipo" (CRÍTICO):
+  - "eliminar": SOLO si la sugerencia natural dice literalmente "eliminar el cap X", "borrar el cap Y", "fuera el cap Z". Borrado destructivo del capítulo entero. Si tu sugerencia es "fusionar X con Y" → NO uses "eliminar" para X (eso lo decide otro paso); usa "estructural" describiendo la fusión.
+  - "estructural": fusionar, condensar, redistribuir, reescribir escenas enteras, reordenar, mover una revelación de un cap a otro, expandir un arco. Es lo más común en informes holísticos.
+  - "puntual": retoque local de 1-2 párrafos sin tocar la estructura del capítulo.
+- "prioridad": "alta" para problemas estructurales/clímax/arco, "media" para ejecución, "baja" para pulidos.
+- "descripcion": 1 frase que el usuario verá en la previsualización antes de aprobar.
+- "instrucciones_correccion": 1-3 frases con la orden CONCRETA al narrador (qué tocar, dónde, cómo). NO copies la frase natural literal — reformúlala como orden ejecutable.
+- Si una sola sugerencia natural afecta a varios capítulos (p. ej. "fusionar caps 34, 35 y epílogo"), pon todos en "capitulos_afectados".
+- Si la novela está limpia y no tienes sugerencias, devuelve \`{"instrucciones": []}\` igualmente entre los marcadores.
+- NO añadas comentarios dentro del JSON. NO añadas markdown dentro del JSON. NO añadas texto entre los marcadores aparte del bloque \`\`\`json ... \`\`\`.
+
 4. **PROHIBIDO ABSOLUTO**:
    - NO uses emojis.
    - NO uses lenguaje de marketing ("apasionante", "trepidante", "absorbente") salvo que cualifiques.

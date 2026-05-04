@@ -1,0 +1,97 @@
+# INFORME EDITORIAL HOLÍSTICO
+
+## VEREDICTO GLOBAL
+Tu manuscrito tiene una premisa magnética —una esclava que oye el vino— y momentos de prosa que logran transmitir la textura del mundo que intentas construir. Sin embargo, la novela arrastra tres problemas estructurales que la lastran: un segundo acto que duplica escenas funcionales sin avanzar la trama, un clímax que se resuelve por intervención externa (Publio) en lugar de por las acciones de la protagonista, y un epílogo que mata la tensión final al alargar innecesariamente la resolución. Los arcos de personaje secundario, especialmente el de Tito y Helena, quedan inconclusos o se resuelven fuera de escena. La novela necesita una cirugía de ritmo en los caps 10-25 y una reestructuración del tercer acto para que el clímax pertenezca a Aurelia, no a un deus ex machina senatorial. El material de base es sólido; la ejecución actual tiene un 40% de relleno que debe podarse.
+
+## PROBLEMAS ESTRUCTURALES (crítico)
+
+1. **El segundo acto es un bucle repetitivo de escenas calcadas**  
+   Entre los caps 10 y 25, la novela repite hasta cuatro veces la misma secuencia: Aurelia es llevada a la bodega, escucha un vino, Tiberio la presiona, ella regresa a su cuarto. Los caps 13, 17, 21 y 29 son funcionalmente idénticos. La información que aporta cada uno podría condensarse en dos escenas. A esto se suma que Caps 10 ("La Noche de los Susurros") y 24 ("La Noche de los Cuchillos") son dos intentos de fuga paralelos que se cancelan de manera casi idéntica. Esto da una sensación de circularidad que agota al lector antes del tercer acto.
+
+2. **El clímax se resuelve por intervención externa, no por la protagonista**  
+   En caps 31-32, Publio Marcio aparece con soldados romanos para detener a Tiberio. Esta es una solución externa que roba a Aurelia su agencia. La protagonista ha pasado 30 capítulos desarrollando su don, planeando su sabotaje y forjando alianzas; que el conflicto se resuelva porque un senador secundario decide traicionar a Tiberio devalúa todo el arco de Aurelia. La novela necesita que el clímax sea consecuencia directa de sus acciones —el sabotaje del vino debería tener consecuencias inmediatas que desencadenen la caída de Tiberio sin necesidad de soldados romanos.
+
+3. **El epílogo (Cap -1) alarga una resolución que ya estaba completa en el Cap 35**  
+   El Cap 35 cierra el arco emocional de Aurelia: ella oye la vid silvestre, pronuncia su nueva filosofía del vino ("será dulce") y el trío llega a la aldea. El epílogo añade veinte páginas que no aportan nueva información: el día a día en la aldea, un jinete que pregunta por ella y se va, una escena de cata nocturna. La tensión se disipa por completo. El epílogo debería eliminarse o reducirse a un párrafo de coda al final del Cap 35.
+
+## ARCOS DE PERSONAJE (mayor)
+
+**Aurelia** — Su arco de "esclava pasiva a mujer libre" está bien trazado en trazo grueso, pero falla en las transiciones. En el cap 13, después de que Genucio la acuse de robo, ella decide "ya no tener miedo", pero esa transformación ocurre entre un párrafo y otro sin trabajo interno. Necesitas mostrar el proceso de decisión, no solo declararlo. Además, su motivación pasa de "sobrevivir" a "salvar a Tito" sin que el vínculo entre ellos se haya desarrollado lo suficiente (pasa del cap 14 al cap 16 en un solo encuentro).
+
+**Tito** — Su arco promete una venganza contra Tiberio por la muerte de su madre (revelación en cap 16), pero esto nunca se ejecuta. En el clímax, Tito está herido e inmovilizado; su enfrentamiento con Tiberio en el cap 33 es un forcejeo breve que no resuelve su historia personal. Su pasado como gladiador (cap 16) se menciona pero nunca se utiliza narrativamente. O eliminas la subtrama de venganza o le das un momento de resolución activa.
+
+**Helena** — Es presentada como un personaje con un pasado trágico (Atenas, sacerdotisa de Dionisio, cap 12), pero esa historia no tiene consecuencias en la trama. Su conocimiento de hierbas y ungüentos es funcional, pero nunca se convierte en un factor determinante. Además, "muere" fuera de escena (Helena se queda en la aldea mientras Aurelia y Tito huyen, cap 33), y su destino final es ambiguo. Necesitas decidir si es un personaje principal o un recurso argumental.
+
+**Tiberio** — La revelación de que busca el *vinum perfectum* para expiar la muerte de su hijo (cap 9) es poderosa, pero se introduce demasiado tarde (cap 17) y no modifica su comportamiento posterior. El lector ya lo ha categorizado como "villano obsesivo", y la motivación paternal no cambia la percepción. Necesitas sembrar esta información antes, idealmente en cap 4 o 5, para que humanice al personaje desde el principio.
+
+## CONTINUIDAD Y COHERENCIA INTERNA (mayor)
+
+1. **Herida de Aurelia en el hombro** — En cap 24, Aurelia cae de la yegua y se lastima el hombro derecho. El dolor se menciona en caps 25, 28 y 33 como limitante. Pero en cap 30 ella carga a Tito escaleras arriba sin que la herida sea un factor, y en cap 34 corre y trepa sin secuelas. O la herida es grave y debe tener consecuencias sostenidas, o eliminas su mención.
+
+2. **Las langostas (cap 2)** — La plaga de langostas es presentada como un evento catastrófico que arruina la cosecha de Publio. Pero nunca se vuelve a mencionar, ni siquiera cuando Tiberio habla de su vino o cuando Publio reaparece en cap 21. Si vas a usar un evento así, debe tener consecuencias económicas o narrativas que perduren.
+
+3. **El saquito de hierbas de Helena** — En cap 12, Helena da a Aurelia un saquito de hierbas; en cap 16, Tito menciona que Helena le ha dado un somnífero; en cap 22, Helena tiene "ungüento de adormidera y mandrágora"; en cap 27, Aurelia usa un "extracto de hongos" para sabotear el vino. La progresión de las capacidades de Helena no está explicada. Si ella tiene acceso a todos estos recursos, ¿por qué no los usó antes? ¿Por qué Tito no los conocía?
+
+4. **Los poderes de Aurelia** — En cap 0 (prólogo), oye el vino a distancia sin tocarlo. En cap 3, necesita poner las manos sobre el barro. En cap 9, vuelve a oír a distancia desde su cuarto. En cap 19, en el calabozo, oye la tierra y las raíces. Las reglas del don cambian según lo que necesite la escena. Debes establecer límites claros para el don y mantenerlos.
+
+## RITMO Y TENSIÓN (mayor)
+
+**Arranque (caps 0-3):** Efectivo. El prólogo establece el don y el conflicto madre-hija; caps 1-3 presentan la plaga, la prueba y la venta de Aurelia. El ritmo es ágil, cada capítulo aporta información nueva.
+
+**Desarrollo medio (caps 4-25):** Aquí está el problema mayor. La secuencia "Aurelia llega a la villa de Tiberio, es probada, escapa al bosque, es capturada" se repite tres veces: cap 8 (llegada y primera cata), caps 10-14 (descubre el ritual, primera fuga fallida), caps 18-20 (acusada de robo, encerrada en calabozo), caps 24-25 (segundo intento de fuga, castigo de Tito). Cada ciclo dura aprox. 5 capítulos y sigue la misma estructura: tensión → intento de acción → fracaso → castigo. Esto genera fatiga. El lector sabe que Aurelia no va a escapar hasta el tercer acto, pero el texto insiste en hacerle intentar una y otra vez. Debes reducirlo a dos ciclos máximos y que el segundo ciclo tenga consecuencias que cambien la situación.
+
+**Tercer acto (caps 26-33):** El ritmo se acelera de forma descontrolada. La cata final, la conspiración de Publio, el incendio y la huida ocurren en 7 capítulos. Comparado con los 20 capítulos que toma recorrer el segundo acto, la resolución se siente atropellada. Necesitas redistribuir el peso: recortar el segundo acto y expandir las consecuencias del sabotaje de Aurelia.
+
+**Resolución (caps 34-35 y Epílogo):** Estos tres capítulos son excesivos para lo que cuentan. Cap 34: caminan, duermen junto al arroyo, amanecer. Cap 35: caminan, llegan a la aldea. Epílogo: tres años después, vida en la aldea, jinete que pregunta y se va. Podrías fusionar caps 34-35 y reducir el epílogo a un párrafo de cierre al final del cap 35.
+
+## ESCENAS Y CAPÍTULOS PROBLEMÁTICOS (mayor/menor)
+
+**Cap 10 — "La Noche de los Susurros"** — Aurelia escucha la conspiración de Tiberio a través de la pared. Esta información es crucial, pero luego ella no actúa en consecuencia hasta cap 22. Once capítulos después. Necesitas que esta revelación tenga un efecto inmediato en su comportamiento, aunque sea interno.
+
+**Cap 14 — "El Toque de una Mano"** — Escena clave para el desarrollo de la relación Aurelia-Tito. Pero ocurre sin que haya habido una construcción previa suficiente. En cap 7, Tito es el capataz que la trata con dureza; en cap 8 apenas cruzan palabra; en cap 14 ya hay intimidad emocional. Faltan escenas intermedias que muestren la evolución de la confianza.
+
+**Cap 22 — "El Plan de Fuga"** — Helena revela que tiene un cofre con objetos de su pasado en Atenas. Esta escena promete un trasfondo que luego no se utiliza. El cuchillo, las monedas y el frasco aparecen pero nunca se conectan con la trama principal. Si Helena tiene un pasado relevante, debe manifestarse en acciones, no solo en exposition.
+
+**Cap 30 — "La Última Noche de Esclava"** — Elaborado plan de fuga (somnífero, llave, cuchillo, caballos, carro) que fracasa por completo en cap 31. Todo el capítulo es información que no llega a ejecutarse. Puedes recortar el plan y que el fracaso sea más rápido, o hacer que parte del plan sí funcione.
+
+**Caps 34-35 y Epílogo** — Ver sección de ritmo. Los tres capítulos juntos suman aprox. 8.000 palabras para una resolución que podría contarse en 2.000. Sugiero fusionarlos y eliminar el epílogo, cerrando con la imagen del cap 35 (el trío llegando a la aldea) o con un breve salto temporal de un párrafo.
+
+## REPETICIONES Y CLICHÉS (menor)
+
+1. **Escenas de cata de vino** — Se repiten al menos 7 veces (caps 3, 9, 13, 17, 21, 27, 29) con la misma estructura: Aurelia pone la mano en el barro, cierra los ojos, describe el vino, Tiberio reacciona. Puedes mantener 2-3 escenas de cata y variar las otras: que ella describa el vino desde la distancia, que alguien más describa y ella confirme, que la cata ocurra durante una acción paralela.
+
+2. **Encierros de Aurelia** — Es encerrada en: el calabozo (cap 18), su cuarto (cap 25), su cuarto de nuevo (cap 26), y antes había sido retenida en la villa de Publio (cap 5). Cada encierro sigue la misma pauta: oscuridad, soledad, reflexión, determinación renovada. Varía los contextos o reduce el número.
+
+3. **Diálogos expositivos sobre el culto báquico** — La información sobre Baco y los rituales se entrega en diálogos donde un personaje le explica a otro (caps 15, 16, 22). Esto lastra el ritmo. Muestra los rituales en acción en lugar de explicarlos.
+
+4. **Cliché del "elegido"** — Aurelia es la única persona en el mundo con este don. El cliché en sí no es malo, pero no se subvierte ni se problematiza. ¿Qué implicaciones tiene ser la única? ¿Hay otros dones? ¿Por qué ella? La novela no explora estas preguntas.
+
+## SUGERENCIAS CONCRETAS DE CORRECCIÓN
+
+1. **Eliminar el Cap 10 ("La Noche de los Susurros")** y fusionar su información (la conspiración de Tiberio) con el Cap 15, cuando Aurelia ve el ritual en el bosque. Así la revelación llega junto con la experiencia visual del altar, y tiene más impacto.
+
+2. **Fusionar Caps 34, 35 y el Epílogo en un solo capítulo de cierre** que termine con la llegada a la aldea y un salto temporal de un párrafo que muestre la vida establecida. Eliminar la escena del jinete que pregunta por Aurelia, porque ya sabíamos que Publio busca a los miembros del culto, no necesitamos un recordatorio que alarga sin aportar.
+
+3. **Reescribir el clímax (caps 31-32)** para que Publio no aparezca con soldados. En su lugar, que el sabotaje de Aurelia al *vinum perfectum* (cap 29) tenga un efecto inmediato y visible: que el vino fermentado explote la tinaja, que el incendio resultante atrape a Tiberio, y que Aurelia tenga que elegir entre salvarse o salvar a Tito. Publio puede llegar después, cuando todo ha terminado, para encontrar las ruinas.
+
+4. **Añadir una escena entre caps 7 y 14 que desarrolle la relación Aurelia-Tito** sin diálogo explícito. Por ejemplo: que él le deje agua extra en el camino, que ella lo vea tratar bien a un animal, que compartan un momento de silencio durante una tormenta. Esto justificará la intimidad del cap 14.
+
+5. **Podar todas las escenas de cata de vino** dejando solo las de caps 3, 9 y 29. Las demás (13, 17, 21, 27) deben transformarse en escenas donde Aurelia interactúe con el vino de otras maneras: trasvasando, mezclando, oliendo, observando, sin el ritual de "mano sobre el barro" cada vez.
+
+6. **Mover la revelación de la motivación de Tiberio (hijo muerto) del cap 9 al cap 4**, cuando Publio y Tiberio negocian. Que Tiberio mencione que busca "un vino que no mate como el mío mató a mi hijo" durante el regateo. Esto humanizará al personaje desde su presentación.
+
+7. **Eliminar la subtrama de venganza de Tito contra Tiberio** (madre muerta revelada en cap 16). No se resuelve y solo añade peso muerto. Si quieres mantenerla, debe tener una escena de confrontación directa en el clímax, no quedar sepultada bajo el incendio.
+
+8. **Unificar las reglas del don de Aurelia**: necesita contacto físico para oír el vino, y puede oír la tierra solo en condiciones de silencio extremo. Añade una escena en cap 3 o cap 6 donde ella misma explique estas limitaciones a otro personaje (su madre, Helena) para que queden establecidas.
+
+## LO QUE FUNCIONA
+
+1. **El prólogo (Cap 0)** — Es la mejor pieza del manuscrito. La escena de Aurelia niña oyendo el vino, su madre callándola, y el descubrimiento del envenenamiento de Genucio establece el don, el conflicto y el tono en 8 páginas. Es quirúrgico.
+
+2. **La prosa sensorial en las escenas de bodega** — Cuando describes los olores, texturas y sonidos del vino fermentando, logras una inmersión que transporta al lector. Esto es especialmente fuerte en caps 3, 9 y 29. Mantén esta voz.
+
+3. **El personaje de Rufina** — Aunque aparece poco (prólogo, caps 1 y 6), su arco está completo y coherente. Su consejo final ("Vive") resuena en todo el manuscrito y da peso emocional a las decisiones de Aurelia.
+
+4. **La imagen del "vino que canta"** como metáfora de la libertad en el epílogo — El cierre con Aurelia oyendo el vino de su propia cosecha y diciendo "canta a casa" es el mejor momento del final. Debes conservar esta imagen (idealmente trasladada al cap 35 si fusionas los capítulos finales) y eliminar el resto del epílogo.
+
+5. **El arco de Helena: historia de Atenas** — Aunque está infradesarrollada, la idea de una ex sacerdotisa de Dionisio exiliada tiene potencial. Si decides expandirla (no es necesario para la trama principal, pero podría enriquecer una secuela), conectar sus conocimientos con el sabotaje del vino de manera más activa fortalecería el tercer acto.
