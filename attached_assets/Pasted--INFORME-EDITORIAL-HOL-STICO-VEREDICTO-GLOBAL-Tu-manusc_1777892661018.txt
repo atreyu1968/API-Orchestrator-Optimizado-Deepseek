@@ -1,0 +1,172 @@
+# INFORME EDITORIAL HOLÍSTICO
+
+## VEREDICTO GLOBAL
+Tu manuscrito tiene una premisa original y una ambientación histórica lograda, con momentos de gran potencia sensorial. Sin embargo, el andamiaje narrativo tiene fisuras estructurales que lastran el conjunto. La novela padece de un ritmo descompensado: los primeros treinta capítulos avanzan con lentitud, acumulando descripciones y escenas de trabajo que no siempre aportan a la trama, mientras que el clímax se precipita en los últimos capítulos y se resuelve mediante intervenciones externas que restan agencia a tu protagonista. Los problemas de continuidad —heridas que aparecen y desaparecen, objetos que cambian de manos sin control— rompen la ilusión de realidad. A esto se suman arcos secundarios inconclusos (Genucio muere de forma casi accidental) y personajes que cambian de decisión sin transición (Helena). La novela necesita una reestructuración quirúrgica: condensar el desarrollo medio, corregir las incoherencias físicas y dar a Aurelia un papel más activo en su propia liberación.
+
+## PROBLEMAS ESTRUCTURALES (crítico)
+
+1. **Ritmo descompensado entre desarrollo medio y clímax**  
+   Los capítulos 7-18 se extienden en descripciones del trabajo en la villa, la rutina de los esclavos y las conversaciones con Helena que no avanzan la trama. Por el contrario, los capítulos 30-33 comprimen la traición de Publio, el enfrentamiento final, el incendio y la huida en apenas cuatro capítulos, sin darles espacio para respirar. El lector pasa de una cadencia pausada a un torbellino de acción mal articulado.
+
+2. **Deus ex machina de Publio Marcio**  
+   La traición de Publio en el capítulo 31 es la llave que resuelve el conflicto, pero no hay suficiente foreshadowing. Publio desaparece de la narración entre el capítulo 5 y el 20, y cuando reaparece, su cambio de bando se siente como un artificio del autor, no como una decisión orgánica del personaje. Esto arruina la sensación de que Aurelia conquista su libertad por mérito propio.
+
+3. **Muerte anticlimática de Genucio**  
+   Genucio es construido como un antagonista central a lo largo de toda la novela, pero muere de forma casi anecdótica en el capítulo 31: un soldado lo apuñala durante el caos. No hay un enfrentamiento directo con Tito ni con Aurelia que cierre su arco, lo que deja una sensación de frustración narrativa.
+
+4. **Abandono del «don de oír la tierra»**  
+   En el capítulo 18, Aurelia descubre que puede oír las raíces, la tierra, el agua subterránea. Es un punto de inflexión poderoso que promete una evolución de su don. Sin embargo, esta habilidad nunca se vuelve a utilizar de forma significativa en los capítulos posteriores. Queda como un hilo suelto que prometía y no cumplió.
+
+## ARCOS DE PERSONAJE (mayor)
+
+**Aurelia** — El arco de esclava sumisa a mujer libre está bien trazado, pero su crecimiento no es progresivo: avanza a saltos, impulsado más por las acciones de otros (Tito, Helena, Publio) que por sus propias decisiones. Su momento de mayor agencia —sabotear el vino— ocurre fuera de escena, entre los capítulos 28 y 29, y se nos cuenta en lugar de mostrarse. Necesitas que el sabotaje sea una escena central, con tensión y riesgo.
+
+**Tito** — Su motivación vengativa contra Tiberio es sólida y se revela a tiempo (cap 15). Sin embargo, su transformación de capataz brutal a aliado enamorado ocurre demasiado rápido. Apenas hay conflicto interno entre la lealtad a su amo y su atracción por Aurelia. Sus heridas, además, fluctúan de forma inverosímil (ver sección de continuidad).
+
+**Helena** — Su arco es contradictorio. En el capítulo 22 afirma que se quedará en la villa porque «no tiene adónde ir». Pero en el capítulo 32 huye con Aurelia y Tito, y en el epílogo vive con ellos en la aldea. Esta inversión de decisión no se muestra ni se justifica. Helena necesita una escena donde decida huir o, si prefieres mantener su sacrificio, que muera heroicamente en el incendio.
+
+**Tiberio Marcelo** — Es el villano más coherente de la novela. Su obsesión por el *vinum perfectum* está bien motivada (la muerte de su hijo) y su muerte autoinfligida es poéticamente justa. Funciona.
+
+**Genucio** — Arco plano de antagonista unidimensional. No tiene matices ni evolución. Su muerte debería ser un clímax de su rivalidad con Tito, no un accidente.
+
+## CONTINUIDAD Y COHERENCIA INTERNA (mayor)
+
+1. **Heridas de Tito** — Tito recibe treinta latigazos en el capítulo 24 y es apuñalado en el antebrazo en el capítulo 30. Sin embargo, en el capítulo 32 corre, forcejea y sube escaleras sin que estas heridas parezcan afectarle de forma realista. Además, se menciona repetidamente una «herida en el costado» (caps 31-33) que no se ha producido en ninguna escena anterior. Necesitas decidir cuándo y cómo recibe cada herida y ser consistente con sus consecuencias físicas.
+
+2. **El soporífero** — En el capítulo 23, Tito lleva el somnífero de Helena, que se rompe durante la pelea con Genucio. En el capítulo 30, Tito afirma haber usado el soporífero para escapar de la celda. No se explica de dónde sacó otro frasco. Esta contradicción debe corregirse: o el frasco no se rompe, o Aurelia logra pasarle el suyo a escondidas.
+
+3. **Transición del salón a la bodega (caps 31-32)** — Al final del capítulo 31, Aurelia y Tito están en el salón, arrestados por los soldados. Al inicio del capítulo 32, están en la bodega con la puerta cerrándose a sus espaldas. No hay transición narrativa. Debes escribir la escena de su huida durante el caos.
+
+4. **Ungüentos de Helena** — Helena proporciona un ungüento de adormidera en los capítulos 11, 13, 17 y 18. Es un recurso narrativo usado en exceso y sin control. Unifica todos estos ungüentos en un único frasco importante, que sea el que usen en el clímax.
+
+5. **Helena decide huir sin transición** — Como se señaló en arcos, su cambio de «me quedo» (cap 22) a «huyo» (cap 32) no está justificado. Añade una escena en los capítulos 30-31 donde Helena ve una oportunidad o cambia de opinión.
+
+## RITMO Y TENSIÓN (mayor)
+
+**Arranque (prólogo - cap 6):** Eficaz. El prólogo engancha, y la venta de Aurelia genera una tensión que promete una novela de ritmo ágil.
+
+**Desarrollo medio (caps 7-18):** Pérdida de tensión. Los capítulos se alargan en descripciones del trabajo en la villa, las rutinas de los esclavos y conversaciones con Helena que no siempre aportan. El ritmo se vuelve repetitivo: escena de trabajo, escena con Helena, escena con Tito, nueva escena de trabajo. Sugiero reducir y fusionar los capítulos 7-9, 11 y 12 en dos o tres capítulos más dinámicos.
+
+**Tercer acto (caps 21-29):** Recuperación parcial de la tensión. El plan de fuga y el ritual en el bosque son puntos álgidos. Sin embargo, el encarcelamiento de Aurelia y los azotes de Tito (caps 24-25) vuelven a ralentizar el ritmo antes del clímax.
+
+**Clímax (caps 30-33):** Demasiado comprimido. La traición de Publio, el enfrentamiento en la bodega, el incendio y la huida ocurren en apenas cuatro capítulos. La falta de espacio ahoga las emociones y la credibilidad de las acciones. Necesitas expandir y reordenar esta sección.
+
+**Resolución (cap 34 - epílogo):** El tono idílico del epílogo contrasta con la dureza del resto de la novela. Funciona como cierre emocional, pero deja algunos cabos sueltos (¿y los emisarios de Publio?).
+
+## ESCENAS Y CAPÍTULOS PROBLEMÁTICOS (mayor/menor)
+
+- **Cap 10 — «La Mano del Capataz»:** Escena muy gráfica del castigo. Es efectiva pero rompe el ritmo del arranque. Considera si es necesaria o si puedes suavizarla.
+- **Caps 7-9, 11-12 — Estancia en la villa:** Se repite la estructura: trabajo, conversación con Helena, tensión con Genucio. Fusionar o reducir.
+- **Cap 18 — «El Calabozo de la Tierra»:** Excelente capítulo de introspección, pero el «don de oír la tierra» que aquí se presenta no tiene continuidad. Si lo mantienes, úsalo después.
+- **Caps 30-31 — Cata final y traición:** La transición entre la cata y la llegada de los soldados es confusa. Publio traiciona de forma repentina. Necesitas más engranaje narrativo.
+- **Cap 32 — «El Incendio de la Bodega»:** La entrada a la bodega no está justificada. ¿Cómo llegan Tito y Aurelia allí? Reescribe la secuencia.
+
+## REPETICIONES Y CLICHÉS (menor)
+
+- **Cliché narrativo:** El «don como maldición» no se subvierte; al final es simplemente una herramienta útil.
+- **Cliché de personaje:** La «vieja sabia» (Helena) que provee soluciones mágicas (ungüentos, conocimientos).
+- **Frase repetida:** «El vino canta / el vino gime / el coro de las ánforas» aparece con excesiva frecuencia. Variar el registro.
+- **Descripción recurrente:** «Olor a mosto y a barro húmedo», «tierra roja», «látigo que silba». Se repiten en casi todos los capítulos.
+
+## SUGERENCIAS CONCRETAS DE CORRECCIÓN
+
+1. **Condensar los capítulos 7-9, 11 y 12** en dos o tres capítulos más dinámicos. Fusiona las escenas de trabajo en el lagar, las conversaciones con Helena y los encuentros con Tito para eliminar redundancia descriptiva y acelerar el ritmo del segundo acto.
+
+2. **Reescribir la secuencia de los capítulos 31-32** para que la transición del salón a la bodega esté narrativamente clara. Añade una escena donde Tito y Aurelia escapen durante el caos de la llegada de los soldados, y donde Genucio muera en un enfrentamiento directo con Tito que cierre su arco.
+
+3. **Añadir foreshadowing de la traición de Publio** en sus reapariciones (caps 4-5 y 20-21). Puedes mostrar su codicia sin escrúpulos, su miedo a las represalias de Roma, o una comunicación secreta con mensajeros imperiales.
+
+4. **Unificar la trama del soporífero.** Decide un solo frasco: o bien Tito conserva el suyo (no se rompe en cap 23) y lo usa para escapar, o bien Aurelia le pasa el suyo durante la cata en el capítulo 30 de forma creíble (por ejemplo, escondido en el pan). Elimina la referencia al frasco roto.
+
+5. **Mostrar el cambio de decisión de Helena.** Añade una escena en el capítulo 31 donde Helena decide huir al ver que la villa arde o al comprender que su conocimiento de las hierbas puede ser útil en el camino. Elimina su afirmación de «me quedo» en el capítulo 22 o transfórmala en una duda.
+
+6. **Reintroducir el «don de oír la tierra»** en los capítulos 32-33. Que Aurelia lo use para encontrar la salida del acueducto, para sentir la presencia de los soldados en el bosque o para detectar un manantial donde beber.
+
+7. **Ajustar la progresión de las heridas de Tito.** Después de los treinta latigazos (cap 24) y la puñalada en el antebrazo (cap 30), Tito no debería poder correr ni forcejear en la huida. Haz que apenas pueda caminar apoyado en Aurelia, y que sea ella quien lo arrastre durante la mayor parte de la fuga. La puñalada en el costado debe tener una escena origen clara (por ejemplo, que se la dé Genucio en el enfrentamiento final que propongo en el punto 2).
+
+8. **Eliminar la redundancia de los ungüentos.** Unifica los ungüentos de adormidera y mandrágora en un único frasco que Helena entregue a Aurelia en el capítulo 11. Ese será el frasco clave que usarán en el clímax. Elimina las referencias a otros ungüentos en caps 13, 17 y 18.
+
+9. **Reducir la extensión de las descripciones sensoriales repetitivas** a lo largo de todo el manuscrito. Las referencias al «olor a mosto», «tierra roja» y «canto del vino» pierden efecto por repetición. Úsalas solo en momentos clave.
+
+## LO QUE FUNCIONA
+
+1. El prólogo: un golpe de efecto que establece el don y la voz narrativa. Funciona como gancho.
+2. La ambientación sensorial: la bodega, los olores, los sonidos del vino están muy bien logrados y crean una atmósfera única.
+3. El personaje de Tiberio: su obsesión trágica está bien motivada y su muerte es poéticamente justa.
+4. El romance entre Tito y Aurelia: la escena en el establo (cap 13) y el beso en el pasillo (cap 22) son momentos de alta tensión emocional.
+5. El epílogo: aunque idílico, ofrece un cierre emocional coherente con el viaje de la protagonista.
+
+## INSTRUCCIONES AUTO-APLICABLES (JSON)
+
+<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->
+```json
+{
+  "instrucciones": [
+    {
+      "capitulos_afectados": [7, 8, 9, 11, 12],
+      "categoria": "ritmo",
+      "descripcion": "Condensar los caps 7-9 y 11-12 fusionando escenas redundantes de trabajo y conversaciones con Helena.",
+      "instrucciones_correccion": "Fusionar los caps 7-9 en un único capítulo de llegada y primeros días, y los caps 11-12 en un solo capítulo de conversación con Helena y desarrollo de la relación con Tito. Eliminar descripciones repetitivas del lagar.",
+      "tipo": "estructural",
+      "prioridad": "alta"
+    },
+    {
+      "capitulos_afectados": [31, 32],
+      "categoria": "trama",
+      "descripcion": "Reescribir la transición entre los caps 31-32 para clarificar la huida del salón a la bodega y dar muerte directa a Genucio.",
+      "instrucciones_correccion": "Añadir escena en la que Tito y Aurelia escapan del salón durante el caos de la entrada de los soldados. Genucio los persigue y Tito lo enfrenta en un duelo breve, apuñalándolo mortalmente (cerrando su arco). Luego bajan a la bodega.",
+      "tipo": "estructural",
+      "prioridad": "alta"
+    },
+    {
+      "capitulos_afectados": [4, 5, 20, 21],
+      "categoria": "trama",
+      "descripcion": "Añadir foreshadowing de la traición de Publio en sus escenas de negociación para que no sea un deus ex machina.",
+      "instrucciones_correccion": "En caps 4-5, mostrar a Publio insistiendo en la viabilidad política del vino y mostrando inquietud por las consecuencias legales. En caps 20-21, añadir un momento en que Publio se comunica en secreto con un mensajero o expresa dudas sobre la lealtad a Tiberio.",
+      "tipo": "estructural",
+      "prioridad": "alta"
+    },
+    {
+      "capitulos_afectados": [23, 30],
+      "categoria": "continuidad",
+      "descripcion": "Unificar el soporífero para eliminar la contradicción entre el frasco roto y el usado.",
+      "instrucciones_correccion": "Eliminar la rotura del frasco en cap 23. Tito conserva el somnífero y lo usa para dormir a los guardias de la celda en cap 30. El mareo de Genucio en cap 23 se justifica por el golpe recibido, no por el olor.",
+      "tipo": "puntual",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [22, 32],
+      "categoria": "personaje",
+      "descripcion": "Mostrar el cambio de decisión de Helena sobre quedarse o huir.",
+      "instrucciones_correccion": "En cap 31, añadir una escena donde Helena ve el incendio y comprende que la villa será destruida, lo que la lleva a decidir huir con ellos. Eliminar su afirmación definitiva de 'me quedo' en cap 22, o convertirla en una duda que se resuelve en el clímax.",
+      "tipo": "estructural",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [18, 33, 34],
+      "categoria": "trama",
+      "descripcion": "Reintroducir el 'don de oír la tierra' en el tercer acto para darle relevancia.",
+      "instrucciones_correccion": "En cap 32 (huida por acueducto), que Aurelia use su don para oír el agua y encontrar la salida correcta. En cap 33 (huida por el bosque), que lo use para sentir la presencia de los soldados a lo lejos y desviar el camino.",
+      "tipo": "estructural",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [24, 25, 26, 27, 30, 31, 32, 33],
+      "categoria": "continuidad",
+      "descripcion": "Ajustar la progresión de las heridas de Tito para que sean físicamente coherentes.",
+      "instrucciones_correccion": "Añadir una escena en cap 24 donde la herida del costado de Tito se produce (por ejemplo, un guardia lo apuñala mientras está atado). Después de los 30 latigazos y la puñalada, Tito no debe poder correr. En la huida (caps 32-33), que apenas pueda caminar apoyado en Aurelia, que es quien lo arrastra. La puñalada del antebrazo en cap 30 debe ser superficial y no incapacitante.",
+      "tipo": "puntual",
+      "prioridad": "alta"
+    },
+    {
+      "capitulos_afectados": [11, 13, 17, 18],
+      "categoria": "continuidad",
+      "descripcion": "Unificar los ungüentos de Helena en un solo frasco clave.",
+      "instrucciones_correccion": "Mantener un único frasco de ungüento de adormidera y mandrágora, que Helena entrega a Aurelia en cap 11. Eliminar las referencias a otros ungüentos en caps 13, 17 y 18. Si Aurelia necesita alivio para el dolor, que use vendas o agua fría.",
+      "tipo": "puntual",
+      "prioridad": "baja"
+    }
+  ]
+}
+```
+<!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->
