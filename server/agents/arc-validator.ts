@@ -341,6 +341,97 @@ IMPORTANTE: Responde UNICAMENTE con JSON valido siguiendo el formato especificad
       result.milestonesChecked = milestonesForVolume.length;
       result.milestonesFulfilled = result.milestoneVerifications?.filter(mv => mv.isFulfilled).length || 0;
 
+      // Fix 12: SCORE Y PASSED DETERMINISTAS (no fiarse del LLM).
+      // El LLM tiende a aprobar con 95/100 incluso cuando solo resolvió 1 de 4
+      // hilos (caso real: novela "La Sal del Vino Amargo" — passed=true, 95/100,
+      // pero 3 de 4 arcos quedaron abiertos). Recalculamos aquí basados en datos
+      // observables: hitos requeridos cumplidos + hilos resueltos.
+      const requiredMilestones = milestonesForVolume.filter(m => m.isRequired);
+      const requiredFulfilled = result.milestoneVerifications?.filter(mv => {
+        const mDef = milestonesForVolume.find(m => m.id === mv.milestoneId);
+        return mv.isFulfilled && mDef?.isRequired;
+      }).length || 0;
+      const requiredRate = requiredMilestones.length > 0 ? requiredFulfilled / requiredMilestones.length : 1;
+
+      const totalThreads = activeThreads.length;
+      const resolvedThreads = result.threadProgressions?.filter(tp => tp.resolvedInVolume || tp.currentStatus === "resolved").length || 0;
+      const progressedThreads = result.threadProgressions?.filter(tp => tp.progressedInVolume || tp.resolvedInVolume).length || 0;
+      result.threadsResolved = resolvedThreads;
+      result.threadsProgressed = progressedThreads;
+
+      const isFinalVolume = input.volumeNumber >= input.totalVolumes;
+      const threadResolutionRate = totalThreads > 0 ? resolvedThreads / totalThreads : 1;
+      const threadProgressionRate = totalThreads > 0 ? progressedThreads / totalThreads : 1;
+
+      // Importancia de los hilos: para volumen final, los hilos "main"/"alta"
+      // DEBEN estar resueltos al 100%. Hilos secundarios pueden quedar abiertos
+      // pero penalizan el score.
+      const mainThreads = activeThreads.filter((t: any) => {
+        const imp = String(t.importance || "").toLowerCase();
+        return imp === "main" || imp === "alta" || imp === "high" || imp === "principal";
+      });
+      const mainResolvedCount = result.threadProgressions?.filter(tp => {
+        const tDef = activeThreads.find((t: any) => t.id === tp.threadId);
+        const imp = String((tDef as any)?.importance || "").toLowerCase();
+        const isMain = imp === "main" || imp === "alta" || imp === "high" || imp === "principal";
+        return isMain && (tp.resolvedInVolume || tp.currentStatus === "resolved");
+      }).length || 0;
+      const mainResolutionRate = mainThreads.length > 0 ? mainResolvedCount / mainThreads.length : 1;
+
+      let computedScore: number;
+      let computedPassed: boolean;
+      const computedFindings: string[] = [];
+
+      if (isFinalVolume) {
+        // Volumen final / novela única: todo debe cerrarse.
+        // Score = 50% required milestones + 30% main threads resolved + 20% all threads resolved.
+        computedScore = Math.round(
+          requiredRate * 50 +
+          mainResolutionRate * 30 +
+          threadResolutionRate * 20
+        );
+        // Passed solo si: 100% required milestones + 100% main threads resolved + >=80% all threads resolved.
+        computedPassed = requiredRate >= 1 && mainResolutionRate >= 1 && threadResolutionRate >= 0.8;
+
+        if (requiredRate < 1) {
+          const missing = requiredMilestones.filter(m => !result.milestoneVerifications?.some(mv => mv.milestoneId === m.id && mv.isFulfilled));
+          computedFindings.push(`${missing.length} hito(s) requerido(s) sin cumplir en el volumen final: ${missing.slice(0, 3).map(m => m.description.substring(0, 80)).join(" | ")}`);
+        }
+        if (mainResolutionRate < 1) {
+          const unresolvedMain = mainThreads.filter((t: any) => {
+            const tp = result.threadProgressions?.find(p => p.threadId === t.id);
+            return !(tp?.resolvedInVolume || tp?.currentStatus === "resolved");
+          });
+          computedFindings.push(`${unresolvedMain.length} hilo(s) PRINCIPAL(es) sin resolver al cierre de la novela: ${unresolvedMain.slice(0, 3).map((t: any) => t.threadName).join(" | ")}`);
+        }
+        if (threadResolutionRate < 0.8 && totalThreads > 0) {
+          const unresolved = result.threadProgressions?.filter(tp => !(tp.resolvedInVolume || tp.currentStatus === "resolved")) || [];
+          computedFindings.push(`Solo ${resolvedThreads}/${totalThreads} hilos resueltos (${Math.round(threadResolutionRate * 100)}%). Quedan abiertos: ${unresolved.slice(0, 5).map(tp => tp.threadName).join(" | ")}`);
+        }
+      } else {
+        // Volumen intermedio: hilos pueden quedar abiertos. Solo exigimos hitos requeridos.
+        // Score = 60% required milestones + 25% threads progressed + 15% threads resolved.
+        computedScore = Math.round(
+          requiredRate * 60 +
+          threadProgressionRate * 25 +
+          threadResolutionRate * 15
+        );
+        computedPassed = requiredRate >= 1 && threadProgressionRate >= 0.5;
+      }
+
+      // Aplicar override solo si difiere significativamente del LLM (evita
+      // sobrescribir cuando el LLM ya está conservador).
+      const llmScore = typeof result.overallScore === "number" ? result.overallScore : 50;
+      const llmPassed = result.passed === true;
+      if (llmScore - computedScore >= 15 || (llmPassed && !computedPassed)) {
+        console.log(`[ArcValidator] Override determinista: LLM dijo ${llmScore}/${llmPassed ? "PASS" : "FAIL"}, calculado ${computedScore}/${computedPassed ? "PASS" : "FAIL"} (final=${isFinalVolume}, mainRes=${Math.round(mainResolutionRate*100)}%, allRes=${Math.round(threadResolutionRate*100)}%, reqMile=${Math.round(requiredRate*100)}%)`);
+        result.overallScore = computedScore;
+        result.passed = computedPassed;
+        result.findings = [...(result.findings || []), ...computedFindings];
+        // Re-clasificar hallazgos tras añadir los nuevos.
+        result.classifiedFindings = this.classifyFindings(result.findings, result.recommendations || "");
+      }
+
       console.log(`[ArcValidator] Successfully parsed result: score=${result.overallScore}, passed=${result.passed}, classifiedFindings=${result.classifiedFindings.length}`);
       return { ...response, result };
     } catch (e) {

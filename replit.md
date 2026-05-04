@@ -52,6 +52,18 @@ Inspección de la BD reveló que **ningún proyecto cumplía el contrato del Arq
   2. **Idempotencia en createChapter**: antes de cada `createChapter` se consulta el set de `chapterNumber` ya existentes en BD y se saltan los duplicados. Permite reintentos seguros tras crash sin generar capítulos huérfanos en BD.
   3. **Dedup en merge de plotOutline**: en lugar de concatenar `[...existingArr, ...newOutlinesPersist]` (que duplicaría outlines en re-extensiones), se usa `Map<number, outline>` con last-write-wins, garantizando que `plotOutline.chapterOutlines` quede consistente sin importar cuántas veces se ejecute la extensión.
 
+**Fix 12 — Verificación determinista de cierre de arcos (May 3, 2026).**
+- **Síntoma**: novela única "La Sal del Vino Amargo" finalizada con `arc-validator` reportando "APROBADA (95/100). Hitos cerrados: 4/4. Hilos resueltos: 1/4". Es decir, 3 de 4 arcos narrativos quedaron abiertos al cierre, pero el sistema marcó el manuscrito como aprobado.
+- **Causa raíz**: el `overallScore` y `passed` los decidía exclusivamente el LLM (sin recalcular en código). El LLM tiende a ser optimista — daba ~95/100 con `passed: true` mientras solo resolvía 25% de los hilos. Además el system prompt pedía "Todos los hitos requeridos cumplidos, hilos principales **progresan**" — pero "progresar" ≠ "resolver", y para una novela única (`volumeNumber === totalVolumes`) los hilos principales DEBEN resolverse, no solo progresar.
+- **Fix en `arc-validator.ts`**: añadido override determinista post-LLM. Calcula `requiredRate` (hitos requeridos cumplidos), `mainResolutionRate` (hilos `importance: main/alta/high/principal` resueltos) y `threadResolutionRate` (todos los hilos resueltos). Para volumen final / novela única (`volumeNumber >= totalVolumes`):
+  - Score = 50% requiredRate + 30% mainResolutionRate + 20% threadResolutionRate.
+  - `passed = true` SOLO si requiredRate=100%, mainResolutionRate=100% Y threadResolutionRate≥80%.
+  - Para volúmenes intermedios: tolerante (basta con que los hitos requeridos se cumplan y ≥50% de hilos progresen).
+  - Override solo se aplica si LLM difiere del cálculo determinista por ≥15 puntos o si LLM dijo PASS y cálculo dice FAIL — evita sobrescribir cuando el LLM ya es conservador.
+  - Findings auto-generados explícitos: lista hitos requeridos sin cumplir e hilos principales sin resolver, con nombres concretos.
+- **Fix en `orchestrator.ts:runStandaloneArcCheck`**: enumeración uno-a-uno de cada hilo abierto y cada hito no cumplido como entradas separadas en `activity_logs`. Hilos principales sin resolver se loguean con `level: warn`; secundarios con `level: info`. Esto se hace **siempre** (incluso si `passed=true`), porque una novela aprobada puede aún tener hilos secundarios abiertos que el autor quiera resolver manualmente.
+- **Resultado esperado**: una novela como "La Sal del Vino Amargo" con 1/4 hilos resueltos ya NO se aprueba. Score recalculado: 4/4 hitos × 50 + 1/4 hilos resueltos × (30 + 20) = 50 + 12.5 = ~63/100, `passed=false`. El usuario verá warnings explícitos enumerando los 3 hilos abiertos por nombre.
+
 **Fix 11 — Escaleta concisa para novelas grandes (>25 caps) (May 3, 2026).**
 - **Síntoma**: Fase 2 del Arquitecto tarda 36 min para 35 capítulos y resuelve fuera de tiempo. El frozen monitor del orquestador (15 min) marca el proyecto como FALLIDO al min 15, pero el Arquitecto sigue corriendo en background; cuando devuelve la escaleta a los 36 min, ya no hay orquestador escuchando y el trabajo se pierde.
 - **Causa raíz combinada**:

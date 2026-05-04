@@ -9522,7 +9522,7 @@ Responde SOLO con un JSON válido con la estructura:
         const r = result.result;
         const statusMsg = r.passed
           ? `Verificación de arcos APROBADA (${r.overallScore}/100). Hitos cerrados: ${r.milestonesFulfilled}/${r.milestonesChecked}. Hilos resueltos: ${r.threadsResolved}/${syntheticThreads.length}`
-          : `⚠️ Verificación de arcos REQUIERE ATENCIÓN (${r.overallScore}/100). Hitos cerrados: ${r.milestonesFulfilled}/${r.milestonesChecked}. ${r.findings && r.findings.length > 0 ? `Hallazgos: ${r.findings.slice(0, 3).join(" | ")}` : ""}`;
+          : `⚠️ Verificación de arcos REQUIERE ATENCIÓN (${r.overallScore}/100). Hitos cerrados: ${r.milestonesFulfilled}/${r.milestonesChecked}. Hilos resueltos: ${r.threadsResolved}/${syntheticThreads.length}.`;
 
         this.callbacks.onAgentStatus("arc-validator", r.passed ? "completed" : "warning", statusMsg);
 
@@ -9533,14 +9533,52 @@ Responde SOLO con un JSON válido con la estructura:
           agentRole: "arc-validator",
         });
 
-        // Si hay findings estructurales, los listamos por separado para que sean
-        // visibles en el panel de actividad.
+        // Fix 12: ENUMERACIÓN EXPLÍCITA DE HILOS ABIERTOS Y HITOS NO CUMPLIDOS.
+        // Antes solo loguamos los `findings` del LLM, que muchas veces eran
+        // genéricos. Ahora listamos uno-a-uno cada hilo no resuelto (con su
+        // nombre) y cada hito requerido sin cumplir, para que el usuario sepa
+        // exactamente qué quedó pendiente. Esto se hace SIEMPRE (incluso si
+        // passed=true), porque incluso una novela "aprobada" puede tener
+        // hilos secundarios abiertos que el usuario quiera resolver manualmente.
+        const unresolvedThreads = (r.threadProgressions || []).filter(tp =>
+          !(tp.resolvedInVolume || tp.currentStatus === "resolved")
+        );
+        const unfulfilledMilestones = (r.milestoneVerifications || []).filter(mv => !mv.isFulfilled);
+
+        if (unresolvedThreads.length > 0) {
+          for (const tp of unresolvedThreads.slice(0, 10)) {
+            const tDef: any = syntheticThreads.find((t: any) => t.id === tp.threadId);
+            const importance = String(tDef?.importance || "media").toLowerCase();
+            const isMain = ["main", "alta", "high", "principal"].includes(importance);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: isMain ? "warn" : "info",
+              message: `${isMain ? "⚠️" : "ℹ️"} Hilo ${isMain ? "PRINCIPAL" : "secundario"} sin resolver: "${tp.threadName}" (${tp.currentStatus}). ${tp.progressNotes || ""}`.trim(),
+              agentRole: "arc-validator",
+            });
+          }
+        }
+
+        if (unfulfilledMilestones.length > 0) {
+          for (const mv of unfulfilledMilestones.slice(0, 10)) {
+            const mDef: any = syntheticMilestones.find((m: any) => m.id === mv.milestoneId);
+            const required = mDef?.isRequired === true;
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: required ? "warn" : "info",
+              message: `${required ? "⚠️" : "ℹ️"} Hito ${required ? "REQUERIDO" : "opcional"} no cumplido: "${mv.description.substring(0, 120)}". ${mv.verificationNotes || ""}`.trim(),
+              agentRole: "arc-validator",
+            });
+          }
+        }
+
+        // Si hay findings adicionales del LLM (estructurales, recomendaciones), también los listamos.
         if (!r.passed && r.findings && r.findings.length > 0) {
           for (const f of r.findings.slice(0, 5)) {
             await storage.createActivityLog({
               projectId: project.id,
               level: "warn",
-              message: `Arco abierto: ${f}`,
+              message: `Hallazgo: ${f}`,
               agentRole: "arc-validator",
             });
           }
