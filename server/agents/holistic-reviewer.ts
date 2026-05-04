@@ -95,16 +95,31 @@ Después de redactar las secciones anteriores en lenguaje natural, REPITE las su
 
 REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
 - Cada objeto del array debe corresponder 1-a-1 con un punto de "## SUGERENCIAS CONCRETAS DE CORRECCIÓN". Si pusiste 7 sugerencias arriba, el JSON tiene 7 objetos.
-- "capitulos_afectados": array de NÚMEROS (no strings). Prólogo = 0, epílogo = -1, nota del autor = -2. Capítulos normales = 1, 2, 3...
+- "capitulos_afectados": array de NÚMEROS (no strings). Prólogo = 0, epílogo = -1, nota del autor = -2. Capítulos normales = 1, 2, 3... INCLUYE TODOS los capítulos que menciones en "instrucciones_correccion" — si la prosa habla del cap 32, 32 debe estar en capitulos_afectados.
 - "categoria": exactamente una de: "trama", "personaje", "ritmo", "continuidad", "dialogo", "estilo", "descripcion", "otro".
-- "tipo" (CRÍTICO):
-  - "eliminar": SOLO si la sugerencia natural dice literalmente "eliminar el cap X", "borrar el cap Y", "fuera el cap Z". Borrado destructivo del capítulo entero. Si tu sugerencia es "fusionar X con Y" → NO uses "eliminar" para X (eso lo decide otro paso); usa "estructural" describiendo la fusión.
-  - "estructural": fusionar, condensar, redistribuir, reescribir escenas enteras, reordenar, mover una revelación de un cap a otro, expandir un arco. Es lo más común en informes holísticos.
-  - "puntual": retoque local de 1-2 párrafos sin tocar la estructura del capítulo.
-- "prioridad": "alta" para problemas estructurales/clímax/arco, "media" para ejecución, "baja" para pulidos.
+- "tipo" (CRÍTICO — escoge el adecuado, el sistema procesa cada tipo de forma distinta):
+  - "puntual": retoque local de 1-2 párrafos sin tocar la estructura del capítulo. Ejemplo: "corregir la mención al frasco roto en cap 23". Es CIRUGÍA find/replace.
+  - "estructural": reescribir escenas enteras, reordenar dentro del capítulo, mover una revelación de un cap a otro, expandir un arco, añadir foreshadowing. Reescritura completa del capítulo afectado.
+  - "eliminar": SOLO si la sugerencia natural dice literalmente "eliminar el cap X", "borrar el cap Y", "fuera el cap Z". Borrado destructivo del capítulo entero, sin absorción en otro.
+  - "fusionar": SOLO para fusionar capítulos enteros (ej: "condensar caps 7-9 en uno solo", "fusionar caps 34, 35 y epílogo en un cierre"). REQUIERE los campos:
+      • "merge_into": número del capítulo DESTINO (donde se absorben los demás).
+      • "merge_sources": array de números de los capítulos ORIGEN (los que serán absorbidos y eliminados).
+      • "capitulos_afectados" = [merge_into, ...merge_sources] (todos).
+    Esta operación es ADMINISTRATIVA y requiere CONFIRMACIÓN HUMANA — el sistema la mostrará al usuario para que la apruebe explícitamente, no se aplica automáticamente con el resto.
+  - "global_style": SOLO para directivas transversales que afectan a la novela ENTERA (ej: "reducir descripciones sensoriales repetitivas en todos los capítulos", "uniformar la voz narrativa", "podar adjetivación excesiva globalmente"). El sistema lo registrará como NOTA para el próximo pase de Pulido — no aplica reescritura cap-a-cap (sería catastrófico).
+- "plan_por_capitulo" (OBLIGATORIO si capitulos_afectados.length > 1, salvo para "eliminar", "fusionar" y "global_style"):
+    objeto donde la clave es el NÚMERO DE CAPÍTULO (como STRING) y el valor es la instrucción específica para ESE capítulo. Ejemplo:
+      "plan_por_capitulo": {
+        "4": "Mostrar a Publio insistiendo en la viabilidad política del vino y mostrando inquietud por las represalias.",
+        "5": "Profundizar la inquietud de Publio durante la negociación, sembrando codicia.",
+        "20": "Añadir una conversación en susurros entre Publio y un mensajero imperial.",
+        "21": "Que Publio escriba/reciba una carta secreta que Aurelia entreve."
+      }
+    Sin "plan_por_capitulo", el sistema NO puede coordinar la reescritura del arco y los N capítulos recibirán la misma instrucción genérica → calidad degradada. NO es opcional cuando hay arco multi-cap.
+- "prioridad": "alta" para problemas estructurales/clímax/arco, "media" para ejecución, "baja" para pulidos. "global_style" siempre es "baja" o "media".
 - "descripcion": 1 frase que el usuario verá en la previsualización antes de aprobar.
-- "instrucciones_correccion": 1-3 frases con la orden CONCRETA al narrador (qué tocar, dónde, cómo). NO copies la frase natural literal — reformúlala como orden ejecutable.
-- Si una sola sugerencia natural afecta a varios capítulos (p. ej. "fusionar caps 34, 35 y epílogo"), pon todos en "capitulos_afectados".
+- "instrucciones_correccion": 1-3 frases con la orden CONCRETA al narrador (qué tocar, dónde, cómo). NO copies la frase natural literal — reformúlala como orden ejecutable. Si distingues entre capítulos, esa información va en "plan_por_capitulo", no aquí.
+- COHERENCIA CRÍTICA: cualquier número de capítulo que menciones en "descripcion", "instrucciones_correccion" o "plan_por_capitulo" DEBE estar también en "capitulos_afectados". El sistema valida esto y descarta o reconcilia automáticamente, pero un JSON coherente reduce errores.
 - Si la novela está limpia y no tienes sugerencias, devuelve \`{"instrucciones": []}\` igualmente entre los marcadores.
 - NO añadas comentarios dentro del JSON. NO añadas markdown dentro del JSON. NO añadas texto entre los marcadores aparte del bloque \`\`\`json ... \`\`\`.
 

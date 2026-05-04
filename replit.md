@@ -52,6 +52,23 @@ Inspección de la BD reveló que **ningún proyecto cumplía el contrato del Arq
   2. **Idempotencia en createChapter**: antes de cada `createChapter` se consulta el set de `chapterNumber` ya existentes en BD y se saltan los duplicados. Permite reintentos seguros tras crash sin generar capítulos huérfanos en BD.
   3. **Dedup en merge de plotOutline**: en lugar de concatenar `[...existingArr, ...newOutlinesPersist]` (que duplicaría outlines en re-extensiones), se usa `Map<number, outline>` con last-write-wins, garantizando que `plotOutline.chapterOutlines` quede consistente sin importar cuántas veces se ejecute la extensión.
 
+**Fix 14 — Multi-capítulo, fusiones y directivas transversales (May 4, 2026).**
+- **Síntoma**: tras Fix 13, el bloque JSON estructurado del Holístico/Beta llega bien al sistema (las 9 instrucciones del informe de "La Sal del Vino Amargo" se extraen), pero al aplicarlas: (a) las multi-capítulo se aplicaban con la misma instrucción genérica a todos los caps del arco (calidad degradada porque el holístico no emitía `plan_por_capitulo`), (b) las fusiones de capítulos ("condensar caps 7-9 en uno") se interpretaban como reescritura del mismo cap → caos, (c) las directivas transversales como "podar adjetivación en todos los capítulos" intentarían reescribir 35 capítulos enteros, y (d) el LLM holístico a veces mencionaba un cap en la prosa de la instrucción pero olvidaba añadirlo a `capitulos_afectados`.
+- **Fix en `holistic-reviewer.ts` y `beta-reader.ts` (system prompts)**:
+  - `plan_por_capitulo` ahora es **OBLIGATORIO** cuando `capitulos_afectados.length > 1` (salvo para "eliminar"/"fusionar"/"global_style"). El LLM debe emitir un objeto `{ "<num_cap>": "instrucción específica para ESE capítulo" }` con el rol de cada capítulo en el arco. Sin él, los caps reciben la misma orden genérica.
+  - Nuevo tipo `"fusionar"`: para fusiones de capítulos enteros. Requiere `merge_into` (cap destino) y `merge_sources` (caps a absorber+eliminar). Operación administrativa: NO se aplica automáticamente, requiere confirmación humana en chat editorial.
+  - Nuevo tipo `"global_style"`: para directivas transversales (podar adjetivación, uniformar voz). Se registra como nota para el próximo pase de Pulido — no aplica reescritura cap-a-cap.
+  - Regla de coherencia explícita: cualquier cap mencionado en la prosa debe estar en `capitulos_afectados`.
+- **Fix en `editorial-notes-parser.ts`**: extendido `EditorialInstruction` con `tipo: "fusionar" | "global_style"` y campos opcionales `merge_into`, `merge_sources`.
+- **Fix en `extractAutoInstructionsFromReview` (orchestrator)**:
+  - Acepta y valida `plan_por_capitulo` del JSON: filtra claves no numéricas y caps inexistentes; descarta el plan si queda vacío.
+  - **Validador de coherencia**: nuevo `extractChapterReferences()` que detecta menciones a capítulos en la prosa (`"cap 32"`, `"caps 7-9"`, `"caps 32, 33 y 34"`, `"prólogo"`, `"epílogo"`, rangos con guión o "a"/"al") y reconcilia con `capitulos_afectados`. Pillaba el bug del informe real donde la prosa decía "cap 32" pero el array sólo tenía [33, 34].
+  - **Cola de pendientes administrativas**: las instrucciones de tipo `"fusionar"` y `"global_style"` se sacan del flujo automático (no pasan al refiner ni al aplicador) y se acumulan en una cola que se loguea como warning de actividad explicando qué pasa con cada una y cómo ejecutarla manualmente.
+- **Resultado para el informe del usuario** (9 instrucciones):
+  - 7 instrucciones multi-cap (foreshadowing Publio, heridas Tito, ungüentos, soporífero, Helena, don de la tierra, transición 31-32) ahora se aplican con `plan_por_capitulo` específico → cada capítulo recibe su orden propia.
+  - 1 instrucción de fusión (condensar caps 7-9 + 11-12) sale del flujo automático y aparece como pendiente administrativa con un mensaje claro de cómo ejecutarla.
+  - 1 instrucción transversal (reducir descripciones sensoriales repetitivas) si el LLM la marca como `global_style`, se registra para el siguiente pase de Pulido sin reescribir 35 capítulos.
+
 **Fix 13 — Lectores Holístico y Beta: instrucciones auto-aplicables (May 4, 2026).**
 - **Síntoma**: tras una revisión holística automática, el sistema dice "no se generó ninguna instrucción aplicable a partir de las notas" o el refiner descarta el 100% de borradores. El usuario veía un informe excelente con 7 sugerencias quirúrgicas claras ("Eliminar Cap 10", "Fusionar Caps 34-35-Epílogo", "Reescribir el clímax para que Aurelia tenga agencia", etc.) y aún así el sistema no aplicaba nada.
 - **Causa raíz** (varias capas):

@@ -23,7 +23,17 @@ export interface EditorialInstruction {
   // "restructure_arc": la trama se desvía irreversiblemente desde el cap N. Re-arquitecto rediseña
   //   la escaleta DESDE `restructure_from_chapter` con `restructure_instructions`, y los capítulos
   //   posteriores se marcan para regeneración secuencial.
-  tipo?: "puntual" | "estructural" | "eliminar" | "regenerate_chapter" | "global_rename" | "restructure_arc";
+  // ── NUEVOS (Fix 14) ──
+  // "fusionar": fusión de capítulos enteros. Operación ADMINISTRATIVA: el sistema
+  //   no la aplica automáticamente, la registra como pendiente y la muestra al
+  //   usuario para confirmación. Requiere `merge_into` y `merge_sources`.
+  // "global_style": directiva transversal aplicable a toda la novela (estilo,
+  //   poda, voz). NO se aplica cap-a-cap (sería catastrófico). Se registra como
+  //   nota para el próximo pase de Pulido.
+  tipo?: "puntual" | "estructural" | "eliminar" | "regenerate_chapter" | "global_rename" | "restructure_arc" | "fusionar" | "global_style";
+  // Para "fusionar": cap destino donde se absorben los demás, y caps origen a eliminar.
+  merge_into?: number;
+  merge_sources?: number[];
   // Cuando capitulos_afectados.length > 1: rol específico de cada capítulo en el arco multi-capítulo.
   // No aplica para tipo "eliminar" / macro-operaciones.
   plan_por_capitulo?: Record<string, string>;

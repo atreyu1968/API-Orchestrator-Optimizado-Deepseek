@@ -95,15 +95,25 @@ Después de tus impresiones en lenguaje natural, REPITE los puntos de "## SI FUE
 
 REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
 - Un objeto por cada punto que escribiste en "## SI FUERA EL AUTOR, CAMBIARÍA...". Si pusiste 5 puntos arriba, el JSON tiene 5 objetos.
-- "capitulos_afectados": array de NÚMEROS (no strings). Prólogo = 0, epílogo = -1, nota del autor = -2.
+- "capitulos_afectados": array de NÚMEROS (no strings). Prólogo = 0, epílogo = -1, nota del autor = -2. INCLUYE TODOS los capítulos que menciones en la instrucción.
 - "categoria": exactamente una de: "trama", "personaje", "ritmo", "continuidad", "dialogo", "estilo", "descripcion", "otro".
 - "tipo":
-  - "estructural": lo habitual para un lector beta — acortar, fusionar, mover una escena, reescribir el clímax, dar más espacio a un personaje. Tu valor está en la sensación de lectura, casi siempre es estructural.
-  - "puntual": solo si pides un retoque concreto de 1-2 párrafos.
-  - "eliminar": SOLO si dijiste literalmente "me cargaría el cap X", "eliminaría/quitaría el cap Y entero". Si dijiste "haría más corto" → es "estructural", NO "eliminar".
+  - "puntual": retoque concreto de 1-2 párrafos. Cirugía find/replace.
+  - "estructural": acortar/expandir, mover una escena, reescribir el clímax, dar más espacio a un personaje, añadir/quitar matices. Tu valor está en la sensación de lectura, casi siempre es estructural.
+  - "eliminar": SOLO si dijiste literalmente "me cargaría el cap X", "eliminaría/quitaría el cap Y entero". Borrado del capítulo sin absorción.
+  - "fusionar": SOLO para fusionar capítulos enteros (ej: "fusionaría los caps 7-8 en uno"). REQUIERE "merge_into" (cap destino) y "merge_sources" (array caps origen). Operación ADMINISTRATIVA — el sistema la mostrará al usuario para confirmación, no se aplica automáticamente.
+  - "global_style": directivas transversales que afectan a TODA la novela (ej: "podaría adjetivación excesiva en todo el manuscrito"). Se registrará como nota para el próximo pase de Pulido, no aplica reescritura cap-a-cap.
+- "plan_por_capitulo" (OBLIGATORIO si capitulos_afectados.length > 1, salvo "eliminar", "fusionar" y "global_style"):
+    objeto donde la clave es el NÚMERO DE CAPÍTULO (como STRING) y el valor es lo concreto a hacer en ese capítulo. Ejemplo:
+      "plan_por_capitulo": {
+        "18": "Acortar a la mitad eliminando exposición disfrazada de diálogo.",
+        "19": "Recoger las consecuencias del cap 18 más rápido."
+      }
+    Sin él, todos los capítulos del arco reciben la misma instrucción genérica y la calidad cae.
 - "prioridad": "alta" para lo que más te sacó del libro, "media" para incomodidades, "baja" para pulidos.
 - "descripcion": 1 frase que el usuario verá en la previsualización.
-- "instrucciones_correccion": 1-3 frases con la orden concreta al narrador. Reformula tu impresión de lector como orden ejecutable.
+- "instrucciones_correccion": 1-3 frases con la orden concreta al narrador. Si distingues entre capítulos, esa info va en "plan_por_capitulo".
+- COHERENCIA: cualquier número de capítulo mencionado en la prosa debe estar en "capitulos_afectados".
 - Si no tienes sugerencias accionables, devuelve \`{"instrucciones": []}\` entre los marcadores.
 - NO añadas comentarios ni markdown dentro del JSON.
 

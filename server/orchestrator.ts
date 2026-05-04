@@ -4573,14 +4573,46 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     let summary: string | undefined;
 
     if (autoInstructions !== null) {
-      draftInstructions = autoInstructions;
-      summary = `Informe automático del sistema (Holístico/Beta): ${autoInstructions.length} instrucción(es) auto-aplicable(s) extraída(s) del bloque JSON.`;
+      draftInstructions = autoInstructions.valid;
+      summary = `Informe automático del sistema (Holístico/Beta): ${autoInstructions.valid.length} instrucción(es) auto-aplicable(s) extraída(s) del bloque JSON.`;
       await storage.createActivityLog({
         projectId: project.id,
         level: "info",
-        message: `Detectado informe estructurado del sistema con ${autoInstructions.length} instrucción(es) auto-aplicable(s). Saltando parser LLM y pasando directamente al refiner para anclaje contra canon.`,
+        message: `Detectado informe estructurado del sistema con ${autoInstructions.valid.length} instrucción(es) auto-aplicable(s). Saltando parser LLM y pasando directamente al refiner para anclaje contra canon.`,
         agentRole: "editor",
       });
+
+      // Fix 14: si la extracción detectó operaciones administrativas (fusiones de
+      // capítulos o directivas transversales de estilo), las loguea como pendientes
+      // — el sistema no las aplica automáticamente porque renumeran/repintan toda
+      // la novela y necesitan revisión humana. El usuario las puede ejecutar desde
+      // chat editorial o desde un futuro botón "operaciones administrativas".
+      if (autoInstructions.pendingAdministrative.length > 0) {
+        const lines = autoInstructions.pendingAdministrative.map(p => {
+          const tipoLabel = p.tipo === "fusionar" ? "FUSIÓN DE CAPÍTULOS" : "DIRECTIVA TRANSVERSAL DE ESTILO";
+          return `  • [${tipoLabel}] ${p.descripcion}\n      → Detalle: ${p.motivo.slice(0, 240)}${p.motivo.length > 240 ? "…" : ""}`;
+        }).join("\n");
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `Fix 14 — Operaciones que requieren confirmación humana (NO se aplicarán automáticamente con las demás):\n${lines}\n\nFusiones: usa el chat editorial pidiendo "fusiona el cap X con el Y" o aplica el borrado y reescritura por separado. Directivas transversales: regístralas para el siguiente pase de Pulido.`,
+          agentRole: "editor",
+        });
+      }
+
+      // Fix 14: si hay instrucciones multi-capítulo SIN plan_por_capitulo, avisar
+      // — el LLM holístico/beta incumplió el contrato del prompt. Las instrucciones
+      // se aplican igual (no las perdemos), pero la coordinación entre capítulos
+      // del arco será uniforme (todos reciben la misma orden) en lugar de
+      // específica por capítulo, y eso baja la calidad del resultado.
+      if (autoInstructions.degradedMultiCap.length > 0) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `Fix 14 — ${autoInstructions.degradedMultiCap.length} instrucción(es) multi-capítulo SIN plan_por_capitulo (el LLM no distinguió el rol de cada capítulo del arco):\n${autoInstructions.degradedMultiCap.map(s => `  • ${s}`).join("\n")}\n\nSe aplicarán igual, pero todos los capítulos del arco recibirán la misma instrucción genérica. Si el resultado es pobre, vuelve a lanzar el informe holístico — el prompt actualizado lo exige obligatorio.`,
+          agentRole: "editor",
+        });
+      }
     } else {
       const parseResult = await this.editorialNotesParser.execute({
         notas: notesText,
@@ -4869,7 +4901,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   private extractAutoInstructionsFromReview(
     notesText: string,
     chapterIndex: Array<{ numero: number; titulo: string }>,
-  ): EditorialInstruction[] | null {
+  ): { valid: EditorialInstruction[]; pendingAdministrative: Array<{ tipo: string; descripcion: string; motivo: string }>; degradedMultiCap: string[] } | null {
     const startMarker = "<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->";
     const endMarker = "<!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->";
     const startIdx = notesText.indexOf(startMarker);
@@ -4880,7 +4912,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // Quitar el wrapping ```json ... ``` si está presente.
     const fenced = block.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     const jsonRaw = (fenced ? fenced[1] : block).trim();
-    if (!jsonRaw) return [];
+    if (!jsonRaw) return { valid: [], pendingAdministrative: [], degradedMultiCap: [] };
 
     let parsed: any;
     try {
@@ -4888,35 +4920,139 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     } catch {
       try { parsed = JSON.parse(jsonRaw); } catch { return null; }
     }
-    if (!parsed || !Array.isArray(parsed.instrucciones)) return [];
+    if (!parsed || !Array.isArray(parsed.instrucciones)) return { valid: [], pendingAdministrative: [], degradedMultiCap: [] };
+
+    const degradedMultiCap: string[] = [];
 
     const validChapterNumbers = new Set(chapterIndex.map(c => c.numero));
 
     const valid: EditorialInstruction[] = [];
+    const pendingAdministrative: Array<{ tipo: string; descripcion: string; motivo: string }> = [];
+
     for (const raw of parsed.instrucciones) {
       if (!raw || typeof raw !== "object") continue;
-      // Coerción de capitulos_afectados: aceptamos números o strings numéricos.
-      const capsRaw: any[] = Array.isArray(raw.capitulos_afectados) ? raw.capitulos_afectados : [];
-      const caps = capsRaw
-        .map(n => (typeof n === "number" ? n : parseInt(String(n), 10)))
-        .filter(n => Number.isFinite(n) && validChapterNumbers.has(n));
-      if (caps.length === 0) continue;
 
       const descripcion = String(raw.descripcion || "").trim();
       const instrucciones_correccion = String(raw.instrucciones_correccion || "").trim();
       if (!descripcion && !instrucciones_correccion) continue;
 
       const tipoRaw = String(raw.tipo || "estructural").toLowerCase();
-      const tipo: EditorialInstruction["tipo"] =
-        tipoRaw === "eliminar" || tipoRaw === "puntual" || tipoRaw === "estructural"
-          ? (tipoRaw as any)
-          : "estructural";
+
+      // Normalización de tipo: ahora aceptamos también "fusionar" y "global_style".
+      let tipo: EditorialInstruction["tipo"];
+      if (
+        tipoRaw === "eliminar" || tipoRaw === "puntual" || tipoRaw === "estructural" ||
+        tipoRaw === "fusionar" || tipoRaw === "global_style" ||
+        tipoRaw === "regenerate_chapter" || tipoRaw === "global_rename" || tipoRaw === "restructure_arc"
+      ) {
+        tipo = tipoRaw as any;
+      } else {
+        tipo = "estructural";
+      }
+
+      // Coerción de capitulos_afectados: aceptamos números o strings numéricos.
+      const capsRaw: any[] = Array.isArray(raw.capitulos_afectados) ? raw.capitulos_afectados : [];
+      let caps = capsRaw
+        .map(n => (typeof n === "number" ? n : parseInt(String(n), 10)))
+        .filter(n => Number.isFinite(n) && validChapterNumbers.has(n));
+
+      // ── Validador de coherencia (Fix 14): extraer números de capítulo
+      // mencionados en descripcion + instrucciones_correccion + plan_por_capitulo
+      // y reconciliar con capitulos_afectados. El holístico a veces dice "cap 32"
+      // en la prosa pero olvida añadirlo al array; esta red de seguridad lo
+      // recupera para que el sistema no enrute mal el trabajo.
+      const corpusForRefs = [
+        descripcion,
+        instrucciones_correccion,
+        raw.plan_por_capitulo && typeof raw.plan_por_capitulo === "object"
+          ? Object.values(raw.plan_por_capitulo).map(v => String(v)).join(" ")
+          : "",
+      ].join(" ");
+      const referencedNumbers = this.extractChapterReferences(corpusForRefs, validChapterNumbers);
+      const capsSet = new Set(caps);
+      let added = 0;
+      for (const n of referencedNumbers) {
+        if (!capsSet.has(n)) {
+          caps.push(n);
+          capsSet.add(n);
+          added++;
+        }
+      }
+      if (added > 0) {
+        // Calculamos qué números fueron añadidos comparando contra el snapshot
+        // PREVIO al merge (capsRaw filtrado), no contra capsSet ya mutado.
+        const original = new Set(capsRaw
+          .map(n => (typeof n === "number" ? n : parseInt(String(n), 10)))
+          .filter(n => Number.isFinite(n) && validChapterNumbers.has(n)));
+        const newlyAdded = referencedNumbers.filter(n => !original.has(n));
+        console.log(`[Fix14] extractAuto: instrucción "${descripcion.slice(0, 60)}" — añadidos ${added} cap(s) referenciados en prosa pero ausentes del array (${newlyAdded.join(", ")}).`);
+      }
+
+      // Para tipos que requieren caps válidos, exigirlo. Para "global_style" no.
+      if (tipo !== "global_style" && caps.length === 0) continue;
 
       const prioridadRaw = String(raw.prioridad || "media").toLowerCase();
       const prioridad: EditorialInstruction["prioridad"] =
         prioridadRaw === "alta" || prioridadRaw === "baja" ? (prioridadRaw as any) : "media";
 
       const categoria = String(raw.categoria || "otro").toLowerCase();
+
+      // ── Plan por capítulo (Fix 14): aceptado tal cual si viene como objeto.
+      let plan_por_capitulo: Record<string, string> | undefined;
+      if (raw.plan_por_capitulo && typeof raw.plan_por_capitulo === "object" && !Array.isArray(raw.plan_por_capitulo)) {
+        plan_por_capitulo = {};
+        for (const [k, v] of Object.entries(raw.plan_por_capitulo)) {
+          const kNum = parseInt(k, 10);
+          if (Number.isFinite(kNum) && validChapterNumbers.has(kNum) && typeof v === "string" && v.trim()) {
+            plan_por_capitulo[String(kNum)] = String(v).trim();
+          }
+        }
+        if (Object.keys(plan_por_capitulo).length === 0) plan_por_capitulo = undefined;
+      }
+
+      // ── Tipos NO aplicables automáticamente (Fix 14):
+      //    "fusionar" requiere confirmación humana porque renumera capítulos y
+      //    es destructivo si se ejecuta sin revisión. La sacamos del flujo y
+      //    la registramos como pendiente para que el usuario la apruebe en chat
+      //    editorial o la desencadene manualmente.
+      if (tipo === "fusionar") {
+        const mergeInto = typeof raw.merge_into === "number" ? raw.merge_into : parseInt(String(raw.merge_into || ""), 10);
+        const mergeSourcesRaw: any[] = Array.isArray(raw.merge_sources) ? raw.merge_sources : [];
+        const mergeSources = mergeSourcesRaw
+          .map(n => (typeof n === "number" ? n : parseInt(String(n), 10)))
+          .filter(n => Number.isFinite(n) && validChapterNumbers.has(n) && n !== mergeInto);
+        const mergeIntoOk = Number.isFinite(mergeInto) && validChapterNumbers.has(mergeInto);
+        const summary = mergeIntoOk && mergeSources.length > 0
+          ? `Fusionar caps ${[mergeInto, ...mergeSources].sort((a, b) => a - b).join(", ")} → cap ${mergeInto} (eliminar ${mergeSources.join(", ")})`
+          : `Fusión declarada pero sin merge_into/merge_sources válidos (${descripcion})`;
+        pendingAdministrative.push({
+          tipo: "fusionar",
+          descripcion: summary,
+          motivo: instrucciones_correccion || descripcion,
+        });
+        continue; // NO entra en el array de instrucciones aplicables.
+      }
+
+      //    "global_style" no es per-capítulo: aplicarlo cap a cap reescribiría
+      //    toda la novela. Se registra como nota para el próximo pase de Pulido
+      //    y se excluye del flujo automático.
+      if (tipo === "global_style") {
+        pendingAdministrative.push({
+          tipo: "global_style",
+          descripcion: descripcion || "Directiva transversal de estilo",
+          motivo: instrucciones_correccion || descripcion,
+        });
+        continue;
+      }
+
+      // Validación Fix 14: multi-cap (caps>1) en tipos puntual/estructural REQUIERE
+      // plan_por_capitulo. Si falta, registramos en degradedMultiCap para que el
+      // caller avise al usuario; la instrucción se aplica igual (no la perdemos)
+      // pero el log explica que el LLM incumplió el contrato y la calidad puede
+      // resentirse (todos los caps recibirán la misma orden genérica).
+      if (caps.length > 1 && (tipo === "puntual" || tipo === "estructural") && !plan_por_capitulo) {
+        degradedMultiCap.push(`"${descripcion.slice(0, 80)}" (caps ${caps.join(", ")})`);
+      }
 
       valid.push({
         capitulos_afectados: caps,
@@ -4926,9 +5062,66 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         elementos_a_preservar: raw.elementos_a_preservar ? String(raw.elementos_a_preservar) : undefined,
         prioridad,
         tipo,
+        plan_por_capitulo,
       });
     }
-    return valid;
+
+    // Devolvemos tuple en lugar de side-channel para evitar carreras si dos
+    // llamadas concurrentes a parseEditorialNotesOnly compartieran instancia.
+    return { valid, pendingAdministrative, degradedMultiCap };
+  }
+
+  /**
+   * Fix 14: extractor de referencias a capítulos dentro de texto libre. Detecta
+   * patrones como "cap 32", "capítulo 32", "caps 7-9", "caps 7, 8 y 9", "caps 7
+   * a 12", "epílogo", "prólogo", "nota del autor". Devuelve los números únicos
+   * que existen en `validChapterNumbers`. Se usa para reconciliar la prosa de
+   * una instrucción con su `capitulos_afectados` cuando el LLM olvida añadir
+   * algún capítulo mencionado.
+   */
+  private extractChapterReferences(text: string, validChapterNumbers: Set<number>): number[] {
+    if (!text) return [];
+    const found = new Set<number>();
+    const lower = text.toLowerCase();
+
+    // Prólogo / epílogo / nota del autor.
+    if (/\bpr[oó]logo\b/.test(lower) && validChapterNumbers.has(0)) found.add(0);
+    if (/\bep[ií]logo\b/.test(lower) && validChapterNumbers.has(-1)) found.add(-1);
+    if (/\bnota\s+del\s+autor\b/.test(lower) && validChapterNumbers.has(-2)) found.add(-2);
+
+    // Token de capítulo: matchea "cap", "cap.", "caps", "capítulo", "capítulos",
+    // "capitulo", "capitulos" (con o sin acento). El bug previo (Fix 14a) era
+    // exigir "ulo(s)" en todos los casos, lo que dejaba fuera "cap 32" / "caps 7-9"
+    // — justo el caso real del informe del usuario.
+    const CAP_TOKEN = "(?:cap(?:s|\\.|[ií]tulos?)?)";
+
+    // Rangos: "caps 7-9", "cap 7 a 12", "capítulos 30 al 33"
+    const rangeRe = new RegExp(`\\b${CAP_TOKEN}\\s*\\.?\\s*(\\d{1,3})\\s*(?:[-–—]|\\s+a\\s+|\\s+al\\s+)\\s*(\\d{1,3})`, "gi");
+    let m: RegExpExecArray | null;
+    while ((m = rangeRe.exec(lower)) !== null) {
+      const a = parseInt(m[1], 10);
+      const b = parseInt(m[2], 10);
+      if (Number.isFinite(a) && Number.isFinite(b) && a <= b && b - a < 100) {
+        for (let n = a; n <= b; n++) if (validChapterNumbers.has(n)) found.add(n);
+      }
+    }
+
+    // Listas con separador tras un "caps" inicial: "caps 11, 13, 17 y 18"
+    const listRe = new RegExp(`\\b${CAP_TOKEN}\\s*\\.?\\s*((?:\\d{1,3}\\s*(?:,|y|e|;)\\s*)+\\d{1,3})`, "gi");
+    while ((m = listRe.exec(lower)) !== null) {
+      const tail = m[1];
+      const nums = tail.split(/[,;]|\s+y\s+|\s+e\s+/).map(s => parseInt(s.trim(), 10));
+      for (const n of nums) if (Number.isFinite(n) && validChapterNumbers.has(n)) found.add(n);
+    }
+
+    // Referencias sueltas: "cap 32", "capítulo 7", "caps 11"
+    const singleRe = new RegExp(`\\b${CAP_TOKEN}\\s*\\.?\\s*(\\d{1,3})`, "gi");
+    while ((m = singleRe.exec(lower)) !== null) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && validChapterNumbers.has(n)) found.add(n);
+    }
+
+    return Array.from(found).sort((a, b) => a - b);
   }
 
   private async groundEditorialInstructions(
