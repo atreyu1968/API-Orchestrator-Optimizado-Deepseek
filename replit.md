@@ -10,6 +10,41 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Feature v7.2 [Fix17] — KDP Optimizer Pipeline completo (multi-mercado + marketing kit + landing) (May 5, 2026)
+
+**Petición**: integrar el documento "KDP Optimizer AI" como pipeline real dentro del módulo de metadatos KDP. Antes existía solo un generador simple (1 llamada → subtítulo + descripción + 7 keywords + 2 BISAC) basado en el world bible. Ahora hay un pipeline completo que parte del manuscrito real y genera material para 8 mercados, kit de marketing orgánico y contenido para landing page.
+
+**Arquitectura nueva (`server/agents/kdp/` + `server/services/kdp-pipeline.ts`)**:
+- **PASO 1 — Análisis del manuscrito** (`manuscript-analyzer.ts`). Usa muestreo estratégico (`server/utils/manuscript-sampler.ts`: threshold 60k chars → 25k inicio + 20k medio + 15k final, ~85% reducción de tokens). Extrae 25-35 seed keywords aplicando estrategia 4-TYPE (GENRE / AUDIENCE / TROPE / SETTING-SOLUTION), tropos, audiencia objetivo, ganchos emocionales, temas, entidades y `isFiction`. Resultado compartido entre todos los mercados.
+- **PASO 2 — Por cada mercado seleccionado (8 disponibles: US/UK/DE/ES/FR/IT/BR/MX, catálogo en `server/utils/kdp-markets.ts`)**:
+  - 2A `market-metadata.ts`: subtítulo, descripción HTML 3800-4000 chars con estructura HOOK→CONFLICT→STAKES→BENEFITS→CLOSING (sin instrucciones de compra), 7 keywords, 3 categorías. Nombres canónicos de personajes inyectados como mandatorios (refuerza [Fix15]). Sanitizador post-modelo: filtra tags HTML no permitidos y >20 frases prohibidas (Apple Books, Kindle, bestseller, gratis, click here, etc.) por compliance Amazon 2024-2025.
+  - 2B `keyword-optimizer.ts`: re-genera las 7 keywords nativas en el idioma del mercado (no traducción), evitando palabras del título.
+  - 2C `seo-generator.ts`: SEO landing (seoTitle 50-60, seoDescription 150-160, ogTitle, ogDescription, seoKeywords).
+- **PASO 3 — Marketing kit** (`marketing-kit.ts`): TikTok hooks, Instagram posts, Pinterest, hashtags general+específico, lead magnets, review CTA, free promo strategy, citas, categorías nicho con competitividad, posts FB groups y plan de 30 días.
+- **PASO 4 — Landing content** (`landing-content.ts`): tagline, sinopsis extendida en markdown, características destacadas, citas memorables y press notes.
+
+**Orquestador (`server/services/kdp-pipeline.ts`)**: corre en background (no bloquea HTTP), persiste progreso en BD tras cada mercado, tolera fallos parciales (marca el mercado con `error` y sigue), y finalmente promueve el mercado primario a las columnas legacy de `kdp_metadata` para compatibilidad con la UI antigua.
+
+**Schema (`shared/schema.ts` L831-837)**: añadidas 6 columnas a `kdp_metadata`: `manuscriptAnalysis`, `marketEntries`, `marketingKit`, `landingContent` (todas JSONB), `pipelineStatus` (text, idle/queued/analyzing/metadata/marketing/landing/completed/failed) y `pipelineProgress` (JSONB con `step`, `marketsTotal`, `marketsDone`, `currentMarket`, `message`, `error`). `db:push` aplicado.
+
+**Endpoints (`server/routes.ts` ~L11422)**:
+- `GET /api/kdp-metadata/markets` — catálogo de los 8 mercados.
+- `POST /api/kdp-metadata/run-pipeline` `{ projectId|reeditProjectId, marketIds[], primaryMarketId? }` — crea fila `kdp_metadata` con `pipelineStatus: queued`, lanza pipeline en background y devuelve `{ id, status }`.
+- Los endpoints anteriores (`/generate`, GET, PATCH, DELETE) se mantienen para retro-compat.
+
+**UI (`client/src/pages/kdp-metadata.tsx`)**: rediseñada con:
+- Selector de origen único arriba (proyecto / reedición).
+- Card "Pipeline Completo": grid checkbox para los 8 mercados + dropdown mercado primario + botón Run.
+- Card "Generador rápido (sin pipeline)" para el flujo legacy de 1 llamada.
+- Lista con polling automático cada 4s mientras hay pipelines en curso (barra de progreso por fase).
+- Dialog visor con pestañas: Análisis, Mercados (sub-pestañas por mercado con metadata + keywords PASO 2A vs 2B + SEO), Marketing kit (acordeón con 11 secciones), Landing content. Auto-refresca durante el pipeline.
+
+**Post-merge (`scripts/post-merge.sh`)**: nuevo script que corre `npm install` + `db:push --force` para que tras pull el usuario obtenga las nuevas columnas automáticamente.
+
+**Coste estimado**: ~3 LLM calls/mercado + 3 globales = 27 calls para los 8 mercados (5-15 min). Ningún mercado bloquea al resto si falla.
+
+**Marcador**: comentarios `[Fix17]` en código nuevo y modificado.
+
 ### Bugfix v7.2 [Fix16] — Anti-monotonía estructural del Arquitecto en el acto 2 (May 5, 2026)
 
 **Síntoma reportado**: el Arquitecto repetía la misma forma narrativa en los capítulos centrales (apertura → conflicto → reflexión → escalada → cliffhanger), haciendo que la zona media de la novela resultara cansina aunque el contenido cambiara.

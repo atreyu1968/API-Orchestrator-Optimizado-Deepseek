@@ -11235,7 +11235,7 @@ CRITERIOS:
     }
   });
 
-  app.get("/api/kdp-metadata/:id", async (req: Request, res: Response) => {
+  app.get("/api/kdp-metadata/:id(\\d+)", async (req: Request, res: Response) => {
     try {
       const meta = await storage.getKdpMetadata(parseInt(req.params.id));
       if (!meta) return res.status(404).json({ error: "KDP metadata not found" });
@@ -11397,9 +11397,32 @@ CRITERIOS:
     }
   });
 
-  app.patch("/api/kdp-metadata/:id", async (req: Request, res: Response) => {
+  // [Fix17] Validación estricta de PATCH: solo campos editables, sin HTML peligroso.
+  const kdpPatchSchema = z.object({
+    subtitle: z.string().max(500).optional(),
+    description: z.string().max(8000).optional(),
+    keywords: z.array(z.string().max(50)).max(7).optional(),
+    bisacCategories: z.array(z.string().max(200)).max(3).optional(),
+    seriesName: z.string().max(200).optional().nullable(),
+    seriesNumber: z.union([z.number().int().nonnegative(), z.null()]).optional(),
+    seriesDescription: z.string().max(2000).optional().nullable(),
+    contentWarnings: z.string().max(500).optional().nullable(),
+    notes: z.string().max(2000).optional().nullable(),
+    status: z.enum(["draft","ready","published","archived"]).optional(),
+  }).strict();
+
+  app.patch("/api/kdp-metadata/:id(\\d+)", async (req: Request, res: Response) => {
     try {
-      const updated = await storage.updateKdpMetadata(parseInt(req.params.id), req.body);
+      const parsed = kdpPatchSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid update payload", details: parsed.error.format() });
+      }
+      const data: any = { ...parsed.data };
+      if (typeof data.description === "string") {
+        const { sanitizeKdpDescription } = await import("./utils/kdp-sanitize");
+        data.description = sanitizeKdpDescription(data.description);
+      }
+      const updated = await storage.updateKdpMetadata(parseInt(req.params.id), data);
       if (!updated) return res.status(404).json({ error: "KDP metadata not found" });
       res.json(updated);
     } catch (error: any) {
@@ -11407,11 +11430,104 @@ CRITERIOS:
     }
   });
 
-  app.delete("/api/kdp-metadata/:id", async (req: Request, res: Response) => {
+  app.delete("/api/kdp-metadata/:id(\\d+)", async (req: Request, res: Response) => {
     try {
       await storage.deleteKdpMetadata(parseInt(req.params.id));
       res.json({ message: "Deleted" });
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // [Fix17] KDP Optimizer Pipeline (multi-mercado + marketing kit + landing content).
+  app.get("/api/kdp-metadata/markets", async (_req: Request, res: Response) => {
+    try {
+      const { listAvailableMarkets } = await import("./services/kdp-pipeline");
+      res.json(listAvailableMarkets());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/kdp-metadata/run-pipeline", async (req: Request, res: Response) => {
+    try {
+      const bodySchema = z.object({
+        projectId: z.number().int().positive().optional(),
+        reeditProjectId: z.number().int().positive().optional(),
+        marketIds: z.array(z.string().min(2).max(4)).min(1).max(8),
+        primaryMarketId: z.string().min(2).max(4).optional(),
+      }).refine(d => d.projectId || d.reeditProjectId, {
+        message: "Se requiere projectId o reeditProjectId",
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid request", details: parsed.error.format() });
+      }
+      const { projectId, reeditProjectId, marketIds } = parsed.data;
+      const primaryMarketId = parsed.data.primaryMarketId || marketIds[0];
+      if (!marketIds.includes(primaryMarketId)) {
+        return res.status(400).json({ error: "primaryMarketId debe estar en marketIds" });
+      }
+      // [Fix17/review] Validar contra catálogo
+      const { findMarket: _fm, KDP_MARKETS } = await import("./utils/kdp-markets");
+      const validIds = new Set(KDP_MARKETS.map(m => m.id));
+      const invalid = marketIds.filter(id => !validIds.has(id));
+      if (invalid.length > 0) {
+        return res.status(400).json({ error: `Mercados inválidos: ${invalid.join(", ")}` });
+      }
+
+      // Resolver título y locale primario para crear la fila contenedora
+      let title = "";
+      let pseudonymName: string | undefined;
+      if (projectId) {
+        const project = await storage.getProject(projectId);
+        if (!project) return res.status(404).json({ error: "Project not found" });
+        title = project.title;
+        if (project.pseudonymId) {
+          const p = await storage.getPseudonym(project.pseudonymId);
+          if (p) pseudonymName = p.name;
+        }
+      } else if (reeditProjectId) {
+        const reedit = await storage.getReeditProject(reeditProjectId);
+        if (!reedit) return res.status(404).json({ error: "Reedit project not found" });
+        title = reedit.title;
+      }
+
+      const { findMarket } = await import("./utils/kdp-markets");
+      const primary = findMarket(primaryMarketId);
+      if (!primary) return res.status(400).json({ error: `Mercado primario inválido: ${primaryMarketId}` });
+
+      const created = await storage.createKdpMetadata({
+        projectId: projectId || null,
+        reeditProjectId: reeditProjectId || null,
+        title,
+        language: primary.langCode,
+        targetMarketplace: primary.domain,
+        aiDisclosure: "ai-assisted",
+        status: "draft",
+        pipelineStatus: "queued",
+        pipelineProgress: {
+          step: "queued",
+          marketsTotal: marketIds.length,
+          marketsDone: 0,
+          message: "En cola…",
+        },
+      } as any);
+
+      // Lanzar pipeline en background — no esperamos
+      const { runKdpPipeline } = await import("./services/kdp-pipeline");
+      runKdpPipeline({
+        kdpMetadataId: created.id,
+        projectId: projectId || null,
+        reeditProjectId: reeditProjectId || null,
+        selectedMarketIds: marketIds,
+        primaryMarketId,
+        pseudonymName,
+      }).catch(err => console.error("[KdpPipeline] uncaught:", err));
+
+      res.json({ id: created.id, status: "queued" });
+    } catch (error: any) {
+      console.error("[KdpPipeline] Error iniciando:", error);
       res.status(500).json({ error: error.message });
     }
   });

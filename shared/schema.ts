@@ -825,6 +825,13 @@ export const kdpMetadata = pgTable("kdp_metadata", {
   contentWarnings: text("content_warnings"),
   status: text("status").notNull().default("draft"),
   notes: text("notes"),
+  // [Fix17] KDP Optimizer pipeline (multi-mercado, marketing kit, landing content).
+  manuscriptAnalysis: jsonb("manuscript_analysis"),
+  marketEntries: jsonb("market_entries"),
+  marketingKit: jsonb("marketing_kit"),
+  landingContent: jsonb("landing_content"),
+  pipelineStatus: text("pipeline_status").default("idle"),
+  pipelineProgress: jsonb("pipeline_progress"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
