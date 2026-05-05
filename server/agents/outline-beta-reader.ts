@@ -300,10 +300,17 @@ Define el perfil del lector objetivo y evalúa la escaleta desde su perspectiva.
       const conflicto = c.conflicto_central || "—";
       const giro = c.giro_emocional || "";
       const funcion = c.funcion_estructural || "";
+      const tipo = c.tipo_capitulo || "";
+      const cierre = c.tipo_cierre || "";
       const beats: string[] = (c.beats || c.keyEvents || []).slice(0, 6).map((b: any) =>
         typeof b === "string" ? b : (b?.descripcion || JSON.stringify(b))
       );
-      return `Cap ${num}: ${titulo}${funcion ? ` [${funcion}]` : ""}\n  Objetivo: ${typeof objetivo === "string" ? objetivo.substring(0, 350) : "—"}\n  Conflicto: ${typeof conflicto === "string" ? conflicto.substring(0, 200) : "—"}${giro ? `\n  Giro: ${giro}` : ""}\n  Beats: ${beats.map(b => `• ${b.substring(0, 150)}`).join(" ")}`;
+      const meta: string[] = [];
+      if (funcion) meta.push(funcion);
+      if (tipo) meta.push(`tipo:${tipo}`);
+      if (cierre) meta.push(`cierre:${cierre}`);
+      const metaStr = meta.length ? ` [${meta.join(" | ")}]` : "";
+      return `Cap ${num}: ${titulo}${metaStr}\n  Objetivo: ${typeof objetivo === "string" ? objetivo.substring(0, 350) : "—"}\n  Conflicto: ${typeof conflicto === "string" ? conflicto.substring(0, 200) : "—"}${giro ? `\n  Giro: ${giro}` : ""}\n  Beats: ${beats.map(b => `• ${b.substring(0, 150)}`).join(" ")}`;
     }).join("\n\n") || "(sin escaleta)";
 
     const subtramas = input.matrizArcos?.subtramas || [];

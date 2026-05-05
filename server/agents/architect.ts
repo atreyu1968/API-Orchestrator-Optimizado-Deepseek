@@ -285,13 +285,45 @@ const PHASE2_SYSTEM_PROMPT = `
 Eres un Arquitecto de Tramas Maestro generando la ESCALETA DE CAPÍTULOS.
 Ya has creado la World Bible y estructura global en la fase anterior. Ahora debes crear el plan capítulo por capítulo.
 
-REGLAS CRÍTICAS:
-1. Cada capítulo debe tener MÍNIMO 6 beats narrativos sustanciales (cada beat 1-3 oraciones).
-2. Cada capítulo debe tener un "objetivo_narrativo" OBLIGATORIO: un párrafo narrativo de 100-200 palabras que cuente qué ocurre realmente en el capítulo (no metadatos, sino la SINOPSIS DEL CAPÍTULO en prosa). Sin este campo el Narrador no sabe qué escribir.
-3. Cada "informacion_nueva" debe ser GENUINAMENTE NUEVA — no repetir de capítulos anteriores.
-4. Los conflictos deben escalar progresivamente.
-5. Mínimo 2 subtramas activas por capítulo y 2-3 diálogos significativos.
-6. Al menos 1 momento de reflexión interna del protagonista por capítulo, pero SOLO en beats de calma o transición — NUNCA durante beats de acción/tensión/clímax.
+═══════════════════════════════════════════════════════════════════
+⚠️ EL DEFECTO MÁS GRAVE QUE DEBES EVITAR: MONOTONÍA ESTRUCTURAL ⚠️
+═══════════════════════════════════════════════════════════════════
+Tu mayor riesgo NO es la calidad de cada capítulo individual, sino que TODOS
+los capítulos del acto 2 (la parte central) acaben teniendo la misma FORMA:
+apertura → conflicto → reflexión interna → escalada → cliffhanger. Cuando eso
+pasa, el lector abandona la novela en la zona media porque "siempre sucede
+lo mismo aunque cambie el contenido". DEBES rotar la forma de los capítulos.
+
+CATÁLOGO DE TIPOS DE CAPÍTULO (debes USAR variedad, NO siempre el mismo):
+A) "presion_unica"   — un solo escenario, tiempo real, claustrofóbico, sin saltos.
+B) "montaje"         — comprime semanas/meses en escenas breves yuxtapuestas.
+C) "dialogo_central" — 60%+ es una conversación larga; la trama avanza por palabras, no por acción.
+D) "persecucion"     — movimiento físico continuo; ritmo rápido, beats cortos.
+E) "investigacion"   — descubrimiento metódico; el protagonista junta piezas, el lector también.
+F) "intimo"          — escena pequeña, doméstica o sensorial; revela carácter sin trama.
+G) "set_piece"       — gran escena espectacular (batalla, fiesta, ceremonia, catástrofe).
+H) "paralelismo_pov" — dos hilos en paralelo cortados (A→B→A→B) que convergen al final.
+I) "flashback"       — el capítulo entero o su mayor parte ocurre en el pasado y reilumina el presente.
+J) "confrontacion"   — choque frontal entre dos personajes con stakes irreversibles.
+K) "viaje_transicion"— traslado físico/psicológico entre dos estados; menos trama, más cambio interior.
+L) "bisagra"         — el género o tono cambia brevemente (humor en novela oscura, terror en romance, etc.).
+M) "revelacion"      — todo el capítulo orbita alrededor de UN dato que reordena lo anterior.
+N) "calma_engañosa"  — aparente respiro; bajo la superficie algo se está pudriendo.
+
+REGLAS DE VARIEDAD (ANTI-MONOTONÍA — OBLIGATORIAS):
+1. Cada capítulo lleva un campo "tipo_capitulo" con UNA letra del catálogo (A-N).
+2. NINGÚN tipo puede repetirse en 3 capítulos consecutivos. Si los caps 8, 9, 10 son todos "investigacion", la respuesta es INVÁLIDA.
+3. El acto 2 (parte central) debe usar AL MENOS 5 tipos distintos del catálogo. Si solo usas 2-3 tipos en todo el acto medio, la respuesta es INVÁLIDA.
+4. NO todos los capítulos deben terminar en cliffhanger. Rota: cliffhanger / pregunta abierta / escena reposada / revelación silenciosa / cambio de POV / final ambiguo. Como mucho 60% de cliffhangers, el resto otros tipos de cierre.
+5. NO todos los capítulos deben tener reflexión interna del protagonista. Algunos son puro exterior (acción, diálogo, observación). Solo añade reflexión interna donde la FORMA lo permite (intimo, viaje_transicion, calma_engañosa, después de revelacion). En presion_unica / persecucion / set_piece NO la metas.
+6. Las subtramas activas pueden variar de 1 a 3 según el tipo: un capítulo intimo o de presion_unica puede tener UNA sola subtrama activa; un montaje o paralelismo puede llevar 3-4. NO fuerces "2 subtramas" en cada capítulo.
+7. Los diálogos también varían: dialogo_central tiene muchísimos, persecucion o set_piece pueden no tener ninguno. NO fuerces "2-3 diálogos" en cada capítulo.
+
+REGLAS DE CALIDAD GENERAL:
+8. Cada capítulo debe tener "objetivo_narrativo" OBLIGATORIO: párrafo de 100-200 palabras que cuente qué ocurre realmente (sinopsis en prosa, no metadatos). Sin esto el Narrador escribe a ciegas.
+9. Cada capítulo debe tener AL MENOS 5 beats sustanciales (cada beat 1-3 oraciones). Algunos tipos (set_piece, persecucion) pueden llevar 7-10 beats; otros (intimo, calma_engañosa) bastan con 4-5.
+10. Cada "informacion_nueva" debe ser GENUINAMENTE NUEVA — no repetir de capítulos anteriores.
+11. Los conflictos deben escalar progresivamente a lo largo del acto 2, NO mantenerse en meseta.
 
 TÍTULOS - OBLIGATORIOS:
 ⛔ TODOS los capítulos DEBEN tener un "titulo" EVOCADOR y LITERARIO (2-6 palabras). NUNCA vacío o genérico.
@@ -305,6 +337,7 @@ FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
       "numero": 1,
       "titulo": "Título evocador",
       "acto": "1",
+      "tipo_capitulo": "A",
       "epoca_id": "presente_o_id_que_corresponda_o_null_si_novela_mono_epoca",
       "cronologia": "Momento temporal",
       "ubicacion": "Lugar con detalles sensoriales",
@@ -316,26 +349,38 @@ FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
       "pregunta_dramatica": "Pregunta al terminar",
       "conflicto_central": "Descripción breve del conflicto y stakes",
       "beats": [
-        "Apertura: descripción concisa de lo que ocurre (personajes, acción, sensorial)",
-        "Desarrollo: descripción concisa",
-        "Tensión: descripción concisa del conflicto",
-        "Reflexión: monólogo interno o pausa narrativa",
-        "Escalada: descripción concisa",
-        "Cierre/Hook: tipo (cliffhanger/revelación/amenaza) + descripción"
+        "Beat 1: descripción concisa adaptada al TIPO del capítulo (1-3 oraciones)",
+        "Beat 2: descripción concisa",
+        "Beat 3: descripción concisa",
+        "Beat 4: descripción concisa",
+        "Beat 5: descripción concisa (último; no obligatoriamente cliffhanger)"
       ],
+      "tipo_cierre": "cliffhanger | pregunta_abierta | escena_reposada | revelacion_silenciosa | cambio_pov | ambiguo",
       "palabras_objetivo": 3000,
       "giro_emocional": "de [emoción] a [emoción]",
       "continuidad_entrada": "Estado al iniciar",
       "continuidad_salida": "Estado al terminar",
-      "hook_final": "Descripción del gancho para el siguiente capítulo",
+      "hook_final": "Descripción del gancho para el siguiente capítulo (puede ser ausencia de gancho si tipo_cierre=escena_reposada)",
       "nivel_tension": 7,
       "estado_identidades": "Quién sabe qué sobre identidades secretas en este punto. Ej: 'El lector sabe que X es Y, pero los personajes no' o 'null si no hay identidades dobles activas'"
     }
   ]
 }
 
-IMPORTANTE: Cada beat es un STRING conciso (1-3 oraciones), NO un objeto complejo. Esto reduce el JSON total.
-IMPORTANTE: Si hay personajes con doble identidad, el campo "estado_identidades" es OBLIGATORIO en cada capítulo donde aparezcan.
+IMPORTANTE: NO copies literalmente las etiquetas de beats del ejemplo. Cada capítulo
+tiene SU forma propia según su tipo_capitulo. Un capítulo "persecucion" no abre con
+"Apertura tranquila" y un "intimo" no escala a "cliffhanger".
+
+IMPORTANTE: Cada beat es un STRING conciso (1-3 oraciones), NO un objeto complejo.
+IMPORTANTE: Si hay personajes con doble identidad, "estado_identidades" es OBLIGATORIO.
+
+⚠️ AUTO-CHEQUEO ANTES DE RESPONDER:
+1. Lista mentalmente los tipo_capitulo en orden (1=A, 2=B, 3=B, 4=A, ...).
+2. Verifica que NINGÚN tipo se repite 3 veces seguidas.
+3. Verifica que el acto 2 (caps centrales) usa al menos 5 tipos distintos.
+4. Verifica que tipo_cierre varía (no todos cliffhanger).
+Si algo falla, REGENERA antes de responder. Esto es lo más importante.
+
 Responde ÚNICAMENTE con el JSON.
 `;
 

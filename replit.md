@@ -10,6 +10,32 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Bugfix v7.2 [Fix16] — Anti-monotonía estructural del Arquitecto en el acto 2 (May 5, 2026)
+
+**Síntoma reportado**: el Arquitecto repetía la misma forma narrativa en los capítulos centrales (apertura → conflicto → reflexión → escalada → cliffhanger), haciendo que la zona media de la novela resultara cansina aunque el contenido cambiara.
+
+**Causa raíz**: el `PHASE2_SYSTEM_PROMPT` traía una plantilla literal de 6 beats etiquetados (`Apertura/Desarrollo/Tensión/Reflexión/Escalada/Cierre`) que el modelo copiaba tal cual a cada capítulo. Además, las reglas exigían "1 reflexión interna + 2 subtramas activas + 2-3 diálogos" en cada uno, forzando que todos los capítulos tuviesen idéntica forma.
+
+**Fix 1 — Catálogo de tipos de capítulo (server/agents/architect.ts).** Reemplazada la plantilla rígida por un catálogo de 14 tipos (presion_unica, montaje, dialogo_central, persecucion, investigacion, intimo, set_piece, paralelismo_pov, flashback, confrontacion, viaje_transicion, bisagra, revelacion, calma_engañosa) que el Arquitecto debe rotar. Se añade el campo `tipo_capitulo` (A-N) y `tipo_cierre` (cliffhanger / pregunta_abierta / escena_reposada / revelacion_silenciosa / cambio_pov / ambiguo) en cada capítulo. Las reglas que forzaban "1 reflexión + 2 subtramas + 2-3 diálogos por capítulo" se sustituyen por: la reflexión interna solo encaja en tipos de calma; las subtramas y diálogos varían según el tipo. Auto-chequeo final del Arquitecto: ningún tipo se repite 3 veces seguidas, el acto 2 usa ≥5 tipos distintos, ≤60% de cierres tipo cliffhanger.
+
+**Fix 2 — Validación servidor-side (server/orchestrator.ts L1372+).** Nueva validación dentro del retry loop del Arquitecto que detecta monotonía y dispara reintento (hasta `MAX_ARCHITECT_RETRIES`):
+- Cobertura mínima: `tipo_capitulo` presente en ≥50% de capítulos regulares.
+- Variedad en acto 2: tercio central de la escaleta debe tener ≥4 tipos distintos (si tiene ≥4 caps).
+- Sin runs largos: ningún tipo se repite ≥3 caps consecutivos.
+- Cliffhangers ≤70% del total. Si tras 3 intentos sigue monótona, se acepta lo mejor visto y se loguea warning, sin bloquear el proyecto.
+
+**Fix 3 — Lector Beta de Escaletas (server/agents/outline-beta-reader.ts).** El bloque de capítulos ahora incluye `tipo:X | cierre:Y` para que el Beta pueda detectar y reportar monotonía en su evaluación.
+
+**Fix 4 — Persistencia (server/orchestrator.ts `convertPlotOutline` L8821-8823).** `tipo_capitulo` y `tipo_cierre` se persisten ahora en `plotOutline.chapterOutlines` (schema passthrough) para que sobrevivan reanudaciones desde checkpoint.
+
+**Fix 5 — Normalización en validación (server/orchestrator.ts L1380+).** El modelo puede responder "A", "presion_unica" o "A) presion_unica". Nueva función `normalizeTipo` extrae la letra A-N o reconoce el nombre canónico, evitando falsos positivos en la detección de variedad por inconsistencia de formato.
+
+**Fix 6 — Mejor-tracking respeta variedad (server/orchestrator.ts L1446).** Antes `bestWorldBibleData` se actualizaba solo por `failRate` de calidad, pudiendo restaurar tras agotar retries una versión 100% monótona. Ahora la rama de monotonía NO actualiza el mejor; solo lo hace la rama de calidad previa.
+
+**Fix 7 — Narrador conoce el tipo (server/agents/ghostwriter.ts L963+).** El prompt de cada capítulo incluye ahora `tipo_capitulo` con un recordatorio del catálogo y guía adaptativa (frases cortas en persecucion, sin reflexión interna en set_piece, etc.) y `tipo_cierre` para que no fuerce cliffhanger cuando el plan dice otra cosa.
+
+**Marcador**: comentarios `[Fix16]` en código modificado.
+
 ### Bugfix v7.2 [Fix15] — World Bible canónica en TODOS los agentes que tocan prosa (May 4, 2026)
 
 **Síntoma reportado**: el escritor (Narrador/Cirujano) no respetaba nombres canónicos de personajes establecidos en la World Bible, los abreviaba o inventaba variantes. Investigación reveló 7 puntos donde el WB se truncaba o llegaba sin formato útil.

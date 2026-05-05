@@ -957,6 +957,24 @@ export class GhostwriterAgent extends BaseAgent {
     - Elenco Presente: ${chapterData.elenco_presente.join(", ")}
     ${chapterData.tono_especifico ? `- Tono específico: ${chapterData.tono_especifico}` : ""}
     ${chapterData.funcion_estructural ? `- Función estructural: ${chapterData.funcion_estructural}` : ""}
+    ${(chapterData as any).tipo_capitulo ? `- Tipo de capítulo (FORMA narrativa, NO contenido): ${(chapterData as any).tipo_capitulo}
+    ⚠️ Adapta tu prosa al tipo. Recordatorio rápido:
+      • presion_unica/A → un solo escenario, tiempo casi real, sin saltos. Frases medidas.
+      • montaje/B → escenas breves yuxtapuestas, transiciones temporales claras.
+      • dialogo_central/C → 60%+ del capítulo es UNA conversación larga; la trama avanza por palabras.
+      • persecucion/D → frases CORTAS, ritmo rápido, sin reflexión interna.
+      • investigacion/E → metódico, el lector descubre con el protagonista.
+      • intimo/F → escena pequeña sensorial, revela carácter sin avanzar la trama externa.
+      • set_piece/G → gran escena espectacular; coreografía clara, SIN reflexión interna.
+      • paralelismo_pov/H → corta entre dos hilos (A→B→A→B) que convergen.
+      • flashback/I → mayor parte ocurre en el pasado; usa marcadores temporales.
+      • confrontacion/J → choque frontal entre dos personajes; tensión sostenida.
+      • viaje_transicion/K → traslado físico/psicológico; ritmo medio, cambio interior.
+      • bisagra/L → cambio breve de tono o registro respecto al resto del libro.
+      • revelacion/M → todo orbita en torno a UN dato que reordena lo anterior.
+      • calma_engañosa/N → aparente respiro; siembra inquietud bajo la superficie.
+    NO metas reflexión interna del protagonista en tipos de acción (D, G) ni claustrofóbicos (A) salvo en beats explícitos de pausa.` : ""}
+    ${(chapterData as any).tipo_cierre ? `- Tipo de cierre objetivo: ${(chapterData as any).tipo_cierre} (cliffhanger / pregunta_abierta / escena_reposada / revelacion_silenciosa / cambio_pov / ambiguo). NO fuerces cliffhanger si el cierre objetivo es otro.` : ""}
     
     ${chapterData.transicion_ubicacion ? `
     ═══════════════════════════════════════════════════════════════════

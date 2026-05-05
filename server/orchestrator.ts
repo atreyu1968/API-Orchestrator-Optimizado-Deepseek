@@ -1366,6 +1366,110 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 });
               }
 
+              // [Fix16] Validación anti-monotonía estructural en el acto 2.
+              // Antes el Arquitecto repetía la misma forma de capítulo durante
+              // toda la zona media (apertura→conflicto→reflexión→escalada→cliffhanger)
+              // y el lector abandonaba la novela. Ahora exigimos:
+              //   - tipo_capitulo presente en la mayoría de caps regulares
+              //   - >=4 tipos distintos en el acto 2 (núcleo central de la novela)
+              //   - ningún tipo se repite >=3 veces consecutivas
+              //   - <=70% de cierres tipo "cliffhanger" globalmente
+              if (regularCaps.length >= 6) {
+                // [Fix16] Normaliza el tipo_capitulo: el modelo puede responder
+                // "A", "presion_unica", "A) presion_unica" o "A - presion_unica".
+                // Extraemos la letra (A-N) si aparece y, si no, usamos el nombre
+                // literal canónico. Así dos formatos distintos cuentan como mismo tipo.
+                const TYPE_NAMES = new Set([
+                  "presion_unica","montaje","dialogo_central","persecucion","investigacion",
+                  "intimo","set_piece","paralelismo_pov","flashback","confrontacion",
+                  "viaje_transicion","bisagra","revelacion","calma_engañosa","calma_enganosa",
+                ]);
+                const normalizeTipo = (raw: any): string => {
+                  if (!raw) return "";
+                  const s = String(raw).trim().toLowerCase();
+                  if (!s) return "";
+                  // 1) Letra A-N al principio (con o sin paréntesis/guion)
+                  const letterMatch = s.match(/^([a-n])\b/);
+                  if (letterMatch) return letterMatch[1].toUpperCase();
+                  // 2) Nombre canónico contenido en el string
+                  for (const name of TYPE_NAMES) {
+                    if (s.includes(name)) return name;
+                  }
+                  // 3) Fallback: cadena cruda truncada
+                  return s.slice(0, 24);
+                };
+                const types: Array<{ num: number; tipo: string }> = regularCaps.map((c: any) => ({
+                  num: c.numero,
+                  tipo: normalizeTipo(c.tipo_capitulo || c.funcion_estructural),
+                }));
+                const withType = types.filter(t => t.tipo.length > 0);
+                const coverage = withType.length / types.length;
+
+                // Recorte del acto 2: tercio central (33%-66%).
+                const a2Start = Math.floor(types.length * 0.33);
+                const a2End = Math.ceil(types.length * 0.66);
+                const act2 = types.slice(a2Start, a2End);
+                const act2Types = act2.filter(t => t.tipo.length > 0).map(t => t.tipo);
+                const act2Distinct = new Set(act2Types).size;
+
+                // Detección de runs (mismo tipo consecutivo).
+                let maxRun = 1;
+                let currentRun = 1;
+                for (let i = 1; i < withType.length; i++) {
+                  if (withType[i].tipo === withType[i - 1].tipo) {
+                    currentRun++;
+                    if (currentRun > maxRun) maxRun = currentRun;
+                  } else {
+                    currentRun = 1;
+                  }
+                }
+
+                // Cliffhanger ratio global.
+                const cierres = regularCaps
+                  .map((c: any) => String(c.tipo_cierre || "").trim().toLowerCase())
+                  .filter((s: string) => s.length > 0);
+                const cliffRatio = cierres.length > 0
+                  ? cierres.filter((s: string) => s.includes("cliff")).length / cierres.length
+                  : 0;
+
+                const monotonyProblems: string[] = [];
+                // Solo penalizamos cobertura si tenemos suficientes datos para concluir
+                if (coverage < 0.5) monotonyProblems.push(`tipo_capitulo solo en ${Math.round(coverage * 100)}% de caps`);
+                if (act2.length >= 4 && act2Distinct > 0 && act2Distinct < 4) monotonyProblems.push(`acto 2 con solo ${act2Distinct} tipos distintos (mín 4)`);
+                if (maxRun >= 3) monotonyProblems.push(`mismo tipo se repite ${maxRun} caps seguidos`);
+                if (cierres.length >= 6 && cliffRatio > 0.7) monotonyProblems.push(`${Math.round(cliffRatio * 100)}% de cliffhangers (máx 70%)`);
+
+                if (monotonyProblems.length > 0) {
+                  // [Fix16] Si hay monotonía NO actualizamos bestWorldBibleData:
+                  // ya se actualizó arriba basándose en failRate de calidad. Una
+                  // escaleta con beats correctos pero monótona no debería reemplazar
+                  // a una previa peor en beats pero más variada (evita restaurar
+                  // una versión 100% monótona como "mejor" tras agotar retries).
+                  lastArchitectError = `Monotonía estructural detectada: ${monotonyProblems.join("; ")}`;
+                  console.warn(`[Orchestrator] Architect attempt ${architectAttempt} monotonía: ${lastArchitectError}`);
+
+                  if (architectAttempt < MAX_ARCHITECT_RETRIES) {
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "warn",
+                      message: `Escaleta monótona (intento ${architectAttempt}): ${monotonyProblems.join("; ")}. Reintentando para variar la forma de los capítulos del acto 2...`,
+                      agentRole: "architect",
+                    });
+                    worldBibleData = null;
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    continue;
+                  }
+
+                  // Agotó retries: log y seguir con lo disponible.
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warn",
+                    message: `⚠️ Escaleta con cierta monotonía estructural tras ${MAX_ARCHITECT_RETRIES} intentos (${monotonyProblems.join("; ")}). Continuando con lo disponible.`,
+                    agentRole: "architect",
+                  });
+                }
+              }
+
               console.log(`[Orchestrator] World Bible parsed successfully on attempt ${architectAttempt}: ${worldBibleData.world_bible?.personajes?.length || 0} characters, ${escaletaLength}/${expectedChapters} chapters, ${regularCaps.length - failingCaps.length}/${regularCaps.length} caps con escaleta completa`);
               break;
             }
@@ -8735,6 +8839,8 @@ Responde SOLO con un JSON válido con la estructura:
         ubicacion: c.ubicacion,
         elenco_presente: c.elenco_presente,
         funcion_estructural: c.funcion_estructural,
+        tipo_capitulo: c.tipo_capitulo,
+        tipo_cierre: c.tipo_cierre,
         informacion_nueva: c.informacion_nueva,
         pregunta_dramatica: c.pregunta_dramatica,
         conflicto_central: c.conflicto_central,
