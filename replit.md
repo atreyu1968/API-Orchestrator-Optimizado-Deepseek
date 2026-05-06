@@ -46,6 +46,10 @@ npm run dev
 - **Design System/Styling**: `client/tailwind.config.ts`, `client/src/index.css`
 - **World Bible Management**: `server/utils/world-bible-format.ts`
 
+## Recent fixes
+
+- **[Fix18] Plot Integrity Auditor**: Nuevo agente (`server/agents/plot-integrity-auditor.ts`) que audita la escaleta del Arquitecto en 3 dimensiones —foreshadowing/seeds-payoffs, coherencia operacional del antagonista, ritmo y densidad del acto 3— combinando métricas deterministas (densidad de pivotes por acto, curva de tensión, días diegéticos, ratio de cliffhangers) con análisis cualitativo del LLM. Inserto entre el Crítico de Originalidad y el Lector Beta con loop de retry (máx 2 iter, threshold 7/10) que reinvoca al Arquitecto vía `plotIntegrityFeedback`. PHASE2 del Arquitecto extendido con campos opcionales por capítulo: `siembra`, `cosecha`, `tension_objetivo`, `dias_diegeticos`, `eventos_pivotales`, `justificacion_antagonica`. Best-effort buffer conserva la mejor escaleta vista.
+
 ## Architecture decisions
 
 - **Autonomous Agent Orchestration**: Uses a modular agent system (`BaseAgent` inheritance) for specialized tasks, managed by a central orchestrator, allowing for complex, multi-step literary workflows.

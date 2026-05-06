@@ -48,6 +48,12 @@ interface ArchitectInput {
   // Arquitecto pasándole estas instrucciones de revisión + el perfil del
   // lector objetivo, para que rediseñe pensando explícitamente en él.
   betaReaderFeedback?: string;
+
+  // [Fix18] Feedback del Auditor de Integridad Narrativa: se inyecta cuando
+  // la auditoría de foreshadowing / coherencia antagonista / pacing del acto 3
+  // detecta problemas de severidad alta. El Arquitecto debe corregir SIN
+  // perder lo aprobado por críticas previas.
+  plotIntegrityFeedback?: string;
 }
 
 const PHASE1_SYSTEM_PROMPT = `
@@ -356,6 +362,12 @@ FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
         "Beat 5: descripción concisa (último; no obligatoriamente cliffhanger)"
       ],
       "tipo_cierre": "cliffhanger | pregunta_abierta | escena_reposada | revelacion_silenciosa | cambio_pov | ambiguo",
+      "tension_objetivo": 7,
+      "dias_diegeticos": 1,
+      "eventos_pivotales": ["Pivote 1: cambio irreversible que ocurre aquí (vacío si el cap no contiene pivotes)"],
+      "siembra": ["IDs cortos de elementos plantados aquí que se cosecharán después (objeto, secreto, atmósfera, capacidad)"],
+      "cosecha": ["IDs de elementos sembrados en capítulos previos que se activan aquí"],
+      "justificacion_antagonica": "OPCIONAL — si en este capítulo el antagonista pierde control / cede algo crítico / subestima al protagonista, explica en ≥80 caracteres por qué FALLA esta vez (ego, prisa por evento X, presión externa concreta). Si no aplica, vacío.",
       "palabras_objetivo": 3000,
       "giro_emocional": "de [emoción] a [emoción]",
       "continuidad_entrada": "Estado al iniciar",
@@ -374,11 +386,19 @@ tiene SU forma propia según su tipo_capitulo. Un capítulo "persecucion" no abr
 IMPORTANTE: Cada beat es un STRING conciso (1-3 oraciones), NO un objeto complejo.
 IMPORTANTE: Si hay personajes con doble identidad, "estado_identidades" es OBLIGATORIO.
 
+⚠️ INTEGRIDAD NARRATIVA (anti-críticas recurrentes — OBLIGATORIO):
+A. FORESHADOWING: cualquier revelación importante del acto 2 o 3 (mística, mágica, sobrenatural, identidad oculta, capacidad latente, traición, parentesco) DEBE estar sembrada en al menos 2 capítulos del acto 1 vía "siembra". No dejes "cosecha" sin "siembra" previa registrada con el mismo ID corto.
+B. ANTAGONISTA: si en algún capítulo el antagonista comete un error que le perjudica (delegar algo crítico a un subordinado dudoso, dejar evidencia, no actuar pudiendo) DEBES rellenar "justificacion_antagonica" con un motivo concreto sembrado antes (ego herido, evento externo X, distracción Y). Sin justificación es CONVENIENCIA DE TRAMA.
+C. RITMO ACTO 3: distribuye "eventos_pivotales" sin que el acto 3 acumule >50% del total. Si una traición y su represalia ocurren con <2 capítulos de margen, mete decantación. "dias_diegeticos" del acto 3 NO debe colapsar a <1/3 del promedio de los actos 1-2 sin que un cap esté etiquetado explícitamente como compresión consciente.
+
 ⚠️ AUTO-CHEQUEO ANTES DE RESPONDER:
 1. Lista mentalmente los tipo_capitulo en orden (1=A, 2=B, 3=B, 4=A, ...).
 2. Verifica que NINGÚN tipo se repite 3 veces seguidas.
 3. Verifica que el acto 2 (caps centrales) usa al menos 5 tipos distintos.
 4. Verifica que tipo_cierre varía (no todos cliffhanger).
+5. Verifica que toda "cosecha" tiene su "siembra" en capítulos anteriores con el mismo ID.
+6. Verifica que toda decisión perjudicial del antagonista lleva "justificacion_antagonica" rellena.
+7. Verifica que el acto 3 no concentra >50% de "eventos_pivotales".
 Si algo falla, REGENERA antes de responder. Esto es lo más importante.
 
 Responde ÚNICAMENTE con el JSON.
@@ -436,6 +456,19 @@ export class ArchitectAgent extends BaseAgent {
     ═══════════════════════════════════════════════════════════════════
     ${input.architectInstructions}
     Estas instrucciones tienen PRIORIDAD sobre las guías generales.
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.plotIntegrityFeedback ? `
+    ═══════════════════════════════════════════════════════════════════
+    🧩 FEEDBACK DEL AUDITOR DE INTEGRIDAD NARRATIVA (PRIORIDAD MÁXIMA) 🧩
+    ═══════════════════════════════════════════════════════════════════
+    Tu escaleta anterior tiene problemas de integridad detectados por un auditor
+    especializado en tres áreas: (1) presagios/foreshadowing, (2) coherencia del
+    antagonista, (3) ritmo del tercer acto. DEBES rediseñar aplicando LITERALMENTE
+    las correcciones siguientes sin romper la estructura ni la voz. Conserva los
+    capítulos aprobados; modifica solo lo que el auditor señala.
+
+    ${input.plotIntegrityFeedback}
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     ${input.betaReaderFeedback ? `

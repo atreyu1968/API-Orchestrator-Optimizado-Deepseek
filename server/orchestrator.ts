@@ -14,6 +14,8 @@ import {
   WorldBibleArbiterAgent,
   OriginalityCriticAgent,
   OutlineBetaReaderAgent,
+  PlotIntegrityAuditorAgent,
+  computePlotIntegrityMetrics,
   HolisticReviewerAgent,
   type HolisticReviewerResult,
   BetaReaderAgent,
@@ -147,6 +149,7 @@ export class Orchestrator {
   private holisticReviewer = new HolisticReviewerAgent();
   private betaReader = new BetaReaderAgent();
   private outlineBetaReader = new OutlineBetaReaderAgent();
+  private plotIntegrityAuditor = new PlotIntegrityAuditorAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
@@ -1625,6 +1628,141 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         }
       } catch (criticErr) {
         console.error(`[Orchestrator] Crítico de Originalidad falló (no bloqueante): ${(criticErr as Error).message}`);
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      // [Fix18] AUDITOR DE INTEGRIDAD NARRATIVA — examina foreshadowing,
+      // coherencia del antagonista y ritmo del tercer acto. Si encuentra
+      // problemas de severidad "alta" o puntuación < 7, re-ejecuta al
+      // Arquitecto inyectando plotIntegrityFeedback. Máximo 2 iteraciones
+      // (1 análisis inicial + 1 reintento). Best-effort: conserva la
+      // mejor escaleta vista. Solo en generación nueva.
+      // ═══════════════════════════════════════════════════════════════
+      try {
+        if (!this.aborted) {
+          const MAX_PI_ITERATIONS = 2;
+          const PI_THRESHOLD = 7;
+          let bestPlotIntegrity: { data: ParsedWorldBible; score: number } | null = null;
+          let lastSeenScore = 0;
+
+          for (let piIter = 0; piIter < MAX_PI_ITERATIONS; piIter++) {
+            if (this.aborted) break;
+            this.callbacks.onAgentStatus("architect", "thinking", "El Auditor de Integridad Narrativa está revisando la escaleta...");
+            const computedMetrics = computePlotIntegrityMetrics(worldBibleData.escaleta_capitulos as any[]);
+            const piOutcome = await this.plotIntegrityAuditor.analyze({
+              title: project.title,
+              genre: project.genre,
+              tone: project.tone,
+              premise: effectivePremise,
+              chapterCount: project.chapterCount,
+              worldBible: worldBibleData.world_bible,
+              escaletaCapitulos: worldBibleData.escaleta_capitulos as any[],
+              projectId: project.id,
+              computedMetrics,
+            });
+
+            if (piOutcome.raw?.tokenUsage) {
+              await this.trackTokenUsage(project.id, piOutcome.raw.tokenUsage, "El Auditor de Integridad Narrativa", "deepseek-v4-flash", undefined, "plot_integrity_check");
+            }
+
+            const audit = piOutcome.result;
+            if (!audit) {
+              console.warn(`[Orchestrator] Auditor de Integridad Narrativa no devolvió resultado válido (iter ${piIter + 1}). Continuando.`);
+              break;
+            }
+
+            const altas = audit.problemas.filter(p => p.severidad === "alta").length;
+            const medias = audit.problemas.filter(p => p.severidad === "media").length;
+            console.log(`[Orchestrator] Auditor de Integridad — iter ${piIter + 1}/${MAX_PI_ITERATIONS}: score ${audit.puntuacion_global}/10, veredicto "${audit.veredicto}", ${altas} altas + ${medias} medias. ${audit.resumen}`);
+
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: audit.veredicto === "reescribir" ? "warn" : "info",
+              agentRole: "architect",
+              message: `🧩 Auditor de Integridad Narrativa — Score ${audit.puntuacion_global}/10 (${audit.veredicto}). ${altas} problemas altos, ${medias} medios. ${audit.resumen}`,
+              metadata: { plotIntegrityScore: audit.puntuacion_global, veredicto: audit.veredicto, problemas: audit.problemas as any },
+            });
+
+            // Best-effort buffer: guarda la mejor escaleta vista. Trackeamos
+            // también el último score para evitar una re-auditoría al cierre.
+            lastSeenScore = audit.puntuacion_global;
+            if (!bestPlotIntegrity || audit.puntuacion_global > bestPlotIntegrity.score) {
+              bestPlotIntegrity = { data: worldBibleData, score: audit.puntuacion_global };
+            }
+
+            const needsRetry = audit.puntuacion_global < PI_THRESHOLD && audit.instrucciones_revision?.trim();
+            const lastIter = piIter === MAX_PI_ITERATIONS - 1;
+            if (!needsRetry || lastIter) {
+              break;
+            }
+
+            console.log(`[Orchestrator] Auditor de Integridad pidió revisión. Re-ejecutando Arquitecto con plotIntegrityFeedback...`);
+            this.callbacks.onAgentStatus("architect", "thinking", `Integridad narrativa baja (${audit.puntuacion_global}/10). El Arquitecto está corrigiendo presagios, antagonista y pacing...`);
+
+            try {
+              const retryResult = await this.architect.execute({
+                title: project.title,
+                premise: effectivePremise,
+                genre: project.genre,
+                tone: project.tone,
+                chapterCount: project.chapterCount,
+                hasPrologue: project.hasPrologue,
+                hasEpilogue: project.hasEpilogue,
+                hasAuthorNote: project.hasAuthorNote,
+                architectInstructions: project.architectInstructions || undefined,
+                plotIntegrityFeedback: audit.instrucciones_revision,
+                kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+                forbiddenNames,
+                projectId: project.id,
+                previousVolumesFullText,
+                pseudonymCatalog,
+                extendedGuideContent: extendedGuideContent || undefined,
+              });
+
+              if (retryResult.tokenUsage) {
+                await this.trackTokenUsage(project.id, retryResult.tokenUsage, "El Arquitecto (revisión integridad narrativa)", "deepseek-v4-flash", undefined, "world_bible");
+              }
+
+              if (!retryResult.error && !retryResult.timedOut && retryResult.content?.trim()) {
+                const reviewedData = this.parseArchitectOutput(retryResult.content);
+                const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
+                const reviewedLen = reviewedData?.escaleta_capitulos?.length || 0;
+                if (reviewedData && reviewedData.world_bible?.personajes?.length && reviewedLen >= expectedChapters - 2) {
+                  console.log(`[Orchestrator] Arquitecto revisó tras Auditor: ${reviewedLen}/${expectedChapters} capítulos. Sustituyendo y re-auditando.`);
+                  worldBibleData = reviewedData;
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "info",
+                    agentRole: "architect",
+                    message: `✅ El Arquitecto rediseñó el outline aplicando las correcciones del Auditor de Integridad Narrativa.`,
+                  });
+                  continue;
+                } else {
+                  console.warn(`[Orchestrator] Revisión por Auditor produjo outline inválido (${reviewedLen}/${expectedChapters}). Manteniendo mejor visto.`);
+                  break;
+                }
+              } else {
+                console.warn(`[Orchestrator] Revisión por Auditor falló: ${retryResult.error || "vacío/timeout"}. Manteniendo mejor visto.`);
+                break;
+              }
+            } catch (retryErr) {
+              console.error(`[Orchestrator] Excepción en revisión por Auditor: ${(retryErr as Error).message}. Manteniendo mejor visto.`);
+              break;
+            }
+          }
+
+          // Best-effort: si el último audit puntuó peor que el mejor visto y
+          // la referencia cambió (hubo un retry posterior), recupera la mejor.
+          // Como en el último iter se hace break ANTES de reemplazar (el
+          // chequeo `lastIter` está en el `break` de needsRetry), el
+          // `lastSeenScore` corresponde siempre al `worldBibleData` actual.
+          if (bestPlotIntegrity && bestPlotIntegrity.data !== worldBibleData && bestPlotIntegrity.score > lastSeenScore) {
+            console.log(`[Orchestrator] Recuperando mejor escaleta vista por Auditor (${bestPlotIntegrity.score} > ${lastSeenScore}).`);
+            worldBibleData = bestPlotIntegrity.data;
+          }
+        }
+      } catch (piErr) {
+        console.error(`[Orchestrator] Auditor de Integridad Narrativa falló (no bloqueante): ${(piErr as Error).message}`);
       }
 
       // ═══════════════════════════════════════════════════════════════
@@ -3310,6 +3448,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       continuidad_entrada: c.continuidad_entrada,
       continuidad_salida: c.continuidad_salida,
       riesgos_de_verosimilitud: c.riesgos_de_verosimilitud,
+      tipo_capitulo: c.tipo_capitulo,
+      tipo_cierre: c.tipo_cierre,
+      // [Fix18] integridad narrativa.
+      siembra: c.siembra,
+      cosecha: c.cosecha,
+      tension_objetivo: c.tension_objetivo,
+      dias_diegeticos: c.dias_diegeticos,
+      eventos_pivotales: c.eventos_pivotales,
+      justificacion_antagonica: c.justificacion_antagonica,
     }));
     
     return {
@@ -7418,6 +7565,15 @@ Responde SOLO con un JSON válido con la estructura:
           continuidad_entrada: c.continuidad_entrada,
           continuidad_salida: c.continuidad_salida,
           riesgos_de_verosimilitud: c.riesgos_de_verosimilitud,
+          tipo_capitulo: c.tipo_capitulo,
+          tipo_cierre: c.tipo_cierre,
+          // [Fix18] integridad narrativa.
+          siembra: c.siembra,
+          cosecha: c.cosecha,
+          tension_objetivo: c.tension_objetivo,
+          dias_diegeticos: c.dias_diegeticos,
+          eventos_pivotales: c.eventos_pivotales,
+          justificacion_antagonica: c.justificacion_antagonica,
         }));
         // Dedup por number contra existingArr: si extendNovel se ejecuta dos
         // veces o si el Architect emite outlines que ya existían, prevalece
@@ -8841,6 +8997,14 @@ Responde SOLO con un JSON válido con la estructura:
         funcion_estructural: c.funcion_estructural,
         tipo_capitulo: c.tipo_capitulo,
         tipo_cierre: c.tipo_cierre,
+        // [Fix18] Campos de integridad narrativa: foreshadowing, pacing, antagonista.
+        // jsonb passthrough — no requieren cambio de schema.
+        siembra: c.siembra,
+        cosecha: c.cosecha,
+        tension_objetivo: c.tension_objetivo,
+        dias_diegeticos: c.dias_diegeticos,
+        eventos_pivotales: c.eventos_pivotales,
+        justificacion_antagonica: c.justificacion_antagonica,
         informacion_nueva: c.informacion_nueva,
         pregunta_dramatica: c.pregunta_dramatica,
         conflicto_central: c.conflicto_central,

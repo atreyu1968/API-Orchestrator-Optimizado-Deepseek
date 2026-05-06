@@ -19,3 +19,4 @@ export { OriginalityCriticAgent, type OriginalityCriticResult, type OriginalityC
 export { HolisticReviewerAgent, type HolisticReviewerResult } from "./holistic-reviewer";
 export { BetaReaderAgent, type BetaReaderResult } from "./beta-reader";
 export { OutlineBetaReaderAgent, type OutlineBetaReaderResult, type OutlineBetaProblem, type OutlineBetaProblemType } from "./outline-beta-reader";
+export { PlotIntegrityAuditorAgent, computePlotIntegrityMetrics, type PlotIntegrityResult, type PlotIntegrityIssue, type PlotIntegrityInput, type PlotIntegrityComputedMetrics } from "./plot-integrity-auditor";
