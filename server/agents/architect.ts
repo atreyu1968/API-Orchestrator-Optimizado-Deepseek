@@ -417,12 +417,15 @@ export class ArchitectAgent extends BaseAgent {
       includeThoughts: false,      // el thoughtSignature solo se loguea, no lo usamos. Quitarlo reduce el tamaño de respuesta y baja el riesgo de drop a media generación.
     });
     // Override timeout: el Arquitecto genera JSON estructurado (no prosa larga).
-    // 12 min por fase: la Fase 2 (escaleta detallada de N capítulos, hasta 65k
-    // tokens de salida) timeoutea a 8 min en novelas grandes (35+ caps con
-    // beats >=6 y objetivo_narrativo de 100-200 palabras cada uno). El watchdog
-    // del orquestador (queue-manager.ts HEARTBEAT_TIMEOUT_MS=15min) está
-    // explícitamente diseñado para soportar API timeout de hasta 12 min, así
-    // que esto cabe sin que el frozen monitor mate al proyecto.
+    // Fase 1 (World Bible): 12 min son de sobra (~32K tokens out).
+    // Fase 2 (escaleta detallada de N capítulos, hasta 65k tokens de salida):
+    // tras [Fix18] cada capítulo lleva 6 campos extra (siembra, cosecha,
+    // tension_objetivo, dias_diegeticos, eventos_pivotales, justificacion_antagonica),
+    // lo que en novelas grandes (40+ caps) hizo que 12 min se quedaran cortos
+    // y el sistema entrara en bucle de timeouts. Por eso Fase 2 sube su timeout
+    // a 18 min via override puntual (ver `phase2`). El watchdog del orquestador
+    // (queue-manager.ts HEARTBEAT_TIMEOUT_MS=22min) deja un margen de 4 min
+    // sobre el peor caso de Fase 2 antes de marcar el proyecto como congelado.
     this.timeoutMs = 12 * 60 * 1000;
   }
 
@@ -608,7 +611,7 @@ ${input.writtenChaptersFullText}
     `;
 
     this.config.systemPrompt = PHASE1_SYSTEM_PROMPT;
-    const phase1Response = await this.generateContent(phase1Prompt);
+    const phase1Response = await this.generateContent(phase1Prompt, input.projectId);
 
     if (phase1Response.error || phase1Response.timedOut || !phase1Response.content?.trim()) {
       console.error(`[El Arquitecto] Fase 1 falló: ${phase1Response.error || "timeout/vacío"}`);
@@ -656,7 +659,7 @@ ${input.writtenChaptersFullText}
           projectId: input.projectId,
           level: "info",
           agentRole: "architect",
-          message: `📐 El Arquitecto — Fase 2/2: generando escaleta detallada de ${input.chapterCount} capítulos. Timeout: 12 min.`,
+          message: `📐 El Arquitecto — Fase 2/2: generando escaleta detallada de ${input.chapterCount} capítulos. Timeout: 18 min.`,
         });
       } catch (e) {
         console.warn(`[El Arquitecto] No se pudo escribir activity log Fase 2 inicio: ${(e as Error).message}`);
@@ -738,11 +741,17 @@ ${input.writtenChaptersFullText}
     // mientras Fase 1 (constructor) se queda en 32K para forzar concisión en la WB.
     const previousMaxOut = this.config.maxOutputTokens;
     this.config.maxOutputTokens = 65536;
+    // [Fix20] Override puntual del timeout para Fase 2: tras añadir los 6 campos
+    // de [Fix18] (siembra/cosecha/etc.) por capítulo, el JSON crece bastante y
+    // 12 min se quedan cortos en novelas grandes. Subimos a 18 min sólo aquí.
+    const previousTimeoutMs = this.timeoutMs;
+    this.timeoutMs = 18 * 60 * 1000;
     let phase2Response;
     try {
-      phase2Response = await this.generateContent(phase2Prompt);
+      phase2Response = await this.generateContent(phase2Prompt, input.projectId);
     } finally {
       this.config.maxOutputTokens = previousMaxOut;
+      this.timeoutMs = previousTimeoutMs;
     }
 
     console.log(`[El Arquitecto] Fase 2 API respondió: ${phase2Response.content?.length || 0} chars, tokens: in=${phase2Response.tokenUsage?.inputTokens || 0} out=${phase2Response.tokenUsage?.outputTokens || 0}, error=${phase2Response.error || "none"}, timedOut=${phase2Response.timedOut}`);
@@ -756,7 +765,7 @@ ${input.writtenChaptersFullText}
             projectId: input.projectId,
             level: "warning",
             agentRole: "architect",
-            message: `⚠️ El Arquitecto — Fase 2/2 falló tras ${phase2ElapsedSec}s: ${phase2Response.timedOut ? "timeout (12 min)" : (phase2Response.error || "respuesta vacía")}.`,
+            message: `⚠️ El Arquitecto — Fase 2/2 falló tras ${phase2ElapsedSec}s: ${phase2Response.timedOut ? "timeout (18 min)" : (phase2Response.error || "respuesta vacía")}.`,
           });
         } catch (e) {
           console.warn(`[El Arquitecto] No se pudo escribir activity log Fase 2 fallo: ${(e as Error).message}`);

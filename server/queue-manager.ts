@@ -13,7 +13,7 @@ interface QueueEvent {
   error?: string;
 }
 
-const HEARTBEAT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes without activity = frozen (must be > API timeout of 12 min)
+const HEARTBEAT_TIMEOUT_MS = 22 * 60 * 1000; // 22 minutes without activity = frozen (must be > Architect Fase 2 timeout de 18 min, ver [Fix20] en architect.ts)
 const HEARTBEAT_CHECK_INTERVAL_MS = 30 * 1000; // Check every 30 seconds
 
 export class QueueManager {
@@ -55,6 +55,8 @@ export class QueueManager {
     this.lastHeartbeat = null;
   }
   
+  private heartbeatCheckInFlight = false;
+
   private async checkHeartbeat(): Promise<void> {
     if (!this.isRunning || this.isPaused || !this.currentProjectId) {
       return;
@@ -64,11 +66,52 @@ export class QueueManager {
       return;
     }
     
+    // [Fix20] Guard contra ejecuciones solapadas (la consulta DB añade un await
+    // que puede solaparse con el siguiente tick del intervalo si la DB va lenta).
+    if (this.heartbeatCheckInFlight) {
+      return;
+    }
+
     const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeat.getTime();
     
     if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
-      console.log(`[QueueManager] FROZEN DETECTED: No activity for ${Math.round(timeSinceLastHeartbeat / 60000)} minutes. Auto-recovering...`);
-      await this.autoRecover();
+      // [Fix20] Antes de declarar congelado, consulta el último activity log en
+      // DB. Los reintentos internos del Architect Fase 2 (3×18 min) emiten un
+      // activity log entre intentos pero no disparan callbacks del orquestador,
+      // así que la heartbeat in-memory podría quedar stale aunque el agente
+      // siga vivo. Si la DB tiene actividad reciente, refrescamos y bailamos.
+      this.heartbeatCheckInFlight = true;
+      // Snapshot del estado pre-await: si durante la consulta DB el proyecto
+      // cambia (completion/restart/swap), abortamos para no auto-recoverar al
+      // proyecto equivocado.
+      const projectIdAtCheck = this.currentProjectId;
+      const heartbeatAtCheck = this.lastHeartbeat;
+      try {
+        try {
+          const lastDbActivity = await storage.getLastActivityLogTime(projectIdAtCheck);
+          if (this.currentProjectId !== projectIdAtCheck || this.lastHeartbeat !== heartbeatAtCheck) {
+            // El proyecto activo cambió mientras consultábamos la DB: abortar.
+            return;
+          }
+          if (lastDbActivity) {
+            const timeSinceDbActivity = Date.now() - lastDbActivity.getTime();
+            if (timeSinceDbActivity <= HEARTBEAT_TIMEOUT_MS) {
+              this.lastHeartbeat = lastDbActivity;
+              console.log(`[QueueManager] In-memory heartbeat stale (${Math.round(timeSinceLastHeartbeat / 60000)} min) but DB activity reciente (${Math.round(timeSinceDbActivity / 60000)} min). Refrescando heartbeat.`);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn(`[QueueManager] No se pudo consultar último activity log: ${(e as Error).message}`);
+          if (this.currentProjectId !== projectIdAtCheck || this.lastHeartbeat !== heartbeatAtCheck) {
+            return;
+          }
+        }
+        console.log(`[QueueManager] FROZEN DETECTED: No activity for ${Math.round(timeSinceLastHeartbeat / 60000)} minutes. Auto-recovering...`);
+        await this.autoRecover();
+      } finally {
+        this.heartbeatCheckInFlight = false;
+      }
     }
   }
   

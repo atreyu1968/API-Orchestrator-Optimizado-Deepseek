@@ -1305,7 +1305,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
               // Fix 11: para escaletas grandes (>25 caps), el Arquitecto opera en
               // modo "concisión obligatoria" para no chocar con el cap de 65K
-              // tokens y el timeout de 12 min. Bajamos threshold acorde:
+              // tokens y el timeout de 18 min de Fase 2 (ver [Fix20]). Bajamos threshold acorde:
               // beats >=4 (en lugar de >=5) y objetivo_narrativo >=50 chars
               // (en lugar de >=80). Para escaletas pequeñas (<=25) mantenemos
               // los umbrales originales más exigentes.
@@ -1511,8 +1511,9 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         });
         
         // CRITICAL: use "failed" (not "paused") so the auto-recovery watchdog does NOT
-        // wake this project up every 15 min and burn tokens forever. The user can
-        // manually flip the status back to retry.
+        // wake this project up every 22 min and burn tokens forever (frozen monitor
+        // window — ver [Fix20] en queue-manager.ts). The user can manually flip
+        // the status back to retry.
         await storage.updateProject(project.id, { status: "failed" });
         
         // Also mark the queue item as failed so processing advances to the next project.

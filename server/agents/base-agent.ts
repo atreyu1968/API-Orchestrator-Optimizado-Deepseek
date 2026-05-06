@@ -313,6 +313,22 @@ export abstract class BaseAgent {
         if (errorMessage.startsWith("TIMEOUT:")) {
           if (attempt < MAX_RETRIES) {
             console.log(`[${this.config.name}] Retrying after timeout...`);
+            // [Fix20] Emite un activity log durante el reintento interno para que
+            // el frozen monitor del queue-manager (que mira activity logs en DB)
+            // no marque el proyecto como congelado durante los 18-min×N que
+            // pueden tardar los reintentos internos del Architect Fase 2.
+            if (projectId) {
+              try {
+                await storage.createActivityLog({
+                  projectId,
+                  level: "warning",
+                  agentRole: this.config.role,
+                  message: `⏱️ ${this.config.name}: timeout interno (intento ${attempt + 1}/${MAX_RETRIES + 1}). Reintentando en ${Math.round(RETRY_DELAY_MS / 1000)}s...`,
+                });
+              } catch (e) {
+                console.warn(`[${this.config.name}] No se pudo escribir activity log de retry: ${(e as Error).message}`);
+              }
+            }
             await sleep(RETRY_DELAY_MS);
             continue;
           }
