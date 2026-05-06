@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import path from "path";
 import { storage } from "./storage";
 import { Orchestrator, extractForbiddenNames } from "./orchestrator";
+import { stripMetaChapterHeader } from "./utils/strip-chapter-header";
 import { queueManager } from "./queue-manager";
 import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema } from "@shared/schema";
 import multer from "multer";
@@ -6236,8 +6237,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         cleaned = cleaned.replace(/\n*```json[\s\S]*?```\n*/g, '\n');
         cleaned = cleaned.replace(/\n*\{[\s\S]*?"characterStates"[\s\S]*?\}\s*$/g, '');
         
-        // 3. Remove markdown chapter/section headers at the start
-        cleaned = cleaned.replace(/^#+ *(CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter|Prólogo|Prologue|Epílogo|Epilogue|Nota del Autor|Author'?s? Note)[^\n]*\n+/i, '');
+        // 3. Strip meta chapter headers leaked into the prose (with or without
+        //    `#`, with or without separator, including bare "Capítulo 22").
+        cleaned = stripMetaChapterHeader(cleaned);
         
         // 4. Remove AI context/prompt artifacts that might leak into content
         const promptPatterns = [
@@ -6423,7 +6425,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         cleaned = cleaned.replace(/\n*```json[\s\S]*?```\n*/g, '\n');
         cleaned = cleaned.replace(/\n*\{[\s\S]*?"characterStates"[\s\S]*?\}\s*$/g, '');
         
-        cleaned = cleaned.replace(/^#+ *(CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter|Prólogo|Prologue|Epílogo|Epilogue|Nota del Autor|Author'?s? Note)[^\n]*\n+/i, '');
+        cleaned = stripMetaChapterHeader(cleaned);
         
         const promptPatterns = [
           /CONTEXTO DEL MUNDO \(World Bible\):[\s\S]*?(?=\n\n[A-ZÁÉÍÓÚÑ]|\n\n[A-Z])/gi,
@@ -6901,7 +6903,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         
         lines.push(`## ${heading}`);
         lines.push("");
-        lines.push(parsed.body);
+        lines.push(stripMetaChapterHeader(parsed.body));
         lines.push("");
       }
       
@@ -7170,7 +7172,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       }
       lines.push(`## ${heading}`);
       lines.push("");
-      lines.push(parsed.body);
+      lines.push(stripMetaChapterHeader(parsed.body));
       lines.push("");
     }
     return lines.join("\n");
@@ -8819,7 +8821,7 @@ CRITERIOS:
         }
         cleaned = cleaned.replace(/\n*```json[\s\S]*?```\n*/g, '\n');
         cleaned = cleaned.replace(/\n*\{[\s\S]*?"characterStates"[\s\S]*?\}\s*$/g, '');
-        cleaned = cleaned.replace(/^#+ *(CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter|Prólogo|Prologue|Epílogo|Epilogue|Nota del Autor|Author'?s? Note)[^\n]*\n+/i, '');
+        cleaned = stripMetaChapterHeader(cleaned);
         cleaned = cleaned.replace(/═{10,}[\s\S]*?═{10,}/g, '');
         cleaned = cleaned.replace(/⛔[^\n]*\n/g, '');
         cleaned = cleaned.replace(/⚠️[^\n]*\n/g, '');
@@ -8922,7 +8924,7 @@ CRITERIOS:
         }
 
         markdown += `${chapterHeader}\n\n`;
-        markdown += splitLongParagraphs(content.trim()) + "\n\n\n";
+        markdown += splitLongParagraphs(stripMetaChapterHeader(content.trim())) + "\n\n\n";
         totalWords += content.split(/\s+/).filter((w: string) => w.length > 0).length;
       }
 
@@ -9013,7 +9015,7 @@ CRITERIOS:
         }
 
         markdown += `${chapterHeader}\n\n`;
-        markdown += splitLongParagraphs(content.trim()) + "\n\n\n";
+        markdown += splitLongParagraphs(stripMetaChapterHeader(content.trim())) + "\n\n\n";
       }
 
       const backMatter = await storage.getProjectBackMatterByReedit(projectId);

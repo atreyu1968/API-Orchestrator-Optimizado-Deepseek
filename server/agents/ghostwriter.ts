@@ -1,6 +1,7 @@
 import { BaseAgent, AgentResponse } from "./base-agent";
 import { repairJson } from "../utils/json-repair";
 import { extractStyleDirectives, buildGhostwriterDirectiveBlock } from "../utils/style-directives";
+import { stripMetaChapterHeader } from "../utils/strip-chapter-header";
 
 interface GhostwriterInput {
   chapterNumber: number;
@@ -1278,29 +1279,10 @@ export class GhostwriterAgent extends BaseAgent {
   //   Tras la cabecera consume el resto de la línea + saltos siguientes,
   //   o llega al fin de string si no hay salto.
   private stripChapterHeaderFromOpening(text: string): string {
-    if (!text) return text;
-    const headerPattern = new RegExp(
-      // Prefijo opcional: whitespace + guion largo/bullet + asteriscos markdown
-      "^[\\s\\u00A0]*[—\\-•*]?[\\s\\u00A0]*\\*{0,2}[\\s\\u00A0]*" +
-      // Una de las tres formas de cabecera
-      "(?:" +
-        // (a) Capítulo / Cap. + número arábigo o romano + separador
-        "(?:Cap[íi]tulo|Cap\\.)\\s+(?:\\d+|[IVXLCDM]+)\\b\\s*[:.\\-—]" +
-      "|" +
-        // (b) Parte + número/romano/ordinal + separador
-        "Parte\\s+(?:\\d+|[IVXLCDM]+|primera|segunda|tercera|cuarta|quinta|sexta|s[ée]ptima|octava|novena|d[ée]cima|[uú]ltima)\\b\\s*[:.\\-—]" +
-      "|" +
-        // (c) Prólogo / Epílogo / Nota del autor + separador obligatorio
-        "(?:Pr[óo]logo|Ep[íi]logo|Nota\\s+(?:del?|de)\\s+autor)\\s*[:.\\-—]" +
-      ")" +
-      // Resto de la línea (incluyendo cierre markdown si lo hay) + salto(s) o EOF
-      "[^\\n]*(?:\\n+|$)",
-      "i"
-    );
-    const stripped = text.replace(headerPattern, "");
+    const stripped = stripMetaChapterHeader(text);
     if (stripped !== text) {
-      console.warn("[Ghostwriter] Sanitized meta-header from chapter opening (Narrator broke the diegetic rule). Original first line discarded.");
+      console.warn("[Ghostwriter] Sanitized meta-header from chapter opening (Narrator broke the diegetic rule). Original first line(s) discarded.");
     }
-    return stripped.trimStart();
+    return stripped;
   }
 }

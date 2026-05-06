@@ -14,6 +14,7 @@ import {
 } from "docx";
 import type { Project, Chapter, Pseudonym, ProjectBackMatter, BookCatalogEntry } from "@shared/schema";
 import { generateBackMatterDocxParagraphs } from "./back-matter-generator";
+import { stripMetaChapterHeader } from "../utils/strip-chapter-header";
 
 interface ManuscriptData {
   project: Project;
@@ -399,6 +400,9 @@ function addContentParagraphs(children: Paragraph[], content: string): void {
   }
   
   cleanedContent = removeStyleGuideContamination(cleanedContent);
+  // Defensa: si el cuerpo del capítulo arranca con la cabecera repetida
+  // ("Capítulo N: Título"), bórrala antes de partir en párrafos.
+  cleanedContent = stripMetaChapterHeader(cleanedContent);
   cleanedContent = splitLongParagraphs(cleanedContent);
   
   const paragraphs = cleanedContent.split(/\n\n+/);
