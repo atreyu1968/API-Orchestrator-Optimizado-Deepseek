@@ -1,8 +1,17 @@
-# LitAgents v7.1 — Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v7.2 — Sistema de Orquestacion de Agentes Literarios IA
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando **DeepSeek V4** como unico backend de IA.
 
 **PWA instalable** — se puede instalar en escritorio y movil directamente desde el navegador.
+
+## Novedades v7.2 — Robustez post-revision tras logs reales
+
+- **[Fix18] Plot Integrity Auditor**: Nuevo agente que audita la escaleta del Arquitecto en 3 dimensiones —foreshadowing/seeds-payoffs, coherencia operacional del antagonista, ritmo y densidad del acto 3— combinando metricas deterministas (densidad de pivotes, curva de tension, dias diegeticos, ratio de cliffhangers) con analisis cualitativo del LLM. Loop de retry (max 2 iter, threshold 7/10) que reinvoca al Arquitecto via `plotIntegrityFeedback`. PHASE2 del Arquitecto extendido con 6 campos opcionales por capitulo (`siembra`, `cosecha`, `tension_objetivo`, `dias_diegeticos`, `eventos_pivotales`, `justificacion_antagonica`).
+- **[Fix19] Cabecera de capitulo duplicada en exportacion**: Nueva utilidad `stripMetaChapterHeader` aplicada como defensa en profundidad en exportacion ES, traducciones, pipeline de reedicion y docx-exporter. Atrapa `Capitulo N` desnudo, `—Capitulo N: Titulo`, `**Capitulo N**`, `Prologo:`, etc., con o sin `#` y con o sin separador.
+- **[Fix20] Timeout Arquitecto Fase 2 ampliado**: Los campos extra de [Fix18] inflan el JSON y en novelas grandes (40+ caps) los 12 min anteriores no bastaban. Fase 2 sube a **18 min** (override-restore en `architect.ts`); `HEARTBEAT_TIMEOUT_MS` del queue-manager pasa de 15 → **22 min** (4 min de margen). `BaseAgent.generateContent` emite activity log al reintentar tras timeout para mantener vivo el frozen monitor; `QueueManager.checkHeartbeat` consulta DB antes de declarar congelado, refrescando el heartbeat in-memory si hay actividad reciente.
+- **[Fix21] Cap absoluto ±15% en fallback de cirugia → narrador**: Cuando el cirujano clasifica una instruccion como "estructural" y delega al Narrador, la red de seguridad de longitud previa permitia contracciones/expansiones grandes si el rango del proyecto era laxo (caso real: cap 25 paso de 2009 → 1460 palabras = -27%). El nuevo `hardLower/hardUpper` garantiza que el fallback nunca se desvie mas del ±15% del original.
+- **[Fix22] Buffer de instrucciones rechazadas por el cirujano para el Revisor Final**: Nueva propiedad `staleInstructionsForFinalReviewer` que se vacia al inicio de cada `runFinalReview` y se rellena (con dedup por capitulo + primeros 200 chars) cuando el cirujano cancela una reescritura editorial por instruccion obsoleta o ya satisfecha. En el siguiente ciclo del Revisor Final esas notas se reinyectan en `issuesPreviosCorregidos` con prefijo `[FALSO POSITIVO YA VERIFICADO POR EL CIRUJANO — NO VUELVAS A EMITIRLO]` para evitar que el Revisor repita ciclo tras ciclo el mismo issue fantasma (caso real: cap 7 "formaldehido" en ciclos 1/3/5; cap 26 "cromato" en ciclos 4/5).
+- **[Fix23] Logging de pulidos anomalos en CopyEditor**: Instrumentacion de tiempo en `copyeditor.execute()`. Si un pulido individual excede 5 min, se emite `console.warn` con duracion y nombre de capitulo para diagnostico futuro de degradaciones del LLM (caso real: cap 17 tardo 11:34 min, outlier 5x sin trazabilidad previa).
 
 ## Novedades v7.1 — Reedicion conectada a la saga
 
