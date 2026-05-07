@@ -158,6 +158,13 @@ export class Orchestrator {
   private continuityCheckpointInterval = 5;
   private currentProjectGenre = "";
   private chaptersRewrittenInCurrentCycle = 0;
+  // [Fix22] Instrucciones del Revisor Final que el Cirujano ya rechazó por
+  // citar contenido inexistente o por estar ya satisfechas. Se acumulan entre
+  // ciclos del Revisor Final dentro del MISMO `runFinalReview` y se reinyectan
+  // en el prompt del siguiente ciclo (vía `issuesPreviosCorregidos`) con un
+  // prefijo explícito para que el Revisor no las repita y queme un ciclo entero.
+  // Se vacía al inicio de cada `runFinalReview`.
+  private staleInstructionsForFinalReviewer: Array<{ chapter: number; instruction: string; reason: string }> = [];
   
   private cumulativeTokens = {
     inputTokens: 0,
@@ -3516,6 +3523,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     const chapterRewriteTracker: Map<number, Map<string, number>> = new Map();
     const MAX_REWRITES_PER_ERROR_TYPE = 3;
     const MAX_REWRITES_PER_CHAPTER = 3;
+
+    // [Fix22] Resetear el buffer de instrucciones rechazadas por el cirujano.
+    // Se acumula entre ciclos de ESTE runFinalReview y se reinyecta como "no
+    // repetir" en el prompt del Revisor Final, para evitar que vuelva a emitir
+    // exactamente los mismos issues fantasma ciclo tras ciclo (caso real: cap 7
+    // formaldehído, cap 26 cromato — repetidos en ciclos 3 y 5 sin avanzar).
+    this.staleInstructionsForFinalReviewer = [];
     
     let seriesUnresolvedThreadsQA: string[] = [];
     let seriesKeyEventsQA: string[] = [];
@@ -3572,13 +3586,23 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           contenido: c.content || "",
         }));
 
+      // [Fix22] Inyectar como "ya intentado y verificado falso" las instrucciones
+      // que el cirujano rechazó en ciclos previos por citar contenido inexistente.
+      // El prefijo lo trata el Revisor Final como issues que NO debe re-emitir.
+      const staleNotes = this.staleInstructionsForFinalReviewer.map(s =>
+        `[FALSO POSITIVO YA VERIFICADO POR EL CIRUJANO — NO VUELVAS A EMITIRLO] Cap ${s.chapter}: ${s.instruction.split("\n")[0].slice(0, 200)}... (Razón del cirujano: ${s.reason.slice(0, 150)})`
+      );
+      const issuesPreviosConRechazos = staleNotes.length > 0
+        ? [...issuesPreviosCorregidos, ...staleNotes]
+        : issuesPreviosCorregidos;
+
       const reviewResult = await this.finalReviewer.execute({
         projectTitle: project.title,
         chapters: chaptersForReview,
         worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
         guiaEstilo,
         pasadaNumero: revisionCycle + 1,
-        issuesPreviosCorregidos,
+        issuesPreviosCorregidos: issuesPreviosConRechazos,
         capitulosConLimitaciones: this.buildLimitationsFromTracker(chapterRewriteTracker, MAX_REWRITES_PER_CHAPTER),
         seriesContext: seriesContextForReview,
       });
@@ -11143,6 +11167,26 @@ Responde SOLO con un JSON válido con la estructura:
         // que el capítulo YA SATISFACE. En ambos casos la reescritura completa
         // suele EMPEORAR el texto (caso visto: 5/10, revertido). Cancelamos.
         if (this.isInstructionStaleOrAlreadySatisfied(reason)) {
+          // [Fix22] Solo las instrucciones del Revisor Final ("editorial") merecen
+          // viajar de vuelta como falsos positivos: son las únicas cuyo origen vuelve
+          // a re-evaluar el manuscrito en ciclos sucesivos. Las cirugías de continuity/
+          // voice/semantic se ejecutan una sola vez por capítulo, así que no se repiten.
+          if (qaSource === "editorial") {
+            // [Fix22] Dedup por (capítulo, primeros 200 chars de la instrucción)
+            // para evitar inflado del prompt si el mismo falso positivo se rechaza
+            // en múltiples ciclos del Revisor Final.
+            const dedupKey = `${chapter.chapterNumber}::${correctionInstructions.slice(0, 200)}`;
+            const alreadyBuffered = this.staleInstructionsForFinalReviewer.some(
+              s => `${s.chapter}::${s.instruction.slice(0, 200)}` === dedupKey
+            );
+            if (!alreadyBuffered) {
+              this.staleInstructionsForFinalReviewer.push({
+                chapter: chapter.chapterNumber,
+                instruction: correctionInstructions.slice(0, 500),
+                reason: reason.slice(0, 300),
+              });
+            }
+          }
           await storage.createActivityLog({
             projectId: project.id,
             level: "warning",
@@ -11363,9 +11407,17 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
     let candidateContent = writerResult.content;
     const candidateWordCount = candidateContent.split(/\s+/).filter(w => w.length > 0).length;
 
-    // Segunda red (hard reject): 10% de holgura adicional sobre el rango permitido.
-    const hardLower = Math.round(surgicalMin * 0.90);
-    const hardUpper = Math.round(surgicalMax * 1.10);
+    // Segunda red (hard reject): 10% de holgura adicional sobre el rango permitido,
+    // PERO con un tope absoluto de ±15% sobre el original. Sin el cap, cuando el rango
+    // del proyecto es laxo (cap 25 caso real: original 2009 palabras, rango proyecto
+    // 1500-2500), el Narrador en modo fallback podía contraer hasta -27% sin que la red
+    // lo cazara. En modo "cirugía → fallback narrador" preservamos siempre la longitud
+    // original con un margen estricto: si la corrección requiere reescritura más radical,
+    // debería ir por otra ruta (no por este fallback).
+    const originalCapLower = Math.round(originalWordCount * 0.85);
+    const originalCapUpper = Math.round(originalWordCount * 1.15);
+    const hardLower = Math.max(Math.round(surgicalMin * 0.90), originalCapLower);
+    const hardUpper = Math.min(Math.round(surgicalMax * 1.10), originalCapUpper);
     if (candidateWordCount < hardLower || candidateWordCount > hardUpper) {
       console.warn(`[QA-Rewrite] ${sectionLabel}: longitud fuera del rango permitido (${candidateWordCount}, permitido ${hardLower}-${hardUpper}, original ${originalWordCount}). Conservando original.`);
       await storage.updateChapter(chapter.id, {

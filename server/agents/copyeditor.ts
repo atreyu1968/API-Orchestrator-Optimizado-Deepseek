@@ -363,8 +363,20 @@ export class CopyEditorAgent extends BaseAgent {
     Responde ÚNICAMENTE con el JSON estructurado.
     `;
 
+    // [Fix23] Instrumentación de tiempo: el pulido normal de un capítulo tarda
+    // 1-3 min. En el caso real "La Promesa del Olvido" el cap 17 tardó 11:34 min
+    // (12:42→12:54), un outlier 5x sobre la media — probable degradación
+    // transitoria del proveedor LLM. Sin warning explícito es invisible en logs.
+    // Si el pulido excede 5 min, lo dejamos registrado en el log del servidor
+    // para diagnóstico futuro de degradaciones del modelo.
+    const polishStartMs = Date.now();
     const response = await this.generateContent(prompt);
-    
+    const polishElapsedMs = Date.now() - polishStartMs;
+    const POLISH_SLOW_THRESHOLD_MS = 5 * 60 * 1000;
+    if (polishElapsedMs > POLISH_SLOW_THRESHOLD_MS) {
+      console.warn(`[CopyEditor] SLOW POLISH (${Math.round(polishElapsedMs / 1000)}s) — Cap ${input.chapterNumber} "${input.chapterTitle}" tardó ${(polishElapsedMs / 60000).toFixed(1)} min en pulir (umbral ${POLISH_SLOW_THRESHOLD_MS / 60000} min). Posible degradación transitoria del LLM.`);
+    }
+
     try {
       const result = repairJson(response.content) as CopyEditorResult;
       return { ...response, result };
