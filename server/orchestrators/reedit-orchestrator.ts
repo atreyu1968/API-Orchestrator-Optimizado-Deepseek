@@ -19,6 +19,7 @@ import { SemanticRepetitionDetectorAgent as CanonicalSemanticRepetitionDetectorA
 // [Fix24] Lectores Holístico y Beta también para el final del reedit.
 import { HolisticReviewerAgent } from "../agents/holistic-reviewer";
 import { BetaReaderAgent } from "../agents/beta-reader";
+import { PlotThreadClosureAuditorAgent } from "../agents/plot-thread-closure-auditor";
 // [Fix31] Snapshot de continuidad para sagas tras reeditar.
 import { ManuscriptAnalyzerAgent } from "../agents/manuscript-analyzer";
 import { ensureChapterNumbers } from "../utils/extract-chapters";
@@ -5024,10 +5025,13 @@ export class ReeditOrchestrator {
    * marcar el reedit como `completed` para que un fallo aquí no revierta
    * el manuscrito a estado "error".
    *
-   * Tres pasos en paralelo:
+   * Pasos en paralelo:
    *  1. Lector Holístico (editor profesional) → audit report `holistic_review`.
    *  2. Lector Beta (lector cualificado) → audit report `beta_review`.
-   *  3. Si el proyecto pertenece a una serie, ManuscriptAnalyzer sobre el
+   *  3. [Fix32] Auditor de Cierre de Tramas → audit report `plot_threads_closure`.
+   *     Inventario exhaustivo de TODAS las tramas/subtramas/arcos con su estado
+   *     de cierre. Detecta hilos abandonados que ningún otro agente ve.
+   *  4. Si el proyecto pertenece a una serie, ManuscriptAnalyzer sobre el
    *     manuscrito reeditado completo → audit report `series_snapshot`.
    *     Así los volúmenes posteriores tienen un canon coherente con el reedit.
    *
@@ -5057,18 +5061,43 @@ export class ReeditOrchestrator {
       }));
 
       const isSeries = !!(project as any).seriesId;
-      console.log(`[ReeditOrchestrator Stage8] Lanzando Holístico + Beta${isSeries ? " + SeriesSnapshot" : ""} sobre ${reviewerChapters.length} capítulos del proyecto ${projectId}.`);
+      // [Fix32] Detectar si es volumen intermedio: pertenece a serie y NO es el último.
+      // Para esto necesitamos saber si hay volúmenes posteriores. Si no podemos
+      // determinarlo (helper falla, lista vacía), asumimos que es autónomo/cierre
+      // (regla más estricta — preferimos falsos positivos a falsos negativos en
+      // tramas colgantes).
+      let esVolumenIntermedio = false;
+      if (isSeries) {
+        try {
+          const seriesId = (project as any).seriesId as number;
+          const currentOrder = (project as any).seriesOrder ?? 1;
+          // No existe helper específico por serie en storage; filtramos en memoria
+          // sobre el listado completo de reedit_projects. Es best-effort: si falla,
+          // caemos a la rama estricta (esVolumenIntermedio = false).
+          const allReedits = await storage.getAllReeditProjects().catch(() => [] as any[]);
+          const hasLaterVolumes = Array.isArray(allReedits)
+            && allReedits.some((s: any) =>
+              Number(s?.seriesId ?? 0) === Number(seriesId)
+              && Number(s?.seriesOrder ?? 0) > Number(currentOrder));
+          esVolumenIntermedio = hasLaterVolumes;
+        } catch {
+          esVolumenIntermedio = false;
+        }
+      }
+
+      console.log(`[ReeditOrchestrator Stage8] Lanzando Holístico + Beta + ClosureAudit${isSeries ? " + SeriesSnapshot" : ""} sobre ${reviewerChapters.length} capítulos del proyecto ${projectId}${esVolumenIntermedio ? " (volumen intermedio: tolerancia con tramas abiertas intencionales)" : ""}.`);
 
       this.emitProgress({
         projectId,
         stage: "post_reedit_reviews",
         currentChapter: validChapters.length,
         totalChapters: validChapters.length,
-        message: `Lanzando lectores Holístico + Beta${isSeries ? " y snapshot de serie" : ""} sobre el manuscrito reeditado…`,
+        message: `Lanzando lectores Holístico + Beta + auditor de cierre de tramas${isSeries ? " y snapshot de serie" : ""} sobre el manuscrito reeditado…`,
       });
 
       const holisticAgent = new HolisticReviewerAgent();
       const betaAgent = new BetaReaderAgent();
+      const closureAgent = new PlotThreadClosureAuditorAgent();
       const tasks: Array<Promise<{ kind: string; ok: boolean; payload?: any; error?: string }>> = [];
 
       tasks.push(holisticAgent.runReview({ projectTitle, chapters: reviewerChapters })
@@ -5078,6 +5107,30 @@ export class ReeditOrchestrator {
       tasks.push(betaAgent.runReview({ projectTitle, chapters: reviewerChapters })
         .then(r => ({ kind: "beta_review", ok: true, payload: { notesText: r.notesText, totalChaptersRead: r.totalChaptersRead } }))
         .catch(e => ({ kind: "beta_review", ok: false, error: (e as Error).message })));
+
+      // [Fix32] Auditoría de cierre de tramas y subtramas sobre el manuscrito completo.
+      tasks.push(closureAgent.runAudit({
+        projectTitle,
+        chapters: reviewerChapters,
+        esVolumenIntermedio,
+      }, projectId)
+        .then(r => ({
+          kind: "plot_threads_closure",
+          ok: true,
+          payload: {
+            resumen: r.resumen,
+            puntuacion_cierre: r.puntuacion_cierre,
+            total_tramas: r.total_tramas,
+            total_cerradas: r.total_cerradas,
+            total_cierre_parcial: r.total_cierre_parcial,
+            total_abiertas_intencionales: r.total_abiertas_intencionales,
+            total_abiertas_colgantes: r.total_abiertas_colgantes,
+            tramas_colgantes_criticas: r.tramas_colgantes_criticas,
+            tramas: r.tramas,
+            notesText: r.notesText,
+          },
+        }))
+        .catch(e => ({ kind: "plot_threads_closure", ok: false, error: (e as Error).message })));
 
       // [Fix31] Snapshot de continuidad solo si pertenece a una serie.
       if (isSeries) {
