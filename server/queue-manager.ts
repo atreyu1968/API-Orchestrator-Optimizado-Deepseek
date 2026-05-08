@@ -14,6 +14,12 @@ interface QueueEvent {
 }
 
 const HEARTBEAT_TIMEOUT_MS = 22 * 60 * 1000; // 22 minutes without activity = frozen (must be > Architect Fase 2 timeout de 18 min, ver [Fix20] en architect.ts)
+// [Fix36] Timeout extendido para apply-editorial: SurgicalPatcher + reescritura
+// completa sobre un capítulo grande puede tardar 25-40 min sin emitir activity
+// logs (el LLM está pensando). Antes el monitor (22 min) declaraba la novela
+// congelada y disparaba auto-recovery, que regeneraba el capítulo en curso
+// desde cero y descartaba el resto de instrucciones pendientes.
+const HEARTBEAT_TIMEOUT_EDITORIAL_MS = 60 * 60 * 1000; // 60 min
 const HEARTBEAT_CHECK_INTERVAL_MS = 30 * 1000; // Check every 30 seconds
 
 export class QueueManager {
@@ -73,8 +79,21 @@ export class QueueManager {
     }
 
     const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeat.getTime();
-    
+
     if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+      // [Fix36] Si el proyecto está en apply-editorial, deja que el monitor
+      // global lo gestione (timeout 60 min + revert a completed sin recovery).
+      // El autoRecover de aquí re-encolaría la novela completa y regeneraría
+      // el capítulo en curso desde cero, perdiendo el resto de instrucciones.
+      try {
+        const proj = await storage.getProject(this.currentProjectId);
+        if (proj?.status === "applying_editorial") {
+          return;
+        }
+      } catch (e) {
+        console.warn(`[QueueManager] [Fix36] No se pudo leer status del proyecto: ${(e as Error).message}`);
+      }
+
       // [Fix20] Antes de declarar congelado, consulta el último activity log en
       // DB. Los reintentos internos del Architect Fase 2 (3×18 min) emiten un
       // activity log entre intentos pero no disparan callbacks del orquestador,
@@ -356,7 +375,10 @@ export class QueueManager {
     try {
       // Get all projects in "generating" status OR projects that failed final review (they might need retry)
       const projects = await storage.getAllProjects();
-      const monitoredStatuses = ["generating", "failed_final_review", "paused"];
+      // [Fix36] Incluimos applying_editorial pero con timeout extendido (60 min)
+      // y un camino de recovery distinto: NO re-encolar la novela completa
+      // (regeneraría el capítulo en curso); solo abortar y revertir a completed.
+      const monitoredStatuses = ["generating", "failed_final_review", "paused", "applying_editorial"];
       const generatingProjects = projects.filter((p: Project) => monitoredStatuses.includes(p.status));
       
       for (const project of generatingProjects) {
@@ -364,9 +386,49 @@ export class QueueManager {
         
         if (lastActivity) {
           const timeSinceActivity = Date.now() - lastActivity.getTime();
-          
-          if (timeSinceActivity > HEARTBEAT_TIMEOUT_MS) {
-            console.log(`[QueueManager] FROZEN PROJECT DETECTED: "${project.title}" (ID: ${project.id}) - no activity for ${Math.round(timeSinceActivity / 60000)} minutes`);
+          const isEditorialApply = project.status === "applying_editorial";
+          const timeoutForThisProject = isEditorialApply ? HEARTBEAT_TIMEOUT_EDITORIAL_MS : HEARTBEAT_TIMEOUT_MS;
+
+          if (timeSinceActivity > timeoutForThisProject) {
+            console.log(`[QueueManager] FROZEN PROJECT DETECTED: "${project.title}" (ID: ${project.id}) - no activity for ${Math.round(timeSinceActivity / 60000)} minutes (status=${project.status}, threshold=${Math.round(timeoutForThisProject / 60000)}min)`);
+
+            // [Fix36] Camino especial para apply-editorial: aborta el orquestador
+            // pero NO re-encola, NO marca el proyecto como paused/waiting (eso
+            // dispararía la regeneración de capítulos pendientes). Revierte el
+            // estado a completed y deja al usuario re-aplicar manualmente desde
+            // la UI las instrucciones que falten.
+            if (isEditorialApply) {
+              try {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  message: `[Fix36] Apply-editorial abortado por inactividad (${Math.round(timeSinceActivity / 60000)} min). El proyecto vuelve a "completed" sin regenerar capítulos. Revisa qué instrucciones quedaron sin aplicar y reintenta desde la UI.`,
+                  agentRole: "system",
+                  metadata: { reason: "editorial_apply_freeze", inactiveMinutes: Math.round(timeSinceActivity / 60000) },
+                });
+              } catch (e) {
+                console.error("[QueueManager] Failed to log Fix36 editorial abort:", e);
+              }
+              await storage.updateProject(project.id, { status: "completed" });
+              // [Fix36] Aborto real: el apply-editorial puede correr fuera del
+              // queueManager (lo lanza directamente la ruta), por lo que
+              // currentOrchestrator no siempre apunta a él. cancelProject()
+              // dispara el AbortController registrado por projectId en
+              // base-agent.ts, cortando la ejecución venga de donde venga.
+              try {
+                cancelProject(project.id);
+              } catch (e) {
+                console.error("[QueueManager] [Fix36] cancelProject failed:", e);
+              }
+              const state = await storage.getQueueState();
+              if (state?.currentProjectId === project.id) {
+                await storage.updateQueueState({ currentProjectId: null });
+                this.currentOrchestrator = null;
+                this.currentProjectId = null;
+              }
+              continue; // siguiente proyecto, sin recovery loop
+            }
+
             
             // SAFETY CAP: count how many auto-recovery attempts have happened in the
             // last 6 hours by scanning recent activity logs. If we already retried

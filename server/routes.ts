@@ -406,7 +406,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
       
-      if (project.status === "generating") {
+      if (project.status === "generating" || project.status === "applying_editorial") {
         return res.status(400).json({ error: "Cannot edit a project while it's generating" });
       }
 
@@ -463,7 +463,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
-      if (project.status === "generating") {
+      if (project.status === "generating" || project.status === "applying_editorial") {
         return res.status(400).json({ error: "No se puede archivar un proyecto mientras se genera" });
       }
 
@@ -771,7 +771,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
-      if (project.status === "generating") {
+      if (project.status === "generating" || project.status === "applying_editorial") {
         return res.status(400).json({ error: "Project is already generating" });
       }
 
@@ -846,7 +846,7 @@ export async function registerRoutes(
 
       console.log(`[Resume] Project ${id} current status: ${project.status}`);
 
-      if (project.status === "generating") {
+      if (project.status === "generating" || project.status === "applying_editorial") {
         console.log(`[Resume] Project ${id} is already generating`);
         return res.status(400).json({ error: "Project is already generating" });
       }
@@ -1379,7 +1379,12 @@ export async function registerRoutes(
         }
       }
 
-      await storage.updateProject(id, { status: "generating" });
+      // [Fix36] Estado dedicado para que el monitor de congelación NO regenere
+      // capítulos durante un apply-editorial largo (la cirugía/reescritura puede
+      // tardar > 22 min en novelas grandes). El monitor sabe que este status usa
+      // timeout extendido (60 min) y, si dispara, solo aborta + revierte a
+      // "completed" sin re-encolar la novela completa.
+      await storage.updateProject(id, { status: "applying_editorial" });
 
       res.json({
         message: usingPreParsed
@@ -1462,7 +1467,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
-      if (project.status === "generating") {
+      if (project.status === "generating" || project.status === "applying_editorial") {
         return res.status(400).json({ error: "Project is already generating" });
       }
 
@@ -1578,7 +1583,7 @@ export async function registerRoutes(
       const project = await storage.getProject(id);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
-      if (project.status === "generating") {
+      if (project.status === "generating" || project.status === "applying_editorial") {
         return res.status(400).json({ error: "El proyecto ya está siendo procesado." });
       }
 
@@ -1639,7 +1644,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
-      if (project.status === "generating") {
+      if (project.status === "generating" || project.status === "applying_editorial") {
         return res.status(400).json({ error: "El proyecto ya está siendo procesado" });
       }
 
@@ -1712,7 +1717,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
-      if (project.status === "generating") {
+      if (project.status === "generating" || project.status === "applying_editorial") {
         return res.status(400).json({ error: "El proyecto ya está siendo procesado" });
       }
 
@@ -4712,7 +4717,7 @@ ${series.seriesGuide.substring(0, 50000)}`;
         return res.status(404).json({ error: "Project not found" });
       }
       
-      if (project.status === "generating") {
+      if (project.status === "generating" || project.status === "applying_editorial") {
         return res.status(400).json({ error: "Cannot rewrite while project is generating" });
       }
       
@@ -7547,7 +7552,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       }
 
       // Prevent purge during active generation
-      if (project.status === "generating") {
+      if (project.status === "generating" || project.status === "applying_editorial") {
         return res.status(409).json({ error: "Cannot purge chapters while project is generating" });
       }
 
