@@ -5275,8 +5275,17 @@ export class ReeditOrchestrator {
 
     await logReeditEvent(projectId, "info", "apply_holistic_beta",
       `[Fix34] Aplicando ${selected.length} instrucción(es) seleccionadas del Holístico+Beta.`, {});
+    // [Fix35-UI] Señal visible para la UI mientras trabaja el patcher.
+    await storage.updateReeditProject(projectId, {
+      currentActivity: `Aplicando Holístico+Beta: 0/${selected.length} instrucción(es)...`,
+    }).catch(() => {});
 
+    let processedIdx = 0;
     for (const ins of selected) {
+      processedIdx += 1;
+      await storage.updateReeditProject(projectId, {
+        currentActivity: `Aplicando Holístico+Beta: ${processedIdx}/${selected.length} (${ins.tipo || "estructural"} · caps ${(ins.capitulos_afectados || []).join(", ") || "—"})...`,
+      }).catch(() => {});
       try {
         if (!ins.autoApplicable) {
           skipped += 1;

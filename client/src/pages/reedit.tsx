@@ -1926,34 +1926,51 @@ export default function ReeditPage() {
                               })}
                             </div>
                           </ScrollArea>
-                          <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t">
-                            <span className="text-xs text-muted-foreground">
-                              {selectedInstructionIds.size} de {pendingEditorial.instrucciones.filter((i: any) => i.autoApplicable).length} auto-aplicables seleccionadas
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                data-testid="button-dismiss-pending-editorial"
-                                onClick={() => {
-                                  if (!confirm("¿Descartar todas las instrucciones del Holístico+Beta sin aplicarlas?")) return;
-                                  dismissPendingMutation.mutate();
-                                }}
-                                disabled={dismissPendingMutation.isPending}
-                              >
-                                Descartar
-                              </Button>
-                              <Button
-                                size="sm"
-                                data-testid="button-apply-holistic-beta"
-                                onClick={() => applyInstructionsMutation.mutate(Array.from(selectedInstructionIds))}
-                                disabled={selectedInstructionIds.size === 0 || applyInstructionsMutation.isPending}
-                              >
-                                {applyInstructionsMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
-                                Aplicar seleccionadas
-                              </Button>
-                            </div>
-                          </div>
+                          {(() => {
+                            const activity = selectedProjectData.currentActivity || "";
+                            const isApplying = applyInstructionsMutation.isPending || /^Aplicando Holístico\+Beta/i.test(activity);
+                            return (
+                              <>
+                                {isApplying && (
+                                  <div
+                                    data-testid="banner-applying-holistic-beta"
+                                    className="mt-3 p-3 rounded-md border border-primary/40 bg-primary/5 flex items-center gap-2 text-sm"
+                                  >
+                                    <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                                    <span className="text-foreground">{activity || "Aplicando correcciones en background..."}</span>
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t">
+                                  <span className="text-xs text-muted-foreground">
+                                    {selectedInstructionIds.size} de {pendingEditorial.instrucciones.filter((i: any) => i.autoApplicable).length} auto-aplicables seleccionadas
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      data-testid="button-dismiss-pending-editorial"
+                                      onClick={() => {
+                                        if (!confirm("¿Descartar todas las instrucciones del Holístico+Beta sin aplicarlas?")) return;
+                                        dismissPendingMutation.mutate();
+                                      }}
+                                      disabled={dismissPendingMutation.isPending || isApplying}
+                                    >
+                                      Descartar
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      data-testid="button-apply-holistic-beta"
+                                      onClick={() => applyInstructionsMutation.mutate(Array.from(selectedInstructionIds))}
+                                      disabled={selectedInstructionIds.size === 0 || isApplying}
+                                    >
+                                      {isApplying ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                                      {isApplying ? "Aplicando..." : "Aplicar seleccionadas"}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </CardContent>
                       </Card>
                     )}
