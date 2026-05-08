@@ -23,6 +23,8 @@ import { PlotThreadClosureAuditorAgent } from "../agents/plot-thread-closure-aud
 // [Fix31] Snapshot de continuidad para sagas tras reeditar.
 import { ManuscriptAnalyzerAgent } from "../agents/manuscript-analyzer";
 import { ensureChapterNumbers } from "../utils/extract-chapters";
+// [Fix33] Logger persistente por proyecto.
+import { logReeditEvent } from "../utils/reedit-logger";
 
 function getChapterSortOrder(chapterNumber: number): number {
   if (chapterNumber === 0) return -1000;
@@ -2627,12 +2629,23 @@ export class ReeditOrchestrator {
       this.progressCallback(progress);
     }
     console.log(`[ReeditOrchestrator] ${progress.stage}: ${progress.message}`);
-    
+
+    // [Fix33] Persistir cada evento de progreso al log descargable del proyecto.
+    logReeditEvent(progress.projectId, "info", progress.stage, progress.message, {
+      chapter: progress.currentChapter,
+      context: { totalChapters: progress.totalChapters },
+    });
+
     // Persist activity message to database for real-time UI updates
     storage.updateReeditProject(progress.projectId, {
       currentActivity: progress.message,
       currentChapter: progress.currentChapter,
-    }).catch(err => console.error("[ReeditOrchestrator] Failed to update currentActivity:", err));
+    }).catch(err => {
+      console.error("[ReeditOrchestrator] Failed to update currentActivity:", err);
+      logReeditEvent(progress.projectId, "warn", progress.stage, "No pude actualizar currentActivity en DB", {
+        context: { error: (err as Error).message },
+      });
+    });
   }
 
   async analyzeStructure(chapters: ReeditChapter[]): Promise<StructureAnalysis> {

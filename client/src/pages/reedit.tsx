@@ -1711,7 +1711,46 @@ export default function ReeditPage() {
                   </TabsContent>
 
                   <TabsContent value="audits">
-                    <ScrollArea className="h-[400px] mt-4">
+                    {/* [Fix33] Botón de descarga de logs: visible siempre que haya proyecto seleccionado. */}
+                    <div className="mt-4 mb-3 flex items-center justify-between gap-2 flex-wrap">
+                      <p className="text-xs text-muted-foreground">
+                        Logs detallados del pipeline (todas las etapas, capítulos, errores y eventos best-effort).
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          data-testid="button-download-reedit-logs"
+                          onClick={() => {
+                            window.open(`/api/reedit-projects/${selectedProjectData.id}/logs/download`, "_blank");
+                          }}
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Descargar logs
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          data-testid="button-clear-reedit-logs"
+                          onClick={async () => {
+                            if (!confirm("¿Borrar todos los logs de este proyecto? Esta acción no se puede deshacer.")) return;
+                            try {
+                              const r = await fetch(`/api/reedit-projects/${selectedProjectData.id}/logs`, { method: "DELETE" });
+                              if (!r.ok) {
+                                const err = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+                                throw new Error(err.error || `HTTP ${r.status}`);
+                              }
+                              toast({ title: "Logs borrados", description: "El historial de logs ha sido eliminado." });
+                            } catch (e) {
+                              toast({ title: "Error", description: (e as Error).message, variant: "destructive" });
+                            }
+                          }}
+                        >
+                          Borrar
+                        </Button>
+                      </div>
+                    </div>
+                    <ScrollArea className="h-[400px]">
                       {auditReports.length > 0 ? (
                         <AuditReportsDisplay reports={auditReports} />
                       ) : (

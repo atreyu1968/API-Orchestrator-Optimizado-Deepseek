@@ -7687,6 +7687,59 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  // [Fix33] Logs descargables del reedit (texto plano, ficheros en data/reedit-logs/{id}.log).
+  app.get("/api/reedit-projects/:id/logs/download", async (req: Request, res: Response) => {
+    try {
+      if (!/^\d+$/.test(req.params.id)) {
+        return res.status(400).json({ error: "id inválido" });
+      }
+      const projectId = parseInt(req.params.id, 10);
+      const { readProjectLog, projectLogStats } = await import("./utils/reedit-logger");
+      const stats = await projectLogStats(projectId);
+      const project = await storage.getReeditProject(projectId).catch(() => null);
+      const filenameSafe = (project?.title || `reedit-${projectId}`)
+        .normalize("NFKD").replace(/[^\w.\- ]+/g, "").trim().replace(/\s+/g, "_") || `reedit-${projectId}`;
+      const filename = `${filenameSafe}-${projectId}-logs.txt`;
+      const body = await readProjectLog(projectId);
+      const header = `# Logs del reedit "${project?.title || ""}" (proyecto ${projectId})\n# Generado: ${new Date().toISOString()}\n# Bytes: ${stats.bytes}${stats.updatedAt ? `\n# Última escritura: ${stats.updatedAt}` : ""}\n# Estado actual: ${project?.status || "(desconocido)"}\n\n`;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(header + (body || "(sin entradas registradas)\n"));
+    } catch (error) {
+      console.error("Error fetching reedit logs:", error);
+      res.status(500).json({ error: "Failed to fetch logs" });
+    }
+  });
+
+  app.get("/api/reedit-projects/:id/logs/stats", async (req: Request, res: Response) => {
+    try {
+      if (!/^\d+$/.test(req.params.id)) {
+        return res.status(400).json({ error: "id inválido" });
+      }
+      const projectId = parseInt(req.params.id, 10);
+      const { projectLogStats } = await import("./utils/reedit-logger");
+      res.json(await projectLogStats(projectId));
+    } catch (error) {
+      console.error("Error fetching reedit log stats:", error);
+      res.status(500).json({ error: "Failed to fetch log stats" });
+    }
+  });
+
+  app.delete("/api/reedit-projects/:id/logs", async (req: Request, res: Response) => {
+    try {
+      if (!/^\d+$/.test(req.params.id)) {
+        return res.status(400).json({ error: "id inválido" });
+      }
+      const projectId = parseInt(req.params.id, 10);
+      const { clearProjectLog } = await import("./utils/reedit-logger");
+      await clearProjectLog(projectId);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error clearing reedit logs:", error);
+      res.status(500).json({ error: "Failed to clear logs" });
+    }
+  });
+
   app.get("/api/reedit-projects/:id/world-bible", async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
