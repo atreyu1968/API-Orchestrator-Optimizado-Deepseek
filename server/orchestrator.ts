@@ -165,6 +165,25 @@ export class Orchestrator {
   // prefijo explícito para que el Revisor no las repita y queme un ciclo entero.
   // Se vacía al inicio de cada `runFinalReview`.
   private staleInstructionsForFinalReviewer: Array<{ chapter: number; instruction: string; reason: string }> = [];
+
+  // [Fix30] Crítica del Lector Beta generada a ~2/3 de los capítulos. Se
+  // inyecta en los Ghostwriters de los capítulos restantes como
+  // `editorialCritique`. Se vacía al inicio de generateNovel y se rellena
+  // una sola vez por novela. Best-effort: si el Beta falla, queda vacío
+  // y la generación continúa sin la inyección.
+  private midNovelBetaCritique: string = "";
+
+  // [Fix30 — code review] Flag de idempotencia: se pone a true ANTES de
+  // disparar el Beta mid-novela para que un fallo o notas vacías no provoquen
+  // que se vuelva a intentar en cada capítulo posterior. También se resetea
+  // al inicio de `generateNovel`.
+  private midNovelBetaAttempted: boolean = false;
+
+  // [Fix29] Issues estructurales detectados por el Holístico antes del
+  // primer ciclo del Final Reviewer. Se inyectan en `issuesPreviosCorregidos`
+  // para que el FR los aborde desde el ciclo 1 en vez de descubrirlos en
+  // ciclos posteriores. Se vacía al inicio de cada runFinalReview.
+  private holisticGateNotes: string[] = [];
   
   private cumulativeTokens = {
     inputTokens: 0,
@@ -918,6 +937,9 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
   }
 
   async generateNovel(project: Project): Promise<void> {
+    // [Fix30] Resetear la crítica del Beta de mid-novela al iniciar nueva generación.
+    this.midNovelBetaCritique = "";
+    this.midNovelBetaAttempted = false;
     try {
       // Check if chapters already exist (recovery after crash)
       const existingChapters = await storage.getChaptersByProject(project.id);
@@ -2161,6 +2183,7 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
             extendedGuideContent: extendedGuideContent || undefined,
             previousChapterContent: isStalled ? undefined : previousContent,
             previousChaptersFullText,
+            editorialCritique: this.midNovelBetaCritique || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -2441,6 +2464,59 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         // PREVENTIVO: cada 5 capítulos completados, escanear patrones repetidos para
         // alimentar al Ghostwriter en los próximos capítulos (evitar muletillas globales).
         await this.runProactiveSemanticScan(project, i + 1, allSections.length, worldBibleData);
+
+        // [Fix30] Lector Beta a mid-novela. Cuando se cumplen los 2/3 del manuscrito,
+        // disparamos el Beta UNA SOLA VEZ sobre los capítulos ya escritos y guardamos
+        // su crítica en `midNovelBetaCritique`. Los Ghostwriters de los capítulos
+        // restantes la recibirán como `editorialCritique`. Best-effort: si falla,
+        // log y seguimos sin la inyección. Solo se dispara si quedan al menos 2
+        // capítulos por escribir, para que la inversión valga la pena.
+        const completedSoFar = i + 1;
+        const totalChaptersForBeta = chapters.length;
+        const twoThirdsMark = Math.floor(totalChaptersForBeta * 2 / 3);
+        const remainingAfter = totalChaptersForBeta - completedSoFar;
+        if (
+          !this.midNovelBetaAttempted &&
+          completedSoFar >= twoThirdsMark &&
+          remainingAfter >= 2 &&
+          totalChaptersForBeta >= 6 &&
+          !this.aborted
+        ) {
+          // [Fix30 — code review #1] Marcar attempted ANTES de la llamada para
+          // garantizar one-shot incluso si runMidNovelBetaReview falla o devuelve
+          // notas vacías; evita reintentos en cada capítulo siguiente.
+          this.midNovelBetaAttempted = true;
+          try {
+            this.callbacks.onAgentStatus("beta-reader", "reviewing",
+              `[Fix30] Lector Beta leyendo los primeros ${completedSoFar}/${totalChaptersForBeta} capítulos para informar el resto de la novela...`
+            );
+            // [Fix30 — code review #2] Usar el helper scoped que filtra a solo
+            // capítulos COMPLETED + content no vacío, en lugar de runBetaReview
+            // (que vía loadFullNovelContext incluiría placeholders pendientes
+            // con contenido "" y degradaría la calidad de la crítica).
+            const betaOutcome = await this.runMidNovelBetaReview(project);
+            if (this.aborted) {
+              console.log(`[Orchestrator] [Fix30] Aborted tras Beta mid-novela. Saliendo silenciosamente.`);
+              return;
+            }
+            if (betaOutcome?.notesText && betaOutcome.notesText.trim().length > 200) {
+              this.midNovelBetaCritique = betaOutcome.notesText;
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "info",
+                agentRole: "beta-reader",
+                message: `[Fix30] Crítica del Beta a mid-novela capturada (${this.midNovelBetaCritique.length.toLocaleString("es-ES")} chars). Se inyectará en los ${remainingAfter} capítulos restantes.`,
+              });
+              this.callbacks.onAgentStatus("beta-reader", "complete",
+                `[Fix30] Beta mid-novela completado. Crítica activa para los ${remainingAfter} capítulos restantes.`
+              );
+            } else {
+              console.warn(`[Orchestrator] [Fix30] Beta mid-novela devolvió notas vacías o muy cortas. No se inyectará crítica.`);
+            }
+          } catch (betaErr) {
+            console.warn(`[Orchestrator] [Fix30] Beta mid-novela falló (best-effort, generación continúa): ${(betaErr as Error).message}`);
+          }
+        }
 
         // PUENTE C — Checkpoint holístico ligero cada N capítulos (configurable).
         // Best-effort: detecta duplicados y drift de nombre del protagonista sin
@@ -2847,6 +2923,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousContinuity,
             refinementInstructions: refinementInstructions + stalledEscalationResume,
             antiRepetitionGuidance: (project as any).antiRepetitionGuidance || undefined,
+            editorialCritique: this.midNovelBetaCritique || undefined,
             authorName,
             isRewrite: isRewrite || isStalledResume,
             minWordCount: perChapterMinResume,
@@ -3530,7 +3607,48 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // exactamente los mismos issues fantasma ciclo tras ciclo (caso real: cap 7
     // formaldehído, cap 26 cromato — repetidos en ciclos 3 y 5 sin avanzar).
     this.staleInstructionsForFinalReviewer = [];
-    
+
+    // [Fix29] Gate del Lector Holístico ANTES del primer ciclo del Final
+    // Reviewer. El FR es caro (1M ctx + hasta 10 ciclos) y a veces descubre
+    // problemas estructurales mayores en el ciclo 3-4, quemando los previos
+    // en pulidos cosméticos. El Holístico (también lee la novela completa)
+    // los señala de entrada y se inyectan en `issuesPreviosCorregidos` del
+    // ciclo 1. NOTA sobre el plan original: re-invocar al Arquitecto con
+    // mecanismo análogo a `plotIntegrityFeedback` NO es viable post-generación
+    // (los capítulos ya existen y un nuevo outline los dejaría huérfanos);
+    // en su lugar promovemos los hallazgos al FR, que ya sabe orquestar
+    // reescrituras capítulo a capítulo vía Cirujano. Best-effort: si falla,
+    // el FR procede sin la inyección. Max 1 invocación por runFinalReview.
+    this.holisticGateNotes = [];
+    try {
+      this.callbacks.onAgentStatus("holistic-reviewer", "reviewing",
+        `[Fix29] Lector Holístico revisando manuscrito completo antes del Revisor Final...`
+      );
+      const holisticGateOutcome = await this.runHolisticReview(project);
+      if (holisticGateOutcome?.notesText && holisticGateOutcome.notesText.trim().length > 200) {
+        const MAX_GATE_CHARS = 12000;
+        const truncatedGateNotes = holisticGateOutcome.notesText.length > MAX_GATE_CHARS
+          ? holisticGateOutcome.notesText.slice(0, MAX_GATE_CHARS) + "\n[...notas del Holístico truncadas por longitud...]"
+          : holisticGateOutcome.notesText;
+        this.holisticGateNotes.push(
+          `[FIX29 — INFORME HOLÍSTICO PRE-FINAL-REVIEWER, alta prioridad estructural] El Lector Holístico ha leído la novela completa antes de iniciar los ciclos del Revisor Final. Aborda estos hallazgos en el ciclo 1 en lugar de descubrirlos en ciclos posteriores:\n\n${truncatedGateNotes}`
+        );
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          agentRole: "holistic-reviewer",
+          message: `[Fix29] Gate del Holístico capturado (${truncatedGateNotes.length.toLocaleString("es-ES")} chars). Inyectado al ciclo 1 del Revisor Final.`,
+        });
+        this.callbacks.onAgentStatus("holistic-reviewer", "complete",
+          `[Fix29] Holístico gate completado. Hallazgos inyectados al Revisor Final.`
+        );
+      } else {
+        console.log(`[Orchestrator] [Fix29] Holístico gate devolvió notas vacías o muy cortas. FR procede sin inyección.`);
+      }
+    } catch (gateErr) {
+      console.warn(`[Orchestrator] [Fix29] Holístico gate falló (best-effort, FR continúa): ${(gateErr as Error).message}`);
+    }
+
     let seriesUnresolvedThreadsQA: string[] = [];
     let seriesKeyEventsQA: string[] = [];
     let seriesContextForReview: any = undefined;
@@ -3592,8 +3710,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const staleNotes = this.staleInstructionsForFinalReviewer.map(s =>
         `[FALSO POSITIVO YA VERIFICADO POR EL CIRUJANO — NO VUELVAS A EMITIRLO] Cap ${s.chapter}: ${s.instruction.split("\n")[0].slice(0, 200)}... (Razón del cirujano: ${s.reason.slice(0, 150)})`
       );
-      const issuesPreviosConRechazos = staleNotes.length > 0
-        ? [...issuesPreviosCorregidos, ...staleNotes]
+      // [Fix29] En el primer ciclo, anteponer las notas del Holístico gate
+      // (alta prioridad estructural) para que el FR las aborde de entrada.
+      // En ciclos posteriores ya no se reinyectan: o el FR ya las procesó,
+      // o están reflejadas en las decisiones del cirujano de ciclos previos.
+      const gateNotes = (revisionCycle === 0) ? this.holisticGateNotes : [];
+      const issuesPreviosConRechazos = (gateNotes.length > 0 || staleNotes.length > 0)
+        ? [...gateNotes, ...issuesPreviosCorregidos, ...staleNotes]
         : issuesPreviosCorregidos;
 
       const reviewResult = await this.finalReviewer.execute({
@@ -5124,6 +5247,53 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
    * emocionales, qué funcionó y qué aburrió. Complementa al holístico, no lo
    * sustituye. NO modifica el proyecto. Tracking de tokens activado.
    */
+  /**
+   * [Fix30 — code review] Variante scoped del Lector Beta para uso mid-novela.
+   * Filtra los capítulos a solo aquellos con `status === "completed"` y `content`
+   * no vacío, para que el Beta no reciba placeholders de capítulos aún por
+   * escribir. Reutiliza `loadFullNovelContext` (style guide + world bible
+   * summary) y solo sustituye la lista de capítulos.
+   */
+  private async runMidNovelBetaReview(project: Project): Promise<BetaReaderResult> {
+    const ctx = await this.loadFullNovelContext(project);
+    const allChapters = await storage.getChaptersByProject(project.id);
+    const completedChapters = allChapters
+      .filter(c => c.status === "completed" && c.content && c.content.trim().length > 100)
+      .sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0))
+      .map(c => ({
+        numero: c.chapterNumber || 0,
+        titulo: c.title || "",
+        contenido: c.content || "",
+      }));
+
+    if (completedChapters.length === 0) {
+      throw new Error("[Fix30] No hay capítulos completados para el Beta mid-novela.");
+    }
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "info",
+      message: `[Fix30] Iniciando lectura beta de mid-novela (${completedChapters.length} capítulos completados).`,
+      agentRole: "editor",
+    });
+
+    const result = await this.betaReader.runReview({
+      projectTitle: project.title,
+      chapters: completedChapters,
+      guiaEstilo: ctx.styleGuideContent,
+      worldBibleSummary: ctx.worldBibleSummary,
+      generoObjetivo: project.genre || undefined,
+      longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
+    }, project.id);
+
+    await this.trackTokenUsage(
+      project.id, result.tokenUsage,
+      "Lector Beta (mid-novela)", "deepseek-v4-flash", undefined, "beta_review"
+    );
+
+    return result;
+  }
+
   async runBetaReview(project: Project): Promise<BetaReaderResult> {
     const ctx = await this.loadFullNovelContext(project);
 

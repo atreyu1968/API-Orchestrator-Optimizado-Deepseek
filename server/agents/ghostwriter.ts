@@ -62,6 +62,15 @@ interface GhostwriterInput {
   kindleUnlimitedOptimized?: boolean;
   surgicalEdit?: boolean;
   /**
+   * [Fix30] Crítica del Lector Beta sobre los capítulos ya escritos (~2/3 del
+   * manuscrito). El Orquestador la genera una sola vez al alcanzar ese hito
+   * y la inyecta en TODOS los Ghostwriters posteriores. Permite que la
+   * segunda mitad de la novela aprenda de los problemas detectados en la
+   * primera mitad (pacing, distancia emocional, expectativas no cumplidas)
+   * sin necesidad de reescribir nada.
+   */
+  editorialCritique?: string;
+  /**
    * Texto COMPLETO de todos los capítulos anteriores ya escritos en orden
    * narrativo, formateado con etiquetas legibles (PRÓLOGO/CAPÍTULO N/EPÍLOGO/
    * NOTA DEL AUTOR). Aprovecha la ventana de 1M tokens de DeepSeek V4 para que
@@ -901,6 +910,31 @@ export class GhostwriterAgent extends BaseAgent {
     INSTRUCCIÓN: Usa este borrador como BASE. Modifica SOLO lo que indican las instrucciones de corrección.${input.surgicalEdit ? " La salida debe parecerse al 90%+ a este borrador, con cambios localizados solo en los puntos problemáticos." : ""}
     `;
       }
+    }
+
+    if (input.editorialCritique && input.editorialCritique.trim().length > 0) {
+      const truncatedCritique = input.editorialCritique.length > 8000
+        ? input.editorialCritique.slice(0, 8000) + "\n[...crítica truncada por longitud...]"
+        : input.editorialCritique;
+      prompt += `
+
+    ═══════════════════════════════════════════════════════════════════
+    📖 CRÍTICA DEL LECTOR BETA SOBRE LA PRIMERA MITAD DE LA NOVELA (Fix30)
+    ═══════════════════════════════════════════════════════════════════
+    Un Lector Beta cualificado ha leído los capítulos ya escritos hasta ahora
+    y emitió la siguiente impresión. Tenla MUY en cuenta al escribir este
+    capítulo: corrige las debilidades señaladas, NO repitas los patrones que
+    aburrieron, intensifica lo que el Beta destacó como funcional. Si la
+    crítica menciona pacing lento → acelera; si pide más conflicto interno →
+    profundiza el subtexto; si avisa de expectativas no cumplidas → cumple
+    aquí o establece foreshadowing claro.
+
+    ${truncatedCritique}
+
+    Esta crítica NO es opcional: es feedback real del lector objetivo de esta
+    novela. Aplícala con criterio editorial, sin contradecir el outline.
+    ═══════════════════════════════════════════════════════════════════
+    `;
     }
 
     if (input.antiRepetitionGuidance && input.antiRepetitionGuidance.trim().length > 0) {

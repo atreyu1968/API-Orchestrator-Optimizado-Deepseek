@@ -1,4 +1,4 @@
-# LitAgents v7.6 — Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v7.7 — Sistema de Orquestacion de Agentes Literarios IA
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando **DeepSeek V4** como unico backend de IA.
 
