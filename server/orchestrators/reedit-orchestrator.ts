@@ -23,6 +23,8 @@ import { PlotThreadClosureAuditorAgent } from "../agents/plot-thread-closure-aud
 // [Fix31] Snapshot de continuidad para sagas tras reeditar.
 import { ManuscriptAnalyzerAgent } from "../agents/manuscript-analyzer";
 import { ensureChapterNumbers } from "../utils/extract-chapters";
+import { SurgicalPatcherAgent } from "../agents/surgical-patcher";
+import { parseHolisticBetaForReedit, type ReeditPendingEditorialParse, type ReeditEditorialInstruction } from "../utils/reedit-editorial-parser";
 // [Fix33] Logger persistente por proyecto.
 import { logReeditEvent } from "../utils/reedit-logger";
 
@@ -5183,6 +5185,53 @@ export class ReeditOrchestrator {
         }
       }
 
+      // [Fix34] Replicar el "mismo proceso" del pipeline principal: parsear las notas
+      // del Holístico+Beta a instrucciones estructuradas y dejarlas como pendingEditorialParse
+      // para revisión humana. Es best-effort: si falla, los informes en bruto siguen disponibles.
+      try {
+        const holisticPayload = results.find(r => r.kind === "holistic_review" && r.ok)?.payload as { notesText?: string } | undefined;
+        const betaPayload = results.find(r => r.kind === "beta_review" && r.ok)?.payload as { notesText?: string } | undefined;
+        const holisticNotes = (holisticPayload?.notesText || "").trim();
+        const betaNotes = (betaPayload?.notesText || "").trim();
+        if (holisticNotes.length === 0 && betaNotes.length === 0) {
+          console.log(`[ReeditOrchestrator Stage8] [Fix34] Sin notesText de Holístico/Beta; omito parseo de instrucciones.`);
+        } else {
+          const concatenated = [
+            holisticNotes && `═══ INFORME DEL LECTOR HOLÍSTICO ═══\n${holisticNotes}`,
+            betaNotes && `═══ INFORME DEL LECTOR BETA ═══\n${betaNotes}`,
+          ].filter(Boolean).join("\n\n");
+          const chapterIndex = reviewerChapters.map(c => ({ numero: c.numero, titulo: c.titulo }));
+          this.emitProgress({
+            projectId,
+            stage: "post_reedit_parse_instructions",
+            currentChapter: validChapters.length,
+            totalChapters: validChapters.length,
+            message: "Analizando informes Holístico+Beta para extraer instrucciones aplicables…",
+          });
+          const parsed = await parseHolisticBetaForReedit({
+            notesText: concatenated,
+            chapterIndex,
+            projectTitle,
+          });
+          await storage.updateReeditProject(projectId, { pendingEditorialParse: parsed as any });
+          await logReeditEvent(projectId, "info", "post_reedit_parse_instructions",
+            `[Fix34] Parseadas ${parsed.count} instrucción(es) del Holístico+Beta (auto-aplicables: ${parsed.instrucciones.filter(i => i.autoApplicable).length}).`,
+            { context: { source: parsed.source } });
+          this.emitProgress({
+            projectId,
+            stage: "post_reedit_parse_instructions_done",
+            currentChapter: validChapters.length,
+            totalChapters: validChapters.length,
+            message: `[Fix34] ${parsed.count} instrucción(es) listas para revisión humana.`,
+          });
+        }
+      } catch (e) {
+        console.error(`[ReeditOrchestrator Stage8] [Fix34] Falló parseo de instrucciones Holístico+Beta:`, e);
+        logReeditEvent(projectId, "warn", "post_reedit_parse_instructions",
+          `[Fix34] Parseo de instrucciones falló: ${(e as Error).message}. Los informes en bruto siguen disponibles.`,
+          {});
+      }
+
       this.emitProgress({
         projectId,
         stage: "post_reedit_reviews_done",
@@ -5193,6 +5242,206 @@ export class ReeditOrchestrator {
     } catch (error) {
       console.error(`[ReeditOrchestrator Stage8] Error general en post-reviews del proyecto ${projectId}:`, error);
     }
+  }
+
+  // [Fix34] Aplica las instrucciones del Holístico+Beta seleccionadas por el usuario
+  // sobre `editedContent` de los reedit_chapters. Retorna un resumen agregado y persiste
+  // un audit_report `holistic_beta_applied` con el detalle por instrucción.
+  async applyHolisticBetaInstructions(
+    projectId: number,
+    selectedIds: number[]
+  ): Promise<{ applied: number; failed: number; skipped: number; summary: string }> {
+    const project = await storage.getReeditProject(projectId);
+    if (!project) throw new Error("Proyecto de reedit no encontrado.");
+    const pending = (project as any).pendingEditorialParse as ReeditPendingEditorialParse | null;
+    if (!pending || !Array.isArray(pending.instrucciones) || pending.instrucciones.length === 0) {
+      throw new Error("No hay instrucciones pendientes del Holístico+Beta.");
+    }
+    const idSet = new Set(selectedIds);
+    const selected: ReeditEditorialInstruction[] = pending.instrucciones.filter(i => idSet.has(i.id));
+    if (selected.length === 0) throw new Error("No se seleccionó ninguna instrucción.");
+
+    const chapters = await storage.getReeditChaptersByProject(projectId);
+    const chapterByNumber = new Map<number, ReeditChapter>();
+    for (const c of chapters) chapterByNumber.set(c.chapterNumber, c);
+
+    const wb = await storage.getReeditWorldBibleByProject(projectId).catch(() => null);
+    const worldBibleContext = wb ? this.buildReeditWorldBibleContext(wb) : "";
+
+    const patcher = new SurgicalPatcherAgent();
+    const perInstruction: Array<{ id: number; tipo: string; status: "applied" | "failed" | "skipped" | "kept_pending"; detail: string }> = [];
+    const appliedSuccessIds = new Set<number>();
+    let applied = 0; let failed = 0; let skipped = 0;
+
+    await logReeditEvent(projectId, "info", "apply_holistic_beta",
+      `[Fix34] Aplicando ${selected.length} instrucción(es) seleccionadas del Holístico+Beta.`, {});
+
+    for (const ins of selected) {
+      try {
+        if (!ins.autoApplicable) {
+          skipped += 1;
+          perInstruction.push({ id: ins.id, tipo: ins.tipo || "estructural", status: "skipped", detail: ins.reasonNotAutoApplicable || "No auto-aplicable" });
+          continue;
+        }
+
+        if (ins.tipo === "global_rename" && ins.rename_from && ins.rename_to) {
+          // Find/replace word-boundary global determinista (sin LLM).
+          const from = ins.rename_from;
+          const to = ins.rename_to;
+          const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const re = new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "gu");
+          let chaptersTouched = 0; let totalReplacements = 0;
+          for (const ch of chapters) {
+            const original = ch.editedContent || ch.originalContent || "";
+            if (!original) continue;
+            const matches = original.match(re);
+            if (!matches || matches.length === 0) continue;
+            const updated = original.replace(re, to);
+            await storage.updateReeditChapter(ch.id, { editedContent: updated });
+            chaptersTouched += 1;
+            totalReplacements += matches.length;
+          }
+          if (totalReplacements === 0) {
+            failed += 1;
+            perInstruction.push({ id: ins.id, tipo: "global_rename", status: "failed", detail: `"${from}" no aparece en el manuscrito.` });
+          } else {
+            applied += 1;
+            appliedSuccessIds.add(ins.id);
+            perInstruction.push({ id: ins.id, tipo: "global_rename", status: "applied", detail: `${totalReplacements} reemplazo(s) en ${chaptersTouched} capítulo(s).` });
+          }
+          continue;
+        }
+
+        // puntual / estructural → SurgicalPatcher por capítulo afectado.
+        const caps = (ins.capitulos_afectados || []).filter(n => chapterByNumber.has(n));
+        if (caps.length === 0) {
+          skipped += 1;
+          perInstruction.push({ id: ins.id, tipo: ins.tipo || "estructural", status: "skipped", detail: "Ningún capítulo afectado válido." });
+          continue;
+        }
+
+        let perChapApplied = 0; let perChapFailed = 0; const reasons: string[] = [];
+        const planByChap = ins.plan_por_capitulo || {};
+        for (const capNum of caps) {
+          const ch = chapterByNumber.get(capNum)!;
+          const original = ch.editedContent || ch.originalContent || "";
+          if (!original.trim()) { perChapFailed += 1; reasons.push(`cap ${capNum}: vacío`); continue; }
+          const planForChap = planByChap[String(capNum)] || planByChap[capNum as any] || "";
+          const instrText = [
+            ins.instrucciones_correccion || ins.descripcion,
+            planForChap ? `\nPLAN ESPECÍFICO PARA ESTE CAPÍTULO: ${planForChap}` : "",
+            ins.elementos_a_preservar ? `\nELEMENTOS A PRESERVAR: ${ins.elementos_a_preservar}` : "",
+          ].join("");
+          const start = Date.now();
+          const result = await patcher.execute({
+            chapterNumber: capNum,
+            chapterTitle: ch.title || "",
+            originalContent: original,
+            instructions: instrText,
+            worldBibleContext,
+          });
+          const ops = result.result?.operations || [];
+          if (ops.length === 0) {
+            perChapFailed += 1;
+            reasons.push(`cap ${capNum}: ${result.result?.not_applicable_reason || "el cirujano no produjo operaciones"}`);
+            continue;
+          }
+          const applyReport = patcher.applyOperations(original, ops);
+          if (applyReport.applied.length === 0) {
+            perChapFailed += 1;
+            reasons.push(`cap ${capNum}: ${applyReport.failed.length} op(s) sin aplicar`);
+            continue;
+          }
+          await storage.updateReeditChapter(ch.id, { editedContent: applyReport.finalContent });
+          perChapApplied += 1;
+          await logReeditEvent(projectId, "info", "apply_holistic_beta",
+            `[Fix34] Cap ${capNum}: ${applyReport.applied.length}/${ops.length} op(s) aplicadas (${Math.round((Date.now()-start)/1000)}s).`,
+            { chapter: capNum });
+        }
+
+        if (perChapApplied > 0 && perChapFailed === 0) {
+          applied += 1;
+          appliedSuccessIds.add(ins.id);
+          perInstruction.push({ id: ins.id, tipo: ins.tipo || "estructural", status: "applied", detail: `Aplicada en ${perChapApplied}/${caps.length} cap(s).` });
+        } else if (perChapApplied > 0 && perChapFailed > 0) {
+          applied += 1;
+          appliedSuccessIds.add(ins.id);
+          perInstruction.push({ id: ins.id, tipo: ins.tipo || "estructural", status: "applied", detail: `Aplicada en ${perChapApplied}/${caps.length} cap(s). Fallos: ${reasons.join("; ").slice(0, 240)}` });
+        } else {
+          failed += 1;
+          perInstruction.push({ id: ins.id, tipo: ins.tipo || "estructural", status: "failed", detail: reasons.join("; ").slice(0, 280) || "Sin operaciones aplicables." });
+        }
+      } catch (e) {
+        failed += 1;
+        perInstruction.push({ id: ins.id, tipo: ins.tipo || "estructural", status: "failed", detail: (e as Error).message });
+        logReeditEvent(projectId, "warn", "apply_holistic_beta",
+          `[Fix34] Falló instrucción id=${ins.id}: ${(e as Error).message}`, {});
+      }
+    }
+
+    // [Fix34 — code review] Conservar trazabilidad: registrar en perInstruction TAMBIÉN
+    // las instrucciones del pending que no se incluyeron en `selected` (no marcadas por el
+    // usuario, o administrativas deshabilitadas). Y conservar como `kept_pending` en el
+    // pendingEditorialParse las que NO se aplicaron con éxito (fallidas, omitidas o no
+    // seleccionadas), para no perder el contexto del HITL.
+    const remainingInstructions = pending.instrucciones.filter(i => !appliedSuccessIds.has(i.id));
+    for (const ins of pending.instrucciones) {
+      if (idSet.has(ins.id)) continue; // ya está en perInstruction
+      perInstruction.push({
+        id: ins.id,
+        tipo: ins.tipo || "estructural",
+        status: "kept_pending",
+        detail: ins.autoApplicable ? "No seleccionada por el usuario." : (ins.reasonNotAutoApplicable || "Administrativa, no auto-aplicable."),
+      });
+    }
+
+    const summary = `Holístico+Beta: ${applied} aplicada(s), ${failed} fallida(s), ${skipped} omitida(s), ${remainingInstructions.length - failed - skipped} no seleccionada(s).`;
+    try {
+      await storage.createReeditAuditReport({
+        projectId,
+        auditType: "holistic_beta_applied",
+        findings: { applied, failed, skipped, kept_pending: remainingInstructions.length, summary, perInstruction, completedAt: new Date().toISOString() } as any,
+      } as any);
+    } catch (e) {
+      console.error(`[ReeditOrchestrator Fix34] Falló persistir audit_report holistic_beta_applied: ${(e as Error).message}`);
+    }
+
+    // Conservar las no aplicadas en pendingEditorialParse (sólo borrar si todo se aplicó OK).
+    if (remainingInstructions.length === 0) {
+      await storage.updateReeditProject(projectId, { pendingEditorialParse: null as any });
+    } else {
+      const updatedPending: ReeditPendingEditorialParse = {
+        resumen_general: pending.resumen_general,
+        instrucciones: remainingInstructions,
+        count: remainingInstructions.length,
+        completedAt: pending.completedAt,
+        source: pending.source,
+      };
+      await storage.updateReeditProject(projectId, { pendingEditorialParse: updatedPending as any });
+    }
+    logReeditEvent(projectId, "info", "apply_holistic_beta", `[Fix34] ${summary}`, {});
+
+    return { applied, failed, skipped, summary };
+  }
+
+  private buildReeditWorldBibleContext(wb: any): string {
+    const parts: string[] = [];
+    const chars = Array.isArray(wb?.characters) ? wb.characters : [];
+    if (chars.length > 0) {
+      parts.push("PERSONAJES:\n" + chars.slice(0, 40).map((c: any) => `- ${c?.name || "?"}: ${(c?.description || "").slice(0, 200)}`).join("\n"));
+    }
+    const locs = Array.isArray(wb?.locations) ? wb.locations : [];
+    if (locs.length > 0) {
+      parts.push("LUGARES:\n" + locs.slice(0, 30).map((l: any) => `- ${l?.name || "?"}: ${(l?.description || "").slice(0, 200)}`).join("\n"));
+    }
+    const lore = Array.isArray(wb?.loreRules) ? wb.loreRules : [];
+    if (lore.length > 0) {
+      parts.push("REGLAS DEL MUNDO:\n" + lore.slice(0, 30).map((r: any) => `- ${(r?.rule || "").slice(0, 200)}`).join("\n"));
+    }
+    if (wb?.historicalPeriod) {
+      parts.push(`PERÍODO: ${wb.historicalPeriod}`);
+    }
+    return parts.join("\n\n");
   }
 }
 

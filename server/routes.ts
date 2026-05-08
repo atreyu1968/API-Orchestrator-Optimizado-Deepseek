@@ -7725,6 +7725,87 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  // [Fix34] GET pendingEditorialParse del reedit (instrucciones extraídas del Holístico+Beta).
+  app.get("/api/reedit-projects/:id/pending-editorial-parse", async (req: Request, res: Response) => {
+    try {
+      if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "ID inválido" });
+      const projectId = parseInt(req.params.id, 10);
+      const project = await storage.getReeditProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      const pending = (project as any).pendingEditorialParse || null;
+      res.json({ pending });
+    } catch (error) {
+      console.error("[Fix34] Error GET pending-editorial-parse:", error);
+      res.status(500).json({ error: "Failed to fetch pending editorial parse" });
+    }
+  });
+
+  // [Fix34] POST aplicar instrucciones seleccionadas del Holístico+Beta sobre los reedit_chapters.
+  app.post("/api/reedit-projects/:id/apply-holistic-beta-instructions", async (req: Request, res: Response) => {
+    try {
+      if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "ID inválido" });
+      const projectId = parseInt(req.params.id, 10);
+      const project = await storage.getReeditProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+
+      const body = req.body || {};
+      const selectedIds = Array.isArray(body.selectedIds)
+        ? body.selectedIds.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n))
+        : [];
+      if (selectedIds.length === 0) {
+        return res.status(400).json({ error: "Debes seleccionar al menos una instrucción para aplicar." });
+      }
+
+      if (activeReeditOrchestrators.has(projectId)) {
+        return res.status(409).json({ error: "El proyecto ya está siendo procesado." });
+      }
+
+      const orchestrator = new ReeditOrchestrator();
+      activeReeditOrchestrators.set(projectId, orchestrator);
+
+      res.status(202).json({
+        success: true,
+        message: `Aplicando ${selectedIds.length} instrucción(es) en background.`,
+        projectId,
+        selectedIds,
+      });
+
+      console.log(`[Fix34] Aplicando ${selectedIds.length} instrucciones Holístico+Beta para proyecto ${projectId}.`);
+      orchestrator.applyHolisticBetaInstructions(projectId, selectedIds)
+        .then((r) => {
+          console.log(`[Fix34] Apply completado proyecto ${projectId}: ${r.summary}`);
+          storage.updateReeditProject(projectId, { currentActivity: r.summary }).catch(() => {});
+        })
+        .catch((err: any) => {
+          console.error(`[Fix34] Apply error proyecto ${projectId}:`, err);
+          storage.updateReeditProject(projectId, {
+            currentActivity: `Error aplicando Holístico+Beta: ${err instanceof Error ? err.message : "desconocido"}`,
+          }).catch(() => {});
+        })
+        .finally(() => {
+          activeReeditOrchestrators.delete(projectId);
+        });
+    } catch (error) {
+      console.error("[Fix34] Error POST apply-holistic-beta-instructions:", error);
+      res.status(500).json({ error: "Failed to apply instructions" });
+    }
+  });
+
+  // [Fix34] DELETE descartar pendingEditorialParse sin aplicar.
+  app.delete("/api/reedit-projects/:id/pending-editorial-parse", async (req: Request, res: Response) => {
+    try {
+      if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "ID inválido" });
+      const projectId = parseInt(req.params.id, 10);
+      const project = await storage.getReeditProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      await storage.updateReeditProject(projectId, { pendingEditorialParse: null as any });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[Fix34] Error DELETE pending-editorial-parse:", error);
+      res.status(500).json({ error: "Failed to delete pending editorial parse" });
+    }
+  });
+
   app.delete("/api/reedit-projects/:id/logs", async (req: Request, res: Response) => {
     try {
       if (!/^\d+$/.test(req.params.id)) {
@@ -8566,6 +8647,12 @@ CRITERIOS:
       
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
+      }
+
+      // [Fix34 — code review] No mutar editedContent mientras un orchestrator está
+      // aplicando cambios (apply Holístico+Beta, reedit, apply-corrections, etc.).
+      if (activeReeditOrchestrators.has(projectId)) {
+        return res.status(409).json({ error: "El proyecto está siendo procesado por otro orquestador. Espera a que termine." });
       }
 
       const chapters = await storage.getReeditChaptersByProject(projectId);

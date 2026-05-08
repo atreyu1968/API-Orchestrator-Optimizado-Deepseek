@@ -634,6 +634,9 @@ export const reeditProjects = pgTable("reedit_projects", {
   seriesOrder: integer("series_order"),
   // Tracking de issues resueltos - evita que el revisor re-reporte problemas ya corregidos
   resolvedIssueHashes: jsonb("resolved_issue_hashes").default([]), // Array of hashes for resolved issues
+  // [Fix34] Instrucciones del Holístico+Beta parseadas y pendientes de aprobación humana.
+  // Mismo shape que projects.pendingEditorialParse: { resumen_general, instrucciones, count, completedAt, source }.
+  pendingEditorialParse: jsonb("pending_editorial_parse"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

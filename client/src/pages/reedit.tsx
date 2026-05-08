@@ -748,6 +748,58 @@ export default function ReeditPage() {
     refetchInterval: 5000,
   });
 
+  // [Fix34] Instrucciones pendientes del Holístico+Beta (para human-in-the-loop).
+  const { data: pendingEditorialData } = useQuery<{ pending: any | null }>({
+    queryKey: ["/api/reedit-projects", selectedProject, "pending-editorial-parse"],
+    enabled: !!selectedProject,
+    refetchInterval: 5000,
+  });
+  const pendingEditorial = pendingEditorialData?.pending || null;
+  const [selectedInstructionIds, setSelectedInstructionIds] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (pendingEditorial?.instrucciones) {
+      const autoIds = pendingEditorial.instrucciones.filter((i: any) => i.autoApplicable).map((i: any) => i.id);
+      setSelectedInstructionIds(new Set(autoIds));
+    } else {
+      setSelectedInstructionIds(new Set());
+    }
+  }, [pendingEditorial?.completedAt]);
+
+  const applyInstructionsMutation = useMutation({
+    mutationFn: async (selectedIds: number[]) => {
+      const r = await fetch(`/api/reedit-projects/${selectedProject}/apply-holistic-beta-instructions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selectedIds }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+        throw new Error(err.error || `HTTP ${r.status}`);
+      }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Aplicación lanzada", description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects", selectedProject, "pending-editorial-parse"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects", selectedProject, "audit-reports"] });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const dismissPendingMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/reedit-projects/${selectedProject}/pending-editorial-parse`, { method: "DELETE" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Descartado", description: "Las instrucciones se han eliminado sin aplicarse." });
+      queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects", selectedProject, "pending-editorial-parse"] });
+    },
+  });
+
   const selectedProjectData = projects.find(p => p.id === selectedProject);
 
   const uploadMutation = useMutation({
@@ -1750,6 +1802,93 @@ export default function ReeditPage() {
                         </Button>
                       </div>
                     </div>
+                    {/* [Fix34] Instrucciones del Holístico+Beta pendientes de aprobación humana. */}
+                    {pendingEditorial && Array.isArray(pendingEditorial.instrucciones) && pendingEditorial.instrucciones.length > 0 && (
+                      <Card className="mb-4 border-primary/40" data-testid="card-pending-editorial-parse">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2 text-base">
+                            <Wand2 className="h-4 w-4 text-primary" />
+                            Correcciones del Holístico + Beta ({pendingEditorial.count})
+                          </CardTitle>
+                          <CardDescription>
+                            {pendingEditorial.resumen_general || "Instrucciones extraídas de los lectores Holístico y Beta sobre el manuscrito reeditado. Selecciona las que quieras aplicar."}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <ScrollArea className="h-[300px] pr-2">
+                            <div className="space-y-2">
+                              {pendingEditorial.instrucciones.map((ins: any) => {
+                                const checked = selectedInstructionIds.has(ins.id);
+                                const tipoBadge = ins.autoApplicable
+                                  ? <Badge variant="default" className="text-xs">{ins.tipo}</Badge>
+                                  : <Badge variant="secondary" className="text-xs">{ins.tipo} (manual)</Badge>;
+                                const capsLabel = (ins.capitulos_afectados || []).slice(0, 6).map((n: number) => getChapterBadgeLabel(n)).join(", ")
+                                  + ((ins.capitulos_afectados || []).length > 6 ? ` +${ins.capitulos_afectados.length - 6}` : "");
+                                return (
+                                  <div key={ins.id} className="flex items-start gap-3 p-2 border rounded-md hover-elevate" data-testid={`text-instruction-${ins.id}`}>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={!ins.autoApplicable}
+                                      onChange={(e) => {
+                                        const next = new Set(selectedInstructionIds);
+                                        if (e.target.checked) next.add(ins.id); else next.delete(ins.id);
+                                        setSelectedInstructionIds(next);
+                                      }}
+                                      className="mt-1"
+                                      data-testid={`checkbox-instruction-${ins.id}`}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                                        {tipoBadge}
+                                        <Badge variant="outline" className="text-xs">{ins.categoria}</Badge>
+                                        {ins.prioridad && <Badge variant="outline" className="text-xs">{ins.prioridad}</Badge>}
+                                        <span className="text-xs text-muted-foreground">{capsLabel}</span>
+                                      </div>
+                                      <p className="text-sm font-medium">{ins.descripcion}</p>
+                                      {ins.instrucciones_correccion && ins.instrucciones_correccion !== ins.descripcion && (
+                                        <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{ins.instrucciones_correccion}</p>
+                                      )}
+                                      {!ins.autoApplicable && ins.reasonNotAutoApplicable && (
+                                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">⚠ {ins.reasonNotAutoApplicable}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </ScrollArea>
+                          <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t">
+                            <span className="text-xs text-muted-foreground">
+                              {selectedInstructionIds.size} de {pendingEditorial.instrucciones.filter((i: any) => i.autoApplicable).length} auto-aplicables seleccionadas
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                data-testid="button-dismiss-pending-editorial"
+                                onClick={() => {
+                                  if (!confirm("¿Descartar todas las instrucciones del Holístico+Beta sin aplicarlas?")) return;
+                                  dismissPendingMutation.mutate();
+                                }}
+                                disabled={dismissPendingMutation.isPending}
+                              >
+                                Descartar
+                              </Button>
+                              <Button
+                                size="sm"
+                                data-testid="button-apply-holistic-beta"
+                                onClick={() => applyInstructionsMutation.mutate(Array.from(selectedInstructionIds))}
+                                disabled={selectedInstructionIds.size === 0 || applyInstructionsMutation.isPending}
+                              >
+                                {applyInstructionsMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                                Aplicar seleccionadas
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
                     <ScrollArea className="h-[400px]">
                       {auditReports.length > 0 ? (
                         <AuditReportsDisplay reports={auditReports} />
