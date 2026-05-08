@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { ChatPanel } from "@/components/chat-panel";
 import { 
@@ -782,6 +783,31 @@ export default function ReeditPage() {
       toast({ title: "Aplicación lanzada", description: data.message });
       queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects", selectedProject, "pending-editorial-parse"] });
       queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects", selectedProject, "audit-reports"] });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+  });
+
+  // [Fix35] Crítica humana sobre el reedit completado.
+  const [humanCritiqueNotes, setHumanCritiqueNotes] = useState("");
+  const parseHumanCritiqueMutation = useMutation({
+    mutationFn: async (notes: string) => {
+      const r = await fetch(`/api/reedit-projects/${selectedProject}/parse-editorial-notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+        throw new Error(err.error || `HTTP ${r.status}`);
+      }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Análisis iniciado", description: data.message });
+      setHumanCritiqueNotes("");
+      queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects", selectedProject, "pending-editorial-parse"] });
     },
     onError: (e: Error) => {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -1802,6 +1828,48 @@ export default function ReeditPage() {
                         </Button>
                       </div>
                     </div>
+                    {/* [Fix35] Crítica humana sobre el manuscrito reeditado. */}
+                    {selectedProjectData.status === "completed" && (
+                      <Card className="mb-4" data-testid="card-human-critique-reedit">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2 text-base">
+                            <Wand2 className="h-4 w-4 text-primary" />
+                            Crítica humana sobre el manuscrito reeditado
+                          </CardTitle>
+                          <CardDescription>
+                            Escribe tu opinión, hallazgos o cambios que quieras proponer (puedes pegar notas largas).
+                            Se analizarán y aparecerán abajo como instrucciones aplicables, igual que las del Holístico+Beta.
+                            Si ya hay instrucciones pendientes, las nuevas se añadirán al listado sin sobrescribirlas.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <Textarea
+                            value={humanCritiqueNotes}
+                            onChange={(e) => setHumanCritiqueNotes(e.target.value)}
+                            placeholder="Ej: El cap 7 pierde tensión a partir del segundo tercio. La motivación del antagonista en el cap 12 me suena floja. Hay tres veces 'una sonrisa torcida' entre los caps 18 y 22..."
+                            className="min-h-[140px] font-mono text-xs"
+                            maxLength={200000}
+                            disabled={parseHumanCritiqueMutation.isPending}
+                            data-testid="textarea-human-critique"
+                          />
+                          <div className="flex items-center justify-between gap-2 mt-2">
+                            <span className="text-xs text-muted-foreground">
+                              {humanCritiqueNotes.length.toLocaleString("es-ES")} / 200.000 caracteres
+                            </span>
+                            <Button
+                              size="sm"
+                              data-testid="button-parse-human-critique"
+                              onClick={() => parseHumanCritiqueMutation.mutate(humanCritiqueNotes)}
+                              disabled={!humanCritiqueNotes.trim() || parseHumanCritiqueMutation.isPending}
+                            >
+                              {parseHumanCritiqueMutation.isPending
+                                ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Analizando...</>
+                                : <><Wand2 className="h-4 w-4 mr-2" />Analizar mis notas</>}
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
                     {/* [Fix34] Instrucciones del Holístico+Beta pendientes de aprobación humana. */}
                     {pendingEditorial && Array.isArray(pendingEditorial.instrucciones) && pendingEditorial.instrucciones.length > 0 && (
                       <Card className="mb-4 border-primary/40" data-testid="card-pending-editorial-parse">

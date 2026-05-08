@@ -39,7 +39,7 @@ export interface ReeditPendingEditorialParse {
   instrucciones: ReeditEditorialInstruction[];
   count: number;
   completedAt: string;
-  source: "auto_holistic_beta_reedit";
+  source: "auto_holistic_beta_reedit" | "human_critique_reedit" | "mixed_reedit";
 }
 
 const AUTO_APPLICABLE_TYPES: Set<string> = new Set(["puntual", "estructural", "global_rename"]);

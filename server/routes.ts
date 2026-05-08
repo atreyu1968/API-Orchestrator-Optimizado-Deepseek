@@ -7791,6 +7791,137 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  // [Fix35] POST: el usuario aporta crítica humana en texto libre sobre un
+  // reedit ya completado. Se parsea con `parseHolisticBetaForReedit` (mismo
+  // camino que [Fix34]) y se persiste en `reeditProjects.pendingEditorialParse`.
+  // Si ya hay un parse pendiente del Holístico+Beta sin aplicar, se FUSIONAN
+  // las nuevas instrucciones reasignando IDs (no se pierde nada). 202 + bg
+  // porque el parser puede tardar varios minutos con notas largas (LLM path).
+  // Concurrency: lock por projectId + re-fetch del project ANTES de persistir
+  // para evitar lost-update si Stage 8 termina mientras corre el parse humano.
+  const pendingHumanCritiqueParses = new Set<number>();
+  app.post("/api/reedit-projects/:id/parse-editorial-notes", async (req: Request, res: Response) => {
+    try {
+      if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "ID inválido" });
+      const projectId = parseInt(req.params.id, 10);
+      const project = await storage.getReeditProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+
+      // Guardas backend (no fiarse solo de la UI): solo proyectos completados,
+      // sin orquestador activo y sin otro parse humano en curso.
+      if (project.status !== "completed") {
+        return res.status(409).json({ error: "El reedit debe estar completado antes de aportar crítica humana." });
+      }
+      if (activeReeditOrchestrators.has(projectId)) {
+        return res.status(409).json({ error: "Hay un proceso del reedit en curso. Espera a que termine antes de aportar crítica." });
+      }
+      if (pendingHumanCritiqueParses.has(projectId)) {
+        return res.status(409).json({ error: "Ya hay un análisis de crítica humana en curso para este proyecto." });
+      }
+
+      const { notes } = req.body || {};
+      if (!notes || typeof notes !== "string" || !notes.trim()) {
+        return res.status(400).json({ error: "Debes proporcionar las notas en el campo 'notes'" });
+      }
+      if (notes.length > 200000) {
+        return res.status(400).json({ error: "Las notas son demasiado largas (máximo 200.000 caracteres)" });
+      }
+
+      const chapters = await storage.getReeditChaptersByProject(projectId);
+      if (!chapters || chapters.length === 0) {
+        return res.status(400).json({ error: "El proyecto no tiene capítulos para anclar las notas." });
+      }
+      const chapterIndex = chapters
+        .filter(c => Number.isFinite(c.chapterNumber))
+        .sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0))
+        .map(c => ({ numero: c.chapterNumber || 0, titulo: c.title || "" }));
+
+      pendingHumanCritiqueParses.add(projectId);
+      res.status(202).json({
+        accepted: true,
+        projectId,
+        message: "Análisis iniciado. Las instrucciones aparecerán en la pestaña Auditorías al terminar.",
+      });
+
+      (async () => {
+        try {
+          const { parseHolisticBetaForReedit } = await import("./utils/reedit-editorial-parser");
+          const parsed = await parseHolisticBetaForReedit({
+            notesText: `═══ CRÍTICA HUMANA SOBRE EL MANUSCRITO REEDITADO ═══\n${notes.trim()}`,
+            chapterIndex,
+            projectTitle: project.title || "Reedición",
+          });
+
+          // [Fix35] Re-leer el proyecto JUSTO ANTES de fusionar para evitar
+          // pisotear cambios concurrentes (Stage 8 que termina, usuario que
+          // aplica/descarta entre 202 y aquí). Sin esto el snapshot inicial
+          // quedaría obsoleto y el update perdería instrucciones.
+          const fresh = await storage.getReeditProject(projectId);
+          if (!fresh) {
+            console.warn(`[Fix35] Proyecto ${projectId} desapareció durante el parse, abortando persistencia.`);
+            return;
+          }
+          const existing = (fresh as any).pendingEditorialParse as any | null;
+
+          // Dedup determinista por (tipo + capitulos_afectados ordenados +
+          // primeros 200 chars de instrucciones_correccion normalizadas).
+          const fingerprint = (ins: any): string => {
+            const tipo = String(ins?.tipo || "").trim().toLowerCase();
+            const caps = Array.isArray(ins?.capitulos_afectados)
+              ? [...ins.capitulos_afectados].map(Number).filter(Number.isFinite).sort((a, b) => a - b).join(",")
+              : "";
+            const corr = String(ins?.instrucciones_correccion || ins?.descripcion || "")
+              .toLowerCase().replace(/\s+/g, " ").trim().slice(0, 200);
+            return `${tipo}|${caps}|${corr}`;
+          };
+
+          let merged: any;
+          if (existing && Array.isArray(existing.instrucciones) && existing.instrucciones.length > 0) {
+            const seen = new Set<string>(existing.instrucciones.map(fingerprint));
+            const newOnes = parsed.instrucciones.filter(ins => {
+              const fp = fingerprint(ins);
+              if (seen.has(fp)) return false;
+              seen.add(fp);
+              return true;
+            });
+            const maxId = existing.instrucciones.reduce(
+              (m: number, i: any) => Math.max(m, Number(i.id) || 0), 0
+            );
+            const renumbered = newOnes.map((ins, idx) => ({ ...ins, id: maxId + 1 + idx }));
+            merged = {
+              resumen_general: existing.resumen_general
+                ? `${existing.resumen_general}\n\n[Crítica humana añadida] ${parsed.resumen_general || "(sin resumen)"}`
+                : parsed.resumen_general,
+              instrucciones: [...existing.instrucciones, ...renumbered],
+              count: existing.instrucciones.length + renumbered.length,
+              completedAt: new Date().toISOString(),
+              source: "mixed_reedit",
+            };
+            console.log(`[Fix35] Fusión proyecto ${projectId}: ${existing.instrucciones.length} previas + ${renumbered.length} nuevas (${parsed.instrucciones.length - renumbered.length} duplicadas descartadas).`);
+          } else {
+            merged = { ...parsed, source: "human_critique_reedit" };
+          }
+
+          await storage.updateReeditProject(projectId, { pendingEditorialParse: merged as any });
+          console.log(`[Fix35] Parse de crítica humana completado proyecto ${projectId}: ${merged.count} instrucción(es).`);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error(`[Fix35] Parse de crítica humana falló proyecto ${projectId}:`, errMsg);
+          await storage.updateReeditProject(projectId, {
+            currentActivity: `Error analizando crítica humana: ${errMsg}`,
+          }).catch(() => {});
+        } finally {
+          pendingHumanCritiqueParses.delete(projectId);
+        }
+      })();
+    } catch (error) {
+      console.error("[Fix35] Error POST parse-editorial-notes:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: error instanceof Error ? error.message : "Failed to parse" });
+      }
+    }
+  });
+
   // [Fix34] DELETE descartar pendingEditorialParse sin aplicar.
   app.delete("/api/reedit-projects/:id/pending-editorial-parse", async (req: Request, res: Response) => {
     try {
