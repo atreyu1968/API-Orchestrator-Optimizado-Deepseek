@@ -13,6 +13,11 @@ interface VoiceRhythmAuditorInput {
   }>;
   guiaEstilo?: string;
   expectedPOV?: string;
+  // [Fix27] Texto íntegro de capítulos PREVIOS al tramo. Permite evaluar
+  // la voz/ritmo en perspectiva del manuscrito completo (lo que parece
+  // "deriva tonal" en este tramo puede ser coherente con el patrón
+  // ya establecido). Aprovecha el 1M ctx de DeepSeek V4.
+  previousChaptersFullText?: string;
 }
 
 export interface VoiceRhythmIssue {
@@ -159,6 +164,13 @@ export class VoiceRhythmAuditorAgent extends BaseAgent {
 ${c.contenido}
 `).join("\n\n---\n\n");
 
+    // [Fix27] Bloque opcional con el texto íntegro de capítulos previos
+    // al tramo: contexto para calibrar el "perfil tonal", NO objeto de
+    // auditoría — explicitar que no se reporten issues sobre estos.
+    const previousFullSection = input.previousChaptersFullText && input.previousChaptersFullText.trim()
+      ? `\n═══════════════════════════════════════════════════════════════════\nCAPÍTULOS PREVIOS AL TRAMO (TEXTO ÍNTEGRO — calibra el perfil tonal del proyecto, NO auditar):\n═══════════════════════════════════════════════════════════════════\n${input.previousChaptersFullText}\n`
+      : "";
+
     const prompt = `
 PROYECTO: ${input.projectTitle}
 TRAMO #${input.trancheNumber} - Análisis de Voz y Ritmo
@@ -167,7 +179,7 @@ GÉNERO: ${input.genre}
 TONO ESPERADO: ${input.tone}
 ${input.expectedPOV ? `POV ESPERADO: ${input.expectedPOV}` : ""}
 ${input.guiaEstilo ? `\nGUÍA DE ESTILO:\n${input.guiaEstilo}` : ""}
-
+${previousFullSection}
 ═══════════════════════════════════════════════════════════════════
 CAPÍTULOS A ANALIZAR (${input.chaptersInScope.length} capítulos):
 ═══════════════════════════════════════════════════════════════════

@@ -99,13 +99,35 @@ Responde SIEMPRE en formato JSON válido con esta estructura exacta:
   }
 
   async analyze(input: AnalyzerInput): Promise<AnalyzerResult> {
-    const chaptersSummary = input.chapters.map(ch => {
-      const maxChapterLength = 2000;
-      const preview = ch.content.length > maxChapterLength 
-        ? ch.content.substring(0, 1000) + "\n\n[...contenido resumido...]\n\n" + ch.content.substring(ch.content.length - 1000)
-        : ch.content;
-      return `### Cap ${ch.chapterNumber}${ch.title ? `: ${ch.title}` : ""}\n${preview}`;
-    }).join("\n\n---\n\n");
+    // [Fix28] Aprovecha el 1M ctx de DeepSeek V4: en vez de truncar cada
+    // capítulo a 2000 chars (head 1k + tail 1k) — que destruye toda info
+    // del medio del capítulo —, repartimos un presupuesto total de chars
+    // para meter el manuscrito ÍNTEGRO siempre que quepa. Solo si la suma
+    // de capítulos excede el presupuesto recurrimos al recorte head+tail
+    // por capítulo, repartido proporcionalmente.
+    const TOTAL_BUDGET_CHARS = 800_000; // ~200K tokens, holgado vs 1M ctx
+    const totalRawChars = input.chapters.reduce((sum, ch) => sum + (ch.content?.length || 0), 0);
+
+    let chaptersSummary: string;
+    if (totalRawChars <= TOTAL_BUDGET_CHARS) {
+      // Cabe entero: pasamos todo el contenido tal cual.
+      chaptersSummary = input.chapters.map(ch =>
+        `### Cap ${ch.chapterNumber}${ch.title ? `: ${ch.title}` : ""}\n${ch.content}`
+      ).join("\n\n---\n\n");
+      console.log(`[ManuscriptAnalyzer] Manuscrito completo cabe en presupuesto (${Math.round(totalRawChars / 1000)}K / ${TOTAL_BUDGET_CHARS / 1000}K chars), enviando ÍNTEGRO.`);
+    } else {
+      // Excede presupuesto: reparto proporcional con head+tail por capítulo,
+      // garantizando un mínimo de 2000 chars por capítulo.
+      const ratio = TOTAL_BUDGET_CHARS / totalRawChars;
+      chaptersSummary = input.chapters.map(ch => {
+        const targetLen = Math.max(2000, Math.floor((ch.content?.length || 0) * ratio));
+        const preview = (ch.content?.length || 0) > targetLen
+          ? ch.content.substring(0, Math.floor(targetLen / 2)) + "\n\n[...contenido resumido por presupuesto...]\n\n" + ch.content.substring(ch.content.length - Math.floor(targetLen / 2))
+          : ch.content;
+        return `### Cap ${ch.chapterNumber}${ch.title ? `: ${ch.title}` : ""}\n${preview}`;
+      }).join("\n\n---\n\n");
+      console.log(`[ManuscriptAnalyzer] Manuscrito excede presupuesto (${Math.round(totalRawChars / 1000)}K > ${TOTAL_BUDGET_CHARS / 1000}K chars), recortando proporcional (ratio ${ratio.toFixed(3)}).`);
+    }
 
     const prompt = `Analiza el siguiente manuscrito para extraer información de continuidad.
 

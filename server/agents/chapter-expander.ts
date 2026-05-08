@@ -113,6 +113,11 @@ interface ChapterExpansionInput {
   };
   worldBible?: any;
   adjacentContext?: { previousSummary?: string; nextSummary?: string };
+  // [Fix26] Texto íntegro de capítulos previos del mismo manuscrito
+  // y de volúmenes anteriores (saga). Aprovecha el 1M ctx de DeepSeek V4
+  // para que la expansión NO contradiga ni repita lo ya escrito.
+  previousChaptersFullText?: string;
+  previousVolumesFullText?: string;
 }
 
 export interface ExpandedChapterResult {
@@ -134,6 +139,10 @@ interface NewChapterInput {
   previousChapterSummary: string;
   nextChapterSummary: string;
   genre: string;
+  // [Fix26] Igual que ChapterExpansionInput: texto íntegro de capítulos
+  // previos y volúmenes anteriores para coherencia profunda.
+  previousChaptersFullText?: string;
+  previousVolumesFullText?: string;
 }
 
 export interface NewChapterResult {
@@ -337,6 +346,17 @@ export class ChapterExpanderAgent extends BaseAgent {
     const adjacentContext = input.adjacentContext ? 
       `CONTEXTO ADYACENTE:\n- Capítulo anterior: ${input.adjacentContext.previousSummary || "N/A"}\n- Capítulo siguiente: ${input.adjacentContext.nextSummary || "N/A"}` : "";
 
+    // [Fix26] Manuscrito previo íntegro y volúmenes anteriores. Aprovecha
+    // el 1M ctx de DeepSeek V4 para que la expansión sea coherente con todo
+    // lo escrito y no introduzca contradicciones, repeticiones de imagen ni
+    // muletillas ya usadas.
+    const previousFullBlock = input.previousChaptersFullText && input.previousChaptersFullText.trim()
+      ? `\n═══════════════════════════════════════════════════════════════════\nCAPÍTULOS PREVIOS DEL MANUSCRITO (TEXTO ÍNTEGRO — para coherencia, NO repetir):\n═══════════════════════════════════════════════════════════════════\n\n${input.previousChaptersFullText}\n`
+      : "";
+    const previousVolumesBlock = input.previousVolumesFullText && input.previousVolumesFullText.trim()
+      ? `\n═══════════════════════════════════════════════════════════════════\nVOLÚMENES ANTERIORES DE LA SAGA (TEXTO ÍNTEGRO — canon previo):\n═══════════════════════════════════════════════════════════════════\n\n${input.previousVolumesFullText}\n`
+      : "";
+
     const prompt = `
 EXPANSIÓN DE CAPÍTULO ${input.chapterNumber}: "${input.chapterTitle}"
 
@@ -348,7 +368,7 @@ CONTENIDO SUGERIDO: ${input.expansionPlan.suggestedContent}
 ${worldBibleContext}
 
 ${adjacentContext}
-
+${previousVolumesBlock}${previousFullBlock}
 ═══════════════════════════════════════════════════════════════════
 CAPÍTULO ORIGINAL A EXPANDIR:
 ═══════════════════════════════════════════════════════════════════
@@ -413,6 +433,14 @@ export class NewChapterGeneratorAgent extends BaseAgent {
   async execute(input: NewChapterInput): Promise<AgentResponse & { result?: NewChapterResult }> {
     const worldBibleContext = input.worldBible ? this.buildWorldBibleContext(input.worldBible) : "";
 
+    // [Fix26] Manuscrito previo íntegro y volúmenes anteriores (saga).
+    const previousFullBlock = input.previousChaptersFullText && input.previousChaptersFullText.trim()
+      ? `\n═══════════════════════════════════════════════════════════════════\nCAPÍTULOS PREVIOS DEL MANUSCRITO (TEXTO ÍNTEGRO — coherencia narrativa):\n═══════════════════════════════════════════════════════════════════\n\n${input.previousChaptersFullText}\n`
+      : "";
+    const previousVolumesBlock = input.previousVolumesFullText && input.previousVolumesFullText.trim()
+      ? `\n═══════════════════════════════════════════════════════════════════\nVOLÚMENES ANTERIORES DE LA SAGA (TEXTO ÍNTEGRO — canon previo):\n═══════════════════════════════════════════════════════════════════\n\n${input.previousVolumesFullText}\n`
+      : "";
+
     const prompt = `
 GENERACIÓN DE NUEVO CAPÍTULO
 
@@ -431,6 +459,7 @@ ${worldBibleContext}
 CONTEXTO NARRATIVO:
 - RESUMEN DEL CAPÍTULO ANTERIOR (${input.insertAfterChapter}): ${input.previousChapterSummary}
 - RESUMEN DEL CAPÍTULO SIGUIENTE (${input.insertAfterChapter + 1}): ${input.nextChapterSummary}
+${previousVolumesBlock}${previousFullBlock}
 
 ═══════════════════════════════════════════════════════════════════
 INSTRUCCIONES:

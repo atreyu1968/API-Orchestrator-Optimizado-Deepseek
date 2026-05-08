@@ -13,6 +13,11 @@ interface ContinuitySentinelInput {
   }>;
   worldBible: any;
   previousCheckpointIssues?: string[];
+  // [Fix27] Texto íntegro de capítulos PREVIOS al tramo en análisis.
+  // Aprovecha el 1M ctx de DeepSeek V4 para reducir falsos positivos
+  // (ej: lo que parece "personaje desaparecido" puede haber sido despedido
+  // explícitamente en un capítulo anterior al tramo).
+  previousChaptersFullText?: string;
 }
 
 export interface ContinuityIssue {
@@ -166,6 +171,13 @@ ${c.contenido}
       ? `\nISSUES DE CHECKPOINTS ANTERIORES (verificar si persisten):\n${input.previousCheckpointIssues.map(i => `- ${i}`).join("\n")}`
       : "";
 
+    // [Fix27] Bloque opcional con el texto íntegro de capítulos previos al
+    // tramo. Se inserta ANTES del scope y con instrucción explícita de NO
+    // reportar issues sobre estos capítulos (son contexto, no objeto de auditoría).
+    const previousFullSection = input.previousChaptersFullText && input.previousChaptersFullText.trim()
+      ? `\n═══════════════════════════════════════════════════════════════════\nCAPÍTULOS PREVIOS AL TRAMO (TEXTO ÍNTEGRO — solo CONTEXTO, NO auditar):\n═══════════════════════════════════════════════════════════════════\n${input.previousChaptersFullText}\n`
+      : "";
+
     const prompt = `
 ${buildCanonNamesBlock(input.worldBible)}
 PROYECTO: ${input.projectTitle}
@@ -174,7 +186,7 @@ CHECKPOINT #${input.checkpointNumber} - Análisis de continuidad
 WORLD BIBLE (Datos Canónicos):
 ${JSON.stringify(input.worldBible, null, 2)}
 ${previousIssuesSection}
-
+${previousFullSection}
 ═══════════════════════════════════════════════════════════════════
 CAPÍTULOS A ANALIZAR (${input.chaptersInScope.length} capítulos):
 ═══════════════════════════════════════════════════════════════════

@@ -5180,23 +5180,41 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   ): { valid: EditorialInstruction[]; pendingAdministrative: Array<{ tipo: string; descripcion: string; motivo: string }>; degradedMultiCap: string[] } | null {
     const startMarker = "<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->";
     const endMarker = "<!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->";
-    const startIdx = notesText.indexOf(startMarker);
-    const endIdx = notesText.indexOf(endMarker);
-    if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return null;
-
-    const block = notesText.slice(startIdx + startMarker.length, endIdx).trim();
-    // Quitar el wrapping ```json ... ``` si está presente.
-    const fenced = block.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-    const jsonRaw = (fenced ? fenced[1] : block).trim();
-    if (!jsonRaw) return { valid: [], pendingAdministrative: [], degradedMultiCap: [] };
-
-    let parsed: any;
-    try {
-      parsed = repairJson(jsonRaw);
-    } catch {
-      try { parsed = JSON.parse(jsonRaw); } catch { return null; }
+    // [Fix25-followup] Extraer TODOS los bloques de marcadores. El auto-loop
+    // de Holístico+Beta ([Fix25]) concatena dos informes y cada uno trae su
+    // propio bloque INSTRUCCIONES_AUTOAPLICABLES; el indexOf simple solo veía
+    // el primero y descartaba silenciosamente las del segundo lector.
+    const blockInstructions: any[] = [];
+    let cursor = 0;
+    let blocksFound = 0;
+    while (cursor < notesText.length) {
+      const sIdx = notesText.indexOf(startMarker, cursor);
+      if (sIdx === -1) break;
+      const eIdx = notesText.indexOf(endMarker, sIdx + startMarker.length);
+      if (eIdx === -1 || eIdx <= sIdx) break;
+      blocksFound += 1;
+      const inner = notesText.slice(sIdx + startMarker.length, eIdx).trim();
+      const fencedM = inner.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      const jsonText = (fencedM ? fencedM[1] : inner).trim();
+      cursor = eIdx + endMarker.length;
+      if (!jsonText) continue;
+      let parsedBlock: any;
+      try { parsedBlock = repairJson(jsonText); }
+      catch {
+        try { parsedBlock = JSON.parse(jsonText); }
+        catch { continue; }
+      }
+      if (parsedBlock && Array.isArray(parsedBlock.instrucciones)) {
+        blockInstructions.push(...parsedBlock.instrucciones);
+      }
     }
-    if (!parsed || !Array.isArray(parsed.instrucciones)) return { valid: [], pendingAdministrative: [], degradedMultiCap: [] };
+    if (blocksFound === 0) return null;
+    if (blockInstructions.length === 0) return { valid: [], pendingAdministrative: [], degradedMultiCap: [] };
+    // Sintetizamos un parsed compatible con el resto del flujo histórico.
+    const parsed: any = { instrucciones: blockInstructions };
+    if (blocksFound > 1) {
+      console.log(`[Fix25-followup] extractAuto: combinados ${blocksFound} bloques INSTRUCCIONES_AUTOAPLICABLES (${blockInstructions.length} instrucciones brutas) — fusión Holístico+Beta.`);
+    }
 
     const degradedMultiCap: string[] = [];
 
@@ -6412,16 +6430,59 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   private async runAutoHolisticReviewLoop(project: Project): Promise<void> {
     try {
       this.callbacks.onAgentStatus("editor", "thinking",
-        "Auto-revisión holística post-finalización en marcha..."
+        "Auto-revisión post-finalización en marcha (Holístico + Beta en paralelo)..."
       );
 
-      const review = await this.runHolisticReview(project);
-      const notes = (review?.notesText || "").trim();
+      // [Fix25] Holístico + Beta en paralelo. Aprovechamos que ambos leen
+      // la misma novela completa (1M ctx) para tener dos perspectivas
+      // independientes — editor profesional y lector cualificado — sin
+      // duplicar el tiempo de espera. Si uno falla, seguimos con el otro.
+      const [holisticOutcome, betaOutcome] = await Promise.allSettled([
+        this.runHolisticReview(project),
+        this.runBetaReview(project),
+      ]);
+
+      const holisticNotes = holisticOutcome.status === "fulfilled"
+        ? (holisticOutcome.value?.notesText || "").trim()
+        : "";
+      const betaNotes = betaOutcome.status === "fulfilled"
+        ? (betaOutcome.value?.notesText || "").trim()
+        : "";
+
+      if (holisticOutcome.status === "rejected") {
+        const msg = holisticOutcome.reason instanceof Error ? holisticOutcome.reason.message : String(holisticOutcome.reason);
+        console.error("[AutoHolisticReview] holistic failed:", holisticOutcome.reason);
+        await storage.createActivityLog({
+          projectId: project.id, level: "warn",
+          message: `Lector Holístico falló en auto-revisión: ${msg.slice(0, 200)}. Continuamos con Beta si está disponible.`,
+          agentRole: "editor",
+        });
+      }
+      if (betaOutcome.status === "rejected") {
+        const msg = betaOutcome.reason instanceof Error ? betaOutcome.reason.message : String(betaOutcome.reason);
+        console.error("[AutoHolisticReview] beta failed:", betaOutcome.reason);
+        await storage.createActivityLog({
+          projectId: project.id, level: "warn",
+          message: `Lector Beta falló en auto-revisión: ${msg.slice(0, 200)}. Continuamos con Holístico si está disponible.`,
+          agentRole: "editor",
+        });
+      }
+
+      // Concatenamos ambos informes con cabeceras claras para que el parser
+      // entienda que son dos voces sobre el MISMO manuscrito y deduplique.
+      const sections: string[] = [];
+      if (holisticNotes) {
+        sections.push(`═══════════════════════════════════════════════════════════════════\nINFORME DEL LECTOR HOLÍSTICO (editor profesional)\n═══════════════════════════════════════════════════════════════════\n\n${holisticNotes}`);
+      }
+      if (betaNotes) {
+        sections.push(`═══════════════════════════════════════════════════════════════════\nINFORME DEL LECTOR BETA (lector cualificado)\n═══════════════════════════════════════════════════════════════════\n\n${betaNotes}\n\nNOTA: Si el Holístico ya señaló un problema y el Beta lo confirma con sus propias palabras, NO los dupliques: agrégalos como una sola instrucción reforzada.`);
+      }
+      const notes = sections.join("\n\n");
       if (!notes) {
         await storage.createActivityLog({
           projectId: project.id,
           level: "info",
-          message: "Auto-revisión holística completada sin notas: el manuscrito está limpio.",
+          message: "Auto-revisión completada sin notas: el manuscrito está limpio (o ambos lectores fallaron).",
           agentRole: "editor",
         });
         this.callbacks.onAutoReviewReady?.({ count: 0, resumen: "Sin observaciones" });

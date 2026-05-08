@@ -16,6 +16,11 @@ import {
 import { ContinuitySentinelAgent as CanonicalContinuitySentinelAgent } from "../agents/continuity-sentinel";
 import { VoiceRhythmAuditorAgent as CanonicalVoiceRhythmAuditorAgent } from "../agents/voice-rhythm-auditor";
 import { SemanticRepetitionDetectorAgent as CanonicalSemanticRepetitionDetectorAgent } from "../agents/semantic-repetition-detector";
+// [Fix24] Lectores Holístico y Beta también para el final del reedit.
+import { HolisticReviewerAgent } from "../agents/holistic-reviewer";
+import { BetaReaderAgent } from "../agents/beta-reader";
+// [Fix31] Snapshot de continuidad para sagas tras reeditar.
+import { ManuscriptAnalyzerAgent } from "../agents/manuscript-analyzer";
 import { ensureChapterNumbers } from "../utils/extract-chapters";
 
 function getChapterSortOrder(chapterNumber: number): number {
@@ -418,7 +423,7 @@ class ContinuitySentinelAgent {
     return this.auditContinuity(input.chapters, input.startChapter, input.endChapter, input.worldBibleContext);
   }
 
-  async auditContinuity(chapterContents: string[], startChapter: number, endChapter: number, worldBibleContext?: string): Promise<any> {
+  async auditContinuity(chapterContents: string[], startChapter: number, endChapter: number, worldBibleContext?: string, previousChaptersFullText?: string): Promise<any> {
     const chaptersInScope = chapterContents.map((c, i) => ({
       numero: startChapter + i,
       titulo: "",
@@ -431,6 +436,9 @@ class ContinuitySentinelAgent {
       checkpointNumber: startChapter,
       chaptersInScope,
       worldBible: worldBibleContext ? { rawText: worldBibleContext } : {},
+      // [Fix27] Texto íntegro de capítulos previos del mismo manuscrito
+      // para reducir falsos positivos por desconocimiento del contexto.
+      previousChaptersFullText,
     });
 
     const canonical = response.result;
@@ -476,7 +484,7 @@ class VoiceRhythmAuditorAgent {
     return this.auditVoiceRhythm(input.chapters, input.startChapter, input.endChapter);
   }
 
-  async auditVoiceRhythm(chapterContents: string[], startChapter: number, endChapter: number): Promise<any> {
+  async auditVoiceRhythm(chapterContents: string[], startChapter: number, endChapter: number, previousChaptersFullText?: string): Promise<any> {
     const chaptersInScope = chapterContents.map((c, i) => ({
       numero: startChapter + i,
       titulo: "",
@@ -489,6 +497,10 @@ class VoiceRhythmAuditorAgent {
       genre: "general",
       tone: "consistente con el género",
       chaptersInScope,
+      // [Fix27] Capítulos previos completos para evaluar deriva de voz/ritmo
+      // en perspectiva: lo que en este tramo parece "desentonar" puede ser
+      // coherente con el patrón establecido antes.
+      previousChaptersFullText,
     });
 
     const canonical = response.result;
@@ -525,7 +537,7 @@ class SemanticRepetitionDetectorAgent {
     return this.detectRepetitions(input.chapters, input.totalChapters, input.worldBibleContext);
   }
 
-  async detectRepetitions(chapterContents: string[], totalChapters: number, worldBibleContext?: string): Promise<any> {
+  async detectRepetitions(chapterContents: string[], totalChapters: number, worldBibleContext?: string, previousChaptersFullText?: string): Promise<any> {
     // Legacy callers pass already-formatted strings like "=== CAPÍTULO 3: title ===\n<content>".
     // Try to recover chapter numbers from that header; fall back to sequential numbering.
     const chapters = chapterContents.map((raw, i) => {
@@ -541,6 +553,7 @@ class SemanticRepetitionDetectorAgent {
       chapters,
       worldBible: worldBibleContext ? { rawText: worldBibleContext } : {},
     });
+    void previousChaptersFullText; // [Fix27] reservado para llamadas parciales futuras
 
     const canonical = response.result;
     const clusters = canonical?.clusters || [];
@@ -2062,6 +2075,12 @@ export class ReeditOrchestrator {
 
         const adjacentContext = this.buildAdjacentChapterContext(updatedChapters, chapter.chapterNumber);
 
+        // [Fix26] Texto íntegro de capítulos previos del manuscrito y de
+        // volúmenes anteriores (saga). DeepSeek V4 (1M ctx) puede leerlo
+        // entero y la expansión queda anclada al canon ya escrito.
+        const previousFullForExpander = await this.buildPreviousReeditChaptersFullText(projectId, chapter.chapterNumber);
+        const previousVolumesForExpander = await this.getPreviousVolumesFullTextForReeditById(projectId);
+
         const expandResult = await this.chapterExpander.execute({
           chapterContent: chapter.originalContent,
           chapterNumber: chapter.chapterNumber,
@@ -2076,6 +2095,8 @@ export class ReeditOrchestrator {
             previousSummary: adjacentContext.previousSummary,
             nextSummary: adjacentContext.nextSummary,
           },
+          previousChaptersFullText: previousFullForExpander,
+          previousVolumesFullText: previousVolumesForExpander,
         });
         this.trackTokens(expandResult);
 
@@ -2133,6 +2154,11 @@ export class ReeditOrchestrator {
         const prevChapter = updatedChapters.find(c => c.chapterNumber === insertion.insertAfterChapter);
         const nextChapter = updatedChapters.find(c => c.chapterNumber === insertion.insertAfterChapter + 1);
 
+        // [Fix26] Mismo enriquecimiento que en chapter-expander: capítulos
+        // previos íntegros + volúmenes anteriores para el nuevo capítulo.
+        const previousFullForNewCh = await this.buildPreviousReeditChaptersFullText(projectId, insertion.insertAfterChapter + 1);
+        const previousVolumesForNewCh = await this.getPreviousVolumesFullTextForReeditById(projectId);
+
         const newChapterResult = await this.newChapterGenerator.execute({
           insertAfterChapter: insertion.insertAfterChapter,
           title: insertion.title,
@@ -2143,6 +2169,8 @@ export class ReeditOrchestrator {
           previousChapterSummary: prevChapter?.originalContent?.substring(0, 2000) || "No disponible",
           nextChapterSummary: nextChapter?.originalContent?.substring(0, 2000) || "No disponible",
           genre: projectGenre,
+          previousChaptersFullText: previousFullForNewCh,
+          previousVolumesFullText: previousVolumesForNewCh,
         });
         this.trackTokens(newChapterResult);
 
@@ -3207,11 +3235,16 @@ export class ReeditOrchestrator {
           message: `Centinela de Continuidad: capítulos ${startChap}-${endChap}...`,
         });
 
+        // [Fix27] Capítulos PREVIOS al tramo (texto íntegro) para que el
+        // Centinela no marque como falso positivo lo que ya estaba establecido.
+        const previousFullForSentinel = await this.buildPreviousReeditChaptersFullText(projectId, startChap);
+
         const continuityResult = await this.continuitySentinel.auditContinuity(
           block.map(c => c.editedContent || c.originalContent),
           startChap,
           endChap,
-          worldBibleContextForSentinel || undefined
+          worldBibleContextForSentinel || undefined,
+          previousFullForSentinel || undefined
         );
         this.trackTokens(continuityResult);
 
@@ -3247,10 +3280,15 @@ export class ReeditOrchestrator {
           message: `Auditor de Voz y Ritmo: capítulos ${startChap}-${endChap}...`,
         });
 
+        // [Fix27] Capítulos PREVIOS al tramo (texto íntegro) para evaluar
+        // la coherencia de voz/ritmo en perspectiva del manuscrito completo.
+        const previousFullForVoice = await this.buildPreviousReeditChaptersFullText(projectId, startChap);
+
         const voiceResult = await this.voiceRhythmAuditor.auditVoiceRhythm(
           block.map(c => c.editedContent || c.originalContent),
           startChap,
-          endChap
+          endChap,
+          previousFullForVoice || undefined
         );
         this.trackTokens(voiceResult);
 
@@ -4121,6 +4159,14 @@ export class ReeditOrchestrator {
         message: finalMessage,
       });
 
+      // [Fix24] STAGE 8 — Lectores Holístico + Beta sobre el manuscrito reeditado.
+      // Best-effort: si falla, el reedit ya está marcado como completado y los
+      // informes se pueden lanzar manualmente. Los persistimos como audit reports
+      // (auditType "holistic_review" / "beta_review") sin migración de schema.
+      // [Fix31] Y, si el proyecto pertenece a una serie, regeneramos el snapshot
+      // de continuidad con ManuscriptAnalyzer sobre el manuscrito reeditado entero.
+      void this.runStage8PostReeditReviews(projectId, project.title || "Manuscrito reeditado");
+
     } catch (error) {
       console.error(`[ReeditOrchestrator] Error processing project ${projectId}:`, error);
       await storage.updateReeditProject(projectId, {
@@ -4968,6 +5014,118 @@ export class ReeditOrchestrator {
         totalThinkingTokens: this.totalThinkingTokens,
       });
       throw error;
+    }
+  }
+
+  /**
+   * [Fix24] + [Fix31] STAGE 8 — POST-REEDIT.
+   *
+   * Best-effort, no bloquea el cierre del proyecto. Se ejecuta DESPUÉS de
+   * marcar el reedit como `completed` para que un fallo aquí no revierta
+   * el manuscrito a estado "error".
+   *
+   * Tres pasos en paralelo:
+   *  1. Lector Holístico (editor profesional) → audit report `holistic_review`.
+   *  2. Lector Beta (lector cualificado) → audit report `beta_review`.
+   *  3. Si el proyecto pertenece a una serie, ManuscriptAnalyzer sobre el
+   *     manuscrito reeditado completo → audit report `series_snapshot`.
+   *     Así los volúmenes posteriores tienen un canon coherente con el reedit.
+   *
+   * Los resultados se persisten como `reeditAuditReports` (auditType custom)
+   * con `findings` JSON conteniendo `{ notesText }` o el snapshot completo.
+   */
+  private async runStage8PostReeditReviews(projectId: number, projectTitle: string): Promise<void> {
+    try {
+      const project = await storage.getReeditProject(projectId);
+      if (!project) {
+        console.warn(`[ReeditOrchestrator Stage8] Proyecto ${projectId} no encontrado, omito post-reviews.`);
+        return;
+      }
+      const chapters = await storage.getReeditChaptersByProject(projectId);
+      const validChapters = sortChaptersByNarrativeOrder(
+        chapters.filter(c => (c.editedContent && c.editedContent.trim().length > 0) || (c.originalContent && c.originalContent.trim().length > 0))
+      );
+      if (validChapters.length === 0) {
+        console.warn(`[ReeditOrchestrator Stage8] Proyecto ${projectId} sin capítulos válidos, omito post-reviews.`);
+        return;
+      }
+
+      const reviewerChapters = validChapters.map(c => ({
+        numero: c.chapterNumber,
+        titulo: c.title || "",
+        contenido: (c.editedContent && c.editedContent.trim()) ? c.editedContent : (c.originalContent || ""),
+      }));
+
+      const isSeries = !!(project as any).seriesId;
+      console.log(`[ReeditOrchestrator Stage8] Lanzando Holístico + Beta${isSeries ? " + SeriesSnapshot" : ""} sobre ${reviewerChapters.length} capítulos del proyecto ${projectId}.`);
+
+      this.emitProgress({
+        projectId,
+        stage: "post_reedit_reviews",
+        currentChapter: validChapters.length,
+        totalChapters: validChapters.length,
+        message: `Lanzando lectores Holístico + Beta${isSeries ? " y snapshot de serie" : ""} sobre el manuscrito reeditado…`,
+      });
+
+      const holisticAgent = new HolisticReviewerAgent();
+      const betaAgent = new BetaReaderAgent();
+      const tasks: Array<Promise<{ kind: string; ok: boolean; payload?: any; error?: string }>> = [];
+
+      tasks.push(holisticAgent.runReview({ projectTitle, chapters: reviewerChapters })
+        .then(r => ({ kind: "holistic_review", ok: true, payload: { notesText: r.notesText, totalChaptersRead: r.totalChaptersRead } }))
+        .catch(e => ({ kind: "holistic_review", ok: false, error: (e as Error).message })));
+
+      tasks.push(betaAgent.runReview({ projectTitle, chapters: reviewerChapters })
+        .then(r => ({ kind: "beta_review", ok: true, payload: { notesText: r.notesText, totalChaptersRead: r.totalChaptersRead } }))
+        .catch(e => ({ kind: "beta_review", ok: false, error: (e as Error).message })));
+
+      // [Fix31] Snapshot de continuidad solo si pertenece a una serie.
+      if (isSeries) {
+        const analyzer = new ManuscriptAnalyzerAgent();
+        const seriesOrder = (project as any).seriesOrder ?? 1;
+        const previousVolumesContext = await this.getPreviousVolumesFullTextForReeditById(projectId);
+        tasks.push(analyzer.analyze({
+          manuscriptTitle: projectTitle,
+          seriesTitle: (project as any).seriesTitle || projectTitle,
+          volumeNumber: seriesOrder,
+          chapters: reviewerChapters.map(c => ({
+            chapterNumber: c.numero,
+            title: c.titulo,
+            content: c.contenido,
+          })),
+          previousVolumesContext: previousVolumesContext || undefined,
+        })
+          .then(r => ({ kind: "series_snapshot", ok: true, payload: r.result || {} }))
+          .catch(e => ({ kind: "series_snapshot", ok: false, error: (e as Error).message })));
+      }
+
+      const results = await Promise.all(tasks);
+      for (const r of results) {
+        if (r.ok) {
+          try {
+            await storage.createReeditAuditReport({
+              projectId,
+              auditType: r.kind,
+              findings: r.payload as any,
+            } as any);
+            console.log(`[ReeditOrchestrator Stage8] Persistido ${r.kind} para proyecto ${projectId}.`);
+          } catch (e) {
+            console.error(`[ReeditOrchestrator Stage8] Falló persistir ${r.kind}: ${(e as Error).message}`);
+          }
+        } else {
+          console.error(`[ReeditOrchestrator Stage8] ${r.kind} falló: ${r.error}`);
+        }
+      }
+
+      this.emitProgress({
+        projectId,
+        stage: "post_reedit_reviews_done",
+        currentChapter: validChapters.length,
+        totalChapters: validChapters.length,
+        message: `Post-reedit completado. Informes disponibles: ${results.filter(r => r.ok).map(r => r.kind).join(", ") || "ninguno"}.`,
+      });
+    } catch (error) {
+      console.error(`[ReeditOrchestrator Stage8] Error general en post-reviews del proyecto ${projectId}:`, error);
     }
   }
 }
