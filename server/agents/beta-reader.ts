@@ -12,6 +12,10 @@ interface BetaReaderInput {
   worldBibleSummary?: string;
   generoObjetivo?: string;
   longitudObjetivo?: string;
+  // [Fix38] Notas que tú mismo (el Beta) emitiste sobre este manuscrito en una
+  // lectura anterior. Si llega, NO repitas las mismas observaciones literales:
+  // céntrate en lo que ha cambiado entre lecturas y en aspectos que no tocaste.
+  previousBetaNotes?: string;
 }
 
 export interface BetaReaderResult {
@@ -186,6 +190,14 @@ export class BetaReaderAgent extends BaseAgent {
       ? `\n\n## CANON DEL MUNDO (referencia)\n${input.worldBibleSummary.slice(0, 6000)}`
       : "";
 
+    // [Fix38] Notas tuyas de una lectura previa. Te las pasamos para que NO
+    // repitas las mismas observaciones literales: o el autor las ignoró
+    // intencionadamente y reincidir es ruido, o ya están aplicadas y deberías
+    // notarlo. Tu valor en esta segunda lectura está en lo NUEVO.
+    const previousNotesBlock = (input.previousBetaNotes && input.previousBetaNotes.trim().length > 200)
+      ? `\n\n═══════════════════════════════════════════════════════════════════\n## NOTAS DE TU LECTURA ANTERIOR (no las repitas)\n═══════════════════════════════════════════════════════════════════\n\n${input.previousBetaNotes.slice(0, 24000)}\n\nIMPORTANTE: arriba están las impresiones que TÚ MISMO emitiste sobre este manuscrito la última vez. En esta nueva lectura:\n- Si una observación previa SIGUE vigente porque el autor no la corrigió, mencionala muy brevemente ("ya lo dije la vez pasada y sigo notándolo en cap N") sin desarrollarla de nuevo, y NO la repitas en el JSON de instrucciones.\n- Si una observación previa YA ESTÁ resuelta, dilo explícitamente en una sola frase ("la pega del cap 12 que comenté antes ya no me molestó esta vez").\n- Centra el grueso de tu informe en aspectos NUEVOS que percibas, en cambios derivados de las correcciones, o en problemas que la primera lectura no captó.\n- En el bloque de INSTRUCCIONES_AUTOAPLICABLES, NO emitas instrucciones que sean clones (mismo capítulo + mismo problema) de las que ya emitiste antes.`
+      : "";
+
     const metaBlock = `## DATOS DEL MANUSCRITO
 Título: ${input.projectTitle}
 Género objetivo: ${input.generoObjetivo || "(no especificado)"}
@@ -197,7 +209,7 @@ Palabras totales aproximadas: ${totalWords.toLocaleString("es-ES")}`;
       .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(sección vacía)"}`)
       .join("");
 
-    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}
+    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${previousNotesBlock}
 
 ═══════════════════════════════════════════════════════════════════
 NOVELA COMPLETA QUE ACABAS DE LEER

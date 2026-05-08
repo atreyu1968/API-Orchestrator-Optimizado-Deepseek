@@ -118,6 +118,13 @@ export const projects = pgTable("projects", {
   // y promesa de género incumplida sin coste por capítulo. Si N <= 0 está
   // desactivado. Off por defecto.
   midGenCheckpointEvery: integer("mid_gen_checkpoint_every").default(0),
+  // [Fix38] Notas del último Lector Beta sobre este manuscrito. Cuando Beta
+  // se re-invoca (auto-holistic re-run, lectura beta manual repetida) recibe
+  // estas notas previas en el prompt para no repetir las mismas observaciones
+  // y centrarse en lo que ha cambiado o quedó sin tocar la vez anterior.
+  // Se sobreescribe tras cada runBetaReview exitoso. Truncado a 24k chars.
+  lastBetaNotes: text("last_beta_notes"),
+  lastBetaNotesAt: timestamp("last_beta_notes_at"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

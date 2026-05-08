@@ -3946,7 +3946,70 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       }
       
       previousScores.push(currentScore);
-      
+
+      // [Fix37] Diminishing returns y regresión persistente. La detección de
+      // plateau original (4 ciclos con spread ≤ 0.5) es demasiado conservadora:
+      // si la novela oscila entre 7.0 y 7.6 durante 5 ciclos sin acercarse a 9,
+      // o si los scores caen monotónicamente (9 → 8 → 7), seguimos quemando
+      // ciclos del Final Reviewer + Cirujano sin ganancia neta.
+      //
+      // Reglas de salida temprana (additivas a la lógica original):
+      //  (a) DIMINISHING RETURNS: tras ≥ 3 ciclos, si los últimos 3 |Δ| son
+      //      todos ≤ 0.3 y el máximo histórico sigue por debajo del umbral,
+      //      cerramos: más ciclos no van a empujar el score al objetivo.
+      //  (b) REGRESIÓN MONÓTONA: si llevamos ≥ 4 ciclos y los últimos 3 son
+      //      estrictamente decrecientes con caída total ≥ 1.0, el sistema
+      //      está empeorando — cortamos antes de degradar más el manuscrito.
+      //      El monitor de regresión por capítulo ya existe (Fix x), pero a
+      //      nivel global no había red.
+      // En ambos casos: rechazo con mejor-score-conocido como diagnóstico.
+      // NOTA crítica sobre el guard de la regla (b): NO usamos bestOverall < 9,
+      // porque eso enmascararía el patrón 9 → 8 → 7 (un 9 puntual seguido de
+      // caída clara). Si se alcanzaron 2 nueves consecutivos ya habríamos
+      // aprobado en el bloque de consecutiveHighScores, así que llegar aquí
+      // con un 9 histórico significa que NO se sostuvo y el trend actual es
+      // lo que importa: usamos el score actual (lastThree[2]) como gate.
+      if (previousScores.length >= 4) {
+        const lastThree = previousScores.slice(-3);
+        const lastFourthFromEnd = previousScores[previousScores.length - 4];
+        const deltas = [
+          Math.abs(lastThree[0] - lastFourthFromEnd),
+          Math.abs(lastThree[1] - lastThree[0]),
+          Math.abs(lastThree[2] - lastThree[1]),
+        ];
+        const allSmallDeltas = deltas[0] <= 0.3 && deltas[1] <= 0.3 && deltas[2] <= 0.3;
+        const bestOverall = Math.max(...previousScores);
+
+        if (allSmallDeltas && bestOverall < this.minAcceptableScore) {
+          this.callbacks.onAgentStatus("final-reviewer", "error",
+            `[Fix37] Diminishing returns: ${previousScores.length} ciclos, mejor ${bestOverall}/10, últimos 3 deltas ≤ 0.3 (${deltas.map(d => d.toFixed(2)).join(", ")}). Más ciclos no acercarán al umbral 9. NO APROBADO — calidad insuficiente.`
+          );
+          await storage.createActivityLog({
+            projectId: project.id, level: "warning", agentRole: "final-reviewer",
+            message: `[Fix37] Salida temprana por diminishing returns. Scores: [${previousScores.join(", ")}]. Mejor: ${bestOverall}/10. Umbral: ${this.minAcceptableScore}.`,
+          });
+          console.log(`[Orchestrator] [Fix37] Diminishing returns exit: scores=[${previousScores.join(", ")}] deltas=[${deltas.join(",")}] best=${bestOverall} threshold=${this.minAcceptableScore}`);
+          return false;
+        }
+
+        const monotonicDown = lastThree[0] > lastThree[1] && lastThree[1] > lastThree[2];
+        const totalDrop = lastThree[0] - lastThree[2];
+        // Gate por score ACTUAL (no histórico): si el ciclo actual está por
+        // debajo del umbral y los 3 últimos vienen cayendo monotónicamente
+        // con caída ≥ 1.0, paramos aunque hubiéramos visto un 9 antes.
+        if (monotonicDown && totalDrop >= 1.0 && lastThree[2] < this.minAcceptableScore) {
+          this.callbacks.onAgentStatus("final-reviewer", "error",
+            `[Fix37] Regresión monótona: ${lastThree.join(" → ")} (caída ${totalDrop.toFixed(1)}). El manuscrito está empeorando. NO APROBADO.`
+          );
+          await storage.createActivityLog({
+            projectId: project.id, level: "warning", agentRole: "final-reviewer",
+            message: `[Fix37] Salida temprana por regresión monótona. Últimos 3 scores: [${lastThree.join(", ")}], mejor histórico: ${bestOverall}/10, score actual: ${lastThree[2]}/10.`,
+          });
+          console.log(`[Orchestrator] [Fix37] Monotonic regression exit: lastThree=${lastThree.join(",")} drop=${totalDrop} current=${lastThree[2]} best=${bestOverall}`);
+          return false;
+        }
+      }
+
       if (previousScores.length >= 4) {
         const lastFour = previousScores.slice(-4);
         const maxRecent = Math.max(...lastFour);
@@ -5277,6 +5340,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       agentRole: "editor",
     });
 
+    // [Fix38] Mid-novela es habitualmente one-shot, pero si por algún motivo
+    // se relanzase (retry tras fallo persistido en activity log) reciclamos
+    // las notas previas para no repetir. Best-effort.
+    const previousMidBetaNotes = (project as any).lastBetaNotes || undefined;
+
     const result = await this.betaReader.runReview({
       projectTitle: project.title,
       chapters: completedChapters,
@@ -5284,6 +5352,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       worldBibleSummary: ctx.worldBibleSummary,
       generoObjetivo: project.genre || undefined,
       longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
+      previousBetaNotes: previousMidBetaNotes,
     }, project.id);
 
     await this.trackTokenUsage(
@@ -5291,16 +5360,32 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       "Lector Beta (mid-novela)", "deepseek-v4-flash", undefined, "beta_review"
     );
 
+    // [Fix38] Persistimos para futuras invocaciones (mid o final).
+    try {
+      await storage.updateProject(project.id, {
+        lastBetaNotes: result.notesText.slice(0, 24000),
+        lastBetaNotesAt: new Date(),
+      } as any);
+    } catch (e) {
+      console.warn(`[Fix38] No se pudo persistir lastBetaNotes (mid-novela): ${(e as Error).message}`);
+    }
+
     return result;
   }
 
   async runBetaReview(project: Project): Promise<BetaReaderResult> {
     const ctx = await this.loadFullNovelContext(project);
 
+    // [Fix38] Recargamos el proyecto para asegurar lastBetaNotes actualizado
+    // (puede haber sido escrito por mid-novela en el mismo run).
+    const freshProject = (await storage.getProject(project.id)) || project;
+    const previousBetaNotes = (freshProject as any).lastBetaNotes || undefined;
+    const hadPrevious = !!(previousBetaNotes && previousBetaNotes.trim().length > 200);
+
     await storage.createActivityLog({
       projectId: project.id,
       level: "info",
-      message: `Iniciando lectura beta de la novela completa (${ctx.chapters.length} capítulos).`,
+      message: `Iniciando lectura beta de la novela completa (${ctx.chapters.length} capítulos)${hadPrevious ? " [Fix38: con memoria de lectura previa]" : ""}.`,
       agentRole: "editor",
     });
 
@@ -5311,6 +5396,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       worldBibleSummary: ctx.worldBibleSummary,
       generoObjetivo: project.genre || undefined,
       longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
+      previousBetaNotes,
     }, project.id);
 
     await this.trackTokenUsage(
@@ -5318,10 +5404,20 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       "Lector Beta", "deepseek-v4-flash", undefined, "beta_review"
     );
 
+    // [Fix38] Persistimos las nuevas notas para la próxima re-lectura.
+    try {
+      await storage.updateProject(project.id, {
+        lastBetaNotes: result.notesText.slice(0, 24000),
+        lastBetaNotesAt: new Date(),
+      } as any);
+    } catch (e) {
+      console.warn(`[Fix38] No se pudo persistir lastBetaNotes: ${(e as Error).message}`);
+    }
+
     await storage.createActivityLog({
       projectId: project.id,
       level: "info",
-      message: `Lectura beta completada: ${result.totalChaptersRead} capítulos / ${result.totalWordsRead.toLocaleString("es-ES")} palabras leídas. Impresiones de ${result.notesText.length.toLocaleString("es-ES")} caracteres generadas.`,
+      message: `Lectura beta completada: ${result.totalChaptersRead} capítulos / ${result.totalWordsRead.toLocaleString("es-ES")} palabras leídas. Impresiones de ${result.notesText.length.toLocaleString("es-ES")} caracteres generadas${hadPrevious ? " (con memoria de lectura previa)" : ""}.`,
       agentRole: "editor",
     });
 
