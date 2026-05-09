@@ -423,7 +423,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Cannot edit a project while it's generating" });
       }
 
-      const allowedFields = ["title", "premise", "genre", "tone", "chapterCount", "hasPrologue", "hasEpilogue", "hasAuthorNote", "pseudonymId", "styleGuideId", "extendedGuideId", "workType", "seriesId", "seriesOrder", "projectSubtype", "minWordCount", "minWordsPerChapter", "maxWordsPerChapter", "kindleUnlimitedOptimized", "architectInstructions"];
+      const allowedFields = ["title", "premise", "genre", "tone", "chapterCount", "hasPrologue", "hasEpilogue", "hasAuthorNote", "pseudonymId", "styleGuideId", "extendedGuideId", "workType", "seriesId", "seriesOrder", "projectSubtype", "minWordCount", "minWordsPerChapter", "maxWordsPerChapter", "kindleUnlimitedOptimized", "architectInstructions", "autoBetaLoop", "autoBetaLoopMaxIterations", "autoHolisticReview"];
       const updateData: Record<string, any> = {};
       
       for (const field of allowedFields) {

@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/form";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import { Play, RotateCcw, BookOpen, FileText, ScrollText, User, Library, BookMarked, Plus, Trash2, Zap } from "lucide-react";
+import { Play, RotateCcw, BookOpen, FileText, ScrollText, User, Library, BookMarked, Plus, Trash2, Zap, Repeat } from "lucide-react";
 import type { Pseudonym, StyleGuide, Series, ExtendedGuide } from "@shared/schema";
 
 const genres = [
@@ -80,6 +80,8 @@ const configSchema = z.object({
   hasPrologue: z.boolean().default(false),
   hasEpilogue: z.boolean().default(false),
   hasAuthorNote: z.boolean().default(false),
+  autoBetaLoop: z.boolean().default(false),
+  autoBetaLoopMaxIterations: z.number().min(1).max(10).default(3),
   pseudonymId: z.number().nullable().optional(),
   styleGuideId: z.number().nullable().optional(),
   extendedGuideId: z.number().nullable().optional(),
@@ -115,6 +117,8 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
       hasPrologue: defaultValues?.hasPrologue || false,
       hasEpilogue: defaultValues?.hasEpilogue || false,
       hasAuthorNote: defaultValues?.hasAuthorNote || false,
+      autoBetaLoop: (defaultValues as any)?.autoBetaLoop || false,
+      autoBetaLoopMaxIterations: (defaultValues as any)?.autoBetaLoopMaxIterations || 3,
       pseudonymId: defaultValues?.pseudonymId || null,
       styleGuideId: defaultValues?.styleGuideId || null,
       extendedGuideId: (defaultValues as any)?.extendedGuideId || null,
@@ -134,6 +138,7 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
   const hasPrologue = form.watch("hasPrologue");
   const hasEpilogue = form.watch("hasEpilogue");
   const hasAuthorNote = form.watch("hasAuthorNote");
+  const autoBetaLoop = form.watch("autoBetaLoop");
   const selectedPseudonymId = form.watch("pseudonymId");
   const selectedWorkType = form.watch("workType");
   const selectedSeriesId = form.watch("seriesId");
@@ -857,6 +862,57 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
             {totalSections} ({hasPrologue ? "Prólogo + " : ""}{chapterCount} capítulos{hasEpilogue ? " + Epílogo" : ""}{hasAuthorNote ? " + Nota del Autor" : ""})
           </span>
         </div>
+
+        <FormField
+          control={form.control}
+          name="autoBetaLoop"
+          render={({ field }) => (
+            <FormItem className="flex flex-col gap-3 space-y-0 rounded-md border p-3">
+              <div className="flex items-center gap-3">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    data-testid="checkbox-auto-beta-loop"
+                  />
+                </FormControl>
+                <div className="flex items-center gap-2 flex-1">
+                  <Repeat className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <FormLabel className="font-medium cursor-pointer">Auto-loop con Lector Beta</FormLabel>
+                    <FormDescription className="text-xs">
+                      Al terminar la novela, el Beta lee → aplica correcciones → re-lee, en bucle, hasta que apruebe (≤3 obs, ninguna alta) o se alcance el máximo de iteraciones. Consume tokens.
+                    </FormDescription>
+                  </div>
+                </div>
+              </div>
+              {autoBetaLoop && (
+                <FormField
+                  control={form.control}
+                  name="autoBetaLoopMaxIterations"
+                  render={({ field: iterField }) => (
+                    <FormItem className="pl-7">
+                      <div className="flex items-center justify-between">
+                        <FormLabel className="text-xs text-muted-foreground">Máximo de iteraciones</FormLabel>
+                        <span className="text-xs font-mono" data-testid="text-auto-beta-loop-iterations">{iterField.value}</span>
+                      </div>
+                      <FormControl>
+                        <Slider
+                          min={1}
+                          max={10}
+                          step={1}
+                          value={[iterField.value]}
+                          onValueChange={(v) => iterField.onChange(v[0])}
+                          data-testid="slider-auto-beta-loop-iterations"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              )}
+            </FormItem>
+          )}
+        />
 
         <div className="flex gap-3 pt-4">
           <Button 

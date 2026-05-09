@@ -132,6 +132,16 @@ export const projects = pgTable("projects", {
   // o las ejecute manualmente desde la herramienta de gestión de capítulos.
   // Cada item: { id, type, targetChapter, secondaryChapter?, reason, source, createdAt }.
   pendingAdminActions: jsonb("pending_admin_actions").default([]),
+  // [Fix47] Auto-loop con el Lector Beta tras finalizar el manuscrito.
+  // Si está activo, al alcanzar status="completed" el orquestador lanza un
+  // bucle: Beta lee → parser estructura instrucciones → si quedan pegas
+  // (>3 instrucciones o alguna de prioridad alta) las aplica con el SurgicalPatcher
+  // automáticamente y vuelve a invocar al Beta. Repite hasta que el Beta
+  // dé su visto bueno (≤3 obs, ninguna alta) o se alcance el máximo de
+  // iteraciones. Persiste el manuscrito intermedio (Fix39 snapshot) para
+  // poder revertir si una iteración degrada la prosa.
+  autoBetaLoop: boolean("auto_beta_loop").notNull().default(false),
+  autoBetaLoopMaxIterations: integer("auto_beta_loop_max_iterations").notNull().default(3),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

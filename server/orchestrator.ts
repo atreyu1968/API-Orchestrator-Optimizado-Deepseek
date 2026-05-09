@@ -9835,8 +9835,214 @@ Responde SOLO con un JSON válido con la estructura:
     // Best-effort: si falla solo se loguea — el manuscrito ya está marcado
     // como completed y el usuario puede lanzar la revisión manual desde el
     // dashboard.
-    if ((project as any).autoHolisticReview) {
+    // [Fix47] Mutua exclusión entre autoHolisticReview (preview-only,
+    // Fix24/25) y autoBetaLoop (apply-and-reread). Si ambos flags están
+    // activos, el Beta-loop tiene prioridad porque cubre el flujo completo
+    // y ambos escriben en pendingEditorialParse + emiten auto_review_ready,
+    // así que correrlos en paralelo se pisaría mutuamente.
+    if ((project as any).autoBetaLoop) {
+      void this.runAutoBetaLoop(project);
+    } else if ((project as any).autoHolisticReview) {
       void this.runAutoHolisticReviewLoop(project);
+    }
+  }
+
+  /**
+   * [Fix47] Bucle automático con el Lector Beta tras finalizar el manuscrito.
+   * Itera Beta → parse → aplicar correcciones automáticas → re-Beta hasta que:
+   *   (a) el Beta no devuelva observaciones,
+   *   (b) las observaciones sean ≤3 y ninguna de prioridad "alta",
+   *   (c) se alcance el máximo de iteraciones.
+   * Cada iteración persiste un activity log con el resumen y el delta de
+   * observaciones. Si una iteración no logra extraer instrucciones aplicables,
+   * cae a previsualización (igual que autoHolisticReview) en lugar de quedarse
+   * colgada en bucle silencioso.
+   */
+  private async runAutoBetaLoop(project: Project): Promise<void> {
+    const maxIterations = Math.max(1, Math.min(10, (project as any).autoBetaLoopMaxIterations || 3));
+    let iter = 0;
+    let currentProject: Project = project;
+
+    try {
+      await storage.createActivityLog({
+        projectId: project.id, level: "info",
+        message: `[Fix47] Auto-loop con Lector Beta iniciado (máx ${maxIterations} iteraciones).`,
+        agentRole: "editor",
+      });
+
+      while (iter < maxIterations) {
+        iter++;
+        // [Fix47] Chequeo de cancelación al inicio de cada iteración: si el
+        // usuario archivó/canceló el proyecto entre iteraciones, salimos limpio.
+        const cancelCheck = await storage.getProject(project.id);
+        if (!cancelCheck || cancelCheck.status === "cancelled" || cancelCheck.status === "archived") {
+          await storage.createActivityLog({
+            projectId: project.id, level: "info",
+            message: `[Fix47] Auto-loop Beta abortado en iteración ${iter}: proyecto en status="${cancelCheck?.status || "deleted"}".`,
+            agentRole: "editor",
+          });
+          return;
+        }
+        this.callbacks.onAgentStatus("editor", "thinking",
+          `Auto-loop Beta iteración ${iter}/${maxIterations}: leyendo el manuscrito completo...`
+        );
+
+        const beta = await this.runBetaReview(currentProject);
+        const notesText = (beta?.notesText || "").trim();
+        if (!notesText) {
+          await storage.createActivityLog({
+            projectId: project.id, level: "success",
+            message: `[Fix47] Iteración ${iter}: el Lector Beta no devolvió observaciones. Auto-loop finalizado (manuscrito aprobado).`,
+            agentRole: "editor",
+          });
+          return;
+        }
+
+        let parsed;
+        try {
+          parsed = await this.parseEditorialNotesOnly(currentProject, notesText);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          await storage.createActivityLog({
+            projectId: project.id, level: "warning",
+            message: `[Fix47] Iteración ${iter}: el parser de notas falló (${msg.slice(0, 200)}). Persistimos las notas crudas en pendingEditorialParse para revisión manual y abortamos el loop.`,
+            agentRole: "editor",
+          });
+          await this.persistBetaNotesAsPending(currentProject, notesText, iter);
+          return;
+        }
+
+        const instructions = parsed.instrucciones || [];
+        const altas = instructions.filter((i: any) => (i?.prioridad || "").toLowerCase() === "alta").length;
+        const total = instructions.length;
+
+        // [Fix47] Si el Beta dejó notas extensas pero el parser no extrajo
+        // NINGUNA instrucción aplicable, NO marcamos como aprobado: persistimos
+        // las notas crudas y abortamos el loop para que el usuario revise. Si
+        // no, ocultaríamos quejas válidas que simplemente no se parsearon.
+        if (total === 0 && notesText.length > 600) {
+          await storage.createActivityLog({
+            projectId: project.id, level: "warning",
+            message: `[Fix47] Iteración ${iter}: el Beta dejó ${notesText.length} chars de notas pero el parser no extrajo instrucciones aplicables. Persistidas en pendingEditorialParse para revisión manual.`,
+            agentRole: "editor",
+          });
+          await this.persistBetaNotesAsPending(currentProject, notesText, iter);
+          return;
+        }
+
+        // Criterio de aprobación: ninguna instrucción de prioridad alta y ≤3 totales.
+        const approved = total === 0 || (altas === 0 && total <= 3);
+        await storage.createActivityLog({
+          projectId: project.id, level: approved ? "success" : "info",
+          message: `[Fix47] Iteración ${iter}/${maxIterations}: ${total} instrucción(es), ${altas} de prioridad alta. ${approved ? "APROBADO por el Beta — auto-loop finalizado." : "Aplicando correcciones automáticamente y volviendo a leer..."}`,
+          agentRole: "editor",
+        });
+        if (approved) return;
+
+        if (iter >= maxIterations) {
+          // Última iteración alcanzada con observaciones todavía: dejamos el
+          // resultado en pendingEditorialParse para que el usuario decida.
+          await storage.createActivityLog({
+            projectId: project.id, level: "warning",
+            message: `[Fix47] Máximo de iteraciones alcanzado (${maxIterations}) con ${total} obs (${altas} altas) sin aplicar. Persistidas en pendingEditorialParse para revisión manual.`,
+            agentRole: "editor",
+          });
+          try {
+            await storage.updateProject(project.id, {
+              pendingEditorialParse: {
+                resumen_general: parsed.resumen_general || null,
+                instrucciones: instructions,
+                count: total,
+                completedAt: new Date().toISOString(),
+                source: "auto_beta_loop_max_iter",
+              } as any,
+            });
+            this.callbacks.onAutoReviewReady?.({ count: total, resumen: parsed.resumen_general || null });
+          } catch (e) {
+            console.error("[Fix47] persist pendingEditorialParse failed:", e);
+          }
+          return;
+        }
+
+        // Aplicar las instrucciones automáticamente. Marcamos el status
+        // para que el monitor de congelación use el timeout extendido (Fix36).
+        await storage.updateProject(project.id, { status: "applying_editorial" });
+        try {
+          await this.applyEditorialNotes(currentProject, "", instructions);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          await storage.createActivityLog({
+            projectId: project.id, level: "error",
+            message: `[Fix47] Iteración ${iter}: applyEditorialNotes falló (${msg.slice(0, 200)}). Auto-loop abortado; manuscrito restaurado a status="completed".`,
+            agentRole: "editor",
+          });
+          try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
+          return;
+        }
+
+        // Recargar el proyecto para la siguiente iteración (lastBetaNotes
+        // habrá cambiado tras runBetaReview, y el contenido de capítulos
+        // habrá sido reescrito por el SurgicalPatcher).
+        const refreshed = await storage.getProject(project.id);
+        if (!refreshed) {
+          await storage.createActivityLog({
+            projectId: project.id, level: "error",
+            message: `[Fix47] Iteración ${iter}: proyecto no encontrado tras aplicar correcciones. Auto-loop abortado.`,
+            agentRole: "editor",
+          });
+          return;
+        }
+        if (refreshed.status !== "completed") {
+          // applyEditorialNotes debería dejarlo en "completed". Si no, algo
+          // raro pasó (posible cancelación manual); abortamos sin re-leer.
+          await storage.createActivityLog({
+            projectId: project.id, level: "warning",
+            message: `[Fix47] Iteración ${iter}: el proyecto quedó en status="${refreshed.status}" tras aplicar (esperaba "completed"). Auto-loop abortado.`,
+            agentRole: "editor",
+          });
+          return;
+        }
+        currentProject = refreshed;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[Fix47] runAutoBetaLoop crashed:", e);
+      await storage.createActivityLog({
+        projectId: project.id, level: "error",
+        message: `[Fix47] Auto-loop con Beta falló: ${msg.slice(0, 240)}. Manuscrito sigue marcado como completed.`,
+        agentRole: "editor",
+      });
+      try {
+        const p = await storage.getProject(project.id);
+        if (p && p.status !== "completed") {
+          await storage.updateProject(project.id, { status: "completed" });
+        }
+      } catch {}
+    }
+  }
+
+  /**
+   * [Fix47] Cuando el parser falla en una iteración del auto-loop, conservamos
+   * las notas crudas del Beta en pendingEditorialParse con un wrapper mínimo
+   * para que el dashboard pueda ofrecer "aplicar manualmente" sin perder el
+   * trabajo del Beta.
+   */
+  private async persistBetaNotesAsPending(project: Project, notesText: string, iter: number): Promise<void> {
+    try {
+      await storage.updateProject(project.id, {
+        pendingEditorialParse: {
+          resumen_general: null,
+          instrucciones: [],
+          rawNotes: notesText.slice(0, 60000),
+          count: 0,
+          completedAt: new Date().toISOString(),
+          source: "auto_beta_loop_parser_failed",
+          iteration: iter,
+        } as any,
+      });
+      this.callbacks.onAutoReviewReady?.({ count: 0, resumen: "Notas Beta sin parsear (revisión manual requerida)" });
+    } catch (e) {
+      console.error("[Fix47] persistBetaNotesAsPending failed:", e);
     }
   }
 

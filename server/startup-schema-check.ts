@@ -5,6 +5,8 @@ type RequiredTable = { table: string; addedIn: string };
 
 const REQUIRED_COLUMNS: RequiredColumn[] = [
   { table: "projects", column: "pending_admin_actions", addedIn: "Fix40" },
+  { table: "projects", column: "auto_beta_loop", addedIn: "Fix47" },
+  { table: "projects", column: "auto_beta_loop_max_iterations", addedIn: "Fix47" },
   { table: "projects", column: "last_beta_notes", addedIn: "Fix38" },
   { table: "projects", column: "last_beta_notes_at", addedIn: "Fix38" },
   { table: "reedit_projects", column: "pending_editorial_parse", addedIn: "Fix34" },
