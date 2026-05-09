@@ -357,9 +357,15 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
     ? `<p>${escapeHtml(labels.publishedBy(publisher.name))}${publisher.websiteUrl ? ` &mdash; <a href="${escapeXml(publisher.websiteUrl)}">${escapeHtml(publisher.websiteUrl)}</a>` : ""}</p>`
     : "";
   const logoBlock = publisherLogo
-    ? `<div class="publisher-logo" style="margin: 0 auto 2em auto; text-align:center;"><img src="../image/publisher-logo.${publisherLogo.ext}" alt="${escapeXml(publisher?.name || "")}" style="max-width:120px; max-height:120px; width:auto; height:auto; display:inline-block;"/></div>`
+    ? `<div class="publisher-logo" style="margin: 0 auto 1.5em auto; text-align:center;"><img src="../image/publisher-logo.${publisherLogo.ext}" alt="${escapeXml(publisher?.name || "")}" style="max-width:70px; max-height:70px; width:auto; height:auto; display:inline-block;"/></div>`
     : "";
+  const titleAuthorBlock = `
+<div style="text-align:center; margin-bottom: 2em;">
+  <h1 class="book-title" style="text-align:center; text-indent:0; margin:0 0 0.4em 0;">${escapeHtml(data.title)}</h1>
+  <h2 class="author" style="text-align:center; text-indent:0; margin:0; font-weight:normal; font-style:italic;">${escapeHtml(authorName)}</h2>
+</div>`;
   const copyrightBody = `
+${titleAuthorBlock}
 ${logoBlock}
 <div class="copyright">
   <p>${escapeHtml(copyrightLine)}</p>
