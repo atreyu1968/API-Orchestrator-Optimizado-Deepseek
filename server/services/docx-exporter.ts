@@ -49,11 +49,27 @@ export async function generateManuscriptDocx(data: ManuscriptData): Promise<Buff
   const { project, chapters, pseudonym, prologue, epilogue, authorNote, backMatter, backMatterBooks } = data;
 
   const authorName = pseudonym?.name || "Anónimo";
-  void authorName;
   const children: Paragraph[] = [];
 
-  // Sin title page: la portada y datos de autor van en KDP. Empezamos
-  // directamente por el prólogo o el primer capítulo.
+  // Bloque título + autor centrado al inicio (sin página dedicada — la portada
+  // como tal la gestiona KDP). Va seguido de un salto de página y luego el
+  // contenido empieza por el prólogo o el primer capítulo.
+  children.push(
+    new Paragraph({ children: [new TextRun({ text: "", break: 3 })] }),
+    new Paragraph({
+      text: project.title,
+      heading: HeadingLevel.TITLE,
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+    }),
+    new Paragraph({
+      text: authorName,
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+      style: "author",
+    }),
+    new Paragraph({ children: [new PageBreak()] }),
+  );
 
   if (prologue && prologue.content) {
     children.push(
@@ -419,11 +435,30 @@ export async function generateGenericManuscriptDocx(data: GenericManuscriptData)
   const regularChapters = sorted.filter(c => c.chapterNumber > 0 && c.chapterNumber < 900);
 
   const children: Paragraph[] = [];
-  void title; void authorName; void genre; void tone;
+  void genre; void tone;
 
-  // Sin title page (consistente con EPUB): la portada y los datos de
-  // autor/título los gestiona KDP. El DOCX empieza directamente por el
-  // prólogo o el primer capítulo.
+  // Bloque título + autor centrado al inicio (consistente con EPUB). Sin
+  // página dedicada de portada — la portada visual la gestiona KDP.
+  children.push(
+    new Paragraph({ children: [new TextRun({ text: "", break: 3 })] }),
+    new Paragraph({
+      text: title,
+      heading: HeadingLevel.TITLE,
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+    }),
+  );
+  if (authorName) {
+    children.push(
+      new Paragraph({
+        text: authorName,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 },
+        style: "author",
+      }),
+    );
+  }
+  children.push(new Paragraph({ children: [new PageBreak()] }));
 
   if (prologue && prologue.content) {
     children.push(
