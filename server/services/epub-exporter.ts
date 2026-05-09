@@ -321,7 +321,13 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
   zip.file("OEBPS/xhtml/copyright.xhtml", xhtmlPage(labels.copyright, lang, "copyright-body", copyrightBody));
   sections.push({ filename: "xhtml/copyright.xhtml", id: "copyright", title: labels.copyright, includeInToc: false });
 
-  // 3. Special chapters + regular chapters in narrative order
+  // 3. Visible/interactive Table of Contents (placeholder — re-rendered with real
+  // chapter links after sections are built, but reserved here so it appears in
+  // reading order BEFORE the chapters).
+  const tocPlaceholderIndex = sections.length;
+  sections.push({ filename: "xhtml/nav.xhtml", id: "nav", title: labels.toc, includeInToc: false });
+
+  // 4. Special chapters + regular chapters in narrative order
   const getSortOrder = (n: number) => (n === 0 ? -1000 : n === -1 ? 1_000_000 : n === -2 ? 1_000_001 : n);
   const sorted = [...data.chapters].sort((a, b) => getSortOrder(a.chapterNumber) - getSortOrder(b.chapterNumber));
 
@@ -349,7 +355,7 @@ ${paragraphsToHtml(ch.content, { dropCap: true })}`;
     sections.push({ filename, id: safeId(id), title: heading, includeInToc: true });
   }
 
-  // 4. Back matter — review request (KDP-compliant: honest, no incentives, no star ratings)
+  // 5. Back matter — review request (KDP-compliant: honest, no incentives, no star ratings)
   const reviewBody = `
 <div class="review-page">
   <h1>${escapeHtml(labels.reviewTitle)}</h1>
@@ -358,7 +364,7 @@ ${paragraphsToHtml(ch.content, { dropCap: true })}`;
   zip.file("OEBPS/xhtml/review-request.xhtml", xhtmlPage(labels.reviewTitle, lang, "review-body", reviewBody));
   sections.push({ filename: "xhtml/review-request.xhtml", id: "review-request", title: labels.reviewTitle, includeInToc: false });
 
-  // 5. Back matter — about the author / web link / also-by
+  // 6. Back matter — about the author / web link / also-by
   const websiteUrl = data.authorWebsiteUrl;
   const alsoByBooks = data.backMatter?.enableAlsoBy && data.backMatterBooks ? data.backMatterBooks : [];
   if (websiteUrl || data.authorBio || alsoByBooks.length > 0) {
@@ -380,7 +386,9 @@ ${paragraphsToHtml(ch.content, { dropCap: true })}`;
     sections.push({ filename: "xhtml/about-author.xhtml", id: "about-author", title: labels.aboutAuthorTitle, includeInToc: false });
   }
 
-  // 6. Navigation document (EPUB3 nav.xhtml)
+  // 7. Navigation document (EPUB3 nav.xhtml) — also visible in spine as
+  // interactive TOC page (registered earlier as sections[tocPlaceholderIndex]).
+  void tocPlaceholderIndex;
   const navItems = sections
     .filter(s => s.includeInToc)
     .map(s => `      <li><a href="${escapeXml(s.filename.replace(/^xhtml\//, ""))}">${escapeHtml(s.title)}</a></li>`)
@@ -419,7 +427,6 @@ ${ncxNavPoints}
 
   // 8. content.opf
   const manifestItems: string[] = [];
-  manifestItems.push(`    <item id="nav" href="xhtml/nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>`);
   manifestItems.push(`    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`);
   manifestItems.push(`    <item id="css" href="css/styles.css" media-type="text/css"/>`);
   if (publisherLogo) {
@@ -427,7 +434,10 @@ ${ncxNavPoints}
     manifestItems.push(`    <item id="img-publisher-logo" href="image/publisher-logo.${publisherLogo.ext}" media-type="${escapeXml(mt)}"/>`);
   }
   for (const s of sections) {
-    manifestItems.push(`    <item id="${escapeXml(s.id)}" href="${escapeXml(s.filename)}" media-type="application/xhtml+xml"/>`);
+    // The nav section needs the EPUB3 `properties="nav"` marker so e-readers
+    // recognize it both as the navigation document AND as a visible spine page.
+    const props = s.id === "nav" ? ` properties="nav"` : "";
+    manifestItems.push(`    <item id="${escapeXml(s.id)}" href="${escapeXml(s.filename)}" media-type="application/xhtml+xml"${props}/>`);
   }
   const spineItems = sections.map(s => `    <itemref idref="${escapeXml(s.id)}"/>`).join("\n");
 
