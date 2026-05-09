@@ -3678,6 +3678,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // reescrituras capítulo a capítulo vía Cirujano. Best-effort: si falla,
     // el FR procede sin la inyección. Max 1 invocación por runFinalReview.
     this.holisticGateNotes = [];
+    // [Fix49] Limpia veredicto previo ANTES de invocar el Holístico para
+    // evitar que un veredicto obsoleto de un run anterior siga visible en UI
+    // si esta vez el parser falla o el modelo no emite el bloque JSON.
+    try { await storage.updateProject(project.id, { holisticGateVerdict: null as any }); } catch {}
     try {
       this.callbacks.onAgentStatus("holistic-reviewer", "reviewing",
         `[Fix29] Lector Holístico revisando manuscrito completo antes del Revisor Final...`
@@ -3700,6 +3704,45 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         this.callbacks.onAgentStatus("holistic-reviewer", "complete",
           `[Fix29] Holístico gate completado. Hallazgos inyectados al Revisor Final.`
         );
+
+        // [Fix49] Parsear el bloque <!-- VEREDICTO_GATE_INICIO --> ... <!-- VEREDICTO_GATE_FIN -->
+        // que el Holístico emite tras las INSTRUCCIONES_AUTOAPLICABLES.
+        // Si la severidad es "irreparable_automaticamente", persistimos el
+        // veredicto en projects.holisticGateVerdict para que la UI muestre un
+        // banner ámbar pidiendo intervención manual. El FR sigue corriendo
+        // (puede pulir lo que sí sea reparable) pero el usuario sabe de
+        // antemano que ciertos issues no van a resolverse solos. Best-effort.
+        try {
+          const verdict = parseHolisticGateVerdict(holisticGateOutcome.notesText);
+          if (verdict) {
+            const persistPayload = {
+              severidadGlobal: verdict.severidad_global,
+              issuesIrreparables: verdict.issues_irreparables || [],
+              capturedAt: new Date().toISOString(),
+            };
+            await storage.updateProject(project.id, { holisticGateVerdict: persistPayload as any });
+            const irrCount = (verdict.issues_irreparables || []).length;
+            if (verdict.severidad_global === "irreparable_automaticamente" && irrCount > 0) {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                agentRole: "holistic-reviewer",
+                message: `[Fix49] El Lector Holístico marca el manuscrito como irreparable automáticamente (${irrCount} issue(s) requieren intervención humana). El Revisor Final continúa para pulir lo demás, pero revisa el banner del manuscrito.`,
+              });
+            } else if (verdict.severidad_global === "reparable_con_reservas") {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "info",
+                agentRole: "holistic-reviewer",
+                message: `[Fix49] Veredicto del Holístico: reparable con reservas. El sistema procederá pero el resultado puede no ser óptimo.`,
+              });
+            }
+          } else {
+            console.log(`[Orchestrator] [Fix49] No se encontró bloque VEREDICTO_GATE en el informe. El veredicto no se persiste.`);
+          }
+        } catch (verdictErr) {
+          console.warn(`[Orchestrator] [Fix49] Parser del veredicto falló (best-effort, FR continúa): ${(verdictErr as Error).message}`);
+        }
       } else {
         console.log(`[Orchestrator] [Fix29] Holístico gate devolvió notas vacías o muy cortas. FR procede sin inyección.`);
       }
@@ -12905,6 +12948,45 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       );
     }
   }
+}
+
+// [Fix49] Parser del bloque <!-- VEREDICTO_GATE_INICIO --> ... <!-- VEREDICTO_GATE_FIN -->
+// emitido por el Lector Holístico tras las INSTRUCCIONES_AUTOAPLICABLES.
+// Tolera texto adicional alrededor del bloque y cierres ```/``` opcionales.
+function parseHolisticGateVerdict(notesText: string): { severidad_global: string; issues_irreparables: Array<{ capitulo: number; problema: string; motivo: string }> } | null {
+  if (!notesText) return null;
+  const m = notesText.match(/<!--\s*VEREDICTO_GATE_INICIO\s*-->([\s\S]*?)<!--\s*VEREDICTO_GATE_FIN\s*-->/);
+  if (!m) return null;
+  let inner = m[1].trim();
+  // Strip optional ```json ... ``` fences (tolerant: any number of backticks, lang tag optional).
+  inner = inner.replace(/^`{3,}\s*(?:json|JSON)?\s*\n?/i, "").replace(/\n?`{3,}\s*$/i, "").trim();
+  if (!inner) return null;
+
+  // Tolerant extraction: locate the outermost {...} JSON object inside the block.
+  // The LLM occasionally adds prose around the JSON ("Mi veredicto: { ... }").
+  const objStart = inner.indexOf("{");
+  const objEnd = inner.lastIndexOf("}");
+  if (objStart === -1 || objEnd === -1 || objEnd <= objStart) return null;
+  let candidate = inner.slice(objStart, objEnd + 1);
+  // Strip trailing commas before } or ] (common LLM mistake).
+  candidate = candidate.replace(/,(\s*[}\]])/g, "$1");
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(candidate);
+  } catch {
+    return null;
+  }
+  const sev = String(parsed?.severidad_global || "").toLowerCase();
+  const allowed = new Set(["reparable", "reparable_con_reservas", "irreparable_automaticamente"]);
+  if (!allowed.has(sev)) return null;
+  const rawIssues = Array.isArray(parsed?.issues_irreparables) ? parsed.issues_irreparables : [];
+  const issues = rawIssues.map((it: any) => ({
+    capitulo: Number(it?.capitulo) || 0,
+    problema: String(it?.problema || "").slice(0, 500),
+    motivo: String(it?.motivo || "").slice(0, 500),
+  })).filter((it: any) => it.problema.length > 0);
+  return { severidad_global: sev, issues_irreparables: issues };
 }
 
 function extractCharacterNames(characters: any[], names: Set<string>): void {

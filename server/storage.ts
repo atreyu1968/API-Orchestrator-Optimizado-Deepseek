@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { 
-  projects, chapters, worldBibles, thoughtLogs, agentStatuses, pseudonyms, styleGuides,
+  projects, chapters, worldBibles, thoughtLogs, agentStatuses, pseudonyms, publishers, styleGuides,
   series, continuitySnapshots, importedManuscripts, importedChapters, extendedGuides, activityLogs,
   projectQueue, queueState, seriesArcMilestones, seriesPlotThreads, seriesArcVerifications,
   aiUsageEvents, reeditProjects, reeditChapters, reeditAuditReports, reeditWorldBibles,
@@ -8,6 +8,7 @@ import {
   type Project, type InsertProject, type Chapter, type InsertChapter,
   type WorldBible, type InsertWorldBible, type ThoughtLog, type InsertThoughtLog,
   type AgentStatus, type InsertAgentStatus, type Pseudonym, type InsertPseudonym,
+  type Publisher, type InsertPublisher,
   type StyleGuide, type InsertStyleGuide, type Series, type InsertSeries,
   type ContinuitySnapshot, type InsertContinuitySnapshot,
   type ImportedManuscript, type InsertImportedManuscript,
@@ -49,6 +50,12 @@ export interface IStorage {
   getAllPseudonyms(): Promise<Pseudonym[]>;
   updatePseudonym(id: number, data: Partial<Pseudonym>): Promise<Pseudonym | undefined>;
   deletePseudonym(id: number): Promise<void>;
+
+  createPublisher(data: InsertPublisher): Promise<Publisher>;
+  getPublisher(id: number): Promise<Publisher | undefined>;
+  getAllPublishers(): Promise<Publisher[]>;
+  updatePublisher(id: number, data: Partial<Publisher>): Promise<Publisher | undefined>;
+  deletePublisher(id: number): Promise<void>;
 
   createStyleGuide(data: InsertStyleGuide): Promise<StyleGuide>;
   getStyleGuide(id: number): Promise<StyleGuide | undefined>;
@@ -300,6 +307,29 @@ export class DatabaseStorage implements IStorage {
 
   async deletePseudonym(id: number): Promise<void> {
     await db.delete(pseudonyms).where(eq(pseudonyms.id, id));
+  }
+
+  async createPublisher(data: InsertPublisher): Promise<Publisher> {
+    const [row] = await db.insert(publishers).values(data).returning();
+    return row;
+  }
+
+  async getPublisher(id: number): Promise<Publisher | undefined> {
+    const [row] = await db.select().from(publishers).where(eq(publishers.id, id));
+    return row;
+  }
+
+  async getAllPublishers(): Promise<Publisher[]> {
+    return db.select().from(publishers).orderBy(asc(publishers.name));
+  }
+
+  async updatePublisher(id: number, data: Partial<Publisher>): Promise<Publisher | undefined> {
+    const [row] = await db.update(publishers).set(data).where(eq(publishers.id, id)).returning();
+    return row;
+  }
+
+  async deletePublisher(id: number): Promise<void> {
+    await db.delete(publishers).where(eq(publishers.id, id));
   }
 
   async createStyleGuide(data: InsertStyleGuide): Promise<StyleGuide> {

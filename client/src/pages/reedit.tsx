@@ -705,6 +705,9 @@ export default function ReeditPage() {
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadLanguage, setUploadLanguage] = useState("es");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [showEpubDialog, setShowEpubDialog] = useState(false);
+  const [epubPublisherId, setEpubPublisherId] = useState<string>("none");
+  const { data: publishersList = [] } = useQuery<any[]>({ queryKey: ["/api/publishers"] });
   const [isUploading, setIsUploading] = useState(false);
   const [expandChapters, setExpandChapters] = useState(false);
   const [insertNewChapters, setInsertNewChapters] = useState(false);
@@ -2031,6 +2034,14 @@ export default function ReeditPage() {
                               <Download className="h-4 w-4 mr-2" />
                               Exportar Markdown (.md)
                             </Button>
+                            <Button 
+                              variant="outline" 
+                              data-testid="button-download-reedit-epub"
+                              onClick={() => setShowEpubDialog(true)}
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              Exportar EPUB
+                            </Button>
                           </div>
                         </CardContent>
                       </Card>
@@ -2144,6 +2155,44 @@ export default function ReeditPage() {
                 <RotateCcw className="h-4 w-4 mr-2" />
               )}
               Reiniciar Proyecto
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEpubDialog} onOpenChange={setShowEpubDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Exportar como EPUB</DialogTitle>
+            <DialogDescription>Selecciona la editorial que aparecerá en la portada y página de copyright. Si dejas "Ninguna" se omite el bloque editorial.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label>Editorial</Label>
+            <Select value={epubPublisherId} onValueChange={setEpubPublisherId}>
+              <SelectTrigger data-testid="select-reedit-epub-publisher"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Ninguna</SelectItem>
+                {publishersList.map((p: any) => (
+                  <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {publishersList.length === 0 && (
+              <p className="text-xs text-muted-foreground">No hay editoriales. Puedes crearlas en la sección "Editoriales" del menú lateral.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEpubDialog(false)}>Cancelar</Button>
+            <Button
+              onClick={() => {
+                if (!selectedProjectData) return;
+                const qs = epubPublisherId !== "none" ? `?publisherId=${epubPublisherId}` : "";
+                window.open(`/api/reedit-projects/${selectedProjectData.id}/export-epub${qs}`, "_blank");
+                setShowEpubDialog(false);
+              }}
+              data-testid="button-reedit-export-epub-confirm"
+            >
+              <Download className="h-4 w-4 mr-2" /> Descargar EPUB
             </Button>
           </DialogFooter>
         </DialogContent>

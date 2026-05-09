@@ -132,6 +132,14 @@ export const projects = pgTable("projects", {
   // o las ejecute manualmente desde la herramienta de gestión de capítulos.
   // Cada item: { id, type, targetChapter, secondaryChapter?, reason, source, createdAt }.
   pendingAdminActions: jsonb("pending_admin_actions").default([]),
+  // [Fix49] Veredicto de reparabilidad emitido por el Lector Holístico en el
+  // gate pre-Final-Reviewer (Fix29). Estructura: { severidadGlobal: "reparable"
+  // | "reparable_con_reservas" | "irreparable_automaticamente", issuesIrreparables:
+  // [{capitulo, problema, motivo}], capturedAt: ISOString }. Si el LLM marca
+  // "irreparable_automaticamente", la UI del manuscrito muestra un banner ámbar
+  // pidiendo intervención manual; el FR sigue corriendo (puede pulir lo demás)
+  // pero el usuario sabe de antemano que ciertos issues no se resolverán solos.
+  holisticGateVerdict: jsonb("holistic_gate_verdict"),
   // [Fix47] Auto-loop con el Lector Beta tras finalizar el manuscrito.
   // Si está activo, al alcanzar status="completed" el orquestador lanza un
   // bucle: Beta lee → parser estructura instrucciones → si quedan pegas
@@ -142,6 +150,20 @@ export const projects = pgTable("projects", {
   // poder revertir si una iteración degrada la prosa.
   autoBetaLoop: boolean("auto_beta_loop").notNull().default(false),
   autoBetaLoopMaxIterations: integer("auto_beta_loop_max_iterations").notNull().default(3),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// [Fix51 — EPUB] Editoriales del usuario. Cada publisher tiene un nombre,
+// logo opcional (almacenado como data URL base64 — caben tranquilamente en
+// jsonb hasta ~200KB de PNG) y una URL de website. Se referencian desde el
+// exportador EPUB para colocar el logo en la portada/contracubierta y un
+// pie editorial en la página de copyright. CRUD completo desde /editoriales.
+export const publishers = pgTable("publishers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  logoDataUrl: text("logo_data_url"),
+  websiteUrl: text("website_url"),
+  copyrightLine: text("copyright_line"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
@@ -270,6 +292,11 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
   currentChapter: true,
 });
 
+export const insertPublisherSchema = createInsertSchema(publishers).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertContinuitySnapshotSchema = createInsertSchema(continuitySnapshots).omit({
   id: true,
   createdAt: true,
@@ -325,6 +352,9 @@ export type InsertSeries = z.infer<typeof insertSeriesSchema>;
 
 export type Project = typeof projects.$inferSelect;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
+
+export type Publisher = typeof publishers.$inferSelect;
+export type InsertPublisher = z.infer<typeof insertPublisherSchema>;
 
 export type ContinuitySnapshot = typeof continuitySnapshots.$inferSelect;
 export type InsertContinuitySnapshot = z.infer<typeof insertContinuitySnapshotSchema>;

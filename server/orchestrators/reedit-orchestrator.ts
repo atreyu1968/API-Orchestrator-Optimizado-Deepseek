@@ -562,7 +562,16 @@ class SemanticRepetitionDetectorAgent {
       chapters,
       worldBible: worldBibleContext ? { rawText: worldBibleContext } : {},
     });
-    void previousChaptersFullText; // [Fix27] reservado para llamadas parciales futuras
+    // [Fix27/Fix50] El detector semántico actual SIEMPRE recibe el manuscrito
+    // íntegro en `chapters` (callsites: orchestrator.ts L11194 al final de la
+    // generación principal y reedit-orchestrator.ts L3342 al final del reedit).
+    // En ambos casos `previousChaptersFullText` sería redundante y duplicaría
+    // la novela en la ventana, llegando a saturar 1 M ctx en obras grandes.
+    // Lo mantenemos en la firma porque la auditoría de Fix50 identificó un
+    // futuro use case (auditar volúmenes posteriores de una serie usando los
+    // anteriores como referencia, sin re-procesarlos como `chapters`). Hasta
+    // que ese flujo exista, esta variable se ignora deliberadamente.
+    void previousChaptersFullText;
 
     const canonical = response.result;
     const clusters = canonical?.clusters || [];
@@ -776,9 +785,21 @@ RESPONDE SOLO EN JSON:
         onProgress(currentBatch, totalBatches, `Extrayendo Biblia del Mundo: capítulos ${batchStart}-${batchEnd} (lote ${currentBatch}/${totalBatches})...`);
       }
 
-      const chaptersText = batch.map(c => 
-        `=== CAPÍTULO ${c.num} ===\n${c.content.substring(0, 12000)}`
-      ).join("\n\n");
+      // [Fix48] Antes truncábamos a 12 000 chars/cap (~2 000-2 400 palabras),
+      // lo que recortaba al 33-50 % los capítulos largos típicos del catálogo
+      // (4-6 k palabras = 24-36 k chars) y silenciaba personajes/eventos del
+      // último tercio. DeepSeek V4-Flash tiene 1 M de ventana; un batch de 10
+      // capítulos × 30 000 chars = 300 k chars (~75 k tokens) cabe holgado.
+      const PER_CHAPTER_TRUNCATION_LIMIT = 30000;
+      let truncatedCount = 0;
+      const chaptersText = batch.map(c => {
+        const original = c.content || "";
+        if (original.length > PER_CHAPTER_TRUNCATION_LIMIT) truncatedCount++;
+        return `=== CAPÍTULO ${c.num} ===\n${original.substring(0, PER_CHAPTER_TRUNCATION_LIMIT)}`;
+      }).join("\n\n");
+      if (truncatedCount > 0) {
+        console.log(`[WorldBibleExtractor] [Fix48] Batch ${currentBatch}/${totalBatches}: ${truncatedCount}/${batch.length} capítulo(s) excedieron ${PER_CHAPTER_TRUNCATION_LIMIT} chars y se truncaron.`);
+      }
 
       const prompt = `Extrae la información del mundo narrativo de estos capítulos (${batchStart} a ${batchEnd}):
 

@@ -5,11 +5,12 @@ import { storage } from "./storage";
 import { Orchestrator, extractForbiddenNames } from "./orchestrator";
 import { stripMetaChapterHeader } from "./utils/strip-chapter-header";
 import { queueManager } from "./queue-manager";
-import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema } from "@shared/schema";
+import { insertProjectSchema, insertPseudonymSchema, insertPublisherSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema } from "@shared/schema";
 import multer from "multer";
 import mammoth from "mammoth";
 import { eq } from "drizzle-orm";
 import { generateManuscriptDocx } from "./services/docx-exporter";
+import { generateManuscriptEpub, generateGenericManuscriptEpub } from "./services/epub-exporter";
 import { generateBackMatterMarkdown } from "./services/back-matter-generator";
 import { z } from "zod";
 import { CopyEditorAgent, cancelProject, ItalianReviewerAgent } from "./agents";
@@ -669,6 +670,52 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error exporting manuscript:", error);
       res.status(500).json({ error: "Failed to export manuscript" });
+    }
+  });
+
+  // [Fix51] EPUB export para proyectos PRINCIPALES (novelas autoras por LitAgents).
+  // Comparte la misma carga (chapters + back-matter + pseudónimo) que el DOCX,
+  // añadiendo opcionalmente un publisher para portada y página de copyright.
+  app.get("/api/projects/:id/export-epub", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProject(id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (project.status !== "completed") return res.status(400).json({ error: "El proyecto debe estar completado para exportar" });
+
+      const allChapters = await storage.getChaptersByProject(id);
+      const prologue = project.hasPrologue ? allChapters.find(c => c.chapterNumber === 0) : null;
+      const epilogue = project.hasEpilogue ? allChapters.find(c => c.chapterNumber === -1) : null;
+      const authorNote = project.hasAuthorNote ? allChapters.find(c => c.chapterNumber === -2) : null;
+      const regularChapters = allChapters.filter(c => c.chapterNumber > 0);
+
+      let pseudonym = null;
+      if (project.pseudonymId) pseudonym = await storage.getPseudonym(project.pseudonymId);
+
+      const publisherId = req.query.publisherId ? parseInt(String(req.query.publisherId)) : null;
+      const publisher = publisherId ? await storage.getPublisher(publisherId) : null;
+
+      const backMatter = await storage.getProjectBackMatter(id);
+      let backMatterBooks: any[] = [];
+      if (backMatter?.enableAlsoBy && backMatter.selectedBookIds) {
+        const allBooks = await storage.getAllBookCatalogEntries();
+        const ids = backMatter.selectedBookIds as number[];
+        backMatterBooks = allBooks.filter(b => ids.includes(b.id));
+      }
+
+      const buffer = await generateManuscriptEpub({
+        project, chapters: regularChapters, pseudonym, prologue, epilogue, authorNote,
+        publisher, backMatter, backMatterBooks,
+      });
+
+      const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, "").replace(/\s+/g, "_");
+      res.setHeader("Content-Type", "application/epub+zip");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.epub"`);
+      res.setHeader("Content-Length", buffer.length);
+      res.send(buffer);
+    } catch (error) {
+      console.error("Error exporting EPUB:", error);
+      res.status(500).json({ error: "Failed to export EPUB" });
     }
   });
 
@@ -3928,6 +3975,75 @@ ${series.seriesGuide.substring(0, 50000)}`;
     } catch (error) {
       console.error("Error deleting pseudonym:", error);
       res.status(500).json({ error: "Failed to delete pseudonym" });
+    }
+  });
+
+  // [Fix51] Editorial publishers CRUD — referenced from EPUB exporter for
+  // copyright page + logo on title page. Logo persists as a base64 data URL
+  // in publishers.logoDataUrl (no object storage dependency).
+  app.get("/api/publishers", async (_req, res) => {
+    try {
+      res.json(await storage.getAllPublishers());
+    } catch (e) {
+      console.error("Error fetching publishers:", e);
+      res.status(500).json({ error: "Failed to fetch publishers" });
+    }
+  });
+
+  app.get("/api/publishers/:id", async (req, res) => {
+    try {
+      const p = await storage.getPublisher(parseInt(req.params.id));
+      if (!p) return res.status(404).json({ error: "Publisher not found" });
+      res.json(p);
+    } catch (e) {
+      console.error("Error fetching publisher:", e);
+      res.status(500).json({ error: "Failed to fetch publisher" });
+    }
+  });
+
+  app.post("/api/publishers", async (req, res) => {
+    try {
+      const parsed = insertPublisherSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid publisher data", details: parsed.error });
+      const created = await storage.createPublisher(parsed.data);
+      res.status(201).json(created);
+    } catch (e) {
+      console.error("Error creating publisher:", e);
+      res.status(500).json({ error: "Failed to create publisher" });
+    }
+  });
+
+  app.patch("/api/publishers/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { name, logoDataUrl, websiteUrl, copyrightLine } = req.body || {};
+      const update: Record<string, any> = {};
+      if (name !== undefined) {
+        if (typeof name !== "string" || name.trim().length === 0) return res.status(400).json({ error: "El nombre no puede estar vacío" });
+        update.name = name.trim();
+      }
+      if (logoDataUrl !== undefined) update.logoDataUrl = logoDataUrl || null;
+      if (websiteUrl !== undefined) {
+        if (websiteUrl && !/^https?:\/\//i.test(websiteUrl)) return res.status(400).json({ error: "Website URL must start with http:// or https://" });
+        update.websiteUrl = websiteUrl || null;
+      }
+      if (copyrightLine !== undefined) update.copyrightLine = copyrightLine || null;
+      const updated = await storage.updatePublisher(id, update);
+      if (!updated) return res.status(404).json({ error: "Publisher not found" });
+      res.json(updated);
+    } catch (e) {
+      console.error("Error updating publisher:", e);
+      res.status(500).json({ error: "Failed to update publisher" });
+    }
+  });
+
+  app.delete("/api/publishers/:id", async (req, res) => {
+    try {
+      await storage.deletePublisher(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (e) {
+      console.error("Error deleting publisher:", e);
+      res.status(500).json({ error: "Failed to delete publisher" });
     }
   });
 
@@ -9444,6 +9560,70 @@ CRITERIOS:
     } catch (error) {
       console.error("Error exporting reedit manuscript:", error);
       res.status(500).json({ error: "Failed to export manuscript" });
+    }
+  });
+
+  // [Fix51] EPUB export para REEDICIONES y TRADUCCIONES (que viajan por el
+  // mismo pipeline reedit). Reusa el detectedLanguage para localizar las
+  // etiquetas (Capítulo/Chapter/Chapitre...). Acepta ?publisherId=N opcional.
+  app.get("/api/reedit-projects/:id/export-epub", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getReeditProject(projectId);
+      if (!project) return res.status(404).json({ error: "Reedit project not found" });
+
+      const chapters = await storage.getReeditChaptersByProject(projectId);
+      if (chapters.length === 0) return res.status(400).json({ error: "No chapters to export" });
+
+      let authorName: string | undefined;
+      let authorWebsiteUrl: string | null = null;
+      let authorBio: string | null = null;
+      if (project.pseudonymId) {
+        const pseudonym = await storage.getPseudonym(project.pseudonymId);
+        if (pseudonym) {
+          authorName = pseudonym.name;
+          if (pseudonym.websiteUrl) authorWebsiteUrl = pseudonym.websiteUrl;
+          if ((pseudonym as any).bio) authorBio = (pseudonym as any).bio;
+        }
+      }
+
+      const publisherId = req.query.publisherId ? parseInt(String(req.query.publisherId)) : null;
+      const publisher = publisherId ? await storage.getPublisher(publisherId) : null;
+
+      const backMatter = await storage.getProjectBackMatterByReedit(projectId);
+      let backMatterBooks: any[] = [];
+      if (backMatter?.enableAlsoBy && backMatter.selectedBookIds) {
+        const allBooks = await storage.getAllBookCatalogEntries();
+        const ids = backMatter.selectedBookIds as number[];
+        backMatterBooks = allBooks.filter(b => ids.includes(b.id));
+      }
+
+      const buffer = await generateGenericManuscriptEpub({
+        title: project.title,
+        authorName,
+        language: project.detectedLanguage || "es",
+        publisher,
+        authorWebsiteUrl,
+        authorBio,
+        chapters: chapters
+          .filter(c => c.editedContent || c.originalContent)
+          .map(c => ({
+            chapterNumber: c.chapterNumber,
+            title: c.title,
+            content: c.editedContent || c.originalContent || "",
+          })),
+        backMatter,
+        backMatterBooks,
+      });
+
+      const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñüÁÉÍÓÚÑÜ\s-]/g, "").trim().replace(/\s+/g, "_");
+      res.setHeader("Content-Type", "application/epub+zip");
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(safeTitle)}.epub"`);
+      res.setHeader("Content-Length", buffer.length);
+      res.send(buffer);
+    } catch (error) {
+      console.error("Error exporting reedit EPUB:", error);
+      res.status(500).json({ error: "Failed to export reedit EPUB" });
     }
   });
 

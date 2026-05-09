@@ -93,6 +93,30 @@ Después de redactar las secciones anteriores en lenguaje natural, REPITE las su
 \`\`\`
 <!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->
 
+## VEREDICTO DE REPARABILIDAD AUTOMÁTICA (JSON)
+
+Después del bloque anterior, emite un SEGUNDO bloque JSON entre los marcadores siguientes con tu evaluación de si los problemas detectados pueden ser corregidos por el sistema automático de reescritura cap-a-cap (Cirujano + Final Reviewer) o requieren intervención humana directa:
+
+<!-- VEREDICTO_GATE_INICIO -->
+\`\`\`json
+{
+  "severidad_global": "reparable",
+  "issues_irreparables": [
+    {"capitulo": 7, "problema": "POV mezclado entre omnisciente y 1ª persona sin justificación narrativa", "motivo": "requiere reescritura completa del cap desde otro punto de vista, fuera del alcance del Cirujano"}
+  ]
+}
+\`\`\`
+<!-- VEREDICTO_GATE_FIN -->
+
+REGLAS DEL VEREDICTO (críticas):
+- "severidad_global": exactamente uno de:
+  - "reparable": problemas locales o estructurales abordables vía cirugía cap-a-cap (continuidad, foreshadowing, ritmo, repeticiones, retoques de personaje, escenas que sobran/faltan).
+  - "reparable_con_reservas": problemas significativos pero ejecutables; el resultado puede no ser óptimo y conviene avisar al usuario.
+  - "irreparable_automaticamente": al menos un capítulo requiere REESCRITURA COMPLETA por cambio de POV/voz/foco que no es find-and-replace, o un arco de personaje exige re-estructurar 5+ capítulos coordinadamente, o el clímax está construido sobre una premisa inconsistente con el setup.
+- "issues_irreparables": array (vacío si severidad="reparable"). Cada item: capitulo (número), problema (1 frase), motivo (por qué el sistema no puede repararlo automáticamente).
+- Sé CONSERVADOR. Marca "irreparable_automaticamente" SOLO si genuinamente la cirugía cap-a-cap no puede resolverlo. Casi todo es "reparable" o "reparable_con_reservas". Un reviewer demasiado pesimista bloquea el flujo automático sin necesidad.
+- Si todo está limpio: \`{"severidad_global": "reparable", "issues_irreparables": []}\`.
+
 REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
 - Cada objeto del array debe corresponder 1-a-1 con un punto de "## SUGERENCIAS CONCRETAS DE CORRECCIÓN". Si pusiste 7 sugerencias arriba, el JSON tiene 7 objetos.
 - "capitulos_afectados": array de NÚMEROS (no strings). Prólogo = 0, epílogo = -1, nota del autor = -2. Capítulos normales = 1, 2, 3... INCLUYE TODOS los capítulos que menciones en "instrucciones_correccion" — si la prosa habla del cap 32, 32 debe estar en capitulos_afectados.

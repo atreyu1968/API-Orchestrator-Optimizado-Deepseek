@@ -18,6 +18,7 @@ import {
   Globe, 
   Settings,
   User,
+  Building2,
   Upload,
   Download,
   Library,
@@ -55,6 +56,7 @@ const translationsNavItems = [
 
 const settingsNavItems = [
   { title: "Pseudónimos", url: "/pseudonyms", icon: User },
+  { title: "Editoriales", url: "/publishers", icon: Building2 },
   { title: "Series", url: "/series", icon: Library },
   { title: "Cola de Proyectos", url: "/queue", icon: ListOrdered },
   { title: "Control de Costos", url: "/costs", icon: DollarSign },

@@ -20,6 +20,7 @@ import WorldBiblePage from "@/pages/world-bible";
 import ThoughtLogsPage from "@/pages/thought-logs";
 import ConfigPage from "@/pages/config";
 import PseudonymsPage from "@/pages/pseudonyms";
+import PublishersPage from "@/pages/publishers";
 import ImportPage from "@/pages/import";
 import ExportPage from "@/pages/export";
 import SeriesPage from "@/pages/series";
@@ -45,6 +46,7 @@ function Router() {
       <Route path="/world-bible" component={WorldBiblePage} />
       <Route path="/thought-logs" component={ThoughtLogsPage} />
       <Route path="/pseudonyms" component={PseudonymsPage} />
+      <Route path="/publishers" component={PublishersPage} />
       <Route path="/series" component={SeriesPage} />
       <Route path="/queue" component={QueuePage} />
       <Route path="/costs" component={CostsPage} />

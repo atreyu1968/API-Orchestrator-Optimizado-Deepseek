@@ -14,7 +14,10 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp, Eye, ArrowLeft, FileUp, Undo2, RotateCcw } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp, Eye, ArrowLeft, FileUp, Undo2, RotateCcw, BookOpen, AlertTriangle } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { Publisher } from "@shared/schema";
 import { diffWords } from "diff";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -74,6 +77,9 @@ export default function Dashboard() {
   const [showArchitectDialog, setShowArchitectDialog] = useState(false);
   const [architectInstructions, setArchitectInstructions] = useState("");
   const [showExtendDialog, setShowExtendDialog] = useState(false);
+  const [showEpubDialog, setShowEpubDialog] = useState(false);
+  const [epubPublisherId, setEpubPublisherId] = useState<string>("none");
+  const { data: publishersList = [] } = useQuery<Publisher[]>({ queryKey: ["/api/publishers"] });
   const [targetChapters, setTargetChapters] = useState("");
   const { projects, currentProject, setSelectedProjectId } = useProject();
 
@@ -1119,17 +1125,31 @@ export default function Dashboard() {
                         <ClipboardCheck className="h-4 w-4 mr-2" />
                         Revisión Final
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          window.open(`/api/projects/${currentProject.id}/export-docx`, "_blank");
-                        }}
-                        data-testid="button-export-docx"
-                      >
-                        <Download className="h-4 w-4 mr-2" />
-                        Exportar Word
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" data-testid="button-export-menu">
+                            <Download className="h-4 w-4 mr-2" />
+                            Exportar
+                            <ChevronDown className="h-4 w-4 ml-1" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => window.open(`/api/projects/${currentProject.id}/export-docx`, "_blank")}
+                            data-testid="button-export-docx"
+                          >
+                            <FileText className="h-4 w-4 mr-2" />
+                            Word (.docx)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setShowEpubDialog(true)}
+                            data-testid="button-export-epub-open"
+                          >
+                            <BookOpen className="h-4 w-4 mr-2" />
+                            EPUB (.epub)
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </>
                   )}
                 </div>
@@ -2145,6 +2165,44 @@ export default function Dashboard() {
       </AlertDialog>
 
       {/* Extend Project Dialog */}
+      <Dialog open={showEpubDialog} onOpenChange={setShowEpubDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Exportar como EPUB</DialogTitle>
+            <DialogDescription>Selecciona la editorial que aparecerá en la portada y página de copyright. Si dejas "Ninguna" se omite el bloque editorial.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label>Editorial</Label>
+            <Select value={epubPublisherId} onValueChange={setEpubPublisherId}>
+              <SelectTrigger data-testid="select-epub-publisher"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Ninguna</SelectItem>
+                {publishersList.map(p => (
+                  <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {publishersList.length === 0 && (
+              <p className="text-xs text-muted-foreground">No hay editoriales. Puedes crearlas en la sección "Editoriales" del menú lateral.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEpubDialog(false)}>Cancelar</Button>
+            <Button
+              onClick={() => {
+                if (!currentProject) return;
+                const qs = epubPublisherId !== "none" ? `?publisherId=${epubPublisherId}` : "";
+                window.open(`/api/projects/${currentProject.id}/export-epub${qs}`, "_blank");
+                setShowEpubDialog(false);
+              }}
+              data-testid="button-export-epub-confirm"
+            >
+              <Download className="h-4 w-4 mr-2" /> Descargar EPUB
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showExtendDialog} onOpenChange={setShowExtendDialog}>
         <DialogContent>
           <DialogHeader>

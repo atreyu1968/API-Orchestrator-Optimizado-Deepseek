@@ -9,11 +9,13 @@ const REQUIRED_COLUMNS: RequiredColumn[] = [
   { table: "projects", column: "auto_beta_loop_max_iterations", addedIn: "Fix47" },
   { table: "projects", column: "last_beta_notes", addedIn: "Fix38" },
   { table: "projects", column: "last_beta_notes_at", addedIn: "Fix38" },
+  { table: "projects", column: "holistic_gate_verdict", addedIn: "Fix49" },
   { table: "reedit_projects", column: "pending_editorial_parse", addedIn: "Fix34" },
 ];
 
 const REQUIRED_TABLES: RequiredTable[] = [
   { table: "guide_generation_jobs", addedIn: "Fix43" },
+  { table: "publishers", addedIn: "Fix51" },
 ];
 
 export async function assertSchemaUpToDate(): Promise<void> {
