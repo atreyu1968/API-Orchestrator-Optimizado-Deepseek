@@ -1,0 +1,67 @@
+root@escritords:/var/www/litagents# cd /var/www/litagents
+echo "DATABASE_URL en .env: $(grep -c '^DATABASE_URL' .env 2>/dev/null || echo 'no hay .env')"
+ls -la .env 2>&1 | head -1
+echo "---"
+echo "Variables del shell:"
+env | grep -E "^DATABASE_URL|^DEEPSEEK|^FISH" | sed 's/=.*/=***/'
+echo "---"
+echo "Carga manual y prueba:"
+set -a; source .env 2>/dev/null; set +a
+echo "DB ahora: ${DATABASE_URL:+OK}${DATABASE_URL:-MISSING}"
+DATABASE_URL en .env: no hay .env
+ls: cannot access '.env': No such file or directory
+---
+Variables del shell:
+---
+Carga manual y prueba:
+DB ahora: MISSING
+root@escritords:/var/www/litagents# # Cómo arranca el servicio:
+systemctl status litagents 2>/dev/null | head -20
+# o si usas pm2:
+pm2 list 2>/dev/null
+# Y los últimos logs reales del proceso:
+journalctl -u litagents -n 30 --no-pager 2>/dev/null || pm2 logs litagents --lines 30 --nostream 2>/dev/null
+* litagents.service - LitAgents Application
+     Loaded: loaded (/etc/systemd/system/litagents.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-05-09 16:46:32 UTC; 2min 50s ago
+ Invocation: 53de6e82aeac4512a76b25796261e696
+       Docs: https://github.com/atreyu1968/API-Orchestrator-Optimizado-Deepseek
+   Main PID: 12600 (node)
+      Tasks: 11 (limit: 18752)
+     Memory: 78.1M (max: 2G, available: 1.9G, peak: 97.3M)
+        CPU: 2.590s
+     CGroup: /system.slice/litagents.service
+             `-12600 /usr/bin/node /var/www/litagents/dist/index.cjs
+
+May 09 16:46:32 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 08 21:09:53 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 08 21:09:53 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 08 21:09:53 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 08 21:09:53 escritords systemd[1]: litagents.service: Consumed 3.845s CPU time, 96.3M memory peak.
+May 08 21:09:53 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 08 21:20:06 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 08 21:20:06 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 08 21:20:06 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 08 21:20:06 escritords systemd[1]: litagents.service: Consumed 4.658s CPU time, 103.9M memory peak.
+May 08 21:20:06 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 08 21:31:35 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 08 21:31:35 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 08 21:31:35 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 08 21:31:35 escritords systemd[1]: litagents.service: Consumed 16.758s CPU time, 262.1M memory peak.
+May 08 21:31:35 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 08 23:06:39 escritords systemd[1]: litagents.service: Main process exited, code=exited, status=1/FAILURE
+May 08 23:06:39 escritords systemd[1]: litagents.service: Failed with result 'exit-code'.
+May 08 23:06:39 escritords systemd[1]: litagents.service: Consumed 1min 38.166s CPU time, 1.1G memory peak.
+May 08 23:06:49 escritords systemd[1]: litagents.service: Scheduled restart job, restart counter is at 1.
+May 08 23:06:49 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 08 23:52:50 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 08 23:52:50 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 08 23:52:50 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 08 23:52:50 escritords systemd[1]: litagents.service: Consumed 37.303s CPU time, 494.8M memory peak.
+May 08 23:52:50 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 09 16:46:32 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 09 16:46:32 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 09 16:46:32 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 09 16:46:32 escritords systemd[1]: litagents.service: Consumed 4min 18.592s CPU time, 1.4G memory peak.
+May 09 16:46:32 escritords systemd[1]: Started litagents.service - LitAgents Application.
+root@escritords:/var/www/litagents# 
