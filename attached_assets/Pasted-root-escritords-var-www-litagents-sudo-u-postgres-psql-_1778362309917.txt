@@ -1,0 +1,52 @@
+root@escritords:/var/www/litagents# sudo -u postgres psql -d $(echo $DATABASE_URL | sed -n 's|.*://[^/]*/\([^?]*\).*|\1|p') <<'SQL'                       ts# sudo -u postgres psql -d $(echo $DATABASE_URL | sed -n 's|.*://[^/]*/\([^?]*\).*|\1|p') <<'SQL'BLE IF NOT EXISTS publishers (
+CREATE TABLE IF NOT EXISTS publishers (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  logo_data_url TEXT,
+  website_url TEXT,XT,
+  copyright_line TEXT, DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW()
+);TER TABLE projects ADD COLUMN IF NOT EXISTS holistic_gate_verdict JSONB;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS holistic_gate_verdict JSONB;LT false;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_beta_loop BOOLEAN DEFAULT false; DEFAULT 3;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_beta_loop_max_iterations INTEGER DEFAULT 3;FAULT false;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS auto_beta_loop_on_translations BOOLEAN DEFAULT false; DEFAULT 2;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS auto_beta_loop_on_translations_max_iterations INTEGER DEFAULT 2;
+SQL
+# Y ahora compila saltándote el push
+# Y ahora compila saltándote el push
+cd /var/www/litagentsenv "HOME=$(eval echo ~litagents)" "PATH=$PATH" "DATABASE_URL=$DATABASE_URL" "NODE_ENV=production" "S
+sudo -u litagents -H env "HOME=$(eval echo ~litagents)" "PATH=$PATH" "DATABASE_URL=$DATABASE_URL" "NODE_ENV=production" "SKIP_DB_PUSH=1" npm run build
+sudo systemctl restart litagents
+sudo systemctl restart litagents
+/usr/lib/postgresql/17/bin/psql: option requires an argument -- 'd'
+psql: hint: Try "psql --help" for more information.
+
+> rest-express@7.9.0 build
+> tsx script/build.ts
+
+skipping database schema push (SKIP_DB_PUSH=1)
+building client...
+vite v7.3.0 building client environment for production...
+transforming (1) src/main.tsxBrowserslist: browsers data (caniuse-lite) is 7 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+✓ 1817 modules transformed.
+../dist/public/index.html                                 2.72 kB │ gzip:   1.02 kB
+../dist/public/assets/ASD_1766442257801-Djy0Uxxs.png    272.02 kB
+../dist/public/assets/index-CYAqwUGa.css                120.42 kB │ gzip:  17.99 kB
+../dist/public/assets/index-vpx4Wnbd.js               1,047.21 kB │ gzip: 280.01 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 9.63s
+building server...
+
+  dist/index.cjs  2.9mb ⚠️
+
+⚡ Done in 375ms
+root@escritords:/var/www/litagents# 
