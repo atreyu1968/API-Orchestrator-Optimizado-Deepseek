@@ -107,6 +107,27 @@ CLEAN_DB_URL_PUSH=$(echo "$DATABASE_URL" | sed 's|^postgres://|postgresql://|')
 DB_USER_PUSH=$(echo "$CLEAN_DB_URL_PUSH" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
 DB_NAME_PUSH=$(echo "$CLEAN_DB_URL_PUSH" | sed -n 's|postgresql://[^/]*/\([^?]*\).*|\1|p')
 SUPERUSER_DB_URL="postgresql://postgres@localhost:5432/$DB_NAME_PUSH"
+
+# Pre-crear tablas/columnas que drizzle-kit detectaría como ambiguas
+# (rename vs create) para evitar el prompt interactivo que cuelga el push
+# en SSH no-TTY. Si ya existen, los IF NOT EXISTS no hacen nada.
+echo "   Pre-creando tablas/columnas para evitar prompts de drizzle..."
+sudo -u postgres psql -d "$DB_NAME_PUSH" <<'SQL' > /dev/null 2>&1 || true
+CREATE TABLE IF NOT EXISTS publishers (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  logo_data_url TEXT,
+  website_url TEXT,
+  copyright_line TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS holistic_gate_verdict JSONB;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_beta_loop BOOLEAN DEFAULT false;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_beta_loop_max_iterations INTEGER DEFAULT 3;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS auto_beta_loop_on_translations BOOLEAN DEFAULT false;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS auto_beta_loop_on_translations_max_iterations INTEGER DEFAULT 2;
+SQL
+
 echo "   Ejecutando db:push como superusuario postgres..."
 set +e
 sudo -u postgres \
@@ -162,12 +183,16 @@ for migration in "$APP_DIR"/migrations/*.sql; do
 done
 
 echo "5. Compilando aplicacion (frontend + backend)..."
+# SKIP_DB_PUSH=1 porque el paso 3 ya sincronizó el schema. Si dejamos que
+# script/build.ts vuelva a hacer drizzle-kit push, se topa con el mismo
+# prompt interactivo de detección de renames y cuelga (ETIMEDOUT).
 BUILD_LOG=$(mktemp)
 set +e
 sudo -u "$APP_USER" -H \
     env "HOME=$APP_USER_HOME" "PATH=$PATH" \
     "DATABASE_URL=$DATABASE_URL" \
     "NODE_ENV=production" \
+    "SKIP_DB_PUSH=1" \
     npm run build > "$BUILD_LOG" 2>&1
 BUILD_EXIT=$?
 set -e
