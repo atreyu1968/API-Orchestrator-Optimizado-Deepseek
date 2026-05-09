@@ -36,11 +36,20 @@ const allowlist = [
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
 
-  console.log("pushing database schema...");
-  try {
-    execSync("npx drizzle-kit push --force", { stdio: "inherit", timeout: 120000 });
-  } catch (e) {
-    console.warn("Database push warning (may be expected):", (e as Error).message || e);
+  // [Fix45] El push de schema se puede saltar con SKIP_DB_PUSH=1. Útil cuando
+  // el deploy script (p.ej. update.sh en VPS) ya ejecutó `drizzle-kit push`
+  // antes del build: repetirlo aquí cuelga el build si la DATABASE_URL no se
+  // propaga al contexto del proceso (típico al lanzar el build con `sudo` sin
+  // -E). En dev/local seguimos haciéndolo por defecto.
+  if (process.env.SKIP_DB_PUSH === "1") {
+    console.log("skipping database schema push (SKIP_DB_PUSH=1)");
+  } else {
+    console.log("pushing database schema...");
+    try {
+      execSync("npx drizzle-kit push --force", { stdio: "inherit", timeout: 120000 });
+    } catch (e) {
+      console.warn("Database push warning (may be expected):", (e as Error).message || e);
+    }
   }
 
   console.log("building client...");
