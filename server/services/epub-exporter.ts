@@ -363,7 +363,7 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
   // título empuja el contenido hacia abajo de forma fiable en cualquier visor.
   // Spacer divs y <br/> los colapsan algunos visores (Microsoft Edge EPUB).
   const logoBlockCentered = publisherLogo
-    ? `<div style="text-align:center; margin-top: 4.8em;"><img src="../image/publisher-logo.${publisherLogo.ext}" alt="${escapeXml(publisher?.name || "")}" style="max-width:70px; max-height:70px; width:auto; height:auto; display:inline-block;"/></div>`
+    ? `<div style="text-align:center; margin-top: 4.8em;"><img src="../image/publisher-logo.${publisherLogo.ext}" alt="${escapeXml(publisher?.name || "")}" style="width:15%; height:auto; display:inline-block;"/></div>`
     : "";
   const titlePageBody = `
 <div style="page-break-after: always; break-after: page;">
