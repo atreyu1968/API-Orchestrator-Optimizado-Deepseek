@@ -1,0 +1,102 @@
+root@escritords:/var/www/litagents# sudo tail -100 /var/log/litagents/error.log
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3716',
+  routine: 'errorMissingColumn'
+}
+[QueueManager] Error checking for frozen projects: error: column "pending_admin_actions" does not exist
+    at /var/www/litagents/dist/index.cjs:64:13330
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async /var/www/litagents/dist/index.cjs:70:38024
+    at async XR.checkForFrozenProjects (/var/www/litagents/dist/index.cjs:6580:16941)
+    at async Timeout._onTimeout (/var/www/litagents/dist/index.cjs:6580:16787) {
+  length: 122,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '736',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3716',
+  routine: 'errorMissingColumn'
+}
+Error fetching agent statuses: error: column "pending_admin_actions" does not exist
+    at /var/www/litagents/dist/index.cjs:64:13330
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async /var/www/litagents/dist/index.cjs:70:38024
+    at async /var/www/litagents/dist/index.cjs:7881:3255 {
+  length: 122,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '736',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3716',
+  routine: 'errorMissingColumn'
+}
+Error fetching projects: error: column "pending_admin_actions" does not exist
+    at /var/www/litagents/dist/index.cjs:64:13330
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async /var/www/litagents/dist/index.cjs:70:38024
+    at async /var/www/litagents/dist/index.cjs:7850:1271 {
+  length: 122,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '736',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3716',
+  routine: 'errorMissingColumn'
+}
+[QueueManager] Error checking for frozen projects: error: column "pending_admin_actions" does not exist
+    at /var/www/litagents/dist/index.cjs:64:13330
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async /var/www/litagents/dist/index.cjs:70:38024
+    at async XR.checkForFrozenProjects (/var/www/litagents/dist/index.cjs:6580:16941)
+    at async Timeout._onTimeout (/var/www/litagents/dist/index.cjs:6580:16787) {
+  length: 122,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '736',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3716',
+  routine: 'errorMissingColumn'
+}
+root@escritords:/var/www/litagents# 
