@@ -367,9 +367,13 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
   // Página 1: título + autor + logo de la editorial.
   // El div envolvente fuerza salto de página para que ningún lector EPUB
   // funda esta página con el copyright que viene a continuación.
+  // 18 párrafos vacíos como spacer vertical: técnica más portable en EPUB
+  // (los <br/> consecutivos los colapsan algunos lectores; el padding-top en %
+  // se calcula sobre el ancho, no sobre el alto, así que tampoco centra).
+  const verticalSpacer = Array(18).fill('<p style="margin:0;text-indent:0;">&#160;</p>').join("\n");
   const titlePageBody = `
-<div class="title-page" style="page-break-after: always; break-after: page; text-align: center;">
-<br/><br/><br/><br/><br/><br/><br/><br/><br/><br/>
+<div class="title-page" style="page-break-after: always; break-after: page; text-align: center; padding-top: 0;">
+${verticalSpacer}
 ${titleAuthorBlock}
 ${logoBlock}
 </div>`;
