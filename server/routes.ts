@@ -7927,6 +7927,52 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  // [Fix40] GET acciones administrativas pendientes (delete_chapter,
+  // merge_chapters, etc.) emitidas por el StructuralInstructionTranslator.
+  // No se aplican automáticamente; la UI las muestra para que el usuario
+  // las revise y las descarte o las ejecute manualmente.
+  app.get("/api/projects/:id/pending-admin-actions", async (req: Request, res: Response) => {
+    try {
+      if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "ID inválido" });
+      const projectId = parseInt(req.params.id, 10);
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      const actions = Array.isArray((project as any).pendingAdminActions) ? (project as any).pendingAdminActions : [];
+      res.json({ actions, count: actions.length });
+    } catch (error) {
+      console.error("[Fix40] Error GET pending-admin-actions:", error);
+      res.status(500).json({ error: "Failed to fetch pending admin actions" });
+    }
+  });
+
+  // [Fix40] DELETE descartar una acción administrativa concreta (por id) o
+  // todas (sin actionId). El sistema NO ejecuta la acción; solo la borra del
+  // listado pendiente. El usuario es responsable de aplicarla manualmente
+  // desde la herramienta de gestión de capítulos si así lo decide.
+  app.delete("/api/projects/:id/pending-admin-actions/:actionId?", async (req: Request, res: Response) => {
+    try {
+      if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "ID inválido" });
+      const projectId = parseInt(req.params.id, 10);
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      const existing = Array.isArray((project as any).pendingAdminActions) ? (project as any).pendingAdminActions : [];
+      const actionIdRaw = req.params.actionId;
+      let next: any[];
+      if (!actionIdRaw) {
+        next = [];
+      } else {
+        if (!/^\d+$/.test(actionIdRaw)) return res.status(400).json({ error: "actionId inválido" });
+        const actionId = parseInt(actionIdRaw, 10);
+        next = existing.filter((a: any) => Number(a?.id) !== actionId);
+      }
+      await storage.updateProject(projectId, { pendingAdminActions: next } as any);
+      res.json({ success: true, remaining: next.length, removed: existing.length - next.length });
+    } catch (error) {
+      console.error("[Fix40] Error DELETE pending-admin-actions:", error);
+      res.status(500).json({ error: "Failed to delete pending admin action" });
+    }
+  });
+
   // [Fix34] DELETE descartar pendingEditorialParse sin aplicar.
   app.delete("/api/reedit-projects/:id/pending-editorial-parse", async (req: Request, res: Response) => {
     try {

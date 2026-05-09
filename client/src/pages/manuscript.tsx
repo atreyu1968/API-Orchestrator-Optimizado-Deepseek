@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2, Sparkles, Pencil, Check, X, Search, AlertTriangle, CheckCircle2, RotateCcw } from "lucide-react";
+import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2, Sparkles, Pencil, Check, X, Search, AlertTriangle, CheckCircle2, RotateCcw, Trash2, ShieldAlert } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { useProject } from "@/lib/project-context";
@@ -135,6 +135,48 @@ export default function ManuscriptPage() {
     queryKey: ["/api/projects", currentProject?.id, "chapters"],
     enabled: !!currentProject?.id,
   });
+
+  // [Fix40] Acciones administrativas pendientes (delete_chapter, merge_chapters,
+  // etc.) emitidas por el StructuralInstructionTranslator. No se aplican
+  // automáticamente; el usuario las revisa y las descarta o las ejecuta a mano.
+  const { data: pendingAdminData } = useQuery<{ actions: any[]; count: number }>({
+    queryKey: ["/api/projects", currentProject?.id, "pending-admin-actions"],
+    enabled: !!currentProject?.id,
+  });
+  const pendingAdminActions = pendingAdminData?.actions || [];
+
+  const dismissAdminActionMutation = useMutation({
+    mutationFn: async (actionId: number | "all") => {
+      const url = actionId === "all"
+        ? `/api/projects/${currentProject!.id}/pending-admin-actions`
+        : `/api/projects/${currentProject!.id}/pending-admin-actions/${actionId}`;
+      const res = await fetch(url, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+    onSuccess: (_data, actionId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "pending-admin-actions"] });
+      toast({
+        title: "Descartada",
+        description: actionId === "all" ? "Todas las acciones se eliminaron del listado." : "Acción eliminada del listado pendiente.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const adminActionLabel = (type: string): string => {
+    switch (type) {
+      case "delete_chapter": return "Eliminar capítulo";
+      case "merge_chapters": return "Fusionar capítulos";
+      case "split_chapter": return "Dividir capítulo";
+      case "swap_chapters": return "Intercambiar capítulos";
+      case "reorder_chapters": return "Reordenar capítulos";
+      case "move_content": return "Mover contenido";
+      default: return type;
+    }
+  };
 
   const handleDownload = async () => {
     if (!currentProject || chapters.length === 0) return;
@@ -524,6 +566,75 @@ export default function ManuscriptPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* [Fix40] Card de acciones administrativas pendientes. Solo visible si
+           hay acciones emitidas por el StructuralInstructionTranslator que el
+           sistema NO aplicó automáticamente por ser destructivas. */}
+      {pendingAdminActions.length > 0 && (
+        <Card className="mb-4 border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20" data-testid="card-pending-admin-actions">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2 text-amber-900 dark:text-amber-200">
+              <ShieldAlert className="h-5 w-5" />
+              Acciones administrativas pendientes ({pendingAdminActions.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Operaciones destructivas que el sistema detectó pero <strong>NO aplicó automáticamente</strong>. Revisa cada una y, si quieres ejecutarla, hazlo manualmente desde la lista de capítulos. Cuando termines (o si decides ignorarla), descártala para limpiar este listado.
+            </p>
+            <div className="space-y-1.5">
+              {pendingAdminActions.map((action: any) => (
+                <div
+                  key={action.id}
+                  className="flex items-start justify-between gap-3 p-2 rounded border border-amber-200 dark:border-amber-800 bg-background"
+                  data-testid={`row-admin-action-${action.id}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-xs" data-testid={`badge-admin-action-type-${action.id}`}>
+                        {adminActionLabel(action.type)}
+                      </Badge>
+                      <span className="text-sm font-medium" data-testid={`text-admin-action-target-${action.id}`}>
+                        {action.targetLabel || `Cap. ${action.targetChapter}`}
+                      </span>
+                      {typeof action.secondaryChapter === "number" && (
+                        <span className="text-xs text-muted-foreground">
+                          → afecta también a Cap. {action.secondaryChapter}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1" data-testid={`text-admin-action-reason-${action.id}`}>
+                      {action.reason}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => dismissAdminActionMutation.mutate(action.id)}
+                    disabled={dismissAdminActionMutation.isPending}
+                    data-testid={`button-dismiss-admin-action-${action.id}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            {pendingAdminActions.length > 1 && (
+              <div className="flex justify-end pt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => dismissAdminActionMutation.mutate("all")}
+                  disabled={dismissAdminActionMutation.isPending}
+                  data-testid="button-dismiss-all-admin-actions"
+                >
+                  Descartar todas
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className={`flex-1 grid grid-cols-1 gap-6 min-h-0 ${showChat ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <Card className="lg:col-span-1">

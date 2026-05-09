@@ -132,6 +132,19 @@ function sortChaptersNarrative<T extends { chapterNumber: number }>(chapters: T[
   return [...chapters].sort((a, b) => narrativeSortOrder(a.chapterNumber) - narrativeSortOrder(b.chapterNumber));
 }
 
+// [Fix41] Resultado tri-valuado del Revisor Final. Reemplaza el bool original
+// para que el caller pueda distinguir entre:
+//  - approved: ≥9/10 con N consecutivas → finalizeCompletedProject normal.
+//  - approved_with_reservations: no llegó a 9 pero best ≥ 7 sin críticos →
+//    el manuscrito es usable, lo marcamos como completed con badge "calidad
+//    estándar"; NO disparamos failed_final_review.
+//  - rejected: best < 7 o críticos sin resolver, o cancelación → status
+//    failed_final_review con mensaje de error real.
+export type FinalReviewOutcome =
+  | { kind: "approved"; finalScore: number; reason: string }
+  | { kind: "approved_with_reservations"; finalScore: number; reason: string }
+  | { kind: "rejected"; finalScore: number; reason: string };
+
 export class Orchestrator {
   private architect = new ArchitectAgent();
   private originalityCritic = new OriginalityCriticAgent();
@@ -2732,7 +2745,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
       }
 
-      const finalReviewApproved = await this.runFinalReview(
+      const finalReviewOutcome = await this.runFinalReview(
         project, 
         chapters, 
         worldBibleData, 
@@ -2742,11 +2755,21 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         authorName
       );
 
-      if (finalReviewApproved) {
+      // [Fix41] approved y approved_with_reservations finalizan normalmente.
+      // Solo "rejected" marca failed_final_review (mejor < 7 o críticos sin
+      // resolver, o cancelación). Esto evita el FAILED engañoso cuando el
+      // manuscrito es perfectamente usable a 7-8/10 sin defectos graves.
+      if (finalReviewOutcome.kind === "approved" || finalReviewOutcome.kind === "approved_with_reservations") {
+        if (finalReviewOutcome.kind === "approved_with_reservations") {
+          await storage.createActivityLog({
+            projectId: project.id, level: "info", agentRole: "final-reviewer",
+            message: `[Fix41] Manuscrito APROBADO CON RESERVAS (${finalReviewOutcome.finalScore}/10). ${finalReviewOutcome.reason} El manuscrito es publicable pero no alcanzó la calidad bestseller (9+/10). Revisa el activity log si quieres re-ejecutar más ciclos manualmente.`,
+          });
+        }
         await this.finalizeCompletedProject(project);
       } else {
         await storage.updateProject(project.id, { status: "failed_final_review" });
-        this.callbacks.onError("El manuscrito no pasó la revisión final después de múltiples intentos.");
+        this.callbacks.onError(`El manuscrito no pasó la revisión final: ${finalReviewOutcome.reason}`);
       }
 
     } catch (error) {
@@ -3408,7 +3431,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
         : baseStyleGuide;
       
-      const finalReviewApproved = await this.runFinalReview(
+      const finalReviewOutcome = await this.runFinalReview(
         project, 
         finalChapters, 
         worldBibleData, 
@@ -3418,11 +3441,18 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         authorName
       );
 
-      if (finalReviewApproved) {
+      // [Fix41] Mismo manejo tri-valuado que en generateNovel.
+      if (finalReviewOutcome.kind === "approved" || finalReviewOutcome.kind === "approved_with_reservations") {
+        if (finalReviewOutcome.kind === "approved_with_reservations") {
+          await storage.createActivityLog({
+            projectId: project.id, level: "info", agentRole: "final-reviewer",
+            message: `[Fix41] Manuscrito APROBADO CON RESERVAS (${finalReviewOutcome.finalScore}/10). ${finalReviewOutcome.reason}`,
+          });
+        }
         await this.finalizeCompletedProject(project);
       } else {
         await storage.updateProject(project.id, { status: "failed_final_review" });
-        this.callbacks.onError("El manuscrito no pasó la revisión final después de múltiples intentos.");
+        this.callbacks.onError(`El manuscrito no pasó la revisión final: ${finalReviewOutcome.reason}`);
       }
 
     } catch (error) {
@@ -3592,7 +3622,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     allSections: SectionData[],
     styleGuideContent: string,
     authorName: string
-  ): Promise<boolean> {
+  ): Promise<FinalReviewOutcome> {
     let revisionCycle = 0;
     let issuesPreviosCorregidos: string[] = [];
     let consecutiveHighScores = 0;
@@ -3600,6 +3630,34 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     const chapterRewriteTracker: Map<number, Map<string, number>> = new Map();
     const MAX_REWRITES_PER_ERROR_TYPE = 3;
     const MAX_REWRITES_PER_CHAPTER = 3;
+
+    // [Fix39] Snapshot del manuscrito en el ciclo con mejor puntuación.
+    // El Revisor Final puede degradar el manuscrito ciclo a ciclo (ej: 9 → 8 → 7
+    // tras reescrituras del Cirujano que introducen regresiones). Sin esta red,
+    // el manuscrito en BD queda en el último estado escrito aunque sea peor
+    // que un ciclo previo. Snapshotamos cuando subimos a un nuevo máximo (≥7)
+    // y restauramos si caemos ≥ 1.0 puntos por debajo del mejor histórico
+    // (cuando ese mejor histórico era ≥ 8).
+    let bestManuscriptSnapshot: { score: number; chapters: Map<number, string> } | null = null;
+
+    // [Fix41] Helper que clasifica una salida del loop según score y críticos.
+    // forceKind permite forzar approved en rutas explícitas (consecutivas 9+,
+    // oscilación 8↔9 con best≥9). El user-cancelled siempre va como rejected.
+    const classifyExit = (
+      score: number,
+      hasCritical: boolean,
+      reason: string,
+      forceKind?: FinalReviewOutcome["kind"],
+    ): FinalReviewOutcome => {
+      if (forceKind) return { kind: forceKind, finalScore: score, reason };
+      if (score >= this.minAcceptableScore) return { kind: "approved", finalScore: score, reason };
+      if (score >= 7 && !hasCritical) return { kind: "approved_with_reservations", finalScore: score, reason };
+      return { kind: "rejected", finalScore: score, reason };
+    };
+    const hasCriticalIssues = (r: any): boolean => {
+      const issues = r?.issues || [];
+      return issues.some((i: any) => i?.severidad === "critica" || i?.severidad === "mayor");
+    };
 
     // [Fix22] Resetear el buffer de instrucciones rechazadas por el cirujano.
     // Se acumula entre ciclos de ESTE runFinalReview y se reinyecta como "no
@@ -3947,6 +4005,51 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       
       previousScores.push(currentScore);
 
+      // [Fix39] Snapshot del manuscrito en el mejor ciclo. Si el ciclo actual
+      // mejora el récord (≥7), guardamos el contenido íntegro de los capítulos.
+      // Si retrocede ≥ 1.0 vs un best ≥ 8, restauramos en BD y saltamos la
+      // fase de reescrituras de este ciclo (las que habrían introducido el
+      // deterioro adicional). El próximo ciclo re-puntuará desde el snapshot.
+      const isNewBest = bestManuscriptSnapshot === null || currentScore > bestManuscriptSnapshot.score;
+      if (isNewBest && currentScore >= 7) {
+        const snap = new Map<number, string>();
+        for (const c of updatedChapters) {
+          if (c.content) snap.set(c.chapterNumber, c.content);
+        }
+        bestManuscriptSnapshot = { score: currentScore, chapters: snap };
+        console.log(`[Orchestrator] [Fix39] Snapshot del manuscrito guardado en ciclo ${revisionCycle + 1} (score ${currentScore}/10, ${snap.size} caps).`);
+      } else if (
+        bestManuscriptSnapshot &&
+        bestManuscriptSnapshot.score >= 8 &&
+        bestManuscriptSnapshot.score - currentScore >= 1.0
+      ) {
+        let restoredCount = 0;
+        for (const ch of updatedChapters) {
+          const snapContent = bestManuscriptSnapshot.chapters.get(ch.chapterNumber);
+          if (snapContent && snapContent !== ch.content) {
+            const wc = snapContent.split(/\s+/).filter(w => w.length > 0).length;
+            await storage.updateChapter(ch.id, { content: snapContent, wordCount: wc });
+            restoredCount++;
+          }
+        }
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          agentRole: "final-reviewer",
+          message: `[Fix39] Regresión detectada: ciclo ${revisionCycle + 1} puntuó ${currentScore}/10 frente al mejor histórico (${bestManuscriptSnapshot.score}/10, caída ≥ 1.0). Restaurados ${restoredCount} capítulo(s) al estado del mejor ciclo. Saltando reescrituras de este ciclo y re-puntuando.`,
+        });
+        this.callbacks.onAgentStatus("final-reviewer", "reviewing",
+          `[Fix39] Manuscrito regresó a ${currentScore}/10 — restaurado al mejor ciclo (${bestManuscriptSnapshot.score}/10).`
+        );
+        console.log(`[Orchestrator] [Fix39] Restored ${restoredCount} chapters from snapshot (best ${bestManuscriptSnapshot.score}, current ${currentScore}).`);
+        // Sustituimos el score del ciclo actual por el del snapshot para que
+        // las reglas de salida (Fix37, plateau) usen la línea base correcta.
+        previousScores[previousScores.length - 1] = bestManuscriptSnapshot.score;
+        currentScore = bestManuscriptSnapshot.score;
+        revisionCycle++;
+        continue;
+      }
+
       // [Fix37] Diminishing returns y regresión persistente. La detección de
       // plateau original (4 ciclos con spread ≤ 0.5) es demasiado conservadora:
       // si la novela oscila entre 7.0 y 7.6 durante 5 ciclos sin acercarse a 9,
@@ -3989,7 +4092,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             message: `[Fix37] Salida temprana por diminishing returns. Scores: [${previousScores.join(", ")}]. Mejor: ${bestOverall}/10. Umbral: ${this.minAcceptableScore}.`,
           });
           console.log(`[Orchestrator] [Fix37] Diminishing returns exit: scores=[${previousScores.join(", ")}] deltas=[${deltas.join(",")}] best=${bestOverall} threshold=${this.minAcceptableScore}`);
-          return false;
+          return classifyExit(bestOverall, hasCriticalIssues(result), `[Fix37] Diminishing returns: mejor histórico ${bestOverall}/10 sin acercarse al umbral 9 tras ${previousScores.length} ciclos.`);
         }
 
         const monotonicDown = lastThree[0] > lastThree[1] && lastThree[1] > lastThree[2];
@@ -4006,7 +4109,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             message: `[Fix37] Salida temprana por regresión monótona. Últimos 3 scores: [${lastThree.join(", ")}], mejor histórico: ${bestOverall}/10, score actual: ${lastThree[2]}/10.`,
           });
           console.log(`[Orchestrator] [Fix37] Monotonic regression exit: lastThree=${lastThree.join(",")} drop=${totalDrop} current=${lastThree[2]} best=${bestOverall}`);
-          return false;
+          return classifyExit(lastThree[2], hasCriticalIssues(result), `[Fix37] Regresión monótona: ${lastThree.join(" → ")} (caída ${totalDrop.toFixed(1)}). Score actual ${lastThree[2]}/10.`);
         }
       }
 
@@ -4023,14 +4126,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               `Puntuación estabilizada en ~${avgScore}/10 tras ${previousScores.length} ciclos de corrección. Manuscrito aprobado — calidad consistente demostrada.`
             );
             console.log(`[Orchestrator] Score plateaued at ${lastFour.join(', ')} (maxRecent ${maxRecent} >= 9) — auto-approving after ${previousScores.length} cycles`);
-            return true;
+            return classifyExit(maxRecent, false, `Plateau en ~${avgScore}/10 con maxRecent ${maxRecent}/10 ≥ 9 tras ${previousScores.length} ciclos.`, "approved");
           }
           
           this.callbacks.onAgentStatus("final-reviewer", "error", 
             `Puntuación estancada en ~${avgScore}/10 tras ${previousScores.length} ciclos. Umbral mínimo: 9. NO APROBADO — calidad insuficiente.`
           );
           console.log(`[Orchestrator] Early exit: scores plateaued at ${lastFour.join(', ')} - maxRecent ${maxRecent} below 9, rejecting`);
-          return false;
+          return classifyExit(bestOverall, hasCriticalIssues(result), `Plateau en ~${avgScore}/10 sin alcanzar 9 tras ${previousScores.length} ciclos. Mejor histórico: ${bestOverall}/10.`);
         }
       }
       
@@ -4061,7 +4164,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               this.callbacks.onAgentStatus("final-reviewer", "completed",
                 `Oscilación persistente (${recent.join(", ")}/10) tras ${cyclesElapsed} ciclos. Mejor puntuación ${bestOverall}/10 confirmó calidad. Sin defectos graves. APROBADO.`
               );
-              return true;
+              return classifyExit(bestOverall, false, `Oscilación 8↔9 persistente (${recent.join(", ")}/10) tras ${cyclesElapsed} ciclos. Mejor histórico ${bestOverall}/10 sin críticos.`, "approved");
             }
           }
           console.log(`[Orchestrator] Score dropped to ${currentScore} after ${consecutiveHighScores} × 9+ (cycle ${cyclesElapsed}, best ${bestOverall}, hasCritical=${hasCurrentCritical}). Continuing revision to stabilise.`);
@@ -4081,7 +4184,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           ? `Manuscrito APROBADO CON RESERVAS. Puntuaciones consecutivas: ${recentScores}/10.`
           : `Manuscrito APROBADO. Puntuaciones consecutivas: ${recentScores}/10. Calidad bestseller confirmada.`;
         this.callbacks.onAgentStatus("final-reviewer", "completed", mensaje);
-        return true;
+        return classifyExit(currentScore, false, `Puntuaciones consecutivas ${recentScores}/10.`, "approved");
       }
       
       // Puntuación >= 9 pero aún no suficientes consecutivas
@@ -4100,7 +4203,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
             `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos de refinamiento. Puntuación: ${currentScore}/10. Sin defectos objetivos adicionales.`
           );
-          return true;
+          return classifyExit(currentScore, false, `Aprobado por revisor con score ${currentScore}/10 tras ${revisionCycle + 1} ciclos sin defectos graves.`, "approved");
         }
         
         this.callbacks.onAgentStatus("final-reviewer", "editing", 
@@ -4133,7 +4236,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
             `Manuscrito APROBADO tras ${revisionCycle + 1} ciclos. Puntuación: ${currentScore}/10. Solo quedan ${result.issues.length} observación(es) menor(es) — calidad suficiente demostrada.`
           );
-          return true;
+          return classifyExit(currentScore, false, `Score ${currentScore}/10 con solo ${result.issues.length} observaciones menores tras ${revisionCycle + 1} ciclos.`, "approved");
         }
       }
       
@@ -4148,12 +4251,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
             `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 (promedio: ${avgScore}). APROBADO.`
           );
-          return true;
+          return classifyExit(currentScore, false, `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado con score ${currentScore}/10.`, "approved");
         } else {
           this.callbacks.onAgentStatus("final-reviewer", "error", 
             `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 NO alcanza el mínimo de 9. Proyecto NO APROBADO.`
           );
-          return false;
+          return classifyExit(currentScore, hasCriticalIssues(result), `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Score final ${currentScore}/10, mejor histórico ${bestOverall}/10.`);
         }
       }
 
@@ -4421,7 +4524,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           this.callbacks.onAgentStatus("final-reviewer", "completed", 
             `Todos los problemas restantes son limitaciones aceptadas. Puntuación: ${currentScore}/10. APROBADO.`
           );
-          return true;
+          return classifyExit(currentScore, hasCriticalIssues(result), `Lista de reescrituras agotada con score ${currentScore}/10 (mejor histórico ${bestScore}/10).`, "approved");
         }
         this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
           `Todos los capítulos con problemas ya fueron corregidos al máximo. Re-evaluando...`
@@ -4467,7 +4570,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             message: `Revisión detenida por el usuario`,
             agentRole: "orchestrator",
           });
-          return false;
+          return classifyExit(currentScore, true, `Revisión cancelada por el usuario en ciclo ${revisionCycle + 1}.`, "rejected");
         }
 
         const chapterNum = chaptersToRewrite[rewriteIndex];
@@ -4584,7 +4687,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       revisionCycle++;
     }
 
-    return false;
+    const fallthroughBest = previousScores.length > 0 ? Math.max(...previousScores) : 0;
+    return classifyExit(fallthroughBest, true, `Loop del Revisor Final terminó sin veredicto explícito tras ${revisionCycle} ciclos (mejor ${fallthroughBest}/10).`, "rejected");
   }
 
   async runFinalReviewOnly(project: Project): Promise<void> {
@@ -4628,7 +4732,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const allSections = this.buildSectionsListFromChapters(chapters, worldBibleData);
       const guiaEstilo = `Género: ${project.genre}, Tono: ${project.tone}`;
 
-      const approved = await this.runFinalReview(
+      const outcome = await this.runFinalReview(
         project,
         chapters,
         worldBibleData,
@@ -4638,17 +4742,27 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         authorName
       );
 
-      if (approved) {
-        await storage.updateProject(project.id, { finalReviewResult: { approved } });
-        this.callbacks.onAgentStatus("final-reviewer", "completed", "Revisión final aprobada");
+      // [Fix41] Tri-valuado: approved | approved_with_reservations | rejected.
+      if (outcome.kind === "approved" || outcome.kind === "approved_with_reservations") {
+        await storage.updateProject(project.id, { finalReviewResult: { approved: true, kind: outcome.kind, finalScore: outcome.finalScore, reason: outcome.reason } });
+        const msg = outcome.kind === "approved"
+          ? "Revisión final aprobada"
+          : `Revisión final aprobada con reservas (${outcome.finalScore}/10)`;
+        this.callbacks.onAgentStatus("final-reviewer", "completed", msg);
+        if (outcome.kind === "approved_with_reservations") {
+          await storage.createActivityLog({
+            projectId: project.id, level: "info", agentRole: "final-reviewer",
+            message: `[Fix41] Manuscrito APROBADO CON RESERVAS (${outcome.finalScore}/10). ${outcome.reason}`,
+          });
+        }
         await this.finalizeCompletedProject(project);
       } else {
         await storage.updateProject(project.id, { 
           status: "failed_final_review",
-          finalReviewResult: { approved }
+          finalReviewResult: { approved: false, kind: outcome.kind, finalScore: outcome.finalScore, reason: outcome.reason }
         });
-        this.callbacks.onAgentStatus("final-reviewer", "error", "Revisión final NO aprobada - puntuación insuficiente");
-        this.callbacks.onError("El manuscrito no alcanzó la puntuación mínima de 9 después de múltiples intentos.");
+        this.callbacks.onAgentStatus("final-reviewer", "error", `Revisión final NO aprobada - ${outcome.reason}`);
+        this.callbacks.onError(`El manuscrito no alcanzó la puntuación mínima: ${outcome.reason}`);
       }
     } catch (error) {
       console.error("Final review error:", error);
@@ -5766,6 +5880,57 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           agentRole: "editor",
         });
         return draftInstructions;
+      }
+
+      // [Fix42] Recuperación parcial cuando el refiner es demasiado agresivo.
+      // Caso real: Holístico/Beta emite 12 instrucciones, refiner descarta 10
+      // y conserva solo 2 (descarte ≥ 50%). Antes ese 80% se perdía. Ahora,
+      // si es review del sistema y se descartó MÁS de la mitad, recuperamos
+      // las descartadas que apuntan a capítulos válidos prefijando la
+      // descripción con "[Sin anclaje literal — verificar]" para que el
+      // usuario sepa que requieren aprobación manual extra. Mantenemos las
+      // refinadas tal cual (son las "limpias"). Resultado: 0 pérdida silenciosa.
+      if (isSystemReview && refined.length > 0 && dropped.length > refined.length) {
+        const validChapterNumbers = new Set(allChapters.map(c => c.chapterNumber));
+        const recovered: EditorialInstruction[] = [];
+        // Cruzamos los dropped contra los borradores originales para recuperar
+        // los campos completos (el refiner solo devuelve descripcion+caps+motivo).
+        for (const d of dropped) {
+          const dCaps = (d.capitulos_afectados || []).filter((n: number) => validChapterNumbers.has(n));
+          if (dCaps.length === 0) continue;
+          // Buscamos la instrucción original en el borrador por descripcion + caps.
+          const original = draftInstructions.find(orig => {
+            const oCaps = orig.capitulos_afectados || [];
+            const capsMatch = dCaps.some(c => oCaps.includes(c));
+            const descMatch = orig.descripcion && d.descripcion &&
+              (orig.descripcion.includes(d.descripcion.slice(0, 40)) ||
+               d.descripcion.includes(orig.descripcion.slice(0, 40)));
+            return capsMatch && descMatch;
+          });
+          if (!original) continue;
+          // No re-recuperamos si ya está en refined (evita duplicados).
+          const alreadyRefined = refined.some(r =>
+            (r.capitulos_afectados || []).some(c => dCaps.includes(c)) &&
+            r.descripcion === original.descripcion
+          );
+          if (alreadyRefined) continue;
+          recovered.push({
+            ...original,
+            descripcion: `[Sin anclaje literal — verificar] ${original.descripcion}`,
+            instrucciones_correccion: original.instrucciones_correccion
+              ? `[REFINER NO ANCLÓ EN TEXTO LITERAL — motivo: ${d.motivo}] ${original.instrucciones_correccion}`
+              : `[REFINER NO ANCLÓ EN TEXTO LITERAL — motivo: ${d.motivo}] Aplicar la observación con precaución.`,
+          });
+        }
+        if (recovered.length > 0) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `[Fix42] Refiner descartó ${dropped.length}/${dropped.length + refined.length} instrucción(es) del informe automático. Recuperadas ${recovered.length} con prefijo "[Sin anclaje literal — verificar]" porque apuntan a capítulos válidos y vienen del propio sistema (Holístico/Beta). El usuario puede revisarlas o deseleccionarlas en la previsualización.`,
+            agentRole: "editor",
+          });
+          return [...refined, ...recovered];
+        }
       }
 
       return refined.length > 0 ? refined : draftInstructions;
@@ -11420,6 +11585,11 @@ Responde SOLO con un JSON válido con la estructura:
 
             // Registrar las acciones administrativas pendientes (NO se aplican
             // automáticamente — son destructivas y requieren confirmación).
+            // [Fix40] Además de loguearlas, las persistimos en
+            // projects.pendingAdminActions para que la UI las muestre y el
+            // usuario pueda revisarlas/descartarlas explícitamente sin tener
+            // que rebuscar en el activity log.
+            const adminToPersist: any[] = [];
             for (const admin of (translatorResult.pendingAdministrativeActions || [])) {
               const targetSec = refreshedSectionsForExec.find((s: any) => s.numero === admin.targetChapterNumber);
               const targetLabel = targetSec ? this.getSectionLabel(targetSec) : `chapter ${admin.targetChapterNumber}`;
@@ -11432,6 +11602,31 @@ Responde SOLO con un JSON válido con la estructura:
                 message: `ACCIÓN PENDIENTE DE CONFIRMACIÓN — operación administrativa "${admin.type}" sobre ${targetLabel}${secondaryStr}. Motivo: ${admin.reason}. No se aplicó automáticamente porque es destructiva. Confírmala manualmente desde la herramienta correspondiente cuando hayas verificado que las reescrituras de prosa quedaron bien integradas.`,
                 agentRole: "editor",
               });
+              adminToPersist.push({
+                type: admin.type,
+                targetChapter: admin.targetChapterNumber,
+                targetLabel,
+                secondaryChapter: typeof admin.secondaryChapterNumber === "number" ? admin.secondaryChapterNumber : null,
+                reason: admin.reason,
+                source: "structural-translator",
+                createdAt: new Date().toISOString(),
+              });
+            }
+            // [Fix40] Persistir merge atómico: leemos el proyecto fresco para
+            // no perder admins persistidas en otros forks concurrentes.
+            if (adminToPersist.length > 0) {
+              try {
+                const fresh = await storage.getProject(project.id);
+                const existing = Array.isArray((fresh as any)?.pendingAdminActions) ? (fresh as any).pendingAdminActions : [];
+                const nextId = existing.reduce((max: number, a: any) => Math.max(max, Number(a?.id) || 0), 0) + 1;
+                const merged = [
+                  ...existing,
+                  ...adminToPersist.map((a, idx) => ({ id: nextId + idx, ...a })),
+                ];
+                await storage.updateProject(project.id, { pendingAdminActions: merged } as any);
+              } catch (persistErr: any) {
+                console.error("[Fix40] Failed to persist pendingAdminActions:", persistErr?.message || persistErr);
+              }
             }
 
             // Liberar el capítulo actual: la nota era estructural, este cap

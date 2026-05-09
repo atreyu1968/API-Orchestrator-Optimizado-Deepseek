@@ -125,6 +125,13 @@ export const projects = pgTable("projects", {
   // Se sobreescribe tras cada runBetaReview exitoso. Truncado a 24k chars.
   lastBetaNotes: text("last_beta_notes"),
   lastBetaNotesAt: timestamp("last_beta_notes_at"),
+  // [Fix40] Acciones administrativas pendientes emitidas por el StructuralInstructionTranslator
+  // (delete_chapter, merge_chapters, split_chapter, swap_chapters, reorder_chapters,
+  // move_content). El sistema NO las aplica automáticamente porque son destructivas;
+  // las persiste aquí para que la UI las muestre, el usuario las revise y las descarte
+  // o las ejecute manualmente desde la herramienta de gestión de capítulos.
+  // Cada item: { id, type, targetChapter, secondaryChapter?, reason, source, createdAt }.
+  pendingAdminActions: jsonb("pending_admin_actions").default([]),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
