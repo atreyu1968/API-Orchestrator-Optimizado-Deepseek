@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { queueManager } from "./queue-manager";
 import { autoResumeReeditProjects, startWatchdog } from "./reedit-auto-resume";
 import { setupAuth, authMiddleware, isAuthEnabled } from "./auth";
+import { assertSchemaUpToDate } from "./startup-schema-check";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -76,6 +77,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  await assertSchemaUpToDate();
   await setupAuth(app);
   app.use(authMiddleware);
 

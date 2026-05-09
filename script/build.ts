@@ -44,11 +44,19 @@ async function buildAll() {
   if (process.env.SKIP_DB_PUSH === "1") {
     console.log("skipping database schema push (SKIP_DB_PUSH=1)");
   } else {
+    if (!process.env.DATABASE_URL) {
+      console.error("ERROR: DATABASE_URL is not set in the build environment.");
+      console.error("Either export it (e.g. `set -a; source /etc/litagents/env; set +a`)");
+      console.error("or pass SKIP_DB_PUSH=1 if the deploy script already pushed the schema.");
+      process.exit(1);
+    }
     console.log("pushing database schema...");
     try {
       execSync("npx drizzle-kit push --force", { stdio: "inherit", timeout: 120000 });
     } catch (e) {
-      console.warn("Database push warning (may be expected):", (e as Error).message || e);
+      console.error("ERROR: drizzle-kit push failed:", (e as Error).message || e);
+      console.error("Refusing to build with an out-of-sync schema. Fix the push or set SKIP_DB_PUSH=1 if it was already applied.");
+      process.exit(1);
     }
   }
 
