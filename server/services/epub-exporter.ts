@@ -236,7 +236,7 @@ p.first-para, p.no-indent, .center p { text-indent: 0; }
 .center { text-align: center; }
 .title-page { text-align: center; padding-top: 25%; }
 .title-page h1.book-title { font-size: 2.2em; margin-bottom: 0.2em; }
-.title-page p.author { font-size: 1.2em; font-style: italic; margin-top: 1em; }
+.title-page p.author { font-size: 1.2em; font-style: italic; margin-top: 1em; text-align: center; text-indent: 0; }
 .title-page .publisher-logo { margin-top: 6em; }
 .title-page .publisher-logo img { max-width: 30%; height: auto; }
 .copyright { font-size: 0.9em; line-height: 1.6; padding: 2em 0; }
