@@ -368,7 +368,7 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
   // El div envolvente fuerza salto de página para que ningún lector EPUB
   // funda esta página con el copyright que viene a continuación.
   const titlePageBody = `
-<div style="page-break-after: always; break-after: page; min-height: 95vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding-top: 30%;">
+<div class="title-page" style="page-break-after: always; break-after: page; text-align: center; padding-top: 25%;">
 ${titleAuthorBlock}
 ${logoBlock}
 </div>`;
