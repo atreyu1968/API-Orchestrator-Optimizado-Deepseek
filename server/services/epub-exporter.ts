@@ -367,7 +367,7 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
     : "";
   const titlePageBody = `
 <div style="page-break-after: always; break-after: page;">
-  <h1 class="book-title" style="text-align:center; text-indent:0; margin: 4.8em 10% 0 10%; font-size: 1.85em; line-height: 1.2em; letter-spacing: 0.05em;">${escapeHtml(data.title)}</h1>
+  <h1 class="book-title" style="text-align:center; text-indent:0; margin: 10em 10% 0 10%; font-size: 1.85em; line-height: 1.2em; letter-spacing: 0.05em;">${escapeHtml(data.title)}</h1>
   <h2 class="author" style="text-align:center; text-indent:0; margin: 1.8em 15% 0 15%; font-size: 1.4em; line-height: 1.2em; font-weight:normal; font-style:italic;">${escapeHtml(authorName)}</h2>
   ${logoBlockCentered}
 </div>`;
