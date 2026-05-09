@@ -8,6 +8,15 @@ export interface EpubGenericChapter {
   content: string;
 }
 
+export type EpubStyleId = "classic" | "modern" | "romance" | "minimal";
+
+export const EPUB_STYLE_OPTIONS: { id: EpubStyleId; label: string; description: string }[] = [
+  { id: "classic",  label: "Clásico",      description: "Serif tradicional (Georgia), capitulares, portada con título grande." },
+  { id: "modern",   label: "Moderno",      description: "Sans-serif (Helvetica), sin capitulares, título en mayúsculas." },
+  { id: "romance",  label: "Romance",      description: "Garamond elegante, título en cursiva, adornos florales entre escenas." },
+  { id: "minimal",  label: "Minimalista",  description: "Limpio y compacto, espaciado reducido, sin capitulares ni adornos." },
+];
+
 export interface EpubGenericData {
   title: string;
   authorName?: string;
@@ -19,6 +28,7 @@ export interface EpubGenericData {
   chapters: EpubGenericChapter[];
   backMatter?: ProjectBackMatter | null;
   backMatterBooks?: BookCatalogEntry[];
+  styleId?: EpubStyleId;
 }
 
 export interface EpubProjectData {
@@ -31,6 +41,7 @@ export interface EpubProjectData {
   publisher?: Publisher | null;
   backMatter?: ProjectBackMatter | null;
   backMatterBooks?: BookCatalogEntry[];
+  styleId?: EpubStyleId;
 }
 
 interface EpubLabels {
@@ -223,25 +234,20 @@ function buildContainerXml(): string {
 </container>`;
 }
 
-function buildStylesCss(): string {
-  return `@charset "UTF-8";
+function buildStylesCss(styleId: EpubStyleId = "classic"): string {
+  // Common rules shared across all themes
+  const common = `@charset "UTF-8";
 @namespace epub "http://www.idpf.org/2007/ops";
 
-body { font-family: Georgia, "Times New Roman", serif; line-height: 1.5; margin: 0 1em; color: #111; }
-h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; font-weight: bold; text-align: center; page-break-after: avoid; }
-h1 { font-size: 1.6em; margin: 2em 0 1em 0; }
-h2 { font-size: 1.3em; margin: 1.5em 0 0.8em 0; }
-p { text-indent: 1.5em; margin: 0 0 0.4em 0; text-align: justify; }
+body { line-height: 1.5; margin: 0 1em; color: #111; }
+h1, h2, h3 { font-weight: bold; text-align: center; page-break-after: avoid; }
 p.first-para, p.no-indent, .center p { text-indent: 0; }
 .center { text-align: center; }
-.title-page { text-align: center; padding-top: 25%; }
-.title-page h1.book-title { font-size: 2.2em; margin-bottom: 0.2em; }
-.title-page p.author { font-size: 1.2em; font-style: italic; margin-top: 1em; text-align: center; text-indent: 0; }
+.title-page { text-align: center; padding-top: 22%; }
 .title-page .publisher-logo { margin-top: 6em; }
 .title-page .publisher-logo img { max-width: 30%; height: auto; }
 .copyright { font-size: 0.9em; line-height: 1.6; padding: 2em 0; }
 .copyright p { text-indent: 0; text-align: left; margin-bottom: 0.6em; }
-.drop-cap { float: left; font-size: 4.2em; line-height: 0.85; padding-right: 0.08em; padding-top: 0.05em; font-weight: bold; }
 nav#toc ol { list-style-type: none; padding: 0; }
 nav#toc li { margin: 0.4em 0; }
 nav#toc a { text-decoration: none; color: #222; }
@@ -249,8 +255,52 @@ nav#toc a { text-decoration: none; color: #222; }
 .also-by ul { list-style-type: none; padding: 0; text-align: center; }
 .also-by li { margin: 0.5em 0; font-style: italic; }
 hr.section-break { border: none; text-align: center; margin: 1.2em 0; }
-hr.section-break:before { content: "\\2756 \\00A0 \\2756 \\00A0 \\2756"; color: #555; }
 `;
+
+  const themes: Record<EpubStyleId, string> = {
+    classic: `body { font-family: Georgia, "Times New Roman", serif; }
+h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; }
+h1 { font-size: 1.6em; margin: 2em 0 1em 0; }
+h2 { font-size: 1.3em; margin: 1.5em 0 0.8em 0; }
+p { text-indent: 1.5em; margin: 0 0 0.4em 0; text-align: justify; }
+.title-page h1.book-title { font-size: 2.2em; margin-bottom: 0.2em; }
+.title-page h2.author { font-size: 1.2em; font-weight: normal; font-style: italic; margin-top: 1em; }
+.drop-cap { float: left; font-size: 4.2em; line-height: 0.85; padding-right: 0.08em; padding-top: 0.05em; font-weight: bold; }
+hr.section-break:before { content: "\\2756 \\00A0 \\2756 \\00A0 \\2756"; color: #555; }
+`,
+    modern: `body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+h1, h2, h3 { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0.04em; }
+h1 { font-size: 1.5em; margin: 2.2em 0 1.2em 0; text-transform: uppercase; }
+h2 { font-size: 1.2em; margin: 1.5em 0 0.8em 0; }
+p { text-indent: 0; margin: 0 0 0.9em 0; text-align: left; }
+.title-page h1.book-title { font-size: 2em; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4em; font-weight: 700; }
+.title-page h2.author { font-size: 1em; font-weight: 400; font-style: normal; margin-top: 1.2em; text-transform: uppercase; letter-spacing: 0.15em; color: #444; }
+.drop-cap { float: none; font-size: 1em; font-weight: bold; padding: 0; }
+hr.section-break:before { content: "\\2014 \\00A0 \\2014 \\00A0 \\2014"; color: #888; letter-spacing: 0.3em; }
+`,
+    romance: `body { font-family: "EB Garamond", Garamond, "Hoefler Text", "Times New Roman", serif; }
+h1, h2, h3 { font-family: "EB Garamond", Garamond, "Hoefler Text", "Times New Roman", serif; font-weight: normal; }
+h1 { font-size: 1.7em; margin: 2em 0 1em 0; font-style: italic; }
+h2 { font-size: 1.3em; margin: 1.5em 0 0.8em 0; font-style: italic; }
+p { text-indent: 1.6em; margin: 0 0 0.4em 0; text-align: justify; }
+.title-page h1.book-title { font-size: 2.4em; font-style: italic; font-weight: normal; margin-bottom: 0.3em; }
+.title-page h2.author { font-size: 1.15em; font-weight: normal; font-style: normal; margin-top: 1.4em; letter-spacing: 0.1em; text-transform: uppercase; color: #5a3a3a; }
+.drop-cap { float: left; font-size: 4.6em; line-height: 0.85; padding-right: 0.1em; padding-top: 0.05em; font-weight: normal; font-style: italic; color: #5a3a3a; }
+hr.section-break:before { content: "\\273F \\00A0 \\273F \\00A0 \\273F"; color: #a06868; }
+`,
+    minimal: `body { font-family: "Iowan Old Style", "Palatino", "Palatino Linotype", Georgia, serif; }
+h1, h2, h3 { font-family: "Iowan Old Style", "Palatino", "Palatino Linotype", Georgia, serif; font-weight: normal; }
+h1 { font-size: 1.3em; margin: 1.6em 0 0.8em 0; }
+h2 { font-size: 1.1em; margin: 1.2em 0 0.6em 0; }
+p { text-indent: 1.2em; margin: 0 0 0.25em 0; text-align: justify; }
+.title-page h1.book-title { font-size: 1.7em; font-weight: normal; margin-bottom: 0.4em; }
+.title-page h2.author { font-size: 1em; font-weight: normal; font-style: normal; margin-top: 1em; color: #555; }
+.drop-cap { float: none; font-size: 1em; font-weight: normal; padding: 0; }
+hr.section-break:before { content: "\\2022 \\00A0 \\2022 \\00A0 \\2022"; color: #999; }
+`,
+  };
+
+  return common + themes[styleId];
 }
 
 function xhtmlPage(title: string, lang: string, bodyClass: string, bodyHtml: string): string {
@@ -283,11 +333,14 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
   const publisherLogo = parseDataUrl(publisher?.logoDataUrl);
   const bookUuid = uuidv4Fallback();
 
+  const styleId: EpubStyleId = data.styleId || "classic";
+  const useDropCap = styleId === "classic" || styleId === "romance";
+
   const zip = new JSZip();
   // mimetype must be FIRST and STORED (uncompressed) per EPUB spec.
   zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
   zip.file("META-INF/container.xml", buildContainerXml());
-  zip.file("OEBPS/css/styles.css", buildStylesCss());
+  zip.file("OEBPS/css/styles.css", buildStylesCss(styleId));
 
   if (publisherLogo) {
     zip.file(`OEBPS/image/publisher-logo.${publisherLogo.ext}`, publisherLogo.buffer);
@@ -351,7 +404,7 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
     }
     const body = `
 <h1>${escapeHtml(heading)}</h1>
-${paragraphsToHtml(ch.content, { dropCap: true })}`;
+${paragraphsToHtml(ch.content, { dropCap: useDropCap })}`;
     const filename = `xhtml/${safeId(id)}.xhtml`;
     zip.file(`OEBPS/${filename}`, xhtmlPage(heading, lang, "chapter-body", body));
     sections.push({ filename, id: safeId(id), title: heading, includeInToc: true });
@@ -488,5 +541,6 @@ export async function generateManuscriptEpub(data: EpubProjectData): Promise<Buf
     chapters: allChapters,
     backMatter,
     backMatterBooks,
+    styleId: data.styleId,
   });
 }

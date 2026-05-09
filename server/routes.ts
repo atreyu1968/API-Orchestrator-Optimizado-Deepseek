@@ -695,6 +695,10 @@ export async function registerRoutes(
       const publisherId = req.query.publisherId ? parseInt(String(req.query.publisherId)) : null;
       const publisher = publisherId ? await storage.getPublisher(publisherId) : null;
 
+      const validStyles = ["classic", "modern", "romance", "minimal"] as const;
+      const styleParam = String(req.query.styleId || "").toLowerCase();
+      const styleId = (validStyles as readonly string[]).includes(styleParam) ? (styleParam as typeof validStyles[number]) : "classic";
+
       const backMatter = await storage.getProjectBackMatter(id);
       let backMatterBooks: any[] = [];
       if (backMatter?.enableAlsoBy && backMatter.selectedBookIds) {
@@ -705,7 +709,7 @@ export async function registerRoutes(
 
       const buffer = await generateManuscriptEpub({
         project, chapters: regularChapters, pseudonym, prologue, epilogue, authorNote,
-        publisher, backMatter, backMatterBooks,
+        publisher, backMatter, backMatterBooks, styleId,
       });
 
       const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, "").replace(/\s+/g, "_");
@@ -9592,6 +9596,10 @@ CRITERIOS:
       const publisherId = req.query.publisherId ? parseInt(String(req.query.publisherId)) : null;
       const publisher = publisherId ? await storage.getPublisher(publisherId) : null;
 
+      const validStyles = ["classic", "modern", "romance", "minimal"] as const;
+      const styleParam = String(req.query.styleId || "").toLowerCase();
+      const styleId = (validStyles as readonly string[]).includes(styleParam) ? (styleParam as typeof validStyles[number]) : "classic";
+
       const backMatter = await storage.getProjectBackMatterByReedit(projectId);
       let backMatterBooks: any[] = [];
       if (backMatter?.enableAlsoBy && backMatter.selectedBookIds) {
@@ -9616,6 +9624,7 @@ CRITERIOS:
           })),
         backMatter,
         backMatterBooks,
+        styleId,
       });
 
       const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñüÁÉÍÓÚÑÜ\s-]/g, "").trim().replace(/\s+/g, "_");

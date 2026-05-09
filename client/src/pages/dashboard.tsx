@@ -79,6 +79,7 @@ export default function Dashboard() {
   const [showExtendDialog, setShowExtendDialog] = useState(false);
   const [showEpubDialog, setShowEpubDialog] = useState(false);
   const [epubPublisherId, setEpubPublisherId] = useState<string>("none");
+  const [epubStyleId, setEpubStyleId] = useState<string>("classic");
   const { data: publishersList = [] } = useQuery<Publisher[]>({ queryKey: ["/api/publishers"] });
   const [targetChapters, setTargetChapters] = useState("");
   const { projects, currentProject, setSelectedProjectId } = useProject();
@@ -2185,13 +2186,27 @@ export default function Dashboard() {
             {publishersList.length === 0 && (
               <p className="text-xs text-muted-foreground">No hay editoriales. Puedes crearlas en la sección "Editoriales" del menú lateral.</p>
             )}
+            <Label className="pt-2">Estilo del EPUB</Label>
+            <Select value={epubStyleId} onValueChange={setEpubStyleId}>
+              <SelectTrigger data-testid="select-epub-style"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="classic">Clásico — Georgia, capitulares, portada grande</SelectItem>
+                <SelectItem value="modern">Moderno — sans-serif, título en mayúsculas</SelectItem>
+                <SelectItem value="romance">Romance — Garamond cursiva, adornos florales</SelectItem>
+                <SelectItem value="minimal">Minimalista — limpio y compacto</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Cambia tipografía, capitulares, espaciado y diseño de portada.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEpubDialog(false)}>Cancelar</Button>
             <Button
               onClick={() => {
                 if (!currentProject) return;
-                const qs = epubPublisherId !== "none" ? `?publisherId=${epubPublisherId}` : "";
+                const params = new URLSearchParams();
+                if (epubPublisherId !== "none") params.set("publisherId", epubPublisherId);
+                params.set("styleId", epubStyleId);
+                const qs = `?${params.toString()}`;
                 window.open(`/api/projects/${currentProject.id}/export-epub${qs}`, "_blank");
                 setShowEpubDialog(false);
               }}
