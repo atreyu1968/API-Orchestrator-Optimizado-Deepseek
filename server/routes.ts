@@ -8149,7 +8149,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const { title, language = "es", expandChapters, insertNewChapters, targetMinWordsPerChapter, instructions, editorialCritique } = req.body;
+      const { title, language = "es", expandChapters, insertNewChapters, targetMinWordsPerChapter, instructions, editorialCritique, autoBetaLoopOnTranslations, autoBetaLoopOnTranslationsMaxIterations } = req.body;
       if (!title) {
         return res.status(400).json({ error: "Title is required" });
       }
@@ -8170,6 +8170,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         expandChapters: expandChapters === "true",
         insertNewChapters: insertNewChapters === "true",
         targetMinWordsPerChapter: parseInt(targetMinWordsPerChapter) || 2000,
+        autoBetaLoopOnTranslations: autoBetaLoopOnTranslations === "true" || autoBetaLoopOnTranslations === true,
+        autoBetaLoopOnTranslationsMaxIterations: Math.max(1, Math.min(10, parseInt(autoBetaLoopOnTranslationsMaxIterations) || 2)),
         architectInstructions: instructions?.trim() || null,
         editorialCritique: editorialCritique?.trim() || null,
       });

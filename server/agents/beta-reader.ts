@@ -16,7 +16,17 @@ interface BetaReaderInput {
   // lectura anterior. Si llega, NO repitas las mismas observaciones literales:
   // céntrate en lo que ha cambiado entre lecturas y en aspectos que no tocaste.
   previousBetaNotes?: string;
+  // [Fix52] Si el manuscrito es una TRADUCCIÓN al idioma `targetLanguage`,
+  // el Beta debe valorar fluidez/naturalidad/modismos del idioma destino y
+  // NO retraducir ni proponer cambios de significado.
+  translationMode?: boolean;
+  targetLanguage?: string;
 }
+
+const TRANSLATION_LANG_NAMES: Record<string, string> = {
+  es: "español", en: "inglés", fr: "francés", de: "alemán",
+  it: "italiano", pt: "portugués", ca: "catalán",
+};
 
 export interface BetaReaderResult {
   notesText: string;
@@ -194,6 +204,13 @@ export class BetaReaderAgent extends BaseAgent {
     // repitas las mismas observaciones literales: o el autor las ignoró
     // intencionadamente y reincidir es ruido, o ya están aplicadas y deberías
     // notarlo. Tu valor en esta segunda lectura está en lo NUEVO.
+    // [Fix52] Bloque adicional cuando el manuscrito es una traducción.
+    // El Beta debe juzgar el resultado en el idioma destino, NO proponer
+    // alteraciones de significado, y enfocarse en fluidez y naturalidad.
+    const translationBlock = input.translationMode
+      ? `\n\n═══════════════════════════════════════════════════════════════════\n## CONTEXTO CRÍTICO: ESTO ES UNA TRADUCCIÓN\n═══════════════════════════════════════════════════════════════════\n\nEl texto que vas a leer es una **traducción al ${TRANSLATION_LANG_NAMES[input.targetLanguage || "es"] || input.targetLanguage || "idioma destino"}** de un manuscrito originalmente escrito en otro idioma.\n\nTu trabajo en esta lectura es REDUCIDO Y ESPECÍFICO:\n- Evalúa la **fluidez y naturalidad** del texto en ${TRANSLATION_LANG_NAMES[input.targetLanguage || "es"] || "el idioma destino"}.\n- Marca frases que suenan a **traducción literal** o **calco sintáctico** (estructuras del idioma original que no funcionan en el destino).\n- Marca **falsos amigos**, modismos mal localizados, registros incorrectos para el género, palabras que un lector nativo no usaría.\n- Marca **inconsistencias terminológicas** (un mismo término traducido de dos formas distintas).\n- Marca **fragmentos sin traducir** o residuos del idioma original que se han colado.\n\nLO QUE NO DEBES HACER (CRÍTICO):\n- NO propongas cambios de **significado** ni de **contenido narrativo** (eso ya se trabajó en el original).\n- NO propongas **retraducir** secciones enteras ni **reescribir** capítulos.\n- NO juzgues la **estructura**, **arcos de personajes**, **ritmo narrativo** ni **decisiones de trama** — todo eso ya se validó en el manuscrito original.\n- NO propongas eliminar/fusionar capítulos.\n- Tu único valor aquí es la **calidad lingüística del texto en ${TRANSLATION_LANG_NAMES[input.targetLanguage || "es"] || "el idioma destino"}**.\n\nEl JSON de instrucciones SOLO debe contener tipos "puntual" o "estructural" con tu intervención limitada a fluidez/naturalidad/terminología. Prohibido tipos "eliminar", "fusionar". El valor del campo "categoria" debe ser "estilo" o "dialogo" en el 90% de los casos. Tu informe en lenguaje natural también debe centrarse exclusivamente en estos aspectos lingüísticos; los apartados de "PERSONAJES", "GIROS", "EXPECTATIVAS", "MUNDO Y ATMÓSFERA" puedes dejarlos vacíos o muy breves si no detectas problemas LINGÜÍSTICOS específicos en ellos.\n═══════════════════════════════════════════════════════════════════`
+      : "";
+
     const previousNotesBlock = (input.previousBetaNotes && input.previousBetaNotes.trim().length > 200)
       ? `\n\n═══════════════════════════════════════════════════════════════════\n## NOTAS DE TU LECTURA ANTERIOR (no las repitas)\n═══════════════════════════════════════════════════════════════════\n\n${input.previousBetaNotes.slice(0, 24000)}\n\nIMPORTANTE: arriba están las impresiones que TÚ MISMO emitiste sobre este manuscrito la última vez. En esta nueva lectura:\n- Si una observación previa SIGUE vigente porque el autor no la corrigió, mencionala muy brevemente ("ya lo dije la vez pasada y sigo notándolo en cap N") sin desarrollarla de nuevo, y NO la repitas en el JSON de instrucciones.\n- Si una observación previa YA ESTÁ resuelta, dilo explícitamente en una sola frase ("la pega del cap 12 que comenté antes ya no me molestó esta vez").\n- Centra el grueso de tu informe en aspectos NUEVOS que percibas, en cambios derivados de las correcciones, o en problemas que la primera lectura no captó.\n- En el bloque de INSTRUCCIONES_AUTOAPLICABLES, NO emitas instrucciones que sean clones (mismo capítulo + mismo problema) de las que ya emitiste antes.`
       : "";
@@ -209,7 +226,7 @@ Palabras totales aproximadas: ${totalWords.toLocaleString("es-ES")}`;
       .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(sección vacía)"}`)
       .join("");
 
-    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${previousNotesBlock}
+    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${translationBlock}${previousNotesBlock}
 
 ═══════════════════════════════════════════════════════════════════
 NOVELA COMPLETA QUE ACABAS DE LEER

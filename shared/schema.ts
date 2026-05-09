@@ -691,6 +691,12 @@ export const reeditProjects = pgTable("reedit_projects", {
   // [Fix34] Instrucciones del Holístico+Beta parseadas y pendientes de aprobación humana.
   // Mismo shape que projects.pendingEditorialParse: { resumen_general, instrucciones, count, completedAt, source }.
   pendingEditorialParse: jsonb("pending_editorial_parse"),
+  // [Fix52] Auto-loop del Lector Beta SOBRE TRADUCCIONES en idioma destino.
+  // Si está activo y el reedit es una traducción, tras Stage 8 el Beta lee
+  // en idioma destino, parsea, aplica automáticamente y vuelve a leer hasta
+  // satisfacción o `autoBetaLoopOnTranslationsMaxIterations` (default 2).
+  autoBetaLoopOnTranslations: boolean("auto_beta_loop_on_translations").default(false),
+  autoBetaLoopOnTranslationsMaxIterations: integer("auto_beta_loop_on_translations_max_iterations").default(2),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

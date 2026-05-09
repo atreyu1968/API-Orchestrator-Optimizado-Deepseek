@@ -712,6 +712,8 @@ export default function ReeditPage() {
   const [expandChapters, setExpandChapters] = useState(false);
   const [insertNewChapters, setInsertNewChapters] = useState(false);
   const [targetMinWords, setTargetMinWords] = useState(2000);
+  const [autoBetaLoopOnTranslations, setAutoBetaLoopOnTranslations] = useState(false);
+  const [autoBetaLoopOnTranslationsMaxIter, setAutoBetaLoopOnTranslationsMaxIter] = useState(2);
   const [uploadInstructions, setUploadInstructions] = useState("");
   const [uploadEditorialCritique, setUploadEditorialCritique] = useState("");
   
@@ -1038,6 +1040,8 @@ export default function ReeditPage() {
     formData.append("expandChapters", expandChapters.toString());
     formData.append("insertNewChapters", insertNewChapters.toString());
     formData.append("targetMinWordsPerChapter", targetMinWords.toString());
+    formData.append("autoBetaLoopOnTranslations", autoBetaLoopOnTranslations.toString());
+    formData.append("autoBetaLoopOnTranslationsMaxIterations", autoBetaLoopOnTranslationsMaxIter.toString());
     if (uploadInstructions.trim()) {
       formData.append("instructions", uploadInstructions.trim());
     }
@@ -1051,7 +1055,7 @@ export default function ReeditPage() {
     } finally {
       setIsUploading(false);
     }
-  }, [uploadFile, uploadTitle, uploadLanguage, expandChapters, insertNewChapters, targetMinWords, uploadInstructions, uploadEditorialCritique, uploadMutation, toast]);
+  }, [uploadFile, uploadTitle, uploadLanguage, expandChapters, insertNewChapters, targetMinWords, autoBetaLoopOnTranslations, autoBetaLoopOnTranslationsMaxIter, uploadInstructions, uploadEditorialCritique, uploadMutation, toast]);
 
   useEffect(() => {
     if (!selectedProject && projects.length > 0) {
@@ -1148,6 +1152,40 @@ export default function ReeditPage() {
                       min={500}
                       max={5000}
                       step={100}
+                      className="mt-1"
+                    />
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <div className="flex flex-col">
+                    <Label htmlFor="auto-beta-translation" className="text-sm cursor-pointer">
+                      Pulido Beta automático (traducciones)
+                    </Label>
+                    <span className="text-xs text-muted-foreground">
+                      Solo si este manuscrito es una traducción. Relee y pule fluidez en idioma destino.
+                    </span>
+                  </div>
+                  <Switch
+                    id="auto-beta-translation"
+                    data-testid="switch-auto-beta-translation"
+                    checked={autoBetaLoopOnTranslations}
+                    onCheckedChange={setAutoBetaLoopOnTranslations}
+                  />
+                </div>
+                {autoBetaLoopOnTranslations && (
+                  <div>
+                    <Label htmlFor="auto-beta-translation-iter" className="text-sm">
+                      Máx. iteraciones del loop Beta
+                    </Label>
+                    <Input
+                      id="auto-beta-translation-iter"
+                      type="number"
+                      data-testid="input-auto-beta-translation-iter"
+                      value={autoBetaLoopOnTranslationsMaxIter}
+                      onChange={(e) => setAutoBetaLoopOnTranslationsMaxIter(Math.max(1, Math.min(10, parseInt(e.target.value) || 2)))}
+                      min={1}
+                      max={10}
+                      step={1}
                       className="mt-1"
                     />
                   </div>

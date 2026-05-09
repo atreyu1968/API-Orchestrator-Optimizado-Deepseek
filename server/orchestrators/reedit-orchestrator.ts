@@ -5264,8 +5264,177 @@ export class ReeditOrchestrator {
         totalChapters: validChapters.length,
         message: `Post-reedit completado. Informes disponibles: ${results.filter(r => r.ok).map(r => r.kind).join(", ") || "ninguno"}.`,
       });
+
+      // [Fix52] Auto-loop del Lector Beta sobre traducciones (opt-in).
+      // Si el usuario marcó `autoBetaLoopOnTranslations`, ejecuta el loop
+      // apply-and-reread con prompt en modo traducción (solo fluidez/idiomatismos).
+      if ((project as any).autoBetaLoopOnTranslations) {
+        await this.runAutoBetaLoopOnTranslation(projectId, projectTitle).catch(e => {
+          console.error(`[ReeditOrchestrator Stage8][Fix52] Auto-loop traducción falló:`, e);
+        });
+      }
     } catch (error) {
       console.error(`[ReeditOrchestrator Stage8] Error general en post-reviews del proyecto ${projectId}:`, error);
+    }
+  }
+
+  /**
+   * [Fix52] Auto-loop apply-and-reread del Lector Beta especializado en
+   * traducciones. Lee el manuscrito en idioma destino, parsea instrucciones
+   * lingüísticas (fluidez/calcos/falsos amigos/inconsistencias terminológicas),
+   * aplica las auto-aplicables vía SurgicalPatcher y vuelve a leer hasta que el
+   * Beta esté satisfecho o se alcance el máximo de iteraciones.
+   *
+   * Criterio de aprobación (igual que Fix47): `total === 0 || (altas === 0 && total <= 3)`.
+   * Por defecto max 2 iteraciones (las traducciones suelen converger rápido).
+   */
+  private async runAutoBetaLoopOnTranslation(projectId: number, projectTitle: string): Promise<void> {
+    const initialProject = await storage.getReeditProject(projectId);
+    if (!initialProject) return;
+    const maxIterations = Math.max(1, Math.min(10, (initialProject as any).autoBetaLoopOnTranslationsMaxIterations || 2));
+    const targetLanguage = ((initialProject as any).detectedLanguage || "es").toLowerCase();
+    const betaAgent = new BetaReaderAgent();
+
+    await logReeditEvent(projectId, "info", "auto_beta_loop_translation",
+      `[Fix52] Auto-loop Beta (traducción → ${targetLanguage}) iniciado (máx ${maxIterations} iteraciones).`, {});
+
+    for (let iter = 1; iter <= maxIterations; iter++) {
+      const cancelCheck = await storage.getReeditProject(projectId);
+      if (!cancelCheck || cancelCheck.cancelRequested) {
+        await logReeditEvent(projectId, "info", "auto_beta_loop_translation",
+          `[Fix52] Auto-loop abortado en iteración ${iter}: cancelación solicitada.`, {});
+        return;
+      }
+
+      const chapters = await storage.getReeditChaptersByProject(projectId);
+      const validChapters = sortChaptersByNarrativeOrder(
+        chapters.filter(c => (c.editedContent && c.editedContent.trim().length > 0) || (c.originalContent && c.originalContent.trim().length > 0))
+      );
+      if (validChapters.length === 0) return;
+      const reviewerChapters = validChapters.map(c => ({
+        numero: c.chapterNumber,
+        titulo: c.title || "",
+        contenido: (c.editedContent && c.editedContent.trim()) ? c.editedContent : (c.originalContent || ""),
+      }));
+
+      this.emitProgress({
+        projectId,
+        stage: "auto_beta_loop_translation",
+        currentChapter: validChapters.length,
+        totalChapters: validChapters.length,
+        message: `[Fix52] Iteración ${iter}/${maxIterations}: Lector Beta releyendo traducción en modo lingüístico…`,
+      });
+
+      let beta;
+      try {
+        beta = await betaAgent.runReview({
+          projectTitle,
+          chapters: reviewerChapters,
+          translationMode: true,
+          targetLanguage,
+        }, projectId);
+      } catch (e) {
+        await logReeditEvent(projectId, "warn", "auto_beta_loop_translation",
+          `[Fix52] Iteración ${iter}: Beta falló (${(e as Error).message.slice(0, 200)}). Loop abortado.`, {});
+        return;
+      }
+      const notesText = (beta?.notesText || "").trim();
+      if (!notesText) {
+        await logReeditEvent(projectId, "info", "auto_beta_loop_translation",
+          `[Fix52] Iteración ${iter}: el Beta no devolvió observaciones. Traducción APROBADA.`, {});
+        return;
+      }
+
+      let parsed: ReeditPendingEditorialParse;
+      try {
+        parsed = await parseHolisticBetaForReedit({
+          notesText: `═══ INFORME DEL LECTOR BETA (TRADUCCIÓN) ═══\n${notesText}`,
+          chapterIndex: reviewerChapters.map(c => ({ numero: c.numero, titulo: c.titulo })),
+          projectTitle,
+        });
+      } catch (e) {
+        const parserMsg = (e as Error).message.slice(0, 200);
+        await logReeditEvent(projectId, "warn", "auto_beta_loop_translation",
+          `[Fix52] Iteración ${iter}: parser falló (${parserMsg}). Persistidas notas crudas del Beta para revisión manual.`, {});
+        // Persistimos las notas crudas como audit_report para que el usuario las
+        // tenga accesibles. NO sobrescribimos pendingEditorialParse si ya tiene
+        // instrucciones útiles de Stage 8 — preservamos el trabajo previo.
+        try {
+          await storage.createReeditAuditReport({
+            projectId,
+            auditType: "auto_beta_loop_translation_raw",
+            findings: {
+              iteration: iter,
+              parserError: parserMsg,
+              notesText: notesText.slice(0, 60000),
+              targetLanguage,
+            },
+          } as any);
+        } catch (persistErr) {
+          console.error(`[Fix52] No se pudo persistir audit_report con notas crudas: ${(persistErr as Error).message}`);
+        }
+        const refreshed = await storage.getReeditProject(projectId);
+        const existingPending = (refreshed as any)?.pendingEditorialParse as ReeditPendingEditorialParse | null;
+        const hasUsefulPending = existingPending && Array.isArray(existingPending.instrucciones) && existingPending.instrucciones.length > 0;
+        if (!hasUsefulPending) {
+          await storage.updateReeditProject(projectId, {
+            pendingEditorialParse: {
+              resumen_general: `[Fix52] Notas crudas del Beta (traducción) — parser falló en iteración ${iter}. Ver audit_report "auto_beta_loop_translation_raw".`,
+              instrucciones: [],
+              count: 0,
+              completedAt: new Date().toISOString(),
+              source: "auto_holistic_beta_reedit",
+            } as any,
+          }).catch(() => {});
+        }
+        return;
+      }
+
+      const instructions = parsed.instrucciones || [];
+      const total = instructions.length;
+      const altas = instructions.filter(i => (i.prioridad || "").toLowerCase() === "alta").length;
+      const autoApplicableIds = instructions.filter(i => i.autoApplicable).map(i => i.id);
+
+      if (total === 0 && notesText.length > 600) {
+        await logReeditEvent(projectId, "warn", "auto_beta_loop_translation",
+          `[Fix52] Iteración ${iter}: Beta dejó ${notesText.length} chars de notas pero el parser no extrajo instrucciones aplicables. Persistidas para revisión manual.`, {});
+        // También guardamos las notas crudas como audit report para que el usuario
+        // pueda leerlas aunque parsed.instrucciones esté vacío.
+        try {
+          await storage.createReeditAuditReport({
+            projectId,
+            auditType: "auto_beta_loop_translation_raw",
+            findings: { iteration: iter, parserError: null, notesText: notesText.slice(0, 60000), targetLanguage },
+          } as any);
+        } catch {}
+        await storage.updateReeditProject(projectId, { pendingEditorialParse: parsed as any }).catch(() => {});
+        return;
+      }
+
+      const approved = total === 0 || (altas === 0 && total <= 3);
+      await logReeditEvent(projectId, approved ? "info" : "info", "auto_beta_loop_translation",
+        `[Fix52] Iteración ${iter}/${maxIterations}: ${total} obs, ${altas} altas. ${approved ? "APROBADO." : `Aplicando ${autoApplicableIds.length} auto-aplicables y releyendo…`}`,
+        { context: { total, altas, autoApplicable: autoApplicableIds.length } });
+
+      if (approved) return;
+
+      if (iter >= maxIterations || autoApplicableIds.length === 0) {
+        await storage.updateReeditProject(projectId, { pendingEditorialParse: parsed as any }).catch(() => {});
+        await logReeditEvent(projectId, "warn", "auto_beta_loop_translation",
+          `[Fix52] Máximo alcanzado (${maxIterations}) con ${total} obs (${altas} altas) sin aplicar. Persistidas en pendingEditorialParse.`, {});
+        return;
+      }
+
+      // Persistimos el parseo para que applyHolisticBetaInstructions encuentre
+      // las instrucciones (lee de pendingEditorialParse) y aplicamos las auto-aplicables.
+      await storage.updateReeditProject(projectId, { pendingEditorialParse: parsed as any });
+      try {
+        await this.applyHolisticBetaInstructions(projectId, autoApplicableIds);
+      } catch (e) {
+        await logReeditEvent(projectId, "error", "auto_beta_loop_translation",
+          `[Fix52] applyHolisticBetaInstructions falló en iter ${iter}: ${(e as Error).message.slice(0, 240)}. Loop abortado.`, {});
+        return;
+      }
     }
   }
 
