@@ -364,9 +364,15 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
   <h1 class="book-title" style="text-align:center; text-indent:0; margin:0 0 0.4em 0;">${escapeHtml(data.title)}</h1>
   <h2 class="author" style="text-align:center; text-indent:0; margin:0; font-weight:normal; font-style:italic;">${escapeHtml(authorName)}</h2>
 </div>`;
-  const copyrightBody = `
+  // Página 1: título + autor + logo de la editorial.
+  const titlePageBody = `
 ${titleAuthorBlock}
-${logoBlock}
+${logoBlock}`;
+  zip.file("OEBPS/xhtml/title.xhtml", xhtmlPage(labels.titlePage, lang, "title-page-body", titlePageBody));
+  sections.push({ filename: "xhtml/title.xhtml", id: "title", title: labels.titlePage, includeInToc: false });
+
+  // Página 2: copyright en página separada.
+  const copyrightBody = `
 <div class="copyright">
   <p>${escapeHtml(copyrightLine)}</p>
   ${publisherLine}
