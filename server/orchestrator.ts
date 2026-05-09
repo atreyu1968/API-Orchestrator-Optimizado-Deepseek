@@ -5622,13 +5622,24 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       cursor = eIdx + endMarker.length;
       if (!jsonText) continue;
       let parsedBlock: any;
+      let parseError: string | null = null;
       try { parsedBlock = repairJson(jsonText); }
-      catch {
+      catch (e1: any) {
         try { parsedBlock = JSON.parse(jsonText); }
-        catch { continue; }
+        catch (e2: any) {
+          parseError = `${e1?.message || e1} / fallback: ${e2?.message || e2}`;
+        }
       }
       if (parsedBlock && Array.isArray(parsedBlock.instrucciones)) {
         blockInstructions.push(...parsedBlock.instrucciones);
+      } else if (parseError) {
+        // [Fix54] Antes este caso era `continue` silencioso — las instrucciones del
+        // bloque se perdían sin trazabilidad. Ahora dejamos un log claro para que
+        // el usuario sepa por qué su informe Holístico/Beta no produjo nada.
+        console.warn(`[Fix54] extractAuto: bloque ${blocksFound} con marcadores válidos pero JSON irrecuperable. ` +
+          `Causa: ${parseError}. Snippet (chars 0-200): ${jsonText.slice(0, 200).replace(/\n/g, " ")}`);
+      } else if (parsedBlock && !Array.isArray(parsedBlock.instrucciones)) {
+        console.warn(`[Fix54] extractAuto: bloque ${blocksFound} parseado pero sin campo "instrucciones" como array. Keys: ${Object.keys(parsedBlock).join(", ")}`);
       }
     }
     if (blocksFound === 0) return null;

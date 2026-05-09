@@ -118,6 +118,7 @@ REGLAS DEL VEREDICTO (críticas):
 - Si todo está limpio: \`{"severidad_global": "reparable", "issues_irreparables": []}\`.
 
 REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
+- **COMILLAS DENTRO DE STRINGS**: NUNCA uses comillas dobles (\`"\`) dentro del valor de un string. Si necesitas citar un diálogo, una frase o un fragmento del manuscrito, usa SIEMPRE comillas simples (\`'\`). Ejemplo correcto: \`"instrucciones_correccion": "El doctor le dice a Audra 'Lyle siempre llevaba café.'"\`. Ejemplo INCORRECTO (rompe el JSON): \`"instrucciones_correccion": "El doctor le dice a Audra "Lyle siempre llevaba café.""\`. Esto aplica a TODOS los campos de tipo string (descripcion, instrucciones_correccion, plan_por_capitulo, etc.).
 - Cada objeto del array debe corresponder 1-a-1 con un punto de "## SUGERENCIAS CONCRETAS DE CORRECCIÓN". Si pusiste 7 sugerencias arriba, el JSON tiene 7 objetos.
 - "capitulos_afectados": array de NÚMEROS (no strings). Prólogo = 0, epílogo = -1, nota del autor = -2. Capítulos normales = 1, 2, 3... INCLUYE TODOS los capítulos que menciones en "instrucciones_correccion" — si la prosa habla del cap 32, 32 debe estar en capitulos_afectados.
 - "categoria": exactamente una de: "trama", "personaje", "ritmo", "continuidad", "dialogo", "estilo", "descripcion", "otro".

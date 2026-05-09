@@ -195,6 +195,42 @@ function smartTruncationSalvage(raw: string): any {
   return JSON.parse(truncated);
 }
 
+/**
+ * [Fix54] Escapa comillas dobles INTERNAS no escapadas dentro de strings JSON.
+ * Caso real (Lector Beta v7.9): el LLM emite `"Beth dijo: "Lo siento."` con la
+ * cita anidada sin escapar. `JSON.parse` y `jsonrepair` ven la segunda `"` como
+ * cierre de string e intentan leer `Lo` como una clave nueva → error.
+ *
+ * Heurística: walker char-by-char que distingue cierre legítimo de comilla
+ * interna mirando el siguiente token significativo. Si tras la `"` viene
+ * `,`, `:`, `}`, `]` o EOF (ignorando whitespace), es cierre. Cualquier otra
+ * cosa indica que la comilla está dentro de un valor de string y debe ser
+ * escapada como `\"`.
+ */
+function escapeUnescapedInnerQuotes(text: string): string {
+  const out: string[] = [];
+  let i = 0;
+  let inString = false;
+  let escape = false;
+  while (i < text.length) {
+    const c = text[i];
+    if (escape) { out.push(c); escape = false; i++; continue; }
+    if (c === '\\') { out.push(c); escape = true; i++; continue; }
+    if (c === '"') {
+      if (!inString) { inString = true; out.push(c); i++; continue; }
+      let j = i + 1;
+      while (j < text.length && /\s/.test(text[j])) j++;
+      const next = text[j];
+      if (next === undefined || next === ',' || next === ':' || next === '}' || next === ']') {
+        inString = false; out.push(c); i++; continue;
+      }
+      out.push('\\', '"'); i++; continue;
+    }
+    out.push(c); i++;
+  }
+  return out.join('');
+}
+
 export function repairJson(raw: string): any {
   // Strategy 1: plain parse on extracted block (the happy path).
   let lastErr: Error | null = null;
@@ -208,6 +244,23 @@ export function repairJson(raw: string): any {
   try {
     const text = extractJsonBlock(raw);
     const repaired = jsonrepair(text);
+    return JSON.parse(repaired);
+  } catch (e) { lastErr = e as Error; }
+
+  // [Fix54] Strategy 2.5: escapar comillas dobles internas no escapadas
+  // (LLMs frecuentemente las emiten en citas anidadas tipo `dijo: "X"`).
+  // Va antes de smartTruncationSalvage porque el problema NO es truncamiento
+  // sino formato. Probamos primero con jsonrepair encima por si quedan
+  // otros artefactos.
+  try {
+    const text = extractJsonBlock(raw);
+    const escaped = escapeUnescapedInnerQuotes(text);
+    return JSON.parse(escaped);
+  } catch (e) { lastErr = e as Error; }
+  try {
+    const text = extractJsonBlock(raw);
+    const escaped = escapeUnescapedInnerQuotes(text);
+    const repaired = jsonrepair(escaped);
     return JSON.parse(repaired);
   } catch (e) { lastErr = e as Error; }
 

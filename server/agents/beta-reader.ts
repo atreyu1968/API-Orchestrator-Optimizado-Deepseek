@@ -109,6 +109,7 @@ Después de tus impresiones en lenguaje natural, REPITE los puntos de "## SI FUE
 
 REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
 - Un objeto por cada punto que escribiste en "## SI FUERA EL AUTOR, CAMBIARÍA...". Si pusiste 5 puntos arriba, el JSON tiene 5 objetos.
+- **COMILLAS DENTRO DE STRINGS**: NUNCA uses comillas dobles (\`"\`) dentro del valor de un string. Si necesitas citar un diálogo o una frase, usa SIEMPRE comillas simples (\`'\`). Ejemplo correcto: \`"instrucciones_correccion": "Beth se acerca y dice 'Lo siento, debí hablar antes.'"\`. Ejemplo INCORRECTO (rompe el JSON): \`"instrucciones_correccion": "Beth se acerca y dice "Lo siento, debí hablar antes.""\`. Esto incluye TODAS las citas, frases entrecomilladas, títulos, etc., dentro de cualquier campo de tipo string.
 - "capitulos_afectados": array de NÚMEROS (no strings). Prólogo = 0, epílogo = -1, nota del autor = -2. INCLUYE TODOS los capítulos que menciones en la instrucción.
 - "categoria": exactamente una de: "trama", "personaje", "ritmo", "continuidad", "dialogo", "estilo", "descripcion", "otro".
 - "tipo":
