@@ -162,6 +162,19 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function wrapText(text: string, maxCharsPerLine: number): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (!current) { current = word; continue; }
+    if ((current + " " + word).length <= maxCharsPerLine) current += " " + word;
+    else { lines.push(current); current = word; }
+  }
+  if (current) lines.push(current);
+  return lines.slice(0, 4);
+}
+
 function safeId(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "id";
 }
@@ -348,6 +361,33 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
 
   const sections: BuiltSection[] = [];
 
+  // 0. Placeholder cover. Sin una imagen declarada como cover-image, Kindle/KF8
+  // agarra la primera imagen del manifest (el logo del publisher) y la pone a
+  // pantalla completa como portada del libro. Generamos un SVG mínimo blanco
+  // con el título, declarado como cover-image. Cuando se sube a KDP, KDP
+  // reemplaza esta portada por la que el usuario sube allí.
+  const titleLines = wrapText(data.title, 22);
+  const titleStartY = 420 - (titleLines.length - 1) * 28;
+  const coverSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 900" preserveAspectRatio="xMidYMid meet">
+  <rect width="600" height="900" fill="#ffffff"/>
+  <text text-anchor="middle" font-family="Georgia, serif" font-size="42" font-weight="bold" fill="#111111">
+${titleLines.map((line, i) => `    <tspan x="300" y="${titleStartY + i * 56}">${escapeXml(line)}</tspan>`).join("\n")}
+  </text>
+  <text x="300" y="560" text-anchor="middle" font-family="Georgia, serif" font-size="24" font-style="italic" fill="#444444">${escapeXml(authorName)}</text>
+</svg>`;
+  zip.file("OEBPS/image/cover.svg", coverSvg);
+  const coverXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${escapeXml(lang)}">
+<head><meta charset="utf-8"/><title>${escapeXml(data.title)}</title>
+<style type="text/css">body{margin:0;padding:0;text-align:center;}img{max-width:100%;max-height:100vh;height:auto;display:block;margin:0 auto;}</style>
+</head>
+<body><div style="text-align:center;"><img src="../image/cover.svg" alt="${escapeXml(data.title)}"/></div></body>
+</html>`;
+  zip.file("OEBPS/xhtml/cover.xhtml", coverXhtml);
+  sections.push({ filename: "xhtml/cover.xhtml", id: "cover", title: labels.titlePage, includeInToc: false });
+
   // 1. Title page
   const titleBody = `
 <div class="title-page">
@@ -484,6 +524,7 @@ ${ncxNavPoints}
   const manifestItems: string[] = [];
   manifestItems.push(`    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`);
   manifestItems.push(`    <item id="css" href="css/styles.css" media-type="text/css"/>`);
+  manifestItems.push(`    <item id="cover-image" href="image/cover.svg" media-type="image/svg+xml" properties="cover-image"/>`);
   if (publisherLogo) {
     const mt = publisherLogo.mediaType;
     manifestItems.push(`    <item id="img-publisher-logo" href="image/publisher-logo.${publisherLogo.ext}" media-type="${escapeXml(mt)}"/>`);
@@ -507,6 +548,7 @@ ${ncxNavPoints}
     ${data.genre ? `<dc:subject>${escapeXml(data.genre)}</dc:subject>` : ""}
     <dc:date>${new Date().toISOString().slice(0, 10)}</dc:date>
     <meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d+Z$/, "Z")}</meta>
+    <meta name="cover" content="cover-image"/>
   </metadata>
   <manifest>
 ${manifestItems.join("\n")}
