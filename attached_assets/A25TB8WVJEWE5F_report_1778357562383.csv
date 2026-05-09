@@ -1,0 +1,4 @@
+﻿"Error: Este error impedirá que el libro se publique. Es necesario corregir el error para poder publicarlo."
+"Aviso: Este problema no impedirá la publicación del libro y se puede ignorar de forma segura, ya que no tendrá ninguna repercusión."
+"Tipo","Descripción","Source File","Número de línea","Advertencia o error en el texto anterior","Solución recomendada"
+"Error","La conversión de Kindle ha encontrado un error interno.","","","","Este es un mensaje automático. Nuestro equipo está trabajando para resolver este problema. Le enviaremos un correo electrónico en un plazo de 3 días laborables con más información sobre cuándo podrá publicar su libro."
