@@ -49,39 +49,11 @@ export async function generateManuscriptDocx(data: ManuscriptData): Promise<Buff
   const { project, chapters, pseudonym, prologue, epilogue, authorNote, backMatter, backMatterBooks } = data;
 
   const authorName = pseudonym?.name || "Anónimo";
+  void authorName;
   const children: Paragraph[] = [];
 
-  children.push(
-    new Paragraph({
-      children: [new TextRun({ text: "", break: 5 })],
-    }),
-    new Paragraph({
-      text: project.title,
-      heading: HeadingLevel.TITLE,
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 400 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: "", break: 2 })],
-    }),
-    new Paragraph({
-      text: `por ${authorName}`,
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 200 },
-      style: "author",
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: "", break: 2 })],
-    }),
-    new Paragraph({
-      text: `Género: ${project.genre} | Tono: ${project.tone}`,
-      alignment: AlignmentType.CENTER,
-      style: "metadata",
-    }),
-    new Paragraph({
-      children: [new PageBreak()],
-    })
-  );
+  // Sin title page: la portada y datos de autor van en KDP. Empezamos
+  // directamente por el prólogo o el primer capítulo.
 
   if (prologue && prologue.content) {
     children.push(
@@ -447,42 +419,11 @@ export async function generateGenericManuscriptDocx(data: GenericManuscriptData)
   const regularChapters = sorted.filter(c => c.chapterNumber > 0 && c.chapterNumber < 900);
 
   const children: Paragraph[] = [];
+  void title; void authorName; void genre; void tone;
 
-  children.push(
-    new Paragraph({ children: [new TextRun({ text: "", break: 5 })] }),
-    new Paragraph({
-      text: title,
-      heading: HeadingLevel.TITLE,
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 400 },
-    }),
-    new Paragraph({ children: [new TextRun({ text: "", break: 2 })] }),
-  );
-
-  if (authorName) {
-    children.push(
-      new Paragraph({
-        text: `por ${authorName}`,
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 200 },
-        style: "author",
-      }),
-      new Paragraph({ children: [new TextRun({ text: "", break: 2 })] }),
-    );
-  }
-
-  if (genre || tone) {
-    const metaParts = [genre ? `Género: ${genre}` : "", tone ? `Tono: ${tone}` : ""].filter(Boolean).join(" | ");
-    children.push(
-      new Paragraph({
-        text: metaParts,
-        alignment: AlignmentType.CENTER,
-        style: "metadata",
-      }),
-    );
-  }
-
-  children.push(new Paragraph({ children: [new PageBreak()] }));
+  // Sin title page (consistente con EPUB): la portada y los datos de
+  // autor/título los gestiona KDP. El DOCX empieza directamente por el
+  // prólogo o el primer capítulo.
 
   if (prologue && prologue.content) {
     children.push(
