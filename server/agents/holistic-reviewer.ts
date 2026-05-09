@@ -164,8 +164,8 @@ export class HolisticReviewerAgent extends BaseAgent {
       const num = Number(raw);
       if (!Number.isFinite(num)) return `SECCIÓN ${String(raw)}`;
       if (num === 0) return "PRÓLOGO";
-      if (num === -1 || num === 998) return "EPÍLOGO";
-      if (num === -2 || num === 999) return "NOTA DEL AUTOR";
+      if (num === -1) return "EPÍLOGO";
+      if (num === -2) return "NOTA DEL AUTOR";
       return `CAPÍTULO ${num}`;
     };
     // Orden narrativo real: prólogo primero, capítulos positivos en medio,
@@ -175,8 +175,8 @@ export class HolisticReviewerAgent extends BaseAgent {
       const n = Number(raw);
       if (!Number.isFinite(n)) return Number.MAX_SAFE_INTEGER;
       if (n === 0) return -1000;
-      if (n === -1 || n === 998) return 1_000_000;
-      if (n === -2 || n === 999) return 1_000_001;
+      if (n === -1) return 1_000_000;
+      if (n === -2) return 1_000_001;
       return n;
     };
     const sortedChapters = [...input.chapters].sort(

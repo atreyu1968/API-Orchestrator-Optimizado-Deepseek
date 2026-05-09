@@ -7261,7 +7261,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         }
         projectTitle = reeditProject.title;
         const chapters = await storage.getReeditChaptersByProject(projectId);
-        const getReeditOrder = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
+        const getReeditOrder = (n: number) => n === 0 ? -1000 : n === -1 ? 1000 : n === -2 ? 1001 : n;
         const sortedChapters = [...chapters].sort((a, b) => getReeditOrder(a.chapterNumber) - getReeditOrder(b.chapterNumber));
         chaptersWithContent = sortedChapters.filter(c => (c.editedContent || c.originalContent || "").trim().length > 0);
       } else {
@@ -8084,9 +8084,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           if (chapterType.includes('prólogo') || chapterType.includes('prologue') || chapterType.includes('prolog') || chapterType.includes('prologo')) {
             chapterNum = 0;
           } else if (chapterType.includes('epílogo') || chapterType.includes('epilogue') || chapterType.includes('epilog') || chapterType.includes('epilogo')) {
-            chapterNum = 998;
+            // [Fix44] Convención unificada: epílogo = -1 (antes 998 en pipeline de reedit).
+            chapterNum = -1;
           } else if (chapterType.includes('nota') || chapterType.includes('note') || chapterType.includes('nachwort')) {
-            chapterNum = 999;
+            // [Fix44] Convención unificada: nota del autor = -2 (antes 999).
+            chapterNum = -2;
           } else {
             const numMatch = match[1].match(/\d+/);
             chapterNum = numMatch ? parseInt(numMatch[0]) : ++chapterIndex;
@@ -9216,7 +9218,7 @@ CRITERIOS:
         return res.status(400).json({ error: "No chapters to export" });
       }
 
-      const getReeditChapterSortOrder = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
+      const getReeditChapterSortOrder = (n: number) => n === 0 ? -1000 : n === -1 ? 1000 : n === -2 ? 1001 : n;
       const sortedChapters = [...chapters].sort((a, b) => getReeditChapterSortOrder(a.chapterNumber) - getReeditChapterSortOrder(b.chapterNumber));
       
       // Localized chapter labels based on detected language
@@ -9246,11 +9248,11 @@ CRITERIOS:
           chapterHeader = chapter.title 
             ? `# ${labels.prologue}: ${chapter.title}`
             : `# ${labels.prologue}`;
-        } else if (chapter.chapterNumber === -1 || chapter.chapterNumber === 998) {
+        } else if (chapter.chapterNumber === -1) {
           chapterHeader = chapter.title 
             ? `# ${labels.epilogue}: ${chapter.title}`
             : `# ${labels.epilogue}`;
-        } else if (chapter.chapterNumber === -2 || chapter.chapterNumber === 999) {
+        } else if (chapter.chapterNumber === -2) {
           chapterHeader = `# ${labels.authorNote}`;
         } else {
           chapterHeader = chapter.title 
@@ -9308,7 +9310,7 @@ CRITERIOS:
         return res.status(400).json({ error: "No chapters to export" });
       }
 
-      const getReeditChapterSortOrder2 = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
+      const getReeditChapterSortOrder2 = (n: number) => n === 0 ? -1000 : n === -1 ? 1000 : n === -2 ? 1001 : n;
       const sortedChapters = [...chapters].sort((a, b) => getReeditChapterSortOrder2(a.chapterNumber) - getReeditChapterSortOrder2(b.chapterNumber));
       
       // Localized chapter labels based on detected language
@@ -9337,11 +9339,11 @@ CRITERIOS:
           chapterHeader = chapter.title 
             ? `# ${labels.prologue}: ${chapter.title}`
             : `# ${labels.prologue}`;
-        } else if (chapter.chapterNumber === -1 || chapter.chapterNumber === 998) {
+        } else if (chapter.chapterNumber === -1) {
           chapterHeader = chapter.title 
             ? `# ${labels.epilogue}: ${chapter.title}`
             : `# ${labels.epilogue}`;
-        } else if (chapter.chapterNumber === -2 || chapter.chapterNumber === 999) {
+        } else if (chapter.chapterNumber === -2) {
           chapterHeader = `# ${labels.authorNote}`;
         } else {
           chapterHeader = chapter.title 
@@ -9522,7 +9524,7 @@ CRITERIOS:
         return;
       }
       
-      const getReeditChapterSortOrder4 = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
+      const getReeditChapterSortOrder4 = (n: number) => n === 0 ? -1000 : n === -1 ? 1000 : n === -2 ? 1001 : n;
       const sortedChapters = [...chapters].sort((a, b) => getReeditChapterSortOrder4(a.chapterNumber) - getReeditChapterSortOrder4(b.chapterNumber));
       const chaptersWithContent = sortedChapters.filter(c => 
         (c.editedContent || c.originalContent)?.trim().length > 0
@@ -9552,8 +9554,8 @@ CRITERIOS:
       
       for (const chapter of chaptersWithContent) {
         const chapterLabel = chapter.chapterNumber === 0 ? "Prólogo" :
-                            chapter.chapterNumber === -1 || chapter.chapterNumber === 998 ? "Epílogo" :
-                            chapter.chapterNumber === -2 || chapter.chapterNumber === 999 ? "Nota del Autor" :
+                            chapter.chapterNumber === -1 ? "Epílogo" :
+                            chapter.chapterNumber === -2 ? "Nota del Autor" :
                             `Capítulo ${chapter.chapterNumber}`;
         
         sendEvent("progress", {
@@ -9612,11 +9614,8 @@ CRITERIOS:
         }
       }
       
-      // Generate final markdown using shared clean builder
-      const reeditChaptersForMarkdown = translatedChapters.map(ch => ({
-        ...ch,
-        chapterNumber: ch.chapterNumber === 998 ? -1 : ch.chapterNumber === 999 ? -2 : ch.chapterNumber,
-      }));
+      // [Fix44] Conversión obsoleta eliminada: ahora reedit usa -1/-2 en BD.
+      const reeditChaptersForMarkdown = translatedChapters;
       const cleanedBody = buildCleanMarkdownLines(reeditChaptersForMarkdown, targetLanguage as string);
       const finalMarkdown = `# ${project.title}\n\n${cleanedBody}`;
       const totalWords = finalMarkdown.split(/\s+/).filter((w: string) => w.length > 0).length;

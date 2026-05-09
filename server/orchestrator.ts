@@ -738,15 +738,15 @@ ${contextParts.join("\n")}
     const getChapterLabel = (raw: number): string => {
       if (!Number.isFinite(raw)) return `SECCIÓN ${raw}`;
       if (raw === 0) return "PRÓLOGO";
-      if (raw === -1 || raw === 998) return "EPÍLOGO";
-      if (raw === -2 || raw === 999) return "NOTA DEL AUTOR";
+      if (raw === -1) return "EPÍLOGO";
+      if (raw === -2) return "NOTA DEL AUTOR";
       return `CAPÍTULO ${raw}`;
     };
     const getChapterSortOrder = (raw: number): number => {
       if (!Number.isFinite(raw)) return Number.MAX_SAFE_INTEGER;
       if (raw === 0) return -1000;
-      if (raw === -1 || raw === 998) return 1_000_000;
-      if (raw === -2 || raw === 999) return 1_000_001;
+      if (raw === -1) return 1_000_000;
+      if (raw === -2) return 1_000_001;
       return raw;
     };
 

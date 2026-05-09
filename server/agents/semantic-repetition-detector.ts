@@ -160,16 +160,16 @@ export class SemanticRepetitionDetectorAgent extends BaseAgent {
     // Helper to get proper chapter label based on number
     const getChapterLabel = (num: number): string => {
       if (num === 0) return "Prólogo";
-      if (num === -1 || num === 998) return "Epílogo";
-      if (num === -2 || num === 999) return "Nota del Autor";
+      if (num === -1) return "Epílogo";
+      if (num === -2) return "Nota del Autor";
       return `Capítulo ${num}`;
     };
     
     // Sort chapters in narrative order (prologue first, epilogue/author note last)
     const getChapterSortOrder = (n: number): number => {
       if (n === 0) return -1000;
-      if (n === -1 || n === 998) return 1000;
-      if (n === -2 || n === 999) return 1001;
+      if (n === -1) return 1000;
+      if (n === -2) return 1001;
       return n;
     };
     

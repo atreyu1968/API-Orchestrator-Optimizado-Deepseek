@@ -438,12 +438,12 @@ export async function generateGenericManuscriptDocx(data: GenericManuscriptData)
   };
   const l = labels[language || "es"] || labels.es;
 
-  const getSortOrder = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
+  const getSortOrder = (n: number) => n === 0 ? -1000 : n === -1 ? 1000 : n === -2 ? 1001 : n;
   const sorted = [...chapters].sort((a, b) => getSortOrder(a.chapterNumber) - getSortOrder(b.chapterNumber));
 
   const prologue = sorted.find(c => c.chapterNumber === 0);
-  const epilogue = sorted.find(c => c.chapterNumber === -1 || c.chapterNumber === 998);
-  const authorNoteChapter = sorted.find(c => c.chapterNumber === -2 || c.chapterNumber === 999);
+  const epilogue = sorted.find(c => c.chapterNumber === -1);
+  const authorNoteChapter = sorted.find(c => c.chapterNumber === -2);
   const regularChapters = sorted.filter(c => c.chapterNumber > 0 && c.chapterNumber < 900);
 
   const children: Paragraph[] = [];

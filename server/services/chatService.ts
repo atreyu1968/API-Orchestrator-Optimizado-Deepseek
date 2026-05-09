@@ -232,10 +232,10 @@ ${content?.substring(0, 10000) || 'Sin contenido disponible'}
 `);
       }
     } else if (context.chapters && context.chapters.length > 0) {
-      const getChapterSortOrder = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
+      const getChapterSortOrder = (n: number) => n === 0 ? -1000 : n === -1 ? 1000 : n === -2 ? 1001 : n;
       const sortedChapters = [...context.chapters].sort((a: any, b: any) => getChapterSortOrder(a.chapterNumber) - getChapterSortOrder(b.chapterNumber));
       
-      const getChapterLabel = (num: number) => num === 0 ? "Prólogo" : num === -1 || num === 998 ? "Epílogo" : num === -2 || num === 999 ? "Nota del Autor" : `Capítulo ${num}`;
+      const getChapterLabel = (num: number) => num === 0 ? "Prólogo" : num === -1 ? "Epílogo" : num === -2 ? "Nota del Autor" : `Capítulo ${num}`;
       const chapterSummaries = sortedChapters.map((ch: any) => {
         const content = 'editedContent' in ch 
           ? (ch.editedContent || ch.originalContent)
@@ -353,7 +353,7 @@ ${context.extendedGuide.substring(0, 8000)}
       return "No hay capítulos en el manuscrito para reestructurar.";
     }
 
-    const getChapterSortOrder = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
+    const getChapterSortOrder = (n: number) => n === 0 ? -1000 : n === -1 ? 1000 : n === -2 ? 1001 : n;
     const sortedChapters = [...chapters].sort((a: any, b: any) => getChapterSortOrder(a.chapterNumber) - getChapterSortOrder(b.chapterNumber));
     const diagnosis = userMessage.replace(/aplicar\s+diagn[óo]stico\s+editorial:?\s*/i, '').trim();
     
@@ -513,7 +513,7 @@ Revisa cada propuesta y usa el botón **Aplicar** para confirmar los cambios que
     let additionalChaptersContext = "";
     
     if (requestedChapters.length > 0 && context.chapters) {
-      const getChapterSortOrder2 = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
+      const getChapterSortOrder2 = (n: number) => n === 0 ? -1000 : n === -1 ? 1000 : n === -2 ? 1001 : n;
       const sortedChapters = [...context.chapters].sort((a: any, b: any) => getChapterSortOrder2(a.chapterNumber) - getChapterSortOrder2(b.chapterNumber));
       const alreadyIncludedNums = sortedChapters.slice(0, 5).map((c: any) => c.chapterNumber);
       

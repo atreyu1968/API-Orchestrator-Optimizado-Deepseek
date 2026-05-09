@@ -28,10 +28,14 @@ import { parseHolisticBetaForReedit, type ReeditPendingEditorialParse, type Reed
 // [Fix33] Logger persistente por proyecto.
 import { logReeditEvent } from "../utils/reedit-logger";
 
+// [Fix44] Convención unificada de capítulos especiales (igual al pipeline
+// principal): 0 = prólogo, -1 = epílogo, -2 = nota del autor. Antes el reedit
+// usaba 998/999 para epílogo/nota, lo que generaba ramas defensivas en cada
+// agente y conversiones de frontera entre pipelines. Ya no.
 function getChapterSortOrder(chapterNumber: number): number {
   if (chapterNumber === 0) return -1000;
-  if (chapterNumber === -1 || chapterNumber === 998) return 1000;
-  if (chapterNumber === -2 || chapterNumber === 999) return 1001;
+  if (chapterNumber === -1) return 1000;
+  if (chapterNumber === -2) return 1001;
   return chapterNumber;
 }
 
@@ -2659,16 +2663,16 @@ export class ReeditOrchestrator {
       recommendations: [],
     };
 
-    // Separate special chapters from regular chapters
-    // 0 = Prologue, 998 = Epilogue, 999 = Author's Note
-    const specialChapterNumbers = [0, 998, 999];
+    // [Fix44] Separación con convención unificada:
+    // 0 = Prólogo, -1 = Epílogo, -2 = Nota del Autor.
+    const specialChapterNumbers = [0, -1, -2];
     const regularChapters = chapters.filter(c => !specialChapterNumbers.includes(c.chapterNumber));
     const regularChapterNumbers = regularChapters.map(c => c.chapterNumber).sort((a, b) => a - b);
     
     // Add metadata about special chapters
     const hasPrologue = chapters.some(c => c.chapterNumber === 0);
-    const hasEpilogue = chapters.some(c => c.chapterNumber === 998);
-    const hasAuthorNote = chapters.some(c => c.chapterNumber === 999);
+    const hasEpilogue = chapters.some(c => c.chapterNumber === -1);
+    const hasAuthorNote = chapters.some(c => c.chapterNumber === -2);
     (analysis as any).hasPrologue = hasPrologue;
     (analysis as any).hasEpilogue = hasEpilogue;
     (analysis as any).hasAuthorNote = hasAuthorNote;

@@ -144,8 +144,8 @@ export class StructuralInstructionTranslatorAgent extends BaseAgent {
   ): Promise<AgentResponse & { result?: StructuralTranslatorResult }> {
     const labelOf = (n: number) => {
       if (n === 0) return "Prólogo";
-      if (n === -1 || n === 998) return "Epílogo";
-      if (n === -2 || n === 999) return "Nota del autor";
+      if (n === -1) return "Epílogo";
+      if (n === -2) return "Nota del autor";
       return `Capítulo ${n}`;
     };
 
