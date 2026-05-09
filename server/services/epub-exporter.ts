@@ -359,24 +359,17 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
   const logoBlock = publisherLogo
     ? `<div class="publisher-logo" style="margin: 0 auto 1.5em auto; text-align:center;"><img src="../image/publisher-logo.${publisherLogo.ext}" alt="${escapeXml(publisher?.name || "")}" style="max-width:70px; max-height:70px; width:auto; height:auto; display:inline-block;"/></div>`
     : "";
-  const titleAuthorBlock = `
-<div style="text-align:center; margin-bottom: 2em;">
-  <h1 class="book-title" style="text-align:center; text-indent:0; margin:0 0 0.4em 0;">${escapeHtml(data.title)}</h1>
-  <h2 class="author" style="text-align:center; text-indent:0; margin:0; font-weight:normal; font-style:italic;">${escapeHtml(authorName)}</h2>
-</div>`;
-  // Página 1: título + autor + logo de la editorial.
-  // El div envolvente fuerza salto de página para que ningún lector EPUB
-  // funda esta página con el copyright que viene a continuación.
-  // Spacer vertical para empujar título+autor+logo hacia el centro.
-  // Usamos un único <div> con altura explícita en em (no vh ni %, que algunos
-  // visores ignoran o calculan sobre el ancho), y dentro varios <br/> como
-  // fallback para visores que ignoren la altura del div.
-  const verticalSpacer = `<div style="height: 18em; line-height: 1.5em;">${"<br/>".repeat(12)}</div>`;
+  // Técnica del EPUB estándar Kindle: margin-top en em directamente en el
+  // título empuja el contenido hacia abajo de forma fiable en cualquier visor.
+  // Spacer divs y <br/> los colapsan algunos visores (Microsoft Edge EPUB).
+  const logoBlockCentered = publisherLogo
+    ? `<div style="text-align:center; margin-top: 4.8em;"><img src="../image/publisher-logo.${publisherLogo.ext}" alt="${escapeXml(publisher?.name || "")}" style="max-width:70px; max-height:70px; width:auto; height:auto; display:inline-block;"/></div>`
+    : "";
   const titlePageBody = `
-<div class="title-page" style="page-break-after: always; break-after: page; text-align: center; padding-top: 0;">
-${verticalSpacer}
-${titleAuthorBlock}
-${logoBlock}
+<div style="page-break-after: always; break-after: page;">
+  <h1 class="book-title" style="text-align:center; text-indent:0; margin: 4.8em 10% 0 10%; font-size: 1.85em; line-height: 1.2em; letter-spacing: 0.05em;">${escapeHtml(data.title)}</h1>
+  <h2 class="author" style="text-align:center; text-indent:0; margin: 1.8em 15% 0 15%; font-size: 1.4em; line-height: 1.2em; font-weight:normal; font-style:italic;">${escapeHtml(authorName)}</h2>
+  ${logoBlockCentered}
 </div>`;
   zip.file("OEBPS/xhtml/title.xhtml", xhtmlPage(labels.titlePage, lang, "title-page-body", titlePageBody));
   sections.push({ filename: "xhtml/title.xhtml", id: "title", title: labels.titlePage, includeInToc: false });
