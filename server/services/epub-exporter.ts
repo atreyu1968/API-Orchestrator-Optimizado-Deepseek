@@ -244,8 +244,8 @@ h1, h2, h3 { font-weight: bold; text-align: center; page-break-after: avoid; }
 p.first-para, p.no-indent, .center p { text-indent: 0; }
 .center { text-align: center; }
 .title-page { text-align: center; padding-top: 22%; }
-.title-page .publisher-logo { margin-top: 6em; }
-.title-page .publisher-logo img { max-width: 30%; height: auto; }
+.title-page .publisher-logo { margin-top: 3em; text-align: center; }
+.title-page .publisher-logo img { max-width: 120px; max-height: 120px; width: auto; height: auto; display: inline-block; }
 .copyright { font-size: 0.9em; line-height: 1.6; padding: 2em 0; }
 .copyright p { text-indent: 0; text-align: left; margin-bottom: 0.6em; }
 nav#toc ol { list-style-type: none; padding: 0; }
@@ -355,7 +355,7 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
     <h1 class="book-title" style="text-align:center; text-indent:0;">${escapeHtml(data.title)}</h1>
     <h2 class="author" style="text-align:center; text-indent:0; margin-left:0; margin-right:0; padding-left:0; padding-right:0; font-weight:normal; font-style:italic;">${escapeHtml(authorName)}</h2>
   </div>
-  ${publisherLogo ? `<div class="publisher-logo"><img src="../image/publisher-logo.${publisherLogo.ext}" alt="${escapeXml(publisher?.name || "")}"/></div>` : ""}
+  ${publisherLogo ? `<div class="publisher-logo" style="margin-top:2em; text-align:center;"><img src="../image/publisher-logo.${publisherLogo.ext}" alt="${escapeXml(publisher?.name || "")}" style="max-width:120px; max-height:120px; width:auto; height:auto; display:inline-block;"/></div>` : ""}
 </div>`;
   zip.file("OEBPS/xhtml/title.xhtml", xhtmlPage(labels.titlePage, lang, "title-page-body", titleBody));
   sections.push({ filename: "xhtml/title.xhtml", id: "title", title: labels.titlePage, includeInToc: false });
