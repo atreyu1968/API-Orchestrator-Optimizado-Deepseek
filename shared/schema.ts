@@ -773,6 +773,32 @@ export const insertGeneratedGuideSchema = createInsertSchema(generatedGuides).om
 export type GeneratedGuide = typeof generatedGuides.$inferSelect;
 export type InsertGeneratedGuide = z.infer<typeof insertGeneratedGuideSchema>;
 
+// [Fix43] Job tracking para generación de guías. La generación tarda 1-3+ min
+// (DeepSeek largo) y excede el timeout de 100s de Cloudflare → 524. Patrón
+// HTTP 202 + polling: el POST inicial inserta una row aquí con status=pending,
+// arranca el trabajo en background y responde inmediatamente con jobId. El
+// frontend hace polling al GET hasta status in (completed | failed).
+export const guideGenerationJobs = pgTable("guide_generation_jobs", {
+  id: serial("id").primaryKey(),
+  status: text("status").notNull().default("pending"), // pending | running | completed | failed
+  guideType: text("guide_type").notNull(),
+  params: jsonb("params").notNull(), // request body original (para reintentos/debug)
+  resultGuideId: integer("result_guide_id"),
+  resultPayload: jsonb("result_payload"), // {assignedPseudonymId, projectId, projectIds, projectsCreated, seriesId, title}
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const insertGuideGenerationJobSchema = createInsertSchema(guideGenerationJobs).omit({
+  id: true,
+  startedAt: true,
+  completedAt: true,
+});
+
+export type GuideGenerationJob = typeof guideGenerationJobs.$inferSelect;
+export type InsertGuideGenerationJob = z.infer<typeof insertGuideGenerationJobSchema>;
+
 export const audiobookProjects = pgTable("audiobook_projects", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),

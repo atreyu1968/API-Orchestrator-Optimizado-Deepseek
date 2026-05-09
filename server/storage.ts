@@ -29,6 +29,7 @@ import {
   type ChatMessage, type InsertChatMessage,
   type ChatProposal, type InsertChatProposal,
   generatedGuides, type GeneratedGuide, type InsertGeneratedGuide,
+  guideGenerationJobs, type GuideGenerationJob, type InsertGuideGenerationJob,
   audiobookProjects, audiobookChapters,
   type AudiobookProject, type InsertAudiobookProject,
   type AudiobookChapter, type InsertAudiobookChapter,
@@ -197,6 +198,11 @@ export interface IStorage {
   // Generated Guides
   createGeneratedGuide(data: InsertGeneratedGuide): Promise<GeneratedGuide>;
   getGeneratedGuide(id: number): Promise<GeneratedGuide | undefined>;
+  // [Fix43] Guide generation jobs (background + polling)
+  createGuideGenerationJob(data: InsertGuideGenerationJob): Promise<GuideGenerationJob>;
+  getGuideGenerationJob(id: number): Promise<GuideGenerationJob | undefined>;
+  updateGuideGenerationJob(id: number, data: Partial<GuideGenerationJob>): Promise<GuideGenerationJob | undefined>;
+  cleanupStaleGuideGenerationJobs(): Promise<number>;
   getAllGeneratedGuides(): Promise<GeneratedGuide[]>;
   updateGeneratedGuide(id: number, data: Partial<GeneratedGuide>): Promise<GeneratedGuide | undefined>;
   deleteGeneratedGuide(id: number): Promise<void>;
@@ -1238,6 +1244,33 @@ export class DatabaseStorage implements IStorage {
 
   async getAllGeneratedGuides(): Promise<GeneratedGuide[]> {
     return db.select().from(generatedGuides).orderBy(desc(generatedGuides.createdAt));
+  }
+
+  async createGuideGenerationJob(data: InsertGuideGenerationJob): Promise<GuideGenerationJob> {
+    const [job] = await db.insert(guideGenerationJobs).values(data).returning();
+    return job;
+  }
+
+  async getGuideGenerationJob(id: number): Promise<GuideGenerationJob | undefined> {
+    const [job] = await db.select().from(guideGenerationJobs).where(eq(guideGenerationJobs.id, id));
+    return job;
+  }
+
+  async updateGuideGenerationJob(id: number, data: Partial<GuideGenerationJob>): Promise<GuideGenerationJob | undefined> {
+    const [updated] = await db.update(guideGenerationJobs).set(data).where(eq(guideGenerationJobs.id, id)).returning();
+    return updated;
+  }
+
+  async cleanupStaleGuideGenerationJobs(): Promise<number> {
+    const result = await db.update(guideGenerationJobs)
+      .set({
+        status: "failed",
+        errorMessage: "El servidor se reinició mientras se generaba la guía. Vuelve a lanzar la generación.",
+        completedAt: new Date(),
+      })
+      .where(or(eq(guideGenerationJobs.status, "pending"), eq(guideGenerationJobs.status, "running")))
+      .returning({ id: guideGenerationJobs.id });
+    return result.length;
   }
 
   async updateGeneratedGuide(id: number, data: Partial<GeneratedGuide>): Promise<GeneratedGuide | undefined> {

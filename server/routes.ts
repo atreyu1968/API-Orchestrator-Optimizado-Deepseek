@@ -196,6 +196,19 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // [Fix43] Limpieza de jobs zombi al arrancar: si el server se reinició a
+  // mitad de un job, el row queda en running/pending para siempre y el
+  // frontend espera 10 min hasta timeout. Marcamos esos jobs como failed con
+  // motivo claro para que el usuario pueda relanzar.
+  try {
+    const stale = await storage.cleanupStaleGuideGenerationJobs();
+    if (stale > 0) {
+      console.log(`[Fix43] Marcados ${stale} jobs de generación de guía como failed (servidor reiniciado).`);
+    }
+  } catch (e) {
+    console.error("[Fix43] Error limpiando jobs zombi al arrancar:", e);
+  }
+
   app.get("/api/projects", async (req: Request, res: Response) => {
     try {
       const projects = await storage.getAllProjects();
@@ -10083,10 +10096,17 @@ CRITERIOS:
     }
   });
 
-  app.post("/api/guides/generate", async (req: Request, res: Response) => {
+  // [Fix43] Helper que ejecuta la generación de guía en background. Antes el
+  // POST corría síncrono y tardaba 1-3+ min, lo que excedía el timeout de 100s
+  // de Cloudflare → 524. Ahora el handler responde 202 con jobId y este helper
+  // actualiza el job a completed/failed para que el frontend lo recoja por
+  // polling. Las validaciones que antes eran 400 ahora se convierten en
+  // errores que marcan el job como failed con errorMessage.
+  async function runGuideGenerationJob(jobId: number, body: any) {
     try {
+      await storage.updateGuideGenerationJob(jobId, { status: "running" });
       const { generateStyleGuide } = await import("./agents/style-guide-generator");
-      const params = { ...req.body };
+      const params = { ...body };
       if (params.guideType === "pseudonym_style" && params.pseudonymId) {
         // Carga las guías de estilo activas del pseudónimo: el agente las usa
         // como input principal para inventar una novela apropiada al estilo.
@@ -10170,47 +10190,47 @@ CRITERIOS:
 
       const result = await generateStyleGuide(params);
 
-      let targetPseudonymId: number | null = req.body.pseudonymId || null;
+      let targetPseudonymId: number | null = body.pseudonymId || null;
 
-      if (req.body.createPseudonymName) {
+      if (body.createPseudonymName) {
         const newPseudonym = await storage.createPseudonym({
-          name: req.body.createPseudonymName,
+          name: body.createPseudonymName,
           bio: null,
-          defaultGenre: req.body.createPseudonymGenre || null,
-          defaultTone: req.body.createPseudonymTone || null,
+          defaultGenre: body.createPseudonymGenre || null,
+          defaultTone: body.createPseudonymTone || null,
         });
         targetPseudonymId = newPseudonym.id;
-      } else if (req.body.assignPseudonymId) {
-        const existingPseudonym = await storage.getPseudonym(req.body.assignPseudonymId);
+      } else if (body.assignPseudonymId) {
+        const existingPseudonym = await storage.getPseudonym(body.assignPseudonymId);
         if (!existingPseudonym) {
-          return res.status(400).json({ error: "El pseudónimo seleccionado no existe" });
+          throw new Error("El pseudónimo seleccionado no existe");
         }
-        targetPseudonymId = req.body.assignPseudonymId;
+        targetPseudonymId = body.assignPseudonymId;
       }
 
       let validatedStyleGuideId: number | null = null;
       const isProjectCreatingGuide =
-        req.body.guideType === "idea_writing" ||
-        req.body.guideType === "series_writing" ||
-        req.body.guideType === "pseudonym_style";
+        body.guideType === "idea_writing" ||
+        body.guideType === "series_writing" ||
+        body.guideType === "pseudonym_style";
 
       if (isProjectCreatingGuide) {
-        const minWords = Math.max(500, Math.min(10000, req.body.minWordsPerChapter || 1500));
-        const maxWords = Math.max(500, Math.min(15000, req.body.maxWordsPerChapter || 3500));
+        const minWords = Math.max(500, Math.min(10000, body.minWordsPerChapter || 1500));
+        const maxWords = Math.max(500, Math.min(15000, body.maxWordsPerChapter || 3500));
         if (minWords > maxWords) {
-          return res.status(400).json({ error: "El mínimo de palabras por capítulo no puede ser mayor que el máximo" });
+          throw new Error("El mínimo de palabras por capítulo no puede ser mayor que el máximo");
         }
 
-        if (req.body.styleGuideId) {
-          const sg = await storage.getStyleGuide(req.body.styleGuideId);
+        if (body.styleGuideId) {
+          const sg = await storage.getStyleGuide(body.styleGuideId);
           if (!sg) {
-            return res.status(400).json({ error: "La guía de estilo seleccionada no existe" });
+            throw new Error("La guía de estilo seleccionada no existe");
           }
           if (targetPseudonymId && sg.pseudonymId !== targetPseudonymId) {
-            return res.status(400).json({ error: "La guía de estilo no pertenece al pseudónimo seleccionado" });
+            throw new Error("La guía de estilo no pertenece al pseudónimo seleccionado");
           }
           validatedStyleGuideId = sg.id;
-        } else if (req.body.guideType === "pseudonym_style" && targetPseudonymId) {
+        } else if (body.guideType === "pseudonym_style" && targetPseudonymId) {
           // En "novela para pseudónimo" el styleGuide nunca lo elige el usuario:
           // se vincula automáticamente la primera guía de estilo activa del
           // pseudónimo, que es la que el agente usó como input para inventar la
@@ -10226,28 +10246,28 @@ CRITERIOS:
       const guide = await storage.createGeneratedGuide({
         title: result.title,
         content: result.content,
-        guideType: req.body.guideType,
-        sourceAuthor: req.body.authorName || null,
-        sourceIdea: req.body.idea || null,
-        sourceGenre: req.body.genre || null,
+        guideType: body.guideType,
+        sourceAuthor: body.authorName || null,
+        sourceIdea: body.idea || null,
+        sourceGenre: body.genre || null,
         pseudonymId: targetPseudonymId,
-        seriesId: req.body.seriesId || null,
+        seriesId: body.seriesId || null,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
       });
 
       if (isProjectCreatingGuide) {
-        const chapterCount = Math.max(1, Math.min(350, req.body.chapterCount || 20));
-        const minWords = Math.max(500, Math.min(10000, req.body.minWordsPerChapter || 1500));
-        const maxWords = Math.max(500, Math.min(15000, req.body.maxWordsPerChapter || 3500));
+        const chapterCount = Math.max(1, Math.min(350, body.chapterCount || 20));
+        const minWords = Math.max(500, Math.min(10000, body.minWordsPerChapter || 1500));
+        const maxWords = Math.max(500, Math.min(15000, body.maxWordsPerChapter || 3500));
 
-        const isSeriesGuide = req.body.guideType === "series_writing";
-        const isPseudonymNovel = req.body.guideType === "pseudonym_style";
+        const isSeriesGuide = body.guideType === "series_writing";
+        const isPseudonymNovel = body.guideType === "pseudonym_style";
         const descSuffix = isSeriesGuide
-          ? `serie: ${(req.body.seriesTitle || "").substring(0, 100)}`
+          ? `serie: ${(body.seriesTitle || "").substring(0, 100)}`
           : isPseudonymNovel
-            ? `pseudónimo: ${(req.body.pseudonymName || "").substring(0, 100)}`
-            : `idea: ${(req.body.idea || "").substring(0, 100)}`;
+            ? `pseudónimo: ${(body.pseudonymName || "").substring(0, 100)}`
+            : `idea: ${(body.idea || "").substring(0, 100)}`;
 
         const extendedGuide = await storage.createExtendedGuide({
           title: result.title,
@@ -10260,11 +10280,11 @@ CRITERIOS:
         let seriesId: number | null = null;
         let nextSeriesOrder: number | null = null;
 
-        if (isSeriesGuide && req.body.seriesId) {
-          seriesId = req.body.seriesId;
+        if (isSeriesGuide && body.seriesId) {
+          seriesId = body.seriesId;
           const seriesObj = await storage.getSeries(seriesId!);
           if (!seriesObj) {
-            return res.status(400).json({ error: "La serie seleccionada no existe" });
+            throw new Error("La serie seleccionada no existe");
           }
           const existingProjects = await storage.getProjectsBySeries(seriesId!);
           let reeditProjects: any[] = [];
@@ -10288,13 +10308,13 @@ CRITERIOS:
             seriesGuide: result.content,
             seriesGuideFileName: "ai-generated-extended.md",
           };
-          if (req.body.seriesIdea && (!seriesObj?.description || seriesObj.description.trim() === "")) {
-            seriesUpdateData.description = req.body.seriesIdea;
+          if (body.seriesIdea && (!seriesObj?.description || seriesObj.description.trim() === "")) {
+            seriesUpdateData.description = body.seriesIdea;
           }
           await storage.updateSeries(seriesId!, seriesUpdateData);
         }
 
-        const createAllVolumes = req.body.createAllVolumes === true && isSeriesGuide && seriesId;
+        const createAllVolumes = body.createAllVolumes === true && isSeriesGuide && seriesId;
         const seriesObj2 = seriesId ? await storage.getSeries(seriesId) : null;
         const totalPlanned = seriesObj2?.totalPlannedBooks || 1;
 
@@ -10316,9 +10336,7 @@ CRITERIOS:
         const remainingVolumes = createAllVolumes ? Math.max(0, totalPlanned - existingVolumeCount) : 1;
 
         if (createAllVolumes && remainingVolumes === 0) {
-          return res.status(400).json({
-            error: `La serie ya tiene ${existingVolumeCount} volúmenes (${totalPlanned} planificados). No hay volúmenes pendientes por crear.`,
-          });
+          throw new Error(`La serie ya tiene ${existingVolumeCount} volúmenes (${totalPlanned} planificados). No hay volúmenes pendientes por crear.`);
         }
 
         let volumeTitles: string[] = [];
@@ -10358,32 +10376,32 @@ CRITERIOS:
           }
           while (volumeTitles.length < remainingVolumes) {
             const volNum = existingVolumeCount + volumeTitles.length + 1;
-            volumeTitles.push(`${req.body.seriesTitle || "Serie"} — Vol. ${volNum}`);
+            volumeTitles.push(`${body.seriesTitle || "Serie"} — Vol. ${volNum}`);
           }
         }
 
         if (!createAllVolumes || remainingVolumes <= 1) {
-          volumeTitles = [req.body.projectTitle || result.title];
+          volumeTitles = [body.projectTitle || result.title];
         }
 
         const createdProjectIds: number[] = [];
         for (let i = 0; i < remainingVolumes; i++) {
           const volTitle = createAllVolumes
-            ? (i === 0 && req.body.projectTitle ? req.body.projectTitle : volumeTitles[i])
-            : (req.body.projectTitle || result.title);
+            ? (i === 0 && body.projectTitle ? body.projectTitle : volumeTitles[i])
+            : (body.projectTitle || result.title);
           const volOrder = nextSeriesOrder !== null ? nextSeriesOrder + i : null;
           const volPremise = isSeriesGuide
             ? (createAllVolumes
-              ? `Volumen ${volOrder || existingVolumeCount + i + 1} de la serie "${req.body.seriesTitle || ""}"`
-              : `Continuación de la serie "${req.body.seriesTitle || ""}"`)
+              ? `Volumen ${volOrder || existingVolumeCount + i + 1} de la serie "${body.seriesTitle || ""}"`
+              : `Continuación de la serie "${body.seriesTitle || ""}"`)
             : isPseudonymNovel
-              ? `Novela original generada para el pseudónimo "${req.body.pseudonymName || params.pseudonymName || ""}" — premisa completa en la guía extendida.`
-              : (req.body.idea || null);
+              ? `Novela original generada para el pseudónimo "${body.pseudonymName || params.pseudonymName || ""}" — premisa completa en la guía extendida.`
+              : (body.idea || null);
 
           // Para pseudonym_style el género/tono no llegan del formulario:
           // se toman del pseudónimo (ya hidratados en `params` arriba).
-          const projectGenre = req.body.genre || (isPseudonymNovel ? params.pseudonymGenre : undefined) || "fantasy";
-          const projectTone = req.body.tone || (isPseudonymNovel ? params.pseudonymTone : undefined) || "dramatic";
+          const projectGenre = body.genre || (isPseudonymNovel ? params.pseudonymGenre : undefined) || "fantasy";
+          const projectTone = body.tone || (isPseudonymNovel ? params.pseudonymTone : undefined) || "dramatic";
 
           const project = await storage.createProject({
             title: volTitle,
@@ -10391,9 +10409,9 @@ CRITERIOS:
             genre: projectGenre,
             tone: projectTone,
             chapterCount,
-            hasPrologue: req.body.hasPrologue || false,
-            hasEpilogue: req.body.hasEpilogue || false,
-            hasAuthorNote: req.body.hasAuthorNote || false,
+            hasPrologue: body.hasPrologue || false,
+            hasEpilogue: body.hasEpilogue || false,
+            hasAuthorNote: body.hasAuthorNote || false,
             pseudonymId: targetPseudonymId,
             styleGuideId: validatedStyleGuideId,
             extendedGuideId: extendedGuide.id,
@@ -10402,25 +10420,30 @@ CRITERIOS:
             seriesOrder: volOrder,
             minWordsPerChapter: minWords,
             maxWordsPerChapter: maxWords,
-            kindleUnlimitedOptimized: req.body.kindleUnlimitedOptimized || false,
+            kindleUnlimitedOptimized: body.kindleUnlimitedOptimized || false,
           });
           createdProjectIds.push(project.id);
         }
 
-        res.json({
-          ...guide,
-          assignedPseudonymId: targetPseudonymId,
-          extendedGuideId: extendedGuide.id,
-          projectId: createdProjectIds[0],
-          projectIds: createdProjectIds,
-          projectsCreated: createdProjectIds.length,
-          seriesId,
+        await storage.updateGuideGenerationJob(jobId, {
+          status: "completed",
+          resultGuideId: guide.id,
+          resultPayload: {
+            ...guide,
+            assignedPseudonymId: targetPseudonymId,
+            extendedGuideId: extendedGuide.id,
+            projectId: createdProjectIds[0],
+            projectIds: createdProjectIds,
+            projectsCreated: createdProjectIds.length,
+            seriesId,
+          } as any,
+          completedAt: new Date(),
         });
       } else {
         // Solo `author_style` sigue creando una guía de estilo automática para
         // el pseudónimo. `pseudonym_style` ya NO entra aquí porque ahora genera
         // una guía de novela (entra por la rama isProjectCreatingGuide arriba).
-        if (targetPseudonymId && req.body.guideType === "author_style") {
+        if (targetPseudonymId && body.guideType === "author_style") {
           await storage.createStyleGuide({
             pseudonymId: targetPseudonymId,
             title: result.title,
@@ -10428,11 +10451,70 @@ CRITERIOS:
           });
         }
 
-        res.json({ ...guide, assignedPseudonymId: targetPseudonymId });
+        await storage.updateGuideGenerationJob(jobId, {
+          status: "completed",
+          resultGuideId: guide.id,
+          resultPayload: { ...guide, assignedPseudonymId: targetPseudonymId } as any,
+          completedAt: new Date(),
+        });
       }
     } catch (error: any) {
-      console.error("Error generating guide:", error);
-      res.status(500).json({ error: error.message });
+      console.error("[Fix43] Error generating guide in background job:", error);
+      try {
+        await storage.updateGuideGenerationJob(jobId, {
+          status: "failed",
+          errorMessage: error?.message || String(error),
+          completedAt: new Date(),
+        });
+      } catch (persistErr) {
+        console.error("[Fix43] Failed to persist job failure:", persistErr);
+      }
+    }
+  }
+
+  // [Fix43] POST endpoint thin: crea el job, dispara helper en background y
+  // responde 202 inmediatamente. El frontend hace polling al GET de abajo.
+  app.post("/api/guides/generate", async (req: Request, res: Response) => {
+    try {
+      if (!req.body || typeof req.body !== "object" || !req.body.guideType) {
+        return res.status(400).json({ error: "guideType requerido" });
+      }
+      const job = await storage.createGuideGenerationJob({
+        status: "pending",
+        guideType: req.body.guideType,
+        params: req.body,
+      });
+      // Fire and forget — el helper actualiza el job al terminar.
+      runGuideGenerationJob(job.id, req.body).catch((err) => {
+        console.error("[Fix43] runGuideGenerationJob unhandled rejection:", err);
+      });
+      res.status(202).json({ jobId: job.id, status: "pending" });
+    } catch (error: any) {
+      console.error("[Fix43] Error creating guide generation job:", error);
+      res.status(500).json({ error: error?.message || "Failed to start guide generation" });
+    }
+  });
+
+  // [Fix43] GET para polling. El frontend lee status hasta completed/failed.
+  app.get("/api/guides/jobs/:id", async (req: Request, res: Response) => {
+    try {
+      if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "ID inválido" });
+      const jobId = parseInt(req.params.id, 10);
+      const job = await storage.getGuideGenerationJob(jobId);
+      if (!job) return res.status(404).json({ error: "Job no encontrado" });
+      res.json({
+        id: job.id,
+        status: job.status,
+        guideType: job.guideType,
+        resultGuideId: job.resultGuideId,
+        resultPayload: job.resultPayload,
+        errorMessage: job.errorMessage,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+      });
+    } catch (error: any) {
+      console.error("[Fix43] Error GET guide job:", error);
+      res.status(500).json({ error: "Failed to fetch guide job" });
     }
   });
 

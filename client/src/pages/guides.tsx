@@ -1040,10 +1040,38 @@ export default function GuidesPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("library");
 
+  // [Fix43] Generación en background con polling. El POST devuelve 202+jobId
+  // (evita el timeout 524 de Cloudflare). Hacemos polling cada 4s al GET del
+  // job hasta status in (completed | failed). Mostramos toast informativo al
+  // arrancar y al terminar; el éxito mantiene el mismo callback que antes.
   const generateMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await apiRequest("POST", "/api/guides/generate", data);
-      return res.json();
+      const { jobId } = await res.json();
+      if (!jobId) throw new Error("El servidor no devolvió jobId");
+      // Toast inmediato: la generación tarda 1-3 min.
+      toast({
+        title: "Generación iniciada",
+        description: "La guía se está generando en segundo plano. Te avisaremos cuando esté lista (1-3 min).",
+      });
+      const startedAt = Date.now();
+      const TIMEOUT_MS = 10 * 60 * 1000;
+      while (true) {
+        if (Date.now() - startedAt > TIMEOUT_MS) {
+          throw new Error("La generación tardó demasiado (>10 min). Revisa la biblioteca de guías por si terminó después.");
+        }
+        await new Promise((r) => setTimeout(r, 4000));
+        const jobRes = await fetch(`/api/guides/jobs/${jobId}`);
+        if (!jobRes.ok) throw new Error(`Error consultando el job (${jobRes.status})`);
+        const job = await jobRes.json();
+        if (job.status === "completed") {
+          return job.resultPayload || {};
+        }
+        if (job.status === "failed") {
+          throw new Error(job.errorMessage || "La generación falló sin mensaje");
+        }
+        // pending | running → seguimos polleando
+      }
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/guides"] });
