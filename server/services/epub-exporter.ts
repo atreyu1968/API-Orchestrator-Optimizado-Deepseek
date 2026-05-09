@@ -300,7 +300,7 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
 <div class="title-page">
   <div style="text-align:center;">
     <h1 class="book-title" style="text-align:center; text-indent:0;">${escapeHtml(data.title)}</h1>
-    <p class="author" style="text-align:center; text-indent:0; margin-left:0; margin-right:0; padding-left:0; padding-right:0;">${escapeHtml(authorName)}</p>
+    <h2 class="author" style="text-align:center; text-indent:0; margin-left:0; margin-right:0; padding-left:0; padding-right:0; font-weight:normal; font-style:italic;">${escapeHtml(authorName)}</h2>
   </div>
   ${publisherLogo ? `<div class="publisher-logo"><img src="../image/publisher-logo.${publisherLogo.ext}" alt="${escapeXml(publisher?.name || "")}"/></div>` : ""}
 </div>`;
