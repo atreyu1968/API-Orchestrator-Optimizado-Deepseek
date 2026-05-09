@@ -298,8 +298,8 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
   // 1. Title page
   const titleBody = `
 <div class="title-page">
-  <h1 class="book-title">${escapeHtml(data.title)}</h1>
-  <p class="author">${escapeHtml(authorName)}</p>
+  <h1 class="book-title" style="text-align:center;">${escapeHtml(data.title)}</h1>
+  <p class="author" style="text-align:center; text-indent:0; margin-left:0; margin-right:0;">${escapeHtml(authorName)}</p>
   ${publisherLogo ? `<div class="publisher-logo"><img src="../image/publisher-logo.${publisherLogo.ext}" alt="${escapeXml(publisher?.name || "")}"/></div>` : ""}
 </div>`;
   zip.file("OEBPS/xhtml/title.xhtml", xhtmlPage(labels.titlePage, lang, "title-page-body", titleBody));
