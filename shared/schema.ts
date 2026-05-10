@@ -584,7 +584,14 @@ export const translations = pgTable("translations", {
   markdown: text("markdown").notNull(),
   inputTokens: integer("input_tokens").default(0),
   outputTokens: integer("output_tokens").default(0),
-  status: text("status").notNull().default("pending"), // pending, translating, completed, error
+  status: text("status").notNull().default("pending"), // pending, translating, completed, error, polishing
+  // [Fix55] Auto-loop del Lector Beta sobre traducciones creadas (no subidas).
+  // Al activarlo, tras completar la traducción capítulo a capítulo el sistema
+  // relee el manuscrito traducido en modo lingüístico y pule fluidez iterativamente.
+  autoBetaLoop: boolean("auto_beta_loop").default(false),
+  autoBetaLoopMaxIterations: integer("auto_beta_loop_max_iterations").default(2),
+  betaReviewNotes: text("beta_review_notes"),
+  betaReviewIterationsRun: integer("beta_review_iterations_run").default(0),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

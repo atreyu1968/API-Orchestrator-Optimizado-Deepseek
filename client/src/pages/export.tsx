@@ -24,7 +24,20 @@ import {
   X,
   Search,
   Play,
+  BookText,
+  Repeat,
+  MessageSquare,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import type { Publisher } from "@shared/schema";
+
+const EPUB_STYLE_OPTIONS = [
+  { id: "classic",  label: "Clásico"      },
+  { id: "modern",   label: "Moderno"      },
+  { id: "romance",  label: "Romance"      },
+  { id: "minimal",  label: "Minimalista"  },
+];
 
 interface TranslationProgress {
   isTranslating: boolean;
@@ -69,7 +82,9 @@ interface SavedTranslation {
   totalWords: number;
   inputTokens: number;
   outputTokens: number;
-  status: "pending" | "translating" | "completed" | "error";
+  status: "pending" | "translating" | "completed" | "error" | "polishing";
+  betaReviewNotes?: string | null;
+  betaReviewIterationsRun?: number | null;
   createdAt: string;
 }
 
@@ -163,6 +178,16 @@ export default function ExportPage() {
   const [eventSourceRef, setEventSourceRef] = useState<EventSource | null>(null);
   const [projectSearch, setProjectSearch] = useState("");
   const [translationSearch, setTranslationSearch] = useState("");
+  // [Fix55] Form: opt-in al auto-loop del Beta sobre la traducción creada.
+  const [autoBetaLoop, setAutoBetaLoop] = useState(false);
+  const [autoBetaLoopMaxIterations, setAutoBetaLoopMaxIterations] = useState(2);
+  // [Fix55] Dialog de exportación EPUB para una traducción concreta.
+  const [epubDialogTranslation, setEpubDialogTranslation] = useState<SavedTranslation | null>(null);
+  const [epubPublisherId, setEpubPublisherId] = useState<string>("none");
+  const [epubStyleId, setEpubStyleId] = useState<string>("classic");
+  // [Fix55] Visualizar las notas del Beta tras el bucle.
+  const [betaNotesDialog, setBetaNotesDialog] = useState<SavedTranslation | null>(null);
+  const { data: publishersList = [] } = useQuery<Publisher[]>({ queryKey: ["/api/publishers"] });
   
   const savedState = loadTranslationState();
   const [translationProgress, setTranslationProgress] = useState<TranslationProgress>({
@@ -187,7 +212,7 @@ export default function ExportPage() {
     }
   });
 
-  const startTranslation = useCallback((projectId: number, srcLang: string, tgtLang: string, projectTitle?: string, source: "original" | "reedit" = "original") => {
+  const startTranslation = useCallback((projectId: number, srcLang: string, tgtLang: string, projectTitle?: string, source: "original" | "reedit" = "original", autoBetaLoop: boolean = false, autoBetaLoopMaxIterations: number = 2) => {
     const title = projectTitle || completedProjects.find(p => p.id === projectId)?.title || "Proyecto";
     
     setTranslationProgress({
@@ -216,9 +241,17 @@ export default function ExportPage() {
     const baseUrl = source === "reedit" 
       ? `/api/reedit-projects/${projectId}/translate-stream`
       : `/api/projects/${projectId}/translate-stream`;
-    const eventSource = new EventSource(
-      `${baseUrl}?sourceLanguage=${srcLang}&targetLanguage=${tgtLang}`
-    );
+    // [Fix55] Solo el endpoint de proyectos originales acepta autoBetaLoop;
+    // las traducciones de reedit_projects ya tienen su propio mecanismo (Fix52).
+    const params = new URLSearchParams({
+      sourceLanguage: srcLang,
+      targetLanguage: tgtLang,
+    });
+    if (source === "original" && autoBetaLoop) {
+      params.set("autoBetaLoop", "true");
+      params.set("autoBetaLoopMaxIterations", String(autoBetaLoopMaxIterations));
+    }
+    const eventSource = new EventSource(`${baseUrl}?${params.toString()}`);
     setEventSourceRef(eventSource);
 
     eventSource.addEventListener("start", (event) => {
@@ -857,6 +890,44 @@ export default function ExportPage() {
                     </div>
                   )}
 
+                  {/* [Fix55] Auto-loop del Beta sobre la traducción creada (solo en proyectos originales) */}
+                  {!translationProgress.isTranslating && selectedProject.source === "original" && (
+                    <div className="p-3 border border-border rounded-md space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="auto-beta-loop-translation"
+                          checked={autoBetaLoop}
+                          onCheckedChange={(v) => setAutoBetaLoop(v === true)}
+                          data-testid="checkbox-auto-beta-loop-translation"
+                        />
+                        <Label htmlFor="auto-beta-loop-translation" className="text-sm font-medium cursor-pointer flex items-center gap-1.5">
+                          <Repeat className="h-3.5 w-3.5" />
+                          Pulir con el Lector Beta tras traducir
+                        </Label>
+                      </div>
+                      <p className="text-xs text-muted-foreground pl-6">
+                        Al terminar la traducción, el Beta la relee en el idioma destino y pule fluidez/calcos/falsos amigos en bucle.
+                      </p>
+                      {autoBetaLoop && (
+                        <div className="pl-6 flex items-center gap-2">
+                          <Label className="text-xs">Iteraciones máx:</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={autoBetaLoopMaxIterations}
+                            onChange={(e) => {
+                              const n = parseInt(e.target.value, 10);
+                              if (!isNaN(n)) setAutoBetaLoopMaxIterations(Math.max(1, Math.min(10, n)));
+                            }}
+                            className="h-7 w-16"
+                            data-testid="input-auto-beta-loop-iter"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {hasExistingTranslation ? (
                     <div className="p-3 bg-muted rounded-md text-sm text-center">
                       {isTranslationInProgress ? (
@@ -872,7 +943,7 @@ export default function ExportPage() {
                     </div>
                   ) : (
                     <Button
-                      onClick={() => startTranslation(selectedProject.id, sourceLanguage, targetLanguage, selectedProject.title, selectedProject.source)}
+                      onClick={() => startTranslation(selectedProject.id, sourceLanguage, targetLanguage, selectedProject.title, selectedProject.source, autoBetaLoop && selectedProject.source === "original", autoBetaLoopMaxIterations)}
                       disabled={translationProgress.isTranslating || sourceLanguage === targetLanguage}
                       className="w-full"
                       data-testid="button-translate-project"
@@ -959,7 +1030,18 @@ export default function ExportPage() {
                         </Badge>
                       ) : translation.status === "error" ? (
                         <Badge variant="destructive">Error</Badge>
+                      ) : translation.status === "polishing" ? (
+                        <Badge variant="outline" className="animate-pulse bg-purple-500/10 text-purple-600 border-purple-200">
+                          <Repeat className="h-3 w-3 mr-1" />
+                          Puliendo (iter {translation.betaReviewIterationsRun ?? 1})
+                        </Badge>
                       ) : null}
+                      {translation.status === "completed" && translation.betaReviewNotes && (
+                        <Badge variant="outline" className="bg-amber-500/10 text-amber-700 border-amber-200">
+                          <MessageSquare className="h-3 w-3 mr-1" />
+                          Beta: {translation.betaReviewIterationsRun ?? 1} iter
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
                       <Badge variant="outline">
@@ -976,20 +1058,47 @@ export default function ExportPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     {translation.status === "completed" ? (
-                      <Button
-                        size="sm"
-                        onClick={() => downloadTranslationMutation.mutate(translation.id)}
-                        disabled={downloadTranslationMutation.isPending}
-                        data-testid={`button-download-translation-${translation.id}`}
-                      >
-                        {downloadTranslationMutation.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Download className="h-4 w-4 mr-2" />
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => downloadTranslationMutation.mutate(translation.id)}
+                          disabled={downloadTranslationMutation.isPending}
+                          data-testid={`button-download-translation-${translation.id}`}
+                        >
+                          {downloadTranslationMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4 mr-2" />
+                          )}
+                          MD
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEpubPublisherId("none");
+                            setEpubStyleId("classic");
+                            setEpubDialogTranslation(translation);
+                          }}
+                          data-testid={`button-export-epub-translation-${translation.id}`}
+                        >
+                          <BookText className="h-4 w-4 mr-2" />
+                          EPUB
+                        </Button>
+                        {translation.betaReviewNotes && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setBetaNotesDialog(translation)}
+                            className="text-amber-700 hover:bg-amber-500/10"
+                            data-testid={`button-view-beta-notes-${translation.id}`}
+                            title="Ver notas del Lector Beta"
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                          </Button>
                         )}
-                        Descargar
-                      </Button>
-                    ) : translation.status === "translating" ? (
+                      </>
+                    ) : translation.status === "translating" || translation.status === "polishing" ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -1000,10 +1109,12 @@ export default function ExportPage() {
                       >
                         {translationProgress.isTranslating ? (
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : translation.status === "polishing" ? (
+                          <Repeat className="h-4 w-4 mr-2 animate-spin" />
                         ) : (
                           <Play className="h-4 w-4 mr-2" />
                         )}
-                        Reanudar
+                        {translation.status === "polishing" ? "Puliendo..." : "Reanudar"}
                       </Button>
                     ) : (
                       <Button
@@ -1038,6 +1149,72 @@ export default function ExportPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* [Fix55] Dialog: exportar una traducción a EPUB con editorial+estilo */}
+      <Dialog open={!!epubDialogTranslation} onOpenChange={(open) => { if (!open) setEpubDialogTranslation(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Exportar traducción a EPUB</DialogTitle>
+            <DialogDescription>
+              {epubDialogTranslation?.projectTitle} — {getLangName(epubDialogTranslation?.targetLanguage || "en")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label>Editorial (opcional)</Label>
+            <Select value={epubPublisherId} onValueChange={setEpubPublisherId}>
+              <SelectTrigger data-testid="select-translation-epub-publisher"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sin editorial</SelectItem>
+                {publishersList.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Label className="pt-2">Estilo del EPUB</Label>
+            <Select value={epubStyleId} onValueChange={setEpubStyleId}>
+              <SelectTrigger data-testid="select-translation-epub-style"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {EPUB_STYLE_OPTIONS.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                if (!epubDialogTranslation) return;
+                const params = new URLSearchParams();
+                if (epubPublisherId !== "none") params.set("publisherId", epubPublisherId);
+                params.set("styleId", epubStyleId);
+                window.open(`/api/translations/${epubDialogTranslation.id}/export-epub?${params.toString()}`, "_blank");
+                setEpubDialogTranslation(null);
+              }}
+              data-testid="button-confirm-export-translation-epub"
+            >
+              <Download className="h-4 w-4 mr-2" /> Descargar EPUB
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* [Fix55] Dialog: notas del Lector Beta tras el bucle de pulido */}
+      <Dialog open={!!betaNotesDialog} onOpenChange={(open) => { if (!open) setBetaNotesDialog(null); }}>
+        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Notas del Lector Beta</DialogTitle>
+            <DialogDescription>
+              {betaNotesDialog?.projectTitle} — {getLangName(betaNotesDialog?.targetLanguage || "en")}
+              {betaNotesDialog?.betaReviewIterationsRun ? ` · ${betaNotesDialog.betaReviewIterationsRun} iteración(es) ejecutada(s)` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="flex-1 max-h-[60vh] pr-4">
+            <pre className="text-xs whitespace-pre-wrap font-mono leading-relaxed" data-testid="text-beta-notes-content">
+              {betaNotesDialog?.betaReviewNotes || ""}
+            </pre>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

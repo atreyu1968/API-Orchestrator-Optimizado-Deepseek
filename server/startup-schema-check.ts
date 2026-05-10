@@ -13,6 +13,10 @@ const REQUIRED_COLUMNS: RequiredColumn[] = [
   { table: "reedit_projects", column: "pending_editorial_parse", addedIn: "Fix34" },
   { table: "reedit_projects", column: "auto_beta_loop_on_translations", addedIn: "Fix52" },
   { table: "reedit_projects", column: "auto_beta_loop_on_translations_max_iterations", addedIn: "Fix52" },
+  { table: "translations", column: "auto_beta_loop", addedIn: "Fix55" },
+  { table: "translations", column: "auto_beta_loop_max_iterations", addedIn: "Fix55" },
+  { table: "translations", column: "beta_review_notes", addedIn: "Fix55" },
+  { table: "translations", column: "beta_review_iterations_run", addedIn: "Fix55" },
 ];
 
 const REQUIRED_TABLES: RequiredTable[] = [

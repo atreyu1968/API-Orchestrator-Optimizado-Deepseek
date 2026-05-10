@@ -6645,6 +6645,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     const projectId = parseInt(req.params.id);
     const targetLanguage = req.query.targetLanguage as string;
     const sourceLanguage = (req.query.sourceLanguage as string) || "es";
+    // [Fix55] Auto-loop del Beta sobre la traducción creada (opt-in).
+    const autoBetaLoop = String(req.query.autoBetaLoop || "").toLowerCase() === "true";
+    const autoBetaLoopMaxIterations = (() => {
+      const n = parseInt(String(req.query.autoBetaLoopMaxIterations || "2"), 10);
+      if (isNaN(n)) return 2;
+      return Math.max(1, Math.min(10, n));
+    })();
     
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -6695,6 +6702,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         markdown: "",
         inputTokens: 0,
         outputTokens: 0,
+        autoBetaLoop,
+        autoBetaLoopMaxIterations,
       });
       translationRecordId = translation.id;
       console.log(`[Translation] Initialized repository record ID ${translationRecordId}`);
@@ -7132,6 +7141,23 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       
       cleanup();
       res.end();
+
+      // [Fix55] Tras cerrar el SSE, si el usuario activó el auto-loop del Beta
+      // sobre la traducción, lo lanzamos en background. NO bloqueamos la
+      // respuesta SSE (que ya se cerró) y cualquier error queda en consola +
+      // persiste estado en la propia translation.
+      if (autoBetaLoop && translationRecordId) {
+        const recId = translationRecordId;
+        (async () => {
+          try {
+            const { runAutoBetaLoopOnPlainTranslation } = await import("./services/translation-beta-polish");
+            await runAutoBetaLoopOnPlainTranslation(recId);
+          } catch (e) {
+            console.error(`[Fix55] auto-beta-loop fallo en translation ${recId}:`, (e as Error).message);
+            await storage.updateTranslation(recId, { status: "completed" }).catch(() => {});
+          }
+        })();
+      }
     } catch (error) {
       console.error("Error translating project:", error);
       sendEvent("error", { error: "Failed to translate project" });
@@ -7316,6 +7342,102 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     return lines.join("\n");
   };
 
+  // [Fix55] EPUB export para traducciones CREADAS (tabla `translations`).
+  // Las traducciones subidas viajan por reedit_projects y usan el endpoint
+  // `/api/reedit-projects/:id/export-epub` (Fix51). Aquí parseamos el markdown
+  // de la translation con el mismo formato que `buildCleanMarkdownLines` produce
+  // (## ${heading}\n\nbody) y se lo pasamos al generador genérico.
+  app.get("/api/translations/:id/export-epub", async (req: Request, res: Response) => {
+    try {
+      const translationId = parseInt(req.params.id);
+      const translation = await storage.getTranslation(translationId);
+      if (!translation) return res.status(404).json({ error: "Translation not found" });
+      if (translation.status !== "completed") {
+        return res.status(400).json({ error: "Translation is not completed yet" });
+      }
+      if (!translation.markdown || translation.markdown.trim().length === 0) {
+        return res.status(400).json({ error: "Translation has no content to export" });
+      }
+
+      const { parseTranslationMarkdown } = await import("./services/translation-beta-polish");
+      const { generateGenericManuscriptEpub } = await import("./services/epub-exporter");
+
+      const targetLanguage = (translation.targetLanguage || "es").toLowerCase();
+      const parsedChapters = parseTranslationMarkdown(translation.markdown, targetLanguage);
+      if (parsedChapters.length === 0) {
+        return res.status(400).json({ error: "Could not parse any chapters from translation markdown" });
+      }
+
+      // Resolver autor: para translation.source === "original" leemos el pseudonym
+      // del proyecto fuente; para "reedit" del reedit project. Best-effort.
+      let authorName: string | undefined;
+      let authorWebsiteUrl: string | null = null;
+      let authorBio: string | null = null;
+      try {
+        if (translation.source === "original" && translation.projectId) {
+          const project = await storage.getProject(translation.projectId);
+          if (project?.pseudonymId) {
+            const pseudonym = await storage.getPseudonym(project.pseudonymId);
+            if (pseudonym) {
+              authorName = pseudonym.name;
+              if (pseudonym.websiteUrl) authorWebsiteUrl = pseudonym.websiteUrl;
+              if ((pseudonym as any).bio) authorBio = (pseudonym as any).bio;
+            }
+          }
+        } else if (translation.source === "reedit" && translation.reeditProjectId) {
+          const reeditProject = await storage.getReeditProject(translation.reeditProjectId);
+          if (reeditProject?.pseudonymId) {
+            const pseudonym = await storage.getPseudonym(reeditProject.pseudonymId);
+            if (pseudonym) {
+              authorName = pseudonym.name;
+              if (pseudonym.websiteUrl) authorWebsiteUrl = pseudonym.websiteUrl;
+              if ((pseudonym as any).bio) authorBio = (pseudonym as any).bio;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[Fix55] Could not resolve author for translation EPUB:", (e as Error).message);
+      }
+
+      const publisherId = req.query.publisherId ? parseInt(String(req.query.publisherId)) : null;
+      const publisher = publisherId ? await storage.getPublisher(publisherId) : null;
+
+      const validStyles = ["classic", "modern", "romance", "minimal"] as const;
+      const styleParam = String(req.query.styleId || "").toLowerCase();
+      const styleId = (validStyles as readonly string[]).includes(styleParam)
+        ? (styleParam as typeof validStyles[number])
+        : "classic";
+
+      const buffer = await generateGenericManuscriptEpub({
+        title: translation.projectTitle,
+        authorName,
+        language: targetLanguage,
+        publisher,
+        authorWebsiteUrl,
+        authorBio,
+        chapters: parsedChapters.map(c => ({
+          chapterNumber: c.chapterNumber,
+          title: null, // El heading completo ya viene en el body como contexto del capítulo.
+          content: c.body,
+        })),
+        styleId,
+      });
+
+      const safeTitle = translation.projectTitle
+        .replace(/[^a-zA-Z0-9áéíóúñüÁÉÍÓÚÑÜ\s-]/g, "")
+        .trim()
+        .replace(/\s+/g, "_");
+      const filename = `${safeTitle}_${targetLanguage.toUpperCase()}.epub`;
+      res.setHeader("Content-Type", "application/epub+zip");
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader("Content-Length", buffer.length);
+      res.send(buffer);
+    } catch (error) {
+      console.error("Error exporting translation EPUB:", error);
+      res.status(500).json({ error: "Failed to export translation EPUB" });
+    }
+  });
+
   // Resume a stuck translation from where it left off
   app.get("/api/translations/:id/resume", async (req: Request, res: Response) => {
     const translationId = parseInt(req.params.id);
@@ -7347,6 +7469,17 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const existingTranslation = await storage.getTranslation(translationId);
       if (!existingTranslation) {
         sendEvent("error", { error: "Translation not found" });
+        cleanup();
+        res.end();
+        return;
+      }
+      // [Fix55 review-A] No permitir resume mientras el bucle Beta de pulido está
+      // corriendo en background sobre esta traducción — ambos procesos pisarían
+      // markdown/status simultáneamente. El usuario debe esperar a que termine.
+      if (existingTranslation.status === "polishing") {
+        sendEvent("error", {
+          error: "La traducción está siendo pulida por el Lector Beta. Espera a que termine antes de reanudar.",
+        });
         cleanup();
         res.end();
         return;
