@@ -296,7 +296,8 @@ h2 { font-size: 1.2em; margin: 1.5em 0 0.8em 0; }
 p { text-indent: 0; margin: 0 0 0.9em 0; text-align: left; }
 .title-page h1.book-title { font-size: 2em; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4em; font-weight: 700; }
 .title-page h2.author { font-size: 1em; font-weight: 400; font-style: normal; margin-top: 1.2em; text-transform: uppercase; letter-spacing: 0.15em; color: #444; }
-.drop-cap { float: none; font-size: 1em; font-weight: bold; padding: 0; }
+/* [Fix60] Drop-cap activo también en modern: bold sans-serif a 4em flotando a la izquierda. */
+.drop-cap { float: left; font-size: 4em; line-height: 0.85; padding-right: 0.1em; padding-top: 0.05em; font-weight: 700; }
 hr.section-break:before { content: "\\2014 \\00A0 \\2014 \\00A0 \\2014"; color: #888; letter-spacing: 0.3em; }
 `,
     romance: `body { font-family: "EB Garamond", Garamond, "Hoefler Text", "Times New Roman", serif; }
@@ -306,7 +307,8 @@ h2 { font-size: 1.3em; margin: 1.5em 0 0.8em 0; font-style: italic; }
 p { text-indent: 1.6em; margin: 0 0 0.4em 0; text-align: justify; }
 .title-page h1.book-title { font-size: 2.4em; font-style: italic; font-weight: normal; margin-bottom: 0.3em; }
 .title-page h2.author { font-size: 1.15em; font-weight: normal; font-style: normal; margin-top: 1.4em; letter-spacing: 0.1em; text-transform: uppercase; color: #5a3a3a; }
-.drop-cap { float: left; font-size: 4.6em; line-height: 0.85; padding-right: 0.1em; padding-top: 0.05em; font-weight: normal; font-style: italic; color: #5a3a3a; }
+/* [Fix60] Drop-cap del tema romance: ahora en bold (no normal) para que destaque como en la imagen de referencia, manteniendo italic y color granate. */
+.drop-cap { float: left; font-size: 4.6em; line-height: 0.85; padding-right: 0.1em; padding-top: 0.05em; font-weight: bold; font-style: italic; color: #5a3a3a; }
 hr.section-break:before { content: "\\273F \\00A0 \\273F \\00A0 \\273F"; color: #a06868; }
 `,
     minimal: `body { font-family: "Iowan Old Style", "Palatino", "Palatino Linotype", Georgia, serif; }
@@ -316,7 +318,8 @@ h2 { font-size: 1.1em; margin: 1.2em 0 0.6em 0; }
 p { text-indent: 1.2em; margin: 0 0 0.25em 0; text-align: justify; }
 .title-page h1.book-title { font-size: 1.7em; font-weight: normal; margin-bottom: 0.4em; }
 .title-page h2.author { font-size: 1em; font-weight: normal; font-style: normal; margin-top: 1em; color: #555; }
-.drop-cap { float: none; font-size: 1em; font-weight: normal; padding: 0; }
+/* [Fix60] Drop-cap activo también en minimal: bold serif algo más contenido (3.6em) para no romper la sobriedad del tema. */
+.drop-cap { float: left; font-size: 3.6em; line-height: 0.85; padding-right: 0.1em; padding-top: 0.05em; font-weight: bold; }
 hr.section-break:before { content: "\\2022 \\00A0 \\2022 \\00A0 \\2022"; color: #999; }
 `,
   };
@@ -355,7 +358,8 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
   const bookUuid = uuidv4Fallback();
 
   const styleId: EpubStyleId = data.styleId || "classic";
-  const useDropCap = styleId === "classic" || styleId === "romance";
+  // [Fix60] Drop-cap activo en los 4 temas (antes solo classic/romance). El CSS de cada tema controla el tamaño y peso concretos.
+  const useDropCap = true;
 
   const zip = new JSZip();
   // mimetype must be FIRST and STORED (uncompressed) per EPUB spec.
