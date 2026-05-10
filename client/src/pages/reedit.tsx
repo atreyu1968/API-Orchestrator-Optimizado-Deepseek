@@ -717,6 +717,16 @@ export default function ReeditPage() {
   const [autoBetaLoopOnTranslationsMaxIter, setAutoBetaLoopOnTranslationsMaxIter] = useState(2);
   const [uploadInstructions, setUploadInstructions] = useState("");
   const [uploadEditorialCritique, setUploadEditorialCritique] = useState("");
+  // [Fix58] Vinculación opcional a serie en el momento del import. Tres modos:
+  //   "none"    → libro suelto (default).
+  //   "create"  → crear nueva serie en el mismo POST (el handler hace POST /api/series primero).
+  //   "<n>"     → vincular a una serie existente cuyo id es n.
+  // `uploadSeriesOrder` es el N° de volumen dentro de la serie (1, 2, 3…).
+  // Para "create" se usan también `newSeriesTitle` y `newSeriesTotalBooks`.
+  const [uploadSeriesId, setUploadSeriesId] = useState<string>("none");
+  const [uploadSeriesOrder, setUploadSeriesOrder] = useState<number>(1);
+  const [newSeriesTitle, setNewSeriesTitle] = useState("");
+  const [newSeriesTotalBooks, setNewSeriesTotalBooks] = useState(3);
   
   // Restart dialog state
   const [showRestartDialog, setShowRestartDialog] = useState(false);
@@ -735,6 +745,31 @@ export default function ReeditPage() {
   const { data: projects = [], isLoading: projectsLoading } = useQuery<ReeditProject[]>({
     queryKey: ["/api/reedit-projects"],
     refetchInterval: 5000,
+  });
+
+  // [Fix58] Lista de series existentes para poblar el select del modal de import.
+  const { data: seriesList = [] } = useQuery<Array<{ id: number; title: string; totalPlannedBooks: number | null; workType: string }>>({
+    queryKey: ["/api/series"],
+  });
+
+  const createSeriesMutation = useMutation({
+    mutationFn: async (data: { title: string; totalPlannedBooks: number }) => {
+      const res = await apiRequest("POST", "/api/series", {
+        title: data.title.trim(),
+        workType: "series",
+        totalPlannedBooks: data.totalPlannedBooks,
+      });
+      return res.json();
+    },
+    onSuccess: (newSeries: { id: number; title: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/series"] });
+      toast({ title: "Serie creada", description: `"${newSeries.title}" lista para vincular el manuscrito.` });
+      setUploadSeriesId(String(newSeries.id));
+      setNewSeriesTitle("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error al crear serie", description: error.message, variant: "destructive" });
+    },
   });
 
   const { data: chapters = [] } = useQuery<ReeditChapter[]>({
@@ -1033,6 +1068,9 @@ export default function ReeditPage() {
       toast({ title: "Información Faltante", description: "Por favor proporciona un título y un archivo", variant: "destructive" });
       return;
     }
+    // [Fix58] Marcar isUploading=true ANTES del posible POST /api/series para
+    // evitar que un doble click cree dos series. El botón se deshabilita por
+    // `isUploading` (ver `disabled={... || isUploading}` más abajo).
     setIsUploading(true);
     const formData = new FormData();
     formData.append("manuscript", uploadFile);
@@ -1049,14 +1087,46 @@ export default function ReeditPage() {
     if (uploadEditorialCritique.trim()) {
       formData.append("editorialCritique", uploadEditorialCritique.trim());
     }
+    // [Fix58] Vinculación a serie. Si "create", primero llamamos POST /api/series
+    // para obtener el id; si "<n>", lo usamos directamente. En ambos casos se
+    // anexa seriesId+seriesOrder al FormData del POST /api/reedit-projects.
+    let resolvedSeriesId: number | null = null;
+    if (uploadSeriesId === "create") {
+      if (!newSeriesTitle.trim()) {
+        toast({ title: "Título de serie faltante", description: "Indica un título para la nueva serie o elige 'Ninguna serie'.", variant: "destructive" });
+        setIsUploading(false);
+        return;
+      }
+      try {
+        const created = await createSeriesMutation.mutateAsync({
+          title: newSeriesTitle,
+          totalPlannedBooks: Math.max(1, newSeriesTotalBooks),
+        });
+        resolvedSeriesId = created.id;
+      } catch {
+        setIsUploading(false);
+        return; // toast ya disparado por la mutación
+      }
+    } else if (uploadSeriesId !== "none") {
+      const n = parseInt(uploadSeriesId);
+      if (!Number.isNaN(n)) resolvedSeriesId = n;
+    }
+    if (resolvedSeriesId !== null) {
+      formData.append("seriesId", String(resolvedSeriesId));
+      formData.append("seriesOrder", String(Math.max(1, uploadSeriesOrder)));
+    }
     try {
       await uploadMutation.mutateAsync(formData);
       setUploadInstructions("");
       setUploadEditorialCritique("");
+      setUploadSeriesId("none");
+      setUploadSeriesOrder(1);
+      setNewSeriesTitle("");
+      setNewSeriesTotalBooks(3);
     } finally {
       setIsUploading(false);
     }
-  }, [uploadFile, uploadTitle, uploadLanguage, expandChapters, insertNewChapters, targetMinWords, autoBetaLoopOnTranslations, autoBetaLoopOnTranslationsMaxIter, uploadInstructions, uploadEditorialCritique, uploadMutation, toast]);
+  }, [uploadFile, uploadTitle, uploadLanguage, expandChapters, insertNewChapters, targetMinWords, autoBetaLoopOnTranslations, autoBetaLoopOnTranslationsMaxIter, uploadInstructions, uploadEditorialCritique, uploadSeriesId, uploadSeriesOrder, newSeriesTitle, newSeriesTotalBooks, createSeriesMutation, uploadMutation, toast]);
 
   useEffect(() => {
     if (!selectedProject && projects.length > 0) {
@@ -1114,6 +1184,78 @@ export default function ReeditPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              {/* [Fix58] Vinculación opcional a serie en el momento del import. */}
+              <div className="space-y-2 pt-2 border-t">
+                <Label htmlFor="reedit-series" className="text-sm font-medium">
+                  Pertenece a serie (opcional)
+                </Label>
+                <Select value={uploadSeriesId} onValueChange={setUploadSeriesId}>
+                  <SelectTrigger id="reedit-series" data-testid="select-reedit-series">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Ninguna serie (libro suelto)</SelectItem>
+                    <SelectItem value="create">+ Crear nueva serie…</SelectItem>
+                    {seriesList.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)} data-testid={`select-item-series-${s.id}`}>
+                        {s.title} {s.totalPlannedBooks ? `(${s.totalPlannedBooks} vols.)` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {uploadSeriesId === "create" && (
+                  <div className="space-y-2 p-3 rounded-md border bg-muted/40">
+                    <div>
+                      <Label htmlFor="new-series-title" className="text-xs">Título de la nueva serie</Label>
+                      <Input
+                        id="new-series-title"
+                        data-testid="input-new-series-title"
+                        value={newSeriesTitle}
+                        onChange={(e) => setNewSeriesTitle(e.target.value)}
+                        placeholder="Ej. Crónicas del Norte"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="new-series-total" className="text-xs">Volúmenes planificados</Label>
+                      <Input
+                        id="new-series-total"
+                        type="number"
+                        data-testid="input-new-series-total"
+                        value={newSeriesTotalBooks}
+                        onChange={(e) => setNewSeriesTotalBooks(Math.max(1, parseInt(e.target.value) || 1))}
+                        min={1}
+                        max={50}
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+                )}
+                {uploadSeriesId !== "none" && (
+                  <div>
+                    <Label htmlFor="reedit-series-order" className="text-xs">N° de volumen dentro de la serie</Label>
+                    <Input
+                      id="reedit-series-order"
+                      type="number"
+                      data-testid="input-reedit-series-order"
+                      value={uploadSeriesOrder}
+                      onChange={(e) => setUploadSeriesOrder(Math.max(1, parseInt(e.target.value) || 1))}
+                      min={1}
+                      max={50}
+                      className="mt-1"
+                    />
+                    {uploadSeriesOrder > 1 && (
+                      <div className="mt-2 p-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800">
+                        <p className="text-xs text-amber-800 dark:text-amber-200">
+                          <strong>Atención:</strong> al ser el volumen {uploadSeriesOrder}, los lectores Holístico/Beta esperarán hilos heredados de los volúmenes {Array.from({ length: uploadSeriesOrder - 1 }, (_, i) => i + 1).join(", ")}. Sube esos manuscritos previos en{" "}
+                          <Link href="/series" className="underline" data-testid="link-series-page">la página de Series</Link>{" "}
+                          para que el contexto de serie sea completo.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="space-y-3 pt-2 border-t">
                 <p className="text-sm font-medium">Opciones de Expansión</p>

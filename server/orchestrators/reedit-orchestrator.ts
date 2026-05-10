@@ -27,6 +27,7 @@ import { SurgicalPatcherAgent } from "../agents/surgical-patcher";
 import { parseHolisticBetaForReedit, type ReeditPendingEditorialParse, type ReeditEditorialInstruction } from "../utils/reedit-editorial-parser";
 // [Fix33] Logger persistente por proyecto.
 import { logReeditEvent } from "../utils/reedit-logger";
+import { buildSeriesContextForReviewers } from "../utils/series-context-builder";
 
 // [Fix44] Convención unificada de capítulos especiales (igual al pipeline
 // principal): 0 = prólogo, -1 = epílogo, -2 = nota del autor. Antes el reedit
@@ -5140,24 +5141,17 @@ export class ReeditOrchestrator {
       const closureAgent = new PlotThreadClosureAuditorAgent();
       const tasks: Array<Promise<{ kind: string; ok: boolean; payload?: any; error?: string }>> = [];
 
-      // [Fix57] Construye un bloque de contexto de serie reducido para que
-      // Holístico y Beta no penalicen arcos largos abiertos cuando se trata
-      // de un volumen intermedio. Reusa señales ya calculadas (isSeries,
-      // esVolumenIntermedio, seriesOrder) y añade el título de la serie.
-      let seriesContextForReeditReviewers: string | undefined = undefined;
-      if (isSeries) {
-        const seriesOrderForCtx = (project as any).seriesOrder ?? 1;
-        const seriesTitleForCtx = (project as any).seriesTitle || projectTitle;
-        const lines: string[] = [];
-        lines.push("═══════════════════════════════════════════════════════════════════");
-        lines.push("## CONTEXTO DE SERIE");
-        lines.push("═══════════════════════════════════════════════════════════════════");
-        lines.push("");
-        lines.push(`Esta novela es el **VOLUMEN ${seriesOrderForCtx}** de la serie "${seriesTitleForCtx}".`);
-        lines.push(`**¿Último volumen?**: ${esVolumenIntermedio ? "NO — los arcos largos de la serie están DISEÑADOS para cerrarse en volúmenes posteriores; valora SOLO el cierre de la trama autoconclusiva interna de este libro." : "SÍ — TODOS los arcos (de libro y de serie) deben cerrarse aquí."}`);
-        lines.push("═══════════════════════════════════════════════════════════════════");
-        seriesContextForReeditReviewers = lines.join("\n");
-      }
+      // [Fix58] Usa el helper compartido (`server/utils/series-context-builder.ts`)
+      // para que el reedit Stage 8 reciba EL MISMO contexto rico que el
+      // orchestrator principal (milestones del volumen + plot threads de la
+      // serie + título + isLastVolume), no solo el bloque mínimo de Fix57.
+      // Sin loadThreadsAndEvents callback porque el reedit-orchestrator no
+      // accede al texto íntegro de los volúmenes previos; eso lo carga aparte
+      // (Fix31, ManuscriptAnalyzer/series_snapshot).
+      const seriesContextForReeditReviewers = await buildSeriesContextForReviewers({
+        seriesId: (project as any).seriesId,
+        seriesOrder: (project as any).seriesOrder,
+      });
 
       tasks.push(holisticAgent.runReview({ projectTitle, chapters: reviewerChapters, seriesContext: seriesContextForReeditReviewers })
         .then(r => ({ kind: "holistic_review", ok: true, payload: { notesText: r.notesText, totalChaptersRead: r.totalChaptersRead } }))

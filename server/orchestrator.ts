@@ -38,6 +38,7 @@ import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, T
 import { ensureChapterNumbers } from "./utils/extract-chapters";
 import { extractStyleDirectives } from "./utils/style-directives";
 import { repairJson } from "./utils/json-repair";
+import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper } from "./utils/series-context-builder";
 import { calculateRealCost } from "./cost-calculator";
 
 interface OrchestratorCallbacks {
@@ -5427,73 +5428,18 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   }
 
   /**
-   * [Fix57] Construye un bloque markdown compacto con el contexto de serie
-   * para los lectores Holístico y Beta. Si el proyecto NO pertenece a una
-   * serie devuelve undefined. El bloque incluye:
-   *   - Título de la serie y posición del volumen (N de M).
-   *   - Si es el último volumen (gating crítico para la severidad).
-   *   - Hilos no resueltos heredados de libros previos.
-   *   - Eventos clave previos (que el lector ya conoce).
-   *   - Milestones obligatorios DEL volumen actual.
-   *   - Plot threads conocidos de la serie con su estado.
-   * Sin esto, los lectores penalizan arcos abiertos que están DISEÑADOS para
-   * cerrarse en volúmenes posteriores y nunca aprueban el manuscrito.
+   * [Fix57/Fix58] Wrapper que delega en el helper compartido
+   * `buildSeriesContextForReviewers` (`server/utils/series-context-builder.ts`),
+   * inyectando el `loadSeriesThreadsAndEvents` específico del orchestrator
+   * principal (que tiene acceso al texto íntegro de los volúmenes previos).
+   * El reedit-orchestrator usa el mismo helper sin ese callback.
    */
   private async buildSeriesContextForReviewers(project: Project): Promise<string | undefined> {
-    if (!project.seriesId) return undefined;
-    try {
-      const seriesData = await storage.getSeries(project.seriesId);
-      if (!seriesData) return undefined;
-      const { threads: unresolvedThreads, events: keyEvents } = await this.loadSeriesThreadsAndEvents(project);
-      const milestones = await storage.getMilestonesBySeries(project.seriesId);
-      const plotThreads = await storage.getPlotThreadsBySeries(project.seriesId);
-      const volumeNumber = project.seriesOrder || 1;
-      const totalVolumes = seriesData.totalPlannedBooks || 10;
-      const isLastVolume = volumeNumber >= totalVolumes;
-      const volumeMilestones = milestones.filter(m => m.volumeNumber === volumeNumber);
-
-      const parts: string[] = [];
-      parts.push("═══════════════════════════════════════════════════════════════════");
-      parts.push("## CONTEXTO DE SERIE");
-      parts.push("═══════════════════════════════════════════════════════════════════");
-      parts.push("");
-      parts.push(`Esta novela es el **VOLUMEN ${volumeNumber} de ${totalVolumes}** de la serie "${seriesData.title}".`);
-      parts.push(`**¿Último volumen?**: ${isLastVolume ? "SÍ — TODOS los arcos (de libro y de serie) deben cerrarse aquí." : "NO — los arcos largos de la serie están DISEÑADOS para cerrarse en volúmenes posteriores; valora SOLO el cierre de la trama autoconclusiva interna de este libro."}`);
-      parts.push("");
-
-      if (unresolvedThreads.length > 0) {
-        parts.push("### HILOS HEREDADOS DE LIBROS PREVIOS (no requieren re-presentación)");
-        parts.push(unresolvedThreads.slice(0, 25).map(t => `- ${t}`).join("\n"));
-        parts.push("");
-      }
-      if (keyEvents.length > 0) {
-        parts.push("### EVENTOS CLAVE PREVIOS (el lector ya los conoce)");
-        parts.push(keyEvents.slice(0, 25).map(e => `- ${e}`).join("\n"));
-        parts.push("");
-      }
-      if (volumeMilestones.length > 0) {
-        parts.push(`### MILESTONES OBLIGATORIOS DE ESTE VOLUMEN (vol ${volumeNumber})`);
-        parts.push(volumeMilestones.map(m => `- ${m.isRequired ? "[OBLIGATORIO] " : "[opcional] "}${m.description}`).join("\n"));
-        parts.push("Si alguno de los OBLIGATORIOS no aparece, ESO sí es un problema estructural mayor.");
-        parts.push("");
-      }
-      if (plotThreads.length > 0) {
-        const seriesLevel = plotThreads.filter(t => t.status !== "resolved");
-        if (seriesLevel.length > 0) {
-          parts.push("### HILOS DE LA SERIE (estado planificado)");
-          parts.push(seriesLevel.slice(0, 30).map(t =>
-            `- "${t.threadName}" (importancia: ${t.importance || "n/a"}, estado: ${t.status || "abierto"})`
-          ).join("\n"));
-          parts.push("Estos hilos pertenecen al arco de SERIE. Si este NO es el último volumen, no exijas su cierre aquí.");
-          parts.push("");
-        }
-      }
-      parts.push("═══════════════════════════════════════════════════════════════════");
-      return parts.join("\n");
-    } catch (err) {
-      console.warn(`[Fix57] No se pudo construir contexto de serie para reviewers: ${(err as Error).message}`);
-      return undefined;
-    }
+    return buildSeriesContextForReviewersHelper({
+      seriesId: project.seriesId,
+      seriesOrder: project.seriesOrder,
+      loadThreadsAndEvents: () => this.loadSeriesThreadsAndEvents(project),
+    });
   }
 
   async runHolisticReview(project: Project): Promise<HolisticReviewerResult> {

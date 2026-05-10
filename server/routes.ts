@@ -8286,9 +8286,31 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const { title, language = "es", expandChapters, insertNewChapters, targetMinWordsPerChapter, instructions, editorialCritique, autoBetaLoopOnTranslations, autoBetaLoopOnTranslationsMaxIterations } = req.body;
+      const { title, language = "es", expandChapters, insertNewChapters, targetMinWordsPerChapter, instructions, editorialCritique, autoBetaLoopOnTranslations, autoBetaLoopOnTranslationsMaxIterations, seriesId, seriesOrder } = req.body;
       if (!title) {
         return res.status(400).json({ error: "Title is required" });
+      }
+
+      // [Fix58] Vinculación opcional a serie en el momento del import. Si el
+      // usuario eligió una serie en el modal, se persiste seriesId+seriesOrder
+      // directamente en el reedit_project; así el helper de contexto de serie
+      // (Fix57/58) puede inyectar el bloque "## CONTEXTO DE SERIE" en los
+      // lectores Holístico/Beta del Stage 8 sin que el usuario tenga que ir
+      // a /series a vincularlo manualmente después. Validación: seriesId debe
+      // existir en BD; si no existe, se ignora silenciosamente para no
+      // bloquear el import.
+      let parsedSeriesId: number | null = null;
+      let parsedSeriesOrder: number | null = null;
+      const sidNum = parseInt(seriesId);
+      if (!Number.isNaN(sidNum) && sidNum > 0) {
+        const seriesExists = await storage.getSeries(sidNum).catch(() => null);
+        if (seriesExists) {
+          parsedSeriesId = sidNum;
+          const soNum = parseInt(seriesOrder);
+          parsedSeriesOrder = !Number.isNaN(soNum) && soNum > 0 ? soNum : 1;
+        } else {
+          console.warn(`[Fix58] seriesId=${sidNum} recibido en POST /api/reedit-projects pero no existe en BD; ignorado.`);
+        }
       }
 
       const result = await mammoth.extractRawText({ buffer: req.file.buffer });
@@ -8311,6 +8333,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         autoBetaLoopOnTranslationsMaxIterations: Math.max(1, Math.min(10, parseInt(autoBetaLoopOnTranslationsMaxIterations) || 2)),
         architectInstructions: instructions?.trim() || null,
         editorialCritique: editorialCritique?.trim() || null,
+        seriesId: parsedSeriesId,
+        seriesOrder: parsedSeriesOrder,
       });
 
       const chapterPattern = /^(Prólogo|Prologue|Prolog|Prologo|Epílogo|Epilogue|Epilog|Epilogo|Nota\s+de(?:l)?\s+Autor(?:a)?|Author'?s?\s+Note|Note\s+de\s+l'Auteur|Nachwort|Nota\s+dell'Autore|Nota\s+de\s+l'Autor|Capítulo\s+\d+|Chapter\s+\d+|Chapitre\s+\d+|Kapitel\s+\d+|Capitolo\s+\d+|Capítol\s+\d+)(?:\s*[:\-–—.]?\s*(.*))?$/gim;
