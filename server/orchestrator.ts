@@ -1138,8 +1138,18 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         console.log(`[Orchestrator] Nombres prohibidos (${forbiddenNames.length}): ${forbiddenNames.slice(0, 20).join(", ")}${forbiddenNames.length > 20 ? "..." : ""}`);
       }
 
-      const effectivePremise = extendedGuideContent || seriesContextContent
-        ? `${project.premise || ""}${extendedGuideContent ? `\n\n--- GUÍA DE ESCRITURA EXTENDIDA ---\n${extendedGuideContent}` : ""}${seriesContextContent}`
+      // [Fix66] NO concatenar extendedGuideContent dentro de la premisa.
+      // Antes: `premise + "--- GUÍA DE ESCRITURA EXTENDIDA ---" + extendedGuide`.
+      // Bug observado por el usuario: si la guía extendida contenía la trama de
+      // OTRA novela (p. ej. fantasía generada como ejemplo de voz) y el proyecto
+      // actual era romance, el Arquitecto leía la guía como si fuera la IDEA
+      // del libro y reescribía género, personajes y trama. La guía extendida
+      // ya viaja como parámetro independiente al Arquitecto (campo
+      // `extendedGuideContent`) y se renderiza en su propio bloque
+      // "MATERIALES DE REFERENCIA DEL AUTOR" — duplicarla en `premise` solo
+      // confunde al modelo y le hace ignorar el género real del proyecto.
+      const effectivePremise = seriesContextContent
+        ? `${project.premise || ""}${seriesContextContent}`
         : (project.premise || "");
 
       // 1M de contexto DeepSeek V4 — pasar texto íntegro de volúmenes previos

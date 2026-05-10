@@ -545,7 +545,20 @@ ${input.pseudonymCatalog}
     Material aportado por el autor (otra novela suya como ejemplo de voz,
     fuentes de research, biografía, contexto histórico, etc.). Léelo entero
     y usa lo que sea relevante para que la novela tenga DATOS REALES
-    cuando aplique y/o IMITE LA VOZ del autor cuando sea su material:
+    cuando aplique y/o IMITE LA VOZ del autor cuando sea su material.
+
+    ⚠️ ALCANCE ESTRICTO — ES MATERIAL DE REFERENCIA, NO LA PREMISA:
+    Aunque este material contenga la trama, personajes o género de OTRA
+    novela del autor, NO debes copiarlos a esta novela. La novela que estás
+    diseñando es la definida arriba en TÍTULO + GÉNERO + IDEA. Concretamente:
+    - NO cambies el GÉNERO declarado (si arriba pone "romance", no diseñes fantasía
+      aunque el material de referencia sea una novela de fantasía).
+    - NO copies personajes, lugares ni la trama del material de referencia
+      como personajes, lugares ni trama de esta novela.
+    - SÍ puedes imitar la VOZ NARRATIVA, el RITMO, el LÉXICO y el ESTILO del
+      material si pertenece al mismo autor.
+    - SÍ puedes usar DATOS HISTÓRICOS, técnicos o de contexto que aparezcan
+      en el material como referencia factual.
 
 ${input.extendedGuideContent}
     ═══════════════════════════════════════════════════════════════════
