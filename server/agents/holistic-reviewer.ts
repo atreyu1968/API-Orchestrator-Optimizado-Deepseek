@@ -12,6 +12,12 @@ interface HolisticReviewerInput {
   worldBibleSummary?: string;
   generoObjetivo?: string;
   longitudObjetivo?: string;
+  // [Fix57] Si el proyecto pertenece a una serie, este bloque ya formateado
+  // describe vol N de M, hilos abiertos heredados de libros previos, eventos
+  // clave previos y milestones del volumen actual. El agente lo recibirá como
+  // contexto para NO penalizar arcos intencionalmente abiertos cuando este
+  // libro NO es el último de la serie.
+  seriesContext?: string;
 }
 
 export interface HolisticReviewerResult {
@@ -157,7 +163,15 @@ REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
    - NO sugieras reescrituras totales. Tus sugerencias deben ser quirúrgicas y aplicables.
    - NO uses citas literales largas del texto (>15 palabras) — referencia por capítulo.
 
-5. **REFERENCIAS A CAPÍTULOS**: Siempre que diagnostiques algo, cita el capítulo concreto entre paréntesis (cap N). Si el problema cruza varios capítulos, cita todos los implicados (caps N-M o caps N, P, R). Para las secciones especiales usa estas etiquetas literales en lugar de "cap N": **(prólogo)**, **(epílogo)**, **(nota del autor)**. El prólogo, el epílogo y la nota del autor SON parte integral del manuscrito y debes evaluarlos como tales:
+5. **CONTEXTO DE SERIE (CRÍTICO si aplica)**: Si en los datos del manuscrito recibes un bloque "## CONTEXTO DE SERIE", este libro NO es una obra autoconclusiva sino un volumen dentro de una serie planificada. Debes ajustar tu severidad:
+   - El bloque te dirá si este es el VOLUMEN ACTUAL N de M y si es el ÚLTIMO de la serie.
+   - Si **NO es el último volumen**: los arcos largos de la serie (la trama global, el conflicto principal del villano de fondo, romances que evolucionan, profecías) están DISEÑADOS para cerrarse en volúmenes posteriores. NO los marques como "arcos abiertos abandonados", "trama que muere", "subtrama sin resolver" ni problema estructural. Marca COMO PROBLEMA solo los arcos que el propio volumen abre y promete cerrar dentro de sí mismo (la trama autoconclusiva del libro: el caso del libro, la misión del libro, el viaje del libro). Un volumen intermedio bien construido cierra su trama interna y deja avanzados — no resueltos — los hilos de la serie.
+   - Si **SÍ es el último volumen**: aplica todo el rigor habitual; aquí TODO arco serie y volumen debe cerrar.
+   - El bloque también te listará HILOS NO RESUELTOS HEREDADOS de libros previos y EVENTOS CLAVE previos. Esos hilos heredados se asume que el lector ya los conoce; no marques como "personaje sin presentar" o "evento sin contexto" cosas explícitamente listadas allí. Sí marca cuando el libro contradice un evento previo o un rasgo establecido.
+   - El bloque te listará MILESTONES OBLIGATORIOS de este volumen. Verifica que esos hitos ocurran. Si faltan, ESO sí es un problema estructural mayor.
+   - En el JSON de instrucciones auto-aplicables: NO emitas instrucciones que pidan "cerrar el arco X" si X es un hilo de serie y este no es el último volumen. NO emitas instrucciones que pidan presentar/explicar elementos heredados de libros previos. Sí emite instrucciones para corregir contradicciones contra el canon de la serie.
+
+6. **REFERENCIAS A CAPÍTULOS**: Siempre que diagnostiques algo, cita el capítulo concreto entre paréntesis (cap N). Si el problema cruza varios capítulos, cita todos los implicados (caps N-M o caps N, P, R). Para las secciones especiales usa estas etiquetas literales en lugar de "cap N": **(prólogo)**, **(epílogo)**, **(nota del autor)**. El prólogo, el epílogo y la nota del autor SON parte integral del manuscrito y debes evaluarlos como tales:
    - El **prólogo** marca tono, promesa y contrato con el lector. Si es funcional, dilo; si dispersa, dilo.
    - El **epílogo** cierra arcos pendientes y entrega la imagen final. Evalúa explícitamente si lo logra, si está conectado con el clímax (cap N) o si es un apéndice descolgado.
    - La **nota del autor** se valora por separado (no es ficción): comenta solo si su tono o contenido daña la sensación final.
@@ -222,6 +236,11 @@ export class HolisticReviewerAgent extends BaseAgent {
       ? `\n\n## CANON DEL MUNDO (resumen)\n${input.worldBibleSummary.slice(0, 6000)}`
       : "";
 
+    // [Fix57] Bloque que activa la regla 5 del SYSTEM_PROMPT.
+    const seriesBlock = (input.seriesContext && input.seriesContext.trim().length > 0)
+      ? `\n\n${input.seriesContext}`
+      : "";
+
     const metaBlock = `## DATOS DEL MANUSCRITO
 Título: ${input.projectTitle}
 Género objetivo: ${input.generoObjetivo || "(no especificado)"}
@@ -233,7 +252,7 @@ Palabras totales aproximadas: ${totalWords.toLocaleString("es-ES")}`;
       .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(sección vacía)"}`)
       .join("");
 
-    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}
+    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}
 
 ═══════════════════════════════════════════════════════════════════
 NOVELA COMPLETA A REVISAR

@@ -21,6 +21,12 @@ interface BetaReaderInput {
   // NO retraducir ni proponer cambios de significado.
   translationMode?: boolean;
   targetLanguage?: string;
+  // [Fix57] Si el proyecto pertenece a una serie, este bloque ya formateado
+  // describe vol N de M, hilos abiertos heredados de libros previos, eventos
+  // clave previos y milestones del volumen actual. El Beta lo recibirá como
+  // contexto para NO quejarse de arcos intencionalmente abiertos cuando este
+  // libro NO es el último de la serie.
+  seriesContext?: string;
 }
 
 const TRANSLATION_LANG_NAMES: Record<string, string> = {
@@ -132,7 +138,14 @@ REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
 - Si no tienes sugerencias accionables, devuelve \`{"instrucciones": []}\` entre los marcadores.
 - NO añadas comentarios ni markdown dentro del JSON.
 
-5. **PROHIBIDO ABSOLUTO**:
+5. **CONTEXTO DE SERIE (CRÍTICO si aplica)**: Si en los datos del manuscrito recibes un bloque "## CONTEXTO DE SERIE", este libro NO es una novela autoconclusiva sino un volumen dentro de una serie planificada. Como lector beta cualificado, ajusta tus expectativas:
+   - El bloque te dirá si este es el VOLUMEN ACTUAL N de M y si es el ÚLTIMO de la serie.
+   - Si **NO es el último volumen**: como lector experimentado, sabes que un libro intermedio de serie cierra su trama interna pero deja la trama global avanzando hacia el siguiente. NO te quejes de "este final me dejó cosas pendientes" si esas cosas son arcos largos de la serie (el villano de fondo no cae aquí, la profecía no se cumple aquí, el romance evoluciona pero no se sella aquí). SÍ te puedes quejar si el libro abre y promete cerrar algo dentro de su propio arco autoconclusivo (la misión de este libro, el caso de este libro, el viaje de este libro) y no lo cumple. Como lector de series, lo que valoras es: ¿la trama interna del libro se cerró satisfactoriamente?, ¿avanzó la trama global?, ¿me ha dado ganas de seguir con el siguiente?
+   - Si **SÍ es el último volumen**: aquí sí esperas TODO cerrado y puedes (y debes) quejarte de cualquier arco que quede colgando.
+   - El bloque te listará HILOS HEREDADOS de libros previos. Como lector que ya leyó los anteriores, esos hilos no necesitan re-presentación; no te quejes de "no sé quién es X" o "no entiendo este conflicto" si está en esa lista.
+   - En tu sección "## SI FUERA EL AUTOR, CAMBIARÍA..." y en el JSON de instrucciones: NO emitas instrucciones que pidan resolver hilos largos de la serie en este volumen si no es el último. Sí emite instrucciones para mejorar la sensación de lectura del propio libro o para reforzar la promesa que el libro hace al lector dentro de su propia trama autoconclusiva.
+
+6. **PROHIBIDO ABSOLUTO**:
    - NO uses emojis.
    - NO uses lenguaje de marketing ni blurb ("imperdible", "una joya", "magistral").
    - NO finjas entusiasmo si no lo sentiste.
@@ -212,6 +225,11 @@ export class BetaReaderAgent extends BaseAgent {
       ? `\n\n═══════════════════════════════════════════════════════════════════\n## CONTEXTO CRÍTICO: ESTO ES UNA TRADUCCIÓN\n═══════════════════════════════════════════════════════════════════\n\nEl texto que vas a leer es una **traducción al ${TRANSLATION_LANG_NAMES[input.targetLanguage || "es"] || input.targetLanguage || "idioma destino"}** de un manuscrito originalmente escrito en otro idioma.\n\nTu trabajo en esta lectura es REDUCIDO Y ESPECÍFICO:\n- Evalúa la **fluidez y naturalidad** del texto en ${TRANSLATION_LANG_NAMES[input.targetLanguage || "es"] || "el idioma destino"}.\n- Marca frases que suenan a **traducción literal** o **calco sintáctico** (estructuras del idioma original que no funcionan en el destino).\n- Marca **falsos amigos**, modismos mal localizados, registros incorrectos para el género, palabras que un lector nativo no usaría.\n- Marca **inconsistencias terminológicas** (un mismo término traducido de dos formas distintas).\n- Marca **fragmentos sin traducir** o residuos del idioma original que se han colado.\n\nLO QUE NO DEBES HACER (CRÍTICO):\n- NO propongas cambios de **significado** ni de **contenido narrativo** (eso ya se trabajó en el original).\n- NO propongas **retraducir** secciones enteras ni **reescribir** capítulos.\n- NO juzgues la **estructura**, **arcos de personajes**, **ritmo narrativo** ni **decisiones de trama** — todo eso ya se validó en el manuscrito original.\n- NO propongas eliminar/fusionar capítulos.\n- Tu único valor aquí es la **calidad lingüística del texto en ${TRANSLATION_LANG_NAMES[input.targetLanguage || "es"] || "el idioma destino"}**.\n\nEl JSON de instrucciones SOLO debe contener tipos "puntual" o "estructural" con tu intervención limitada a fluidez/naturalidad/terminología. Prohibido tipos "eliminar", "fusionar". El valor del campo "categoria" debe ser "estilo" o "dialogo" en el 90% de los casos. Tu informe en lenguaje natural también debe centrarse exclusivamente en estos aspectos lingüísticos; los apartados de "PERSONAJES", "GIROS", "EXPECTATIVAS", "MUNDO Y ATMÓSFERA" puedes dejarlos vacíos o muy breves si no detectas problemas LINGÜÍSTICOS específicos en ellos.\n═══════════════════════════════════════════════════════════════════`
       : "";
 
+    // [Fix57] Bloque que activa la regla 5 del SYSTEM_PROMPT.
+    const seriesBlock = (input.seriesContext && input.seriesContext.trim().length > 0)
+      ? `\n\n${input.seriesContext}`
+      : "";
+
     const previousNotesBlock = (input.previousBetaNotes && input.previousBetaNotes.trim().length > 200)
       ? `\n\n═══════════════════════════════════════════════════════════════════\n## NOTAS DE TU LECTURA ANTERIOR (no las repitas)\n═══════════════════════════════════════════════════════════════════\n\n${input.previousBetaNotes.slice(0, 24000)}\n\nIMPORTANTE: arriba están las impresiones que TÚ MISMO emitiste sobre este manuscrito la última vez. En esta nueva lectura:\n- Si una observación previa SIGUE vigente porque el autor no la corrigió, mencionala muy brevemente ("ya lo dije la vez pasada y sigo notándolo en cap N") sin desarrollarla de nuevo, y NO la repitas en el JSON de instrucciones.\n- Si una observación previa YA ESTÁ resuelta, dilo explícitamente en una sola frase ("la pega del cap 12 que comenté antes ya no me molestó esta vez").\n- Centra el grueso de tu informe en aspectos NUEVOS que percibas, en cambios derivados de las correcciones, o en problemas que la primera lectura no captó.\n- En el bloque de INSTRUCCIONES_AUTOAPLICABLES, NO emitas instrucciones que sean clones (mismo capítulo + mismo problema) de las que ya emitiste antes.`
       : "";
@@ -227,7 +245,7 @@ Palabras totales aproximadas: ${totalWords.toLocaleString("es-ES")}`;
       .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(sección vacía)"}`)
       .join("");
 
-    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${translationBlock}${previousNotesBlock}
+    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${translationBlock}${previousNotesBlock}
 
 ═══════════════════════════════════════════════════════════════════
 NOVELA COMPLETA QUE ACABAS DE LEER
