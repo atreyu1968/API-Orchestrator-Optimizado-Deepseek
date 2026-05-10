@@ -214,9 +214,22 @@ function paragraphsToHtml(rawContent: string, opts: { dropCap?: boolean } = {}):
   for (let i = 0; i < paragraphs.length; i++) {
     const p = escapeHtml(paragraphs[i]);
     if (i === 0 && opts.dropCap) {
-      const m = p.match(/^([\s"«¡¿—–-]*)(\S)(.*)$/s);
-      if (m) {
-        out.push(`<p class="first-para">${m[1]}<span class="drop-cap">${m[2]}</span>${m[3]}</p>`);
+      // [Fix59] Si el primer párrafo abre con un guion de diálogo (— – -) o
+      // con una raya/guion largo, NO aplicar drop-cap: el guion quedaría
+      // flotando antes del drop-cap y se vería roto. En su lugar, marcar el
+      // párrafo como `first-para` para suprimir el sangrado pero conservar
+      // tipografía normal (estándar editorial: capítulos que abren con
+      // diálogo no llevan capitular).
+      const trimmed = p.trimStart();
+      const opensWithDialogue = /^[—–-]/.test(trimmed);
+      if (!opensWithDialogue) {
+        const m = p.match(/^([\s"«¡¿]*)(\S)(.*)$/s);
+        if (m) {
+          out.push(`<p class="first-para">${m[1]}<span class="drop-cap">${m[2]}</span>${m[3]}</p>`);
+          continue;
+        }
+      } else {
+        out.push(`<p class="first-para">${p}</p>`);
         continue;
       }
     }
@@ -240,7 +253,12 @@ function buildStylesCss(styleId: EpubStyleId = "classic"): string {
 @namespace epub "http://www.idpf.org/2007/ops";
 
 body { line-height: 1.5; margin: 0 1em; color: #111; }
-h1, h2, h3 { font-weight: bold; text-align: center; page-break-after: avoid; }
+h1, h2, h3 { font-weight: bold; text-align: center; page-break-after: avoid; break-after: avoid-page; }
+/* [Fix59] Cada capítulo arranca en página nueva (estándar editorial). */
+.chapter-body h1 { page-break-before: always; break-before: page; }
+/* [Fix59] El número del capítulo va encima del título en línea separada y a menor tamaño. */
+.chapter-body h1 .chapter-num { display: block; font-size: 0.65em; font-weight: normal; letter-spacing: 0.18em; text-transform: uppercase; color: #555; margin-bottom: 0.6em; }
+.chapter-body h1 .chapter-name { display: block; }
 p.first-para, p.no-indent, .center p { text-indent: 0; }
 .center { text-align: center; }
 .title-page { text-align: center; padding-top: 22%; }
@@ -260,7 +278,9 @@ hr.section-break { border: none; text-align: center; margin: 1.2em 0; }
   const themes: Record<EpubStyleId, string> = {
     classic: `body { font-family: Georgia, "Times New Roman", serif; }
 h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; }
-h1 { font-size: 1.6em; margin: 2em 0 1em 0; }
+/* [Fix59] margin-top más pequeño porque el page-break-before crea ya el aire
+ * superior; margin-bottom más generoso para separar bien del primer párrafo. */
+h1 { font-size: 1.6em; margin: 4em 0 2.5em 0; }
 h2 { font-size: 1.3em; margin: 1.5em 0 0.8em 0; }
 p { text-indent: 1.5em; margin: 0 0 0.4em 0; text-align: justify; }
 .title-page h1.book-title { font-size: 2.2em; margin-bottom: 0.2em; }
@@ -270,7 +290,7 @@ hr.section-break:before { content: "\\2756 \\00A0 \\2756 \\00A0 \\2756"; color: 
 `,
     modern: `body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
 h1, h2, h3 { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0.04em; }
-h1 { font-size: 1.5em; margin: 2.2em 0 1.2em 0; text-transform: uppercase; }
+h1 { font-size: 1.5em; margin: 4em 0 2.8em 0; text-transform: uppercase; }
 h2 { font-size: 1.2em; margin: 1.5em 0 0.8em 0; }
 p { text-indent: 0; margin: 0 0 0.9em 0; text-align: left; }
 .title-page h1.book-title { font-size: 2em; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4em; font-weight: 700; }
@@ -280,7 +300,7 @@ hr.section-break:before { content: "\\2014 \\00A0 \\2014 \\00A0 \\2014"; color: 
 `,
     romance: `body { font-family: "EB Garamond", Garamond, "Hoefler Text", "Times New Roman", serif; }
 h1, h2, h3 { font-family: "EB Garamond", Garamond, "Hoefler Text", "Times New Roman", serif; font-weight: normal; }
-h1 { font-size: 1.7em; margin: 2em 0 1em 0; font-style: italic; }
+h1 { font-size: 1.7em; margin: 4em 0 2.5em 0; font-style: italic; }
 h2 { font-size: 1.3em; margin: 1.5em 0 0.8em 0; font-style: italic; }
 p { text-indent: 1.6em; margin: 0 0 0.4em 0; text-align: justify; }
 .title-page h1.book-title { font-size: 2.4em; font-style: italic; font-weight: normal; margin-bottom: 0.3em; }
@@ -290,7 +310,7 @@ hr.section-break:before { content: "\\273F \\00A0 \\273F \\00A0 \\273F"; color: 
 `,
     minimal: `body { font-family: "Iowan Old Style", "Palatino", "Palatino Linotype", Georgia, serif; }
 h1, h2, h3 { font-family: "Iowan Old Style", "Palatino", "Palatino Linotype", Georgia, serif; font-weight: normal; }
-h1 { font-size: 1.3em; margin: 1.6em 0 0.8em 0; }
+h1 { font-size: 1.3em; margin: 3em 0 2em 0; }
 h2 { font-size: 1.1em; margin: 1.2em 0 0.6em 0; }
 p { text-indent: 1.2em; margin: 0 0 0.25em 0; text-align: justify; }
 .title-page h1.book-title { font-size: 1.7em; font-weight: normal; margin-bottom: 0.4em; }
@@ -425,15 +445,37 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
     const isAuthorNote = ch.chapterNumber === -2;
     let heading: string;
     let id: string;
-    if (isPrologue) { heading = ch.title || labels.prologue; id = "prologue"; }
-    else if (isEpilogue) { heading = ch.title || labels.epilogue; id = "epilogue"; }
-    else if (isAuthorNote) { heading = ch.title || labels.authorNote; id = "author-note"; }
-    else {
-      heading = ch.title ? `${labels.chapter} ${ch.chapterNumber}: ${ch.title}` : `${labels.chapter} ${ch.chapterNumber}`;
+    // [Fix59] Heading en dos partes: el número va arriba pequeño y discreto
+    // (`chapter-num`), y el subtítulo o "Capítulo N" abajo grande
+    // (`chapter-name`). Para prólogo/epílogo/nota del autor se usa solo el
+    // texto descriptivo en `chapter-name`. Tanto el ToC como el OPF/NCX siguen
+    // usando `heading` plano (sin spans) para evitar markup en metadatos.
+    let headingHtml: string;
+    if (isPrologue) {
+      heading = ch.title || labels.prologue;
+      id = "prologue";
+      headingHtml = `<span class="chapter-name">${escapeHtml(heading)}</span>`;
+    } else if (isEpilogue) {
+      heading = ch.title || labels.epilogue;
+      id = "epilogue";
+      headingHtml = `<span class="chapter-name">${escapeHtml(heading)}</span>`;
+    } else if (isAuthorNote) {
+      heading = ch.title || labels.authorNote;
+      id = "author-note";
+      headingHtml = `<span class="chapter-name">${escapeHtml(heading)}</span>`;
+    } else {
+      const numberLabel = `${labels.chapter} ${ch.chapterNumber}`;
+      if (ch.title && ch.title.trim()) {
+        heading = `${numberLabel}: ${ch.title}`;
+        headingHtml = `<span class="chapter-num">${escapeHtml(numberLabel)}</span><span class="chapter-name">${escapeHtml(ch.title)}</span>`;
+      } else {
+        heading = numberLabel;
+        headingHtml = `<span class="chapter-name">${escapeHtml(numberLabel)}</span>`;
+      }
       id = `ch-${ch.chapterNumber}`;
     }
     const body = `
-<h1>${escapeHtml(heading)}</h1>
+<h1>${headingHtml}</h1>
 ${paragraphsToHtml(ch.content, { dropCap: useDropCap })}`;
     const filename = `xhtml/${safeId(id)}.xhtml`;
     zip.file(`OEBPS/${filename}`, xhtmlPage(heading, lang, "chapter-body", body));
