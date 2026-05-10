@@ -126,6 +126,11 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_beta_loop BOOLEAN DEFAULT fal
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS auto_beta_loop_max_iterations INTEGER DEFAULT 3;
 ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS auto_beta_loop_on_translations BOOLEAN DEFAULT false;
 ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS auto_beta_loop_on_translations_max_iterations INTEGER DEFAULT 2;
+-- [Fix55] EPUB + auto-beta-loop sobre translations creadas (markdown plano)
+ALTER TABLE translations ADD COLUMN IF NOT EXISTS auto_beta_loop BOOLEAN DEFAULT false;
+ALTER TABLE translations ADD COLUMN IF NOT EXISTS auto_beta_loop_max_iterations INTEGER DEFAULT 2;
+ALTER TABLE translations ADD COLUMN IF NOT EXISTS beta_review_notes TEXT;
+ALTER TABLE translations ADD COLUMN IF NOT EXISTS beta_review_iterations_run INTEGER DEFAULT 0;
 SQL
 
 echo "   Ejecutando db:push como superusuario postgres..."
