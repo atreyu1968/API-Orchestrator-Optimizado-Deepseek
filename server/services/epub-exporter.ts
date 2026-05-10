@@ -257,7 +257,8 @@ h1, h2, h3 { font-weight: bold; text-align: center; page-break-after: avoid; bre
 /* [Fix59] Cada capítulo arranca en página nueva (estándar editorial). */
 .chapter-body h1 { page-break-before: always; break-before: page; }
 /* [Fix59] El número del capítulo va encima del título en línea separada y a menor tamaño. */
-.chapter-body h1 .chapter-num { display: block; font-size: 0.65em; font-weight: normal; letter-spacing: 0.18em; text-transform: uppercase; color: #555; margin-bottom: 0.6em; }
+/* [Fix59] color #222 (no #555) para que se lea bien en e-ink Kindle (Paperwhite/Oasis); el tracking amplio mantiene el aire visual del rótulo. */
+.chapter-body h1 .chapter-num { display: block; font-size: 0.65em; font-weight: normal; letter-spacing: 0.22em; text-transform: uppercase; color: #222; margin-bottom: 0.7em; }
 .chapter-body h1 .chapter-name { display: block; }
 p.first-para, p.no-indent, .center p { text-indent: 0; }
 .center { text-align: center; }
