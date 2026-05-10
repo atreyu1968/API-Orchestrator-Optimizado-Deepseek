@@ -599,6 +599,18 @@ ${input.writtenChaptersFullText}
     - Campos de prosa (perfil_psicologico, descripcion_sensorial, atmosfera, eventos_clave,
       notas_voz_historica, etc.): MÁX. 2 frases concisas, NO párrafos largos.
     - "linea_temporal": MÁX. 8 entradas de momentos clave, no una por capítulo.
+      ⚠️ COHERENCIA DE CALENDARIO (obligatoria si la novela usa fechas concretas):
+      Si fijas una fecha real (ej: "domingo 14 de enero de 2024"), TODAS las
+      menciones posteriores de día de la semana DEBEN derivarse del calendario
+      real. Antes de incluir una fecha "viernes 19 de enero" verifica que el
+      19 de enero de ese año cae realmente en viernes; si no, ajusta el día,
+      la fecha o ambos. La incoherencia entre fecha-y-día-de-semana es uno de
+      los errores que el Revisor Final marca como "lesión persistente" y
+      degrada el veredicto a "APROBADO CON RESERVAS" (caso real: novela "La
+      Herrumbre de los Días" donde Caradec muere domingo 14 enero pero
+      apariciones posteriores de viernes/jueves/lunes no encajaban). Si no
+      necesitas precisión de calendario, usa marcadores relativos ("tres días
+      después", "la semana siguiente") en lugar de fechas absolutas.
     - "personajes": describe a fondo solo a protagonistas y antagonistas (perfil ≤ 3 frases);
       secundarios con 1-2 frases de perfil + contra_cliche obligatorio.
     - "lexico_historico": SOLO el campo "epoca" es obligatorio (1 línea). Las listas

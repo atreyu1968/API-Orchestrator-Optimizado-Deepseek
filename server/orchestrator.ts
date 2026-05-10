@@ -2381,6 +2381,30 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           } else {
             refinementAttempts++;
 
+            // [Fix61] Abortar tras regresión catastrófica: si la reescritura
+            // siguiendo el Plan Quirúrgico hace caer la nota ≥3 puntos respecto
+            // a la mejor versión conocida (≥7), seguimos quemando intentos
+            // empeorando el capítulo. En la novela "La Herrumbre de los Días"
+            // los caps 6, 9 y 22 tuvieron este patrón (7→5, 8→5, 6→4). Cortamos
+            // ya y conservamos la mejor versión sin gastar más LLM.
+            const catastrophicRegression =
+              bestVersion.score >= 7 &&
+              currentScore > 0 &&
+              bestVersion.score - currentScore >= 3;
+            if (catastrophicRegression) {
+              console.log(`[Orchestrator] [Fix61] Regresión catastrófica en ${sectionLabel}: ${currentScore}/10 vs mejor ${bestVersion.score}/10 (caída ≥3). Abortando reescrituras.`);
+              this.callbacks.onAgentStatus("editor", "editing",
+                `[Fix61] ${sectionLabel} regresó a ${currentScore}/10 desde ${bestVersion.score}/10. El Plan Quirúrgico está empeorando el capítulo. Conservando mejor versión.`
+              );
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warning",
+                agentRole: "editor",
+                message: `[Fix61] ${sectionLabel}: reescritura regresó a ${currentScore}/10 desde mejor histórico ${bestVersion.score}/10 (caída ${bestVersion.score - currentScore}). Plan Quirúrgico abortado tras ${refinementAttempts} intento(s).`,
+              });
+              break;
+            }
+
             if (attemptsSinceBestImprovement >= 2) {
               console.log(`[Orchestrator] Anti-stagnation: ${sectionLabel} sin mejorar la mejor versión (${bestVersion.score}/10) tras ${attemptsSinceBestImprovement} intentos. Stopping rewrites.`);
               this.callbacks.onAgentStatus("editor", "editing",
@@ -2419,6 +2443,26 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         chapterContent = bestVersion.content;
         extractedContinuityState = bestVersion.continuityState;
         console.log(`[Orchestrator] Using best version for ${sectionLabel}: ${bestVersion.score}/10`);
+
+        // [Fix64] Persistir la versión aprobada por el Editor ANTES del pulido.
+        // Bug observado en "La Herrumbre de los Días" cap 26: tras "aprobado
+        // (8/10) → puliendo..." el orquestador se reinició y la rama de resume
+        // marcó el cap como pendiente (sin content en BD), regenerándolo desde
+        // cero a un coste de ~5 min y tokens duplicados. Guardando el contenido
+        // aprobado con status="polishing" sobrevivimos al restart: en el resume
+        // detectamos el status y aceptamos la versión aprobada sin re-narrar
+        // (perdiendo solo el pulido cosmético, no el capítulo entero).
+        // Umbral mínimo de 50 chars para no aceptar fragmentos vacíos pero
+        // sí cubrir notas del autor/prólogos breves.
+        if (chapterContent && chapterContent.trim().length >= 50) {
+          const wcApproved = chapterContent.split(/\s+/).filter(w => w.length > 0).length;
+          await storage.updateChapter(chapter.id, {
+            content: chapterContent,
+            wordCount: wcApproved,
+            status: "polishing",
+            continuityState: extractedContinuityState,
+          });
+        }
 
         this.callbacks.onAgentStatus("copyeditor", "polishing", `El Estilista está puliendo ${sectionLabel}...`);
 
@@ -2704,11 +2748,40 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
           
           if (semanticResult.chaptersToRevise.length > 0) {
+            // [Fix62] Pre-filtrar capítulos que NO tienen cluster aplicable
+            // y filtrar foreshadowing por capitulo_setup (solo capítulos
+            // posteriores al setup pueden resolverlo). En la novela "La
+            // Herrumbre de los Días" ~18% de las cirugías se descartaban
+            // por "instrucción no aplicable" (foreshadowing del cap 17
+            // enviado al cap 3, cap 12, cap 33). Aquí cortamos el ruido.
+            // [Fix62] Mapeo a orden narrativo: prólogo=0, capítulos N>0 normales,
+            // epílogo (-1) y nota del autor (-2) son narrativamente los últimos
+            // (no excluirlos de payoffs pendientes). Setup desconocido (null)
+            // se trata como NO enrutable, no como cap 0.
+            const narrOrder = (n: number): number => n < 0 ? 999_999 + Math.abs(n) : n;
+            const actionableChapters: number[] = [];
+            for (const chapterNum of semanticResult.chaptersToRevise) {
+              const narrCh = narrOrder(chapterNum);
+              const hasCluster = semanticResult.clusters.some(
+                c => c.capitulos_afectados?.includes(chapterNum)
+              );
+              const hasResolvableForeshadowing = semanticResult.foreshadowingStatus.some(
+                f => f.estado === "sin_payoff" && f.capitulo_setup != null && narrOrder(f.capitulo_setup) <= narrCh
+              );
+              if (hasCluster || hasResolvableForeshadowing) {
+                actionableChapters.push(chapterNum);
+              }
+            }
+            const droppedCount = semanticResult.chaptersToRevise.length - actionableChapters.length;
+            if (droppedCount > 0) {
+              console.log(`[Orchestrator] [Fix62] Semantic: descartados ${droppedCount} capítulos sin issues aplicables (${semanticResult.chaptersToRevise.filter(n => !actionableChapters.includes(n)).join(", ")}).`);
+            }
+
             this.callbacks.onAgentStatus("semantic-detector", "editing", 
-              `Corrigiendo ${semanticResult.chaptersToRevise.length} capítulos (intento ${semanticAttempt})`
+              `Corrigiendo ${actionableChapters.length} capítulos (intento ${semanticAttempt})`
             );
             
-            for (const chapterNum of semanticResult.chaptersToRevise) {
+            for (const chapterNum of actionableChapters) {
               const chapterToFix = completedForSemanticAnalysis.find(c => c.chapterNumber === chapterNum);
               const sectionForFix = allSections.find((s: any) => s.numero === chapterNum);
               
@@ -2722,9 +2795,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                   .map(c => `Repetición de idea: "${c.descripcion}"\n⚠️ PRESERVAR: ${c.elementos_a_preservar || "El resto del capítulo"}\n✏️ CORRECCIÓN: ${c.fix_sugerido}`)
                   .join("\n\n");
                 
+                // [Fix62] Solo enviar foreshadowing cuyo setup esté en este
+                // capítulo o anterior (orden narrativo) — epílogo/nota cuentan
+                // como narrativamente posteriores a todos.
+                const narrChapter = narrOrder(chapterNum);
                 const foreshadowingIssues = semanticResult.foreshadowingStatus
-                  .filter(f => f.estado === "sin_payoff")
-                  .map(f => `Foreshadowing sin resolver: "${f.setup}" (plantado en cap ${f.capitulo_setup}) - DEBES resolverlo en este capítulo o eliminarlo`)
+                  .filter(f => f.estado === "sin_payoff" && f.capitulo_setup != null && narrOrder(f.capitulo_setup) <= narrChapter)
+                  .map(f => `Foreshadowing sin resolver: "${f.setup}" (plantado en cap ${f.capitulo_setup}) - Si tiene sentido en este capítulo, resuélvelo o referénciaolo; si no aplica, ignora esta nota.`)
                   .join("\n");
                 
                 const allIssues = [clusterIssues, foreshadowingIssues].filter(Boolean).join("\n\n");
@@ -2838,6 +2915,30 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           extendedGuideContent = extendedGuide.content;
           console.log(`[Orchestrator:Resume] Using extended guide: "${extendedGuide.title}"`);
         }
+      }
+
+      // [Fix64] Capítulos con status="polishing" tienen contenido aprobado por
+      // el Editor (guardado antes de invocar al Estilista). Si el orquestador
+      // murió durante el pulido, no regeneramos: aceptamos la versión aprobada
+      // como completed. Perdemos solo el pulido cosmético, no el capítulo
+      // entero (~5 min y tokens duplicados como en el cap 26 de "La Herrumbre
+      // de los Días"). Los caps con status="writing" sin content sí se regeneran.
+      const polishingChapters = existingChapters.filter(
+        c => c.status === "polishing" && c.content && c.content.trim().length >= 50
+      );
+      for (const polCh of polishingChapters) {
+        const wcPol = polCh.content!.split(/\s+/).filter(w => w.length > 0).length;
+        await storage.updateChapter(polCh.id, { status: "completed", wordCount: wcPol });
+        polCh.status = "completed";
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          agentRole: "orchestrator",
+          message: `[Fix64] Capítulo ${polCh.chapterNumber} estaba en pulido cuando el sistema se reinició. Aceptando la versión aprobada por el Editor como definitiva (saltando re-pulido y re-generación).`,
+        });
+      }
+      if (polishingChapters.length > 0) {
+        console.log(`[Orchestrator Resume] [Fix64] Aceptados ${polishingChapters.length} capítulo(s) que estaban en pulido como completed.`);
       }
 
       const pendingChapters = existingChapters
@@ -3138,6 +3239,25 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           } else {
             refinementAttempts++;
 
+            // [Fix61] Regresión catastrófica: ver comentario en la rama no-resume.
+            const catastrophicRegressionR =
+              bestVersion.score >= 7 &&
+              currentScore > 0 &&
+              bestVersion.score - currentScore >= 3;
+            if (catastrophicRegressionR) {
+              console.log(`[Orchestrator Resume] [Fix61] Regresión catastrófica en ${sectionLabel}: ${currentScore}/10 vs mejor ${bestVersion.score}/10 (caída ≥3). Abortando reescrituras.`);
+              this.callbacks.onAgentStatus("editor", "editing",
+                `[Fix61] ${sectionLabel} regresó a ${currentScore}/10 desde ${bestVersion.score}/10. El Plan Quirúrgico está empeorando el capítulo. Conservando mejor versión.`
+              );
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warning",
+                agentRole: "editor",
+                message: `[Fix61] ${sectionLabel}: reescritura regresó a ${currentScore}/10 desde mejor histórico ${bestVersion.score}/10 (caída ${bestVersion.score - currentScore}). Plan Quirúrgico abortado tras ${refinementAttempts} intento(s).`,
+              });
+              break;
+            }
+
             if (attemptsSinceBestImprovement >= 2) {
               console.log(`[Orchestrator Resume] Anti-stagnation: ${sectionLabel} sin mejorar la mejor versión (${bestVersion.score}/10) tras ${attemptsSinceBestImprovement} intentos. Stopping rewrites.`);
               this.callbacks.onAgentStatus("editor", "editing",
@@ -3156,6 +3276,17 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         chapterContent = bestVersion.content;
         extractedContinuityState = bestVersion.continuityState;
         console.log(`[Orchestrator Resume] Using best version for ${sectionLabel}: ${bestVersion.score}/10`);
+
+        // [Fix64] Persistir versión aprobada antes del pulido. Ver no-resume.
+        if (chapterContent && chapterContent.trim().length >= 50) {
+          const wcApprovedR = chapterContent.split(/\s+/).filter(w => w.length > 0).length;
+          await storage.updateChapter(chapter.id, {
+            content: chapterContent,
+            wordCount: wcApprovedR,
+            status: "polishing",
+            continuityState: extractedContinuityState,
+          });
+        }
 
         this.callbacks.onAgentStatus("copyeditor", "polishing", `El Estilista está puliendo ${sectionLabel}...`);
 
@@ -3377,11 +3508,32 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
           
           if (semanticResult.chaptersToRevise.length > 0) {
+            // [Fix62] Pre-filtrar capítulos sin issues aplicables.
+            // Ver comentario detallado en la rama no-resume.
+            const narrOrderR = (n: number): number => n < 0 ? 999_999 + Math.abs(n) : n;
+            const actionableChaptersR: number[] = [];
+            for (const chapterNum of semanticResult.chaptersToRevise) {
+              const narrCh = narrOrderR(chapterNum);
+              const hasCluster = semanticResult.clusters.some(
+                c => c.capitulos_afectados?.includes(chapterNum)
+              );
+              const hasResolvableForeshadowing = semanticResult.foreshadowingStatus.some(
+                f => f.estado === "sin_payoff" && f.capitulo_setup != null && narrOrderR(f.capitulo_setup) <= narrCh
+              );
+              if (hasCluster || hasResolvableForeshadowing) {
+                actionableChaptersR.push(chapterNum);
+              }
+            }
+            const droppedR = semanticResult.chaptersToRevise.length - actionableChaptersR.length;
+            if (droppedR > 0) {
+              console.log(`[Orchestrator Resume] [Fix62] Semantic: descartados ${droppedR} capítulos sin issues aplicables.`);
+            }
+
             this.callbacks.onAgentStatus("semantic-detector", "editing", 
-              `Corrigiendo ${semanticResult.chaptersToRevise.length} capítulos (intento ${semanticAttemptResume})`
+              `Corrigiendo ${actionableChaptersR.length} capítulos (intento ${semanticAttemptResume})`
             );
             
-            for (const chapterNum of semanticResult.chaptersToRevise) {
+            for (const chapterNum of actionableChaptersR) {
               const chapterToFix = completedForSemanticAnalysis.find(c => c.chapterNumber === chapterNum);
               
               if (chapterToFix) {
@@ -3395,9 +3547,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                   .map(c => `Repetición de idea: "${c.descripcion}"\n⚠️ PRESERVAR: ${c.elementos_a_preservar || "El resto del capítulo"}\n✏️ CORRECCIÓN: ${c.fix_sugerido}`)
                   .join("\n\n");
                 
+                // [Fix62] Solo foreshadowing con setup <= chapterNum (orden narrativo).
+                const narrChapterR = narrOrderR(chapterNum);
                 const foreshadowingIssues = semanticResult.foreshadowingStatus
-                  .filter(f => f.estado === "sin_payoff")
-                  .map(f => `Foreshadowing sin resolver: "${f.setup}" (plantado en cap ${f.capitulo_setup}) - DEBES resolverlo o eliminarlo`)
+                  .filter(f => f.estado === "sin_payoff" && f.capitulo_setup != null && narrOrderR(f.capitulo_setup) <= narrChapterR)
+                  .map(f => `Foreshadowing sin resolver: "${f.setup}" (plantado en cap ${f.capitulo_setup}) - Si tiene sentido en este capítulo, resuélvelo o referénciaolo; si no aplica, ignora esta nota.`)
                   .join("\n");
                 
                 const allIssues = [clusterIssues, foreshadowingIssues].filter(Boolean).join("\n\n");
@@ -3640,6 +3794,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // y restauramos si caemos ≥ 1.0 puntos por debajo del mejor histórico
     // (cuando ese mejor histórico era ≥ 8).
     let bestManuscriptSnapshot: { score: number; chapters: Map<number, string> } | null = null;
+    // [Fix63] Contador de restauraciones Fix39 consecutivas. Si tras alcanzar
+    // un mejor histórico ≥9 vienen 2 ciclos seguidos en los que el FR
+    // regresiona y restauramos el snapshot, ya sabemos que el FR está
+    // empeorando: aceptamos el snapshot como aprobado en lugar de seguir
+    // quemando ciclos (~3-5 min cada uno) que solo restauran sin progreso.
+    let consecutiveFix39Restorations = 0;
 
     // [Fix41] Helper que clasifica una salida del loop según score y críticos.
     // forceKind permite forzar approved en rutas explícitas (consecutivas 9+,
@@ -4061,6 +4221,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           if (c.content) snap.set(c.chapterNumber, c.content);
         }
         bestManuscriptSnapshot = { score: currentScore, chapters: snap };
+        consecutiveFix39Restorations = 0; // [Fix63] reset al haber un nuevo best
         console.log(`[Orchestrator] [Fix39] Snapshot del manuscrito guardado en ciclo ${revisionCycle + 1} (score ${currentScore}/10, ${snap.size} caps).`);
       } else if (
         bestManuscriptSnapshot &&
@@ -4076,6 +4237,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             restoredCount++;
           }
         }
+        consecutiveFix39Restorations++;
         await storage.createActivityLog({
           projectId: project.id,
           level: "warning",
@@ -4085,13 +4247,35 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         this.callbacks.onAgentStatus("final-reviewer", "reviewing",
           `[Fix39] Manuscrito regresó a ${currentScore}/10 — restaurado al mejor ciclo (${bestManuscriptSnapshot.score}/10).`
         );
-        console.log(`[Orchestrator] [Fix39] Restored ${restoredCount} chapters from snapshot (best ${bestManuscriptSnapshot.score}, current ${currentScore}).`);
+        console.log(`[Orchestrator] [Fix39] Restored ${restoredCount} chapters from snapshot (best ${bestManuscriptSnapshot.score}, current ${currentScore}). Consecutive restorations: ${consecutiveFix39Restorations}.`);
+
+        // [Fix63] Salida temprana tras 2 restauraciones Fix39 consecutivas con
+        // best ≥ 9. En la novela "La Herrumbre de los Días" los ciclos 3-5 del
+        // FR fueron 9→8→6→7 (3 regresiones consecutivas restauradas) sin
+        // ningún progreso real; cada ciclo perdido cuesta ~3-5 min y tokens.
+        // Si el snapshot ya está en 9/10, lo aceptamos como aprobado.
+        if (consecutiveFix39Restorations >= 2 && bestManuscriptSnapshot.score >= 9) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "info",
+            agentRole: "final-reviewer",
+            message: `[Fix63] Salida temprana: 2 ciclos consecutivos del Revisor Final regresaron y fueron restaurados al snapshot 9/10. El FR está empeorando, no mejorando. Aceptando snapshot como aprobado.`,
+          });
+          this.callbacks.onAgentStatus("final-reviewer", "completed",
+            `[Fix63] Manuscrito aprobado en ${bestManuscriptSnapshot.score}/10 tras 2 regresiones consecutivas restauradas. Más ciclos del Revisor Final solo empeorarían el resultado.`
+          );
+          return classifyExit(bestManuscriptSnapshot.score, false, `[Fix63] Aprobado por snapshot ${bestManuscriptSnapshot.score}/10 tras ${consecutiveFix39Restorations} regresiones consecutivas restauradas.`, "approved");
+        }
+
         // Sustituimos el score del ciclo actual por el del snapshot para que
         // las reglas de salida (Fix37, plateau) usen la línea base correcta.
         previousScores[previousScores.length - 1] = bestManuscriptSnapshot.score;
         currentScore = bestManuscriptSnapshot.score;
         revisionCycle++;
         continue;
+      } else {
+        // [Fix63] Sin restauración en este ciclo: reset del contador.
+        consecutiveFix39Restorations = 0;
       }
 
       // [Fix37] Diminishing returns y regresión persistente. La detección de
