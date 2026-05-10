@@ -352,7 +352,27 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
   // directamente por el copyright). El logo de la editorial, si existe,
   // se muestra pequeño centrado al inicio de esta página.
   const year = new Date().getFullYear();
-  const copyrightLine = publisher?.copyrightLine || labels.copyrightDefault(authorName, year);
+  // [Fix56] El copyright SIEMPRE debe corresponder al autor del libro (su
+  // pseudónimo), no al titular de la cuenta. La línea configurada en la
+  // editorial (`publisher.copyrightLine`) se trata así:
+  //   - Si contiene los placeholders `{author}` o `{year}`, se interpolan y
+  //     reemplaza al copyright por defecto.
+  //   - Si NO contiene `{author}`, se usa SOLO como pie editorial adicional
+  //     (línea extra debajo) y el copyright principal se genera con el
+  //     pseudónimo y el año en curso, evitando que el nombre real del titular
+  //     filtre cuando el usuario haya guardado "© [su nombre]" en la editorial.
+  const rawPublisherCopyright = publisher?.copyrightLine?.trim() || "";
+  const hasAuthorPlaceholder = /\{author\}/i.test(rawPublisherCopyright);
+  const hasYearPlaceholder = /\{year\}/i.test(rawPublisherCopyright);
+  const interpolate = (s: string) => s
+    .replace(/\{author\}/gi, authorName)
+    .replace(/\{year\}/gi, String(year));
+  const copyrightLine = hasAuthorPlaceholder
+    ? interpolate(rawPublisherCopyright)
+    : labels.copyrightDefault(authorName, year);
+  const extraPublisherCopyrightLine = (rawPublisherCopyright && !hasAuthorPlaceholder)
+    ? `<p>${escapeHtml(hasYearPlaceholder ? interpolate(rawPublisherCopyright) : rawPublisherCopyright)}</p>`
+    : "";
   const publisherLine = publisher
     ? `<p>${escapeHtml(labels.publishedBy(publisher.name))}${publisher.websiteUrl ? ` &mdash; <a href="${escapeXml(publisher.websiteUrl)}">${escapeHtml(publisher.websiteUrl)}</a>` : ""}</p>`
     : "";
@@ -378,6 +398,7 @@ export async function generateGenericManuscriptEpub(data: EpubGenericData): Prom
   const copyrightBody = `
 <div class="copyright">
   <p>${escapeHtml(copyrightLine)}</p>
+  ${extraPublisherCopyrightLine}
   ${publisherLine}
   <p>${escapeHtml(labels.copyrightFiction)}</p>
   <p>${escapeHtml(labels.copyrightReproduction)}</p>
