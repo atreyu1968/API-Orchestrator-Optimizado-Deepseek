@@ -7265,6 +7265,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     worldBibleData: ParsedWorldBible,
     guiaEstilo: string,
     previousFinalScore: number | null,
+    modifiedChapterIds?: number[],
   ): Promise<void> {
     void guiaEstilo; // se mantiene en la firma para futuras necesidades del FinalReviewer.
     this.callbacks.onAgentStatus("final-reviewer", "reviewing",
@@ -7297,6 +7298,74 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     const newResult = reviewResult.result;
     const newScoreRaw = newResult?.puntuacion_global ?? null;
     const newScoreForDb = newScoreRaw != null ? Math.round(newScoreRaw) : null;
+
+    // [Fix69-C] Auto-revert global tras regresión catastrófica (delta ≤ -2.0).
+    // Antes solo emitíamos un AVISO y seguíamos ejecutando fases posteriores
+    // (resolución de issues documentados) sobre un manuscrito ya degradado.
+    // Observado en "El Aliento de los Antiguos": 9/10 → 7/10 (-2.0) y el
+    // sistema continuó aplicando cirugías que enrutaban instrucciones al cap
+    // equivocado. Ahora, si la fase editorial ha empeorado el manuscrito
+    // ≥2 puntos Y tenemos snapshots por capítulo (preEditContent), restauramos
+    // automáticamente cada capítulo modificado a su versión previa y dejamos
+    // la puntuación global en el valor anterior.
+    if (
+      newScoreRaw != null &&
+      previousFinalScore != null &&
+      (newScoreRaw - previousFinalScore) <= -2.0 &&
+      Array.isArray(modifiedChapterIds) &&
+      modifiedChapterIds.length > 0
+    ) {
+      let restored = 0;
+      for (const chapterId of modifiedChapterIds) {
+        try {
+          const ch = updatedChaptersForReview.find(c => c.id === chapterId);
+          if (!ch) continue;
+          const pre = (ch as any).preEditContent as string | null | undefined;
+          if (!pre || !pre.trim()) continue;
+          const restoredWc = pre.split(/\s+/).filter(w => w.length > 0).length;
+          // [Fix69-C] Limpiamos continuityState al restaurar la prosa: el snapshot
+          // de continuidad se calculó sobre el texto editado (ahora descartado),
+          // así que dejarlo poblado generaría discrepancias entre prosa
+          // restaurada y estado canónico. Se forzará su regeneración la próxima
+          // vez que un agente lo necesite.
+          await storage.updateChapter(chapterId, {
+            content: pre,
+            wordCount: restoredWc,
+            status: "completed",
+            needsRevision: false,
+            revisionReason: null,
+            continuityState: null,
+          } as any);
+          restored++;
+        } catch (revertErr) {
+          console.error(`[Fix69-C] No se pudo restaurar cap id=${chapterId}:`, revertErr);
+        }
+      }
+      const restoreMsg = `Puntuación global cayó ${previousFinalScore}/10 → ${newScoreRaw}/10 (${(newScoreRaw - previousFinalScore).toFixed(1)}) tras notas editoriales. Auto-revert activado: ${restored}/${modifiedChapterIds.length} capítulo(s) restaurado(s) a su versión anterior. Puntuación global mantenida en ${previousFinalScore}/10. Las notas editoriales aplicadas estaban empeorando el manuscrito.`;
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        message: restoreMsg,
+        agentRole: "final-reviewer",
+      });
+      // [Fix69-C] Aviso explícito sobre posible desincronización del World Bible:
+      // si las notas editoriales modificaron entradas del WB (heridas, decisiones
+      // de trama, eventos), esos cambios PERSISTEN en el WB porque el revert
+      // solo afecta a la prosa de los capítulos. Avisamos al usuario para que
+      // revise el WB manualmente si la regresión es relevante.
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        message: `Aviso post-revert: el auto-revert solo restaura la prosa de los ${restored} capítulo(s) afectados. Si esta sesión editorial modificó entradas del World Bible (heridas, decisiones de trama, líneas temporales, registros de personajes), esos cambios PERMANECEN. Revisa el WB en el panel correspondiente y, si detectas inconsistencias entre prosa restaurada y canon, edita el WB manualmente o lanza una nueva ronda editorial.`,
+        agentRole: "final-reviewer",
+      });
+      // NO actualizamos finalScore ni finalReviewResult: el manuscrito ha vuelto
+      // al estado pre-edits, así que la puntuación válida es la previa.
+      this.callbacks.onAgentStatus("final-reviewer", "completed",
+        `Auto-revert tras regresión global (${previousFinalScore}/10 → ${newScoreRaw}/10). ${restored} capítulo(s) restaurado(s).`
+      );
+      return;
+    }
 
     await storage.updateProject(project.id, {
       finalReviewResult: newResult as any,
@@ -7693,6 +7762,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // Snapshot the global score BEFORE applying so we can compare later.
       const previousFinalScore = project.finalScore ?? null;
 
+      // [Fix69-C] IDs de capítulos efectivamente modificados durante esta sesión
+      // editorial. Se usa para el auto-revert en `recalculateFinalScoreAfterEdits`
+      // cuando la puntuación global cae ≥2 puntos: restauramos solo los capítulos
+      // que tocamos en este flujo, sin afectar al resto.
+      const modifiedChapterIds = new Set<number>();
+
       for (let i = 0; i < sortedChapters.length; i++) {
         if (this.aborted) {
           console.log(`[ApplyEditorialNotes] Aborted after processing ${i}/${sortedChapters.length} chapters (project ${project.id}). Exiting silently.`);
@@ -7962,6 +8037,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         // Contabilidad y snapshot final del capítulo
         if (chapterModified) {
           appliedCount++;
+          modifiedChapterIds.add(chapter.id);
           await storage.updateChapter(chapter.id, {
             preEditContent: beforeContent,
             preEditAt: new Date() as any,
@@ -8000,6 +8076,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // sumamos aquí para que appliedCount refleje TODOS los cambios reales.
       // Esto también garantiza que recalculateFinalScoreAfterEdits se ejecute
       // si hubo cambios (la condición es appliedCount > 0).
+      // [Fix69-C] Para el auto-revert necesitamos los IDs (no los números) de
+      // los caps reenrutados. Hacemos un único fetch fuera del bucle.
+      const allChaptersAfterLoop = await storage.getChaptersByProject(project.id);
       for (const reroutedNum of reroutedTargets) {
         // Si el target ya estaba en sortedChapters Y entró al bucle, ya lo
         // contamos por la vía normal. Solo sumamos los targets que NO se
@@ -8008,6 +8087,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         if (!alreadyProcessedByLoop) {
           appliedCount++;
         }
+        const reroutedCh = allChaptersAfterLoop.find(c => c.chapterNumber === reroutedNum);
+        if (reroutedCh) modifiedChapterIds.add(reroutedCh.id);
       }
       if (reroutedTargets.size > 0) {
         const list = Array.from(reroutedTargets).join(", ");
@@ -8038,7 +8119,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
       if (appliedCount > 0 && !cancelled) {
         try {
-          await this.recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore);
+          await this.recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore, Array.from(modifiedChapterIds));
         } catch (reviewErr) {
           console.error("[ApplyEditorialNotes] Error en revisión final post-editorial:", reviewErr);
           await storage.createActivityLog({
@@ -11700,6 +11781,33 @@ Responde SOLO con un JSON válido con la estructura:
       return;
     }
 
+    // [Fix69-A] Filtro upstream de instrucciones no-op explícitas.
+    // El distribuidor multi-capítulo a veces enruta al cap N una instrucción
+    // cuyo texto literal dice "mantener tal cual / sin modificaciones / aplicar
+    // en el capítulo X / fuera del alcance de este capítulo". Si esto se deja
+    // pasar al cirujano, éste lo clasifica como "no aplicable" y caemos al
+    // fallback de Narrador → reescribimos un capítulo que la propia
+    // instrucción pedía NO tocar. Detectamos el patrón antes de invocar
+    // a nadie y devolvemos el cap como completed sin tocarlo.
+    if (this.isExplicitNoOpInstruction(correctionInstructions, sectionData.numero)) {
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        message: `${sectionLabel}: la instrucción dice explícitamente que NO se debe modificar este capítulo (mantener tal cual / cambios en otro cap / fuera de alcance). Descartada antes de invocar al cirujano para no introducir cambios espurios.`,
+        agentRole: "editor",
+      });
+      await storage.updateChapter(chapter.id, {
+        status: "completed",
+        needsRevision: false,
+        revisionReason: null,
+      });
+      this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+      this.callbacks.onAgentStatus("surgical-patcher", "completed",
+        `${sectionLabel}: instrucción no-op detectada upstream; capítulo no tocado.`
+      );
+      return;
+    }
+
     await storage.updateChapter(chapter.id, { 
       status: "revision",
       needsRevision: true,
@@ -11786,13 +11894,30 @@ Responde SOLO con un JSON válido con la estructura:
           return;
         }
 
-        // Operaciones generadas pero ninguna encontró el texto literal → cae al reescritura.
+        // [Fix69-B] Operaciones generadas pero ninguna encontró el texto literal.
+        // ANTES caíamos al fallback del Narrador, que reescribía el capítulo entero
+        // para "cumplir" una instrucción cuyo anclaje no existe. Resultado típico:
+        // el Narrador inventaba un texto plausible y el Editor lo revertía o, peor,
+        // lo dejaba pasar y degradaba el cap (visto en cap 14 de "El Aliento de los
+        // Antiguos"). Si el cirujano generó operaciones pero ninguna ancla aparece
+        // en el manuscrito, la instrucción está mal enrutada/obsoleta/alucinada y
+        // el cap correcto es OTRO. Cancelamos para no dañar el cap actual.
         await storage.createActivityLog({
           projectId: project.id,
-          level: "info",
-          message: `${sectionLabel}: las ${operations.length} operaciones del cirujano no encontraron texto literal. Cayendo a reescritura completa.`,
+          level: "warning",
+          message: `${sectionLabel}: el cirujano generó ${operations.length} operaciones pero ninguna ancló texto literal del capítulo (instrucción mal enrutada, obsoleta o alucinada). Reescritura cancelada para no degradar el capítulo. Vuelve a emitir la nota indicando el capítulo correcto.`,
           agentRole: "surgical-patcher",
         });
+        await storage.updateChapter(chapter.id, {
+          status: "completed",
+          needsRevision: false,
+          revisionReason: null,
+        });
+        this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+        this.callbacks.onAgentStatus("surgical-patcher", "completed",
+          `${sectionLabel}: anclas literales no encontradas; capítulo no tocado.`
+        );
+        return;
       } else {
         const reason = patchResult.result?.not_applicable_reason || "El cirujano clasificó la instrucción como estructural.";
         // Detectar instrucciones que SOLO afectan al World Bible (no al texto del
@@ -12816,6 +12941,40 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
   // cambios concretos al texto, devolvemos false para no perdernos correcciones
   // mixtas. Por eso pedimos señal en la razón del cirujano (que ya analizó
   // ambos lados).
+  // [Fix69-A] Detecta instrucciones cuyo TEXTO LITERAL declara explícitamente
+  // que el capítulo actual no debe modificarse (el distribuidor multi-capítulo
+  // a veces enruta al cap N una instrucción que en realidad pide cambios solo
+  // en otros caps, dejando una nota tipo "para el Cap N: mantener tal cual").
+  // Si se deja pasar al cirujano, éste rechaza, pero caemos al fallback del
+  // Narrador y reescribimos un capítulo que la propia instrucción protegía.
+  // Detectamos los patrones en español más comunes ANTES de tocar nada.
+  private isExplicitNoOpInstruction(instruction: string, currentChapterNumber: number): boolean {
+    const t = (instruction || "").toLowerCase().trim();
+    if (!t) return false;
+
+    // Patrón 1: la instrucción dice literalmente "no modificar / mantener tal cual / sin cambios".
+    // Exigimos al menos uno de estos para evitar falsos positivos sobre instrucciones
+    // que solo mencionan estos verbos como parte de un contexto más amplio.
+    const noOpVerbs = /\b(mantener (la )?(escena|prosa|texto|capítulo|capitulo|narración|narracion|secuencia|párrafo|parrafo)[^.]{0,60}(tal cual|sin (modificaciones|cambios|alteraciones|tocar)|intacto)|no (modificar|tocar|alterar|cambiar) (este|el) (capítulo|capitulo|texto|cap\.?))/;
+    const fueraDeAlcance = /(fuera del alcance de este (capítulo|capitulo|cap\.?)|no aplica al? (capítulo|capitulo) (actual|presente|este)|este (capítulo|capitulo) no (requiere|necesita) (cambios|modificaciones)|no hay (cambios|modificaciones) que (aplicar|realizar) (aquí|en este (capítulo|capitulo)))/;
+
+    // Patrón 2: la instrucción dice que los cambios se aplican EN OTROS capítulos
+    // distintos al actual. Capturamos "en el/los capítulo(s) X" / "en el cap X"
+    // / "en los caps X y Y" y verificamos que NINGUNO de los números coincida
+    // con currentChapterNumber.
+    let appliesToOtherChapters = false;
+    const otherChapMatch = t.match(/(?:los cambios|las (?:modificaciones|correcciones)|se aplican?|aplicar?)[^.]{0,40}\b(?:en|al|a los?)\s+(?:el |los )?cap(?:[íi]tulos?)?\.?\s*([0-9]+(?:\s*(?:,|y|e)\s*[0-9]+)*)/i);
+    if (otherChapMatch) {
+      const numStr = otherChapMatch[1];
+      const nums = numStr.split(/[\s,ye]+/).map(s => parseInt(s, 10)).filter(n => !Number.isNaN(n));
+      if (nums.length > 0 && !nums.includes(currentChapterNumber)) {
+        appliesToOtherChapters = true;
+      }
+    }
+
+    return noOpVerbs.test(t) || fueraDeAlcance.test(t) || appliesToOtherChapters;
+  }
+
   private isWorldBibleOnlyInstruction(surgeonReason: string, originalInstructions: string): boolean {
     const r = (surgeonReason || "").toLowerCase();
     const i = (originalInstructions || "").toLowerCase();
