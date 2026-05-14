@@ -74,10 +74,19 @@ export async function buildSeriesContextForReviewers(opts: SeriesContextOptions)
     parts.push("═══════════════════════════════════════════════════════════════════");
     parts.push("");
     if (isPrequel) {
-      parts.push(`Esta novela es una **PRECUELA (Vol. 0)** de la serie "${seriesData.title}" (de ${totalVolumes} volúmenes principales planificados).`);
-      parts.push(`**¿Último volumen?**: NO aplica — una precuela ocurre ANTES, cronológicamente, de los otros libros. Su misión es ser una novela autoconclusiva que enriquece la serie, no cerrar arcos de los volúmenes posteriores.`);
-      parts.push(`**Hilos largos de la serie**: lo que pasa en los volúmenes posteriores (Vol. 1+) es el **FUTURO** de los personajes de esta precuela. NO exijas que la precuela los resuelva ni los plantee explícitamente; tampoco te quejes si personajes "salen vivos" o "no se sabe nada de X" cuando X aparece en libros posteriores — el lector de la serie sabe lo que pasa después.`);
-      parts.push(`**Coherencia inversa**: lo que esta precuela establezca debe encajar hacia adelante con lo ya escrito en los volúmenes posteriores (no contradicción), pero la precuela en sí se juzga como novela independiente.`);
+      // [Fix68b] Reformulación: el Beta seguía evaluando la precuela con
+      // rúbrica de "novela autoconclusiva" y quejándose de que era "solo un
+      // primer acto" o "se siente inconclusa". El usuario plantea que la
+      // precuela debe juzgarse como PRIMER LIBRO CRONOLÓGICO de una serie
+      // en curso: el lector va a continuar leyendo los volúmenes
+      // posteriores, así que arcos largos LEGÍTIMAMENTE quedan abiertos como
+      // ganchos. Cambio de marco: no "novela independiente" sino "primer
+      // libro de una serie".
+      parts.push(`Esta novela es la **PRECUELA (Vol. 0)** de la serie "${seriesData.title}" — el **primer libro cronológico** de una serie planificada de ${totalVolumes} volúmenes principales. El lector seguirá leyendo Vol. 1+ a continuación.`);
+      parts.push(`**¿Último volumen?**: NO. Esta precuela NO debe juzgarse como una novela autoconclusiva ni con la rúbrica de "novela completa cerrada". Debe juzgarse como el **primer libro de una serie larga**: arcos amplios, hilos de fondo, presentaciones de personajes y promesas a largo plazo PUEDEN y DEBEN quedar abiertos al final — eso es lo esperado, no un defecto. Un cliffhanger o una transición hacia Vol. 1 al cerrar el libro son válidos.`);
+      parts.push(`**Lo que SÍ debes evaluar**: que la PROPIA TRAMA INTERNA que esta precuela elige contar (no la de la serie entera, ni la del Vol. 1) tenga progresión sostenida y un cierre coherente del ARCO PUNTUAL que se haya planteado. Si en este manuscrito se plantea el viaje de X a Y, valida que ese viaje se cierre; si se plantea la transformación interior de Z, valida que esa transformación tenga un punto de inflexión claro. NO exijas más cierre del que el libro promete dentro de sí mismo.`);
+      parts.push(`**Lo que NO debes hacer**: NO penalices que personajes salgan vivos, que "no se sepa nada de" un personaje que aparece en libros posteriores, que queden conflictos políticos/místicos/familiares abiertos hacia el futuro, ni que el manuscrito "termine cuando empieza la acción grande de la serie". Eso es exactamente lo que una precuela hace por diseño.`);
+      parts.push(`**Coherencia inversa (sí debes auditar)**: que nada de lo escrito en esta precuela CONTRADIGA los eventos/personajes/reglas establecidos en los volúmenes posteriores (personajes deben aparecer más jóvenes/inexpertos, geografía/cultura compatibles, etc.).`);
       parts.push("");
     } else {
       parts.push(`Esta novela es el **VOLUMEN ${volumeNumber} de ${totalVolumes}** de la serie "${seriesData.title}".`);

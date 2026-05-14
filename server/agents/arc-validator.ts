@@ -279,11 +279,13 @@ export class ArcValidatorAgent extends BaseAgent {
     const prompt = `
 SERIE: "${input.seriesTitle}"
 ${input.isPrequel
-  ? `VOLUMEN: PRECUELA (Vol. 0) — ocurre cronológicamente ANTES de los ${input.totalVolumes} volúmenes principales planificados.
+  ? `VOLUMEN: PRECUELA (Vol. 0) — PRIMER LIBRO CRONOLÓGICO de una serie planificada de ${input.totalVolumes} volúmenes principales. El lector seguirá leyendo Vol. 1+ a continuación.
 
-ESTA NOVELA ES UNA PRECUELA. Reglas específicas:
+ESTA NOVELA ES UNA PRECUELA. NO la juzgues con la rúbrica de "novela autoconclusiva cerrada"; júzgala como **el primer libro de una serie larga**. Arcos amplios, hilos de fondo y promesas a largo plazo PUEDEN quedar abiertos al final — eso es lo esperado, no un defecto de arco. Reglas específicas:
 - Solo verifica los HITOS PENDIENTES listados abajo (que pertenecen al Vol. 0). Si la lista está vacía, no exijas hitos del Vol. 1+ como sustituto: pertenecen a libros POSTERIORES.
 - Solo verifica progresión/cierre de los HILOS ARGUMENTALES listados abajo (los específicos de la precuela). Hilos planteados para libros posteriores NO se incluyen aquí y NO debes exigirlos.
+- NO reportes "arco incompleto" ni "el manuscrito termina como un primer acto" porque queden abiertos hilos largos hacia Vol. 1+: están planificados para resolverse después.
+- SÍ verifica que el ARCO PUNTUAL que la precuela elige plantear internamente tenga progresión sostenida y un punto de inflexión coherente. NO exijas más cierre del que el libro promete dentro de sí mismo.
 - Usa el CONTEXTO DE VOLÚMENES POSTERIORES (si lo hay) para detectar CONTRADICCIONES (anacronismos respecto a libros posteriores, personajes con conocimientos/edad incompatible, lugares/reglas del mundo incoherentes). Estas sí son fallos del arco.`
   : `VOLUMEN: ${input.volumeNumber} de ${input.totalVolumes}`}
 PROYECTO: "${input.projectTitle}"

@@ -642,13 +642,18 @@ la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad sufici
       // rama estándar y reportaba como "arco_incompleto" hilos que pertenecen
       // a libros posteriores.
       if (sc.isPrequel) {
+        // [Fix68b] Reformulación: el FR no debe usar la rúbrica "novela
+        // autoconclusiva" para una precuela. Es el PRIMER LIBRO CRONOLÓGICO
+        // de una serie en curso; el lector continuará. Arcos amplios pueden
+        // quedar abiertos legítimamente y un cliffhanger hacia Vol. 1 es
+        // válido.
         seriesSection = `
     ═══════════════════════════════════════════════════════════════════
-    🔴 CONTEXTO DE SERIE - PRECUELA (Vol. 0)
+    🔴 CONTEXTO DE SERIE - PRECUELA (Vol. 0 — PRIMER LIBRO CRONOLÓGICO)
     ═══════════════════════════════════════════════════════════════════
-    Serie: "${sc.seriesTitle}" — PRECUELA cronológica (de ${sc.totalVolumes} volúmenes principales planificados)
+    Serie: "${sc.seriesTitle}" — esta novela es la PRECUELA, el PRIMER libro cronológico de una serie planificada de ${sc.totalVolumes} volúmenes principales. El lector seguirá leyendo Vol. 1+ a continuación.
 
-    ESTA NOVELA ES UNA PRECUELA: ocurre ANTES de los volúmenes existentes. Júzgala como NOVELA AUTOCONCLUSIVA por su propia trama, NO por cumplir hitos de los libros posteriores.
+    NO JUZGUES ESTA NOVELA COMO "AUTOCONCLUSIVA" NI COMO "NOVELA INDEPENDIENTE": júzgala como **el primer libro de una serie larga**. Arcos amplios, hilos de fondo, presentaciones de personajes y promesas a largo plazo PUEDEN y DEBEN quedar abiertos. Un cliffhanger o una transición hacia Vol. 1 al final son válidos por diseño.
 
     HILOS DE LA SERIE QUE SE DESARROLLAN EN LIBROS POSTERIORES (referencia / NO exigir cierre aquí):
     ${sc.unresolvedThreadsFromPrevBooks.length > 0 ? sc.unresolvedThreadsFromPrevBooks.slice(0, 20).map((t, i) => `  ${i + 1}. ${t}`).join("\n") : "  (Ninguno)"}
@@ -664,9 +669,9 @@ la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad sufici
     ═══════════════════════════════════════════════════════════════════
 
     INSTRUCCIONES ADICIONALES DE PRECUELA:
-    - NO reportes "arco_incompleto" porque hilos de los volúmenes POSTERIORES queden abiertos: están planificados para resolverse después.
-    - NO exijas que la precuela revele/cierre secretos que se desvelan en libros posteriores.
-    - SÍ verifica que la trama AUTOCONCLUSIVA de la precuela cierre satisfactoriamente.
+    - NO reportes "arco_incompleto" ni "el manuscrito termina como un primer acto" ni "se siente inconcluso": la precuela está DISEÑADA para conectar con Vol. 1+. Los arcos largos quedando abiertos es lo esperado.
+    - NO exijas que la precuela revele/cierre secretos, conflictos políticos, místicos o familiares que se desvelan en libros posteriores.
+    - SÍ verifica que el **ARCO PUNTUAL** que la precuela elige plantear internamente (su propia trama interna, no la de la serie) tenga progresión sostenida y un punto de inflexión coherente. Si en este manuscrito se plantea el viaje de X a Y, valida que ese viaje se cierre; si se plantea la transformación interior de Z, valida que tenga su momento de cambio. NO exijas más cierre del que el libro promete dentro de sí mismo.
     - SÍ verifica coherencia inversa: que nada de lo escrito CONTRADIGA los eventos/personajes de los volúmenes posteriores (los personajes deben aparecer más jóvenes/inexpertos, los lugares y reglas del mundo deben ser compatibles).
     - SÍ valora si la precuela siembra orígenes útiles para los libros posteriores, pero no la penalices si decide ser más independiente.
     ═══════════════════════════════════════════════════════════════════`;
