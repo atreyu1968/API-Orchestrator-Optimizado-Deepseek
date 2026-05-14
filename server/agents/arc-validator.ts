@@ -260,7 +260,7 @@ ${threadsText}
 ═══════════════════════════════════════════════════════════════════
 CONTENIDO REAL DE LOS CAPÍTULOS DEL VOLUMEN:
 ═══════════════════════════════════════════════════════════════════
-${input.chaptersSummary.substring(0, 100000)}
+${input.chaptersSummary}
 
 ═══════════════════════════════════════════════════════════════════
 INSTRUCCIONES DE VERIFICACIÓN:

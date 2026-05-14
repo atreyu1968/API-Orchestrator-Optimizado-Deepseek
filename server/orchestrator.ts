@@ -10863,11 +10863,17 @@ Responde SOLO con un JSON válido con la estructura:
       const sortedChapters = sortChaptersNarrative(chapters);
       const worldBible = await storage.getWorldBibleByProject(project.id);
 
+      // [Fix67] Antes truncábamos cada capítulo a 8 000 chars (~1 500 palabras),
+      // lo que con capítulos típicos de 4 000-6 000 palabras dejaba al
+      // ArcValidator viendo solo el primer 25-40 % de cada uno. El verificador
+      // entonces respondía cosas como "los capítulos finales (no proporcionados)
+      // deben cubrir X" — porque literalmente NO los recibía. DeepSeek V4-Flash
+      // tiene 1 M de ventana: una novela de 200 000 palabras son ~800 000 tokens
+      // y cabe completa. Pasamos el contenido íntegro de cada capítulo.
       const chaptersSummary = sortedChapters.map(c => {
         const label = c.chapterNumber === 0 ? "Prólogo" : c.chapterNumber === -1 ? "Epílogo" : `Capítulo ${c.chapterNumber}`;
         const content = ((c as any).editedContent || c.content || "");
-        const preview = content.substring(0, 8000);
-        return `${label}: ${c.title || ""} (${c.wordCount || 0} palabras)\n${preview}${content.length > 8000 ? "\n[...truncado...]" : ""}`;
+        return `${label}: ${c.title || ""} (${c.wordCount || 0} palabras)\n${content}`;
       }).join("\n\n---\n\n");
 
       const { ArcValidatorAgent } = await import("./agents/arc-validator");
@@ -11093,11 +11099,12 @@ Responde SOLO con un JSON válido con la estructura:
 
       const chapters = await storage.getChaptersByProject(project.id);
       const sortedChapters = sortChaptersNarrative(chapters);
+      // [Fix67] Pasamos contenido íntegro de cada capítulo (antes truncado a
+      // 8 000 chars). Ver explicación detallada en `runSeriesArcVerification`.
       const chaptersSummary = sortedChapters.map(c => {
         const label = c.chapterNumber === 0 ? "Prólogo" : c.chapterNumber === -1 ? "Epílogo" : `Capítulo ${c.chapterNumber}`;
         const content = ((c as any).editedContent || c.content || "");
-        const preview = content.substring(0, 8000);
-        return `${label}: ${c.title || ""} (${c.wordCount || 0} palabras)\n${preview}${content.length > 8000 ? "\n[...truncado...]" : ""}`;
+        return `${label}: ${c.title || ""} (${c.wordCount || 0} palabras)\n${content}`;
       }).join("\n\n---\n\n");
 
       const { ArcValidatorAgent } = await import("./agents/arc-validator");
