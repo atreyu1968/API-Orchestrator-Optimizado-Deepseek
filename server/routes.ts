@@ -5433,7 +5433,13 @@ IMPORTANTE:
         const reeditProject = await storage.getReeditProject(projectId);
         if (!reeditProject) return res.status(404).json({ error: "Reedit project not found" });
         projectTitle = reeditProject.title;
-        volumeNumber = reeditProject.seriesOrder || 1;
+        // [Fix68] Detección de precuela también para reedit (seriesOrder===0
+        // o projectSubtype==="prequel"). Sin esto, una precuela reeditada se
+        // verificaba como Vol. 1.
+        const _isPrequelReedit = (reeditProject as any).projectSubtype === "prequel" || reeditProject.seriesOrder === 0;
+        volumeNumber = _isPrequelReedit ? 0 : (reeditProject.seriesOrder || 1);
+        (req as any)._isPrequelVerify = _isPrequelReedit;
+        (req as any)._verifyProject = reeditProject;
         const chapters = await storage.getReeditChaptersByProject(projectId);
         chaptersList = chapters.map(c => ({
           chapterNumber: c.chapterNumber,
@@ -5449,7 +5455,11 @@ IMPORTANTE:
         const [manuscript] = await dbImport.select().from(importedManuscriptsTable).where(eq(importedManuscriptsTable.id, projectId));
         if (!manuscript) return res.status(404).json({ error: "Imported manuscript not found" });
         projectTitle = manuscript.title;
-        volumeNumber = manuscript.seriesOrder || 1;
+        // [Fix68] Detección de precuela también para manuscritos importados.
+        const _isPrequelImport = (manuscript as any).projectSubtype === "prequel" || manuscript.seriesOrder === 0;
+        volumeNumber = _isPrequelImport ? 0 : (manuscript.seriesOrder || 1);
+        (req as any)._isPrequelVerify = _isPrequelImport;
+        (req as any)._verifyProject = manuscript;
         const chapters = await dbImport.select().from(importedChaptersTable).where(eq(importedChaptersTable.manuscriptId, projectId));
         chaptersList = chapters.map(c => ({
           chapterNumber: c.chapterNumber,
@@ -5461,7 +5471,14 @@ IMPORTANTE:
         const project = await storage.getProject(projectId);
         if (!project) return res.status(404).json({ error: "Project not found" });
         projectTitle = project.title;
-        volumeNumber = project.seriesOrder || 1;
+        // [Fix68] Detección unificada de precuela. Para precuela el volumen
+        // verificado es 0; el ArcValidator recibe `isPrequel` para no exigir
+        // hitos/hilos del Vol. 1+ y para tratar los snapshots de la serie
+        // como volúmenes POSTERIORES (coherencia inversa).
+        const _isPrequelVerify = (project as any).projectSubtype === "prequel" || project.seriesOrder === 0;
+        volumeNumber = _isPrequelVerify ? 0 : (project.seriesOrder || 1);
+        (req as any)._isPrequelVerify = _isPrequelVerify;
+        (req as any)._verifyProject = project;
         worldBible = await storage.getWorldBibleByProject(projectId);
         const chapters = await storage.getChaptersByProject(projectId);
         chaptersList = chapters.map(c => ({
@@ -5496,10 +5513,11 @@ IMPORTANTE:
           return `${chapterLabel}${title}\n[Sin contenido - ${c.status || "pending"}]`;
         }
         
-        const contentPreview = c.content.substring(0, 8000);
-        const isTruncated = c.content.length > 8000;
-        
-        return `${chapterLabel}${title} (${wordCount} palabras)\n${contentPreview}${isTruncated ? "\n[...contenido truncado para verificación...]" : ""}`;
+        // [Fix68] Alineado con Fix67: DeepSeek V4-Flash tiene 1M de contexto;
+        // pasamos el capítulo íntegro al ArcValidator (sin truncar a 8000)
+        // para que la verificación manual sea consistente con la automática
+        // y vea desenlaces completos.
+        return `${chapterLabel}${title} (${wordCount} palabras)\n${c.content}`;
       }).join("\n\n---\n\n");
       
       console.log(`[Arc Verification] Building summary for ${volumeType || "project"}: ${totalChapters} chapters, ${chaptersWithContent.length} with content`);
@@ -5507,6 +5525,33 @@ IMPORTANTE:
       const { ArcValidatorAgent } = await import("./agents/arc-validator");
       const arcValidator = new ArcValidatorAgent();
       
+      // [Fix68] Para precuelas (solo en la rama "project"), construir contexto
+      // inverso con los snapshots de los volúmenes posteriores y pasar
+      // `isPrequel` al validator. En las ramas "reedit"/"imported" no
+      // tenemos el `project` cargado, así que dejamos la verificación normal.
+      let _previousVolumesContext: string | undefined = undefined;
+      const _isPrequelVerify = !!(req as any)._isPrequelVerify;
+      const _verifyProject = (req as any)._verifyProject;
+      if (_isPrequelVerify && _verifyProject?.seriesId) {
+        try {
+          const fc = await storage.getSeriesFullContinuity(_verifyProject.seriesId);
+          const parts: string[] = [];
+          for (const s of fc.projectSnapshots) {
+            if (s.projectId === _verifyProject.id) continue;
+            parts.push(`Synopsis: ${s.synopsis || "N/A"}\nHilos no resueltos: ${JSON.stringify(s.unresolvedThreads)}`);
+          }
+          for (const ms of fc.manuscriptSnapshots) {
+            const snap = ms.snapshot as any;
+            if (snap?.synopsis || snap?.unresolvedThreads) {
+              parts.push(`Synopsis: ${snap.synopsis || "N/A"}\nHilos no resueltos: ${JSON.stringify(snap.unresolvedThreads || [])}`);
+            }
+          }
+          if (parts.length > 0) _previousVolumesContext = parts.join("\n---\n");
+        } catch (e) {
+          console.warn("[Arc Verification] Failed to build prequel inverse context:", e);
+        }
+      }
+
       const result = await arcValidator.execute({
         projectTitle: projectTitle,
         seriesTitle: series.title,
@@ -5516,6 +5561,8 @@ IMPORTANTE:
         milestones,
         plotThreads: threads,
         worldBible: worldBible || {},
+        previousVolumesContext: _previousVolumesContext,
+        isPrequel: _isPrequelVerify,
       });
 
       if (result.result) {
@@ -5984,10 +6031,15 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
 
       console.log(`[ThreadFixer] Analyzing ${chaptersWithContent.length} chapters for project ${projectId}`);
 
+      // [Fix68] Precuela: el fixer NO debe proponer correcciones que inyecten
+      // hitos/hilos de Vol. 1+ (libros posteriores) en la precuela. Pasamos
+      // isPrequel para que filtre los hilos y volumeNumber=0 para que solo
+      // considere hitos del Vol. 0.
+      const _isPrequelFix = (project as any).projectSubtype === "prequel" || project.seriesOrder === 0;
       const result = await threadFixer.execute({
         projectTitle: project.title,
         seriesTitle: series.title,
-        volumeNumber: project.seriesOrder || 1,
+        volumeNumber: _isPrequelFix ? 0 : (project.seriesOrder || 1),
         totalVolumes: series.totalPlannedBooks || 10,
         chapters: chaptersWithContent.map((c: any) => ({
           id: c.id,
@@ -5998,6 +6050,7 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
         milestones,
         plotThreads: threads,
         worldBible: worldBible || {},
+        isPrequel: _isPrequelFix,
       });
 
       if (!result.result) {

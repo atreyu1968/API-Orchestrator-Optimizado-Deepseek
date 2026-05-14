@@ -25,6 +25,11 @@ interface FinalReviewerInput {
     milestones: Array<{ description: string; isRequired: boolean }>;
     plotThreads: Array<{ threadName: string; status: string; importance: string }>;
     isLastVolume: boolean;
+    // [Fix68] true cuando el proyecto es una PRECUELA (Vol. 0). Antes el FR
+    // recibía siempre milestones/threads del Vol. 1 para una precuela y se
+    // quejaba de "hitos no cumplidos" que en realidad pertenecen al libro
+    // siguiente, no a la precuela.
+    isPrequel?: boolean;
   };
 }
 
@@ -630,6 +635,42 @@ la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad sufici
     let seriesSection = "";
     if (input.seriesContext) {
       const sc = input.seriesContext;
+      // [Fix68] Rama precuela: cambia totalmente la semántica. Una precuela
+      // ocurre ANTES de los volúmenes existentes, así que los hilos y eventos
+      // "previos" son en realidad el FUTURO de los personajes; los hitos del
+      // Vol. 1+ NO son obligatorios para la precuela. Antes el FR usaba la
+      // rama estándar y reportaba como "arco_incompleto" hilos que pertenecen
+      // a libros posteriores.
+      if (sc.isPrequel) {
+        seriesSection = `
+    ═══════════════════════════════════════════════════════════════════
+    🔴 CONTEXTO DE SERIE - PRECUELA (Vol. 0)
+    ═══════════════════════════════════════════════════════════════════
+    Serie: "${sc.seriesTitle}" — PRECUELA cronológica (de ${sc.totalVolumes} volúmenes principales planificados)
+
+    ESTA NOVELA ES UNA PRECUELA: ocurre ANTES de los volúmenes existentes. Júzgala como NOVELA AUTOCONCLUSIVA por su propia trama, NO por cumplir hitos de los libros posteriores.
+
+    HILOS DE LA SERIE QUE SE DESARROLLAN EN LIBROS POSTERIORES (referencia / NO exigir cierre aquí):
+    ${sc.unresolvedThreadsFromPrevBooks.length > 0 ? sc.unresolvedThreadsFromPrevBooks.slice(0, 20).map((t, i) => `  ${i + 1}. ${t}`).join("\n") : "  (Ninguno)"}
+
+    EVENTOS DE LIBROS POSTERIORES (FUTURO de los personajes — la precuela no los conoce):
+    ${sc.keyEventsFromPrevBooks.length > 0 ? sc.keyEventsFromPrevBooks.slice(0, 20).map((e, i) => `  ${i + 1}. ${e}`).join("\n") : "  (Ninguno)"}
+
+    HITOS REGISTRADOS PARA LA PRECUELA (Vol. 0):
+    ${sc.milestones.length > 0 ? sc.milestones.map((m, i) => `  ${i + 1}. ${m.isRequired ? "⛔ OBLIGATORIO" : "○ Opcional"}: ${m.description}`).join("\n") : "  (Ninguno registrado — NO uses los hitos de Vol. 1+ como sustituto; pertenecen a libros POSTERIORES.)"}
+
+    HILOS ARGUMENTALES DE LA SERIE (planificados para libros POSTERIORES):
+    ${sc.plotThreads.length > 0 ? sc.plotThreads.map((t, i) => `  ${i + 1}. [${t.status.toUpperCase()}] (${t.importance}): ${t.threadName}`).join("\n") : "  (Ninguno definido)"}
+    ═══════════════════════════════════════════════════════════════════
+
+    INSTRUCCIONES ADICIONALES DE PRECUELA:
+    - NO reportes "arco_incompleto" porque hilos de los volúmenes POSTERIORES queden abiertos: están planificados para resolverse después.
+    - NO exijas que la precuela revele/cierre secretos que se desvelan en libros posteriores.
+    - SÍ verifica que la trama AUTOCONCLUSIVA de la precuela cierre satisfactoriamente.
+    - SÍ verifica coherencia inversa: que nada de lo escrito CONTRADIGA los eventos/personajes de los volúmenes posteriores (los personajes deben aparecer más jóvenes/inexpertos, los lugares y reglas del mundo deben ser compatibles).
+    - SÍ valora si la precuela siembra orígenes útiles para los libros posteriores, pero no la penalices si decide ser más independiente.
+    ═══════════════════════════════════════════════════════════════════`;
+      } else {
       seriesSection = `
     ═══════════════════════════════════════════════════════════════════
     🔴 CONTEXTO DE SERIE - VERIFICACIÓN OBLIGATORIA
@@ -656,6 +697,7 @@ la puntuación DEBE ser 9 o superior. El manuscrito ha demostrado calidad sufici
     - Si es el último volumen, verifica que NO queden hilos abiertos sin resolver
     - Reporta como "arco_incompleto" cualquier hilo de serie abandonado
     ═══════════════════════════════════════════════════════════════════`;
+      }
     }
 
     const editorialCritiqueSection = input.editorialCritique ? `

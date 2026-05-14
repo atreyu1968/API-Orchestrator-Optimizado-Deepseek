@@ -1020,8 +1020,10 @@ ${seriesData.seriesGuide}
             console.log(`[Orchestrator] Using series guide for "${seriesData.title}" (${seriesData.seriesGuide.split(/\s+/).length} words)`);
           }
 
-          const currentOrder = project.seriesOrder || 1;
-          const isPrequel = (project as any).projectSubtype === "prequel";
+          // [Fix68] Detección unificada con resto del código: precuela también
+          // si seriesOrder===0, no solo por projectSubtype.
+          const isPrequel = (project as any).projectSubtype === "prequel" || project.seriesOrder === 0;
+          const currentOrder = isPrequel ? 0 : (project.seriesOrder || 1);
           const fullContinuity = await storage.getSeriesFullContinuity(project.seriesId);
           const seriesProjectsForCtx = await storage.getProjectsBySeries(project.seriesId);
           const previousVolumes = fullContinuity.projectSnapshots.filter(s => {
@@ -3936,7 +3938,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           const unresolvedThreadsFromPrev = loadedThreads;
           const keyEventsFromPrev = loadedEvents;
 
-          const volumeNumber = project.seriesOrder || 1;
+          // [Fix68] Mismo bug que en series-context-builder: `seriesOrder || 1`
+          // colapsaba precuelas (seriesOrder=0) al Vol. 1 y el FR cargaba los
+          // hitos del libro siguiente como obligatorios para la precuela.
+          const isPrequelFR = (project as any).projectSubtype === "prequel" || project.seriesOrder === 0;
+          const volumeNumber = isPrequelFR
+            ? 0
+            : (typeof project.seriesOrder === "number" && project.seriesOrder > 0 ? project.seriesOrder : 1);
           const totalVolumes = seriesData.totalPlannedBooks || 10;
           const volumeMilestones = milestones.filter(m => m.volumeNumber === volumeNumber);
 
@@ -3948,9 +3956,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             keyEventsFromPrevBooks: keyEventsFromPrev,
             milestones: volumeMilestones.map(m => ({ description: m.description, isRequired: m.isRequired })),
             plotThreads: plotThreads.map(t => ({ threadName: t.threadName, status: t.status, importance: t.importance })),
-            isLastVolume: volumeNumber >= totalVolumes,
+            isLastVolume: !isPrequelFR && volumeNumber >= totalVolumes,
+            isPrequel: isPrequelFR,
           };
-          console.log(`[Orchestrator] Series context for Final Reviewer: vol ${volumeNumber}/${totalVolumes}, ${unresolvedThreadsFromPrev.length} unresolved threads, ${volumeMilestones.length} milestones, ${plotThreads.length} plot threads, isLast=${volumeNumber >= totalVolumes}`);
+          console.log(`[Orchestrator] Series context for Final Reviewer: ${isPrequelFR ? "PRECUELA (vol 0)" : `vol ${volumeNumber}/${totalVolumes}`}, ${unresolvedThreadsFromPrev.length} ${isPrequelFR ? "future threads" : "unresolved threads"}, ${volumeMilestones.length} milestones, ${plotThreads.length} plot threads, isLast=${!isPrequelFR && volumeNumber >= totalVolumes}`);
         }
       } catch (err) {
         console.warn(`[Orchestrator] Failed to load series context for final review:`, err);
@@ -5632,6 +5641,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     return buildSeriesContextForReviewersHelper({
       seriesId: project.seriesId,
       seriesOrder: project.seriesOrder,
+      // [Fix68] Pasamos projectSubtype para que el helper distinga
+      // precuela (vol 0) de vol 1 y no contamine al Beta con hitos del
+      // libro equivocado.
+      projectSubtype: (project as any).projectSubtype,
       loadThreadsAndEvents: () => this.loadSeriesThreadsAndEvents(project),
     });
   }
@@ -10699,8 +10712,12 @@ Responde SOLO con un JSON válido con la estructura:
     if (!project.seriesId) return { threads, events };
 
     try {
-      const currentOrder = project.seriesOrder || 1;
-      const isPrequel = (project as any).projectSubtype === "prequel";
+      // [Fix68] Detección consistente con resto del código: precuela también
+      // si seriesOrder===0 (no solo por projectSubtype). Si es precuela,
+      // currentOrder=MAX_SAFE_INTEGER hace que todos los snapshots de la
+      // serie cuenten como "ya escritos" para coherencia inversa.
+      const isPrequel = (project as any).projectSubtype === "prequel" || project.seriesOrder === 0;
+      const currentOrder = isPrequel ? Number.MAX_SAFE_INTEGER : (project.seriesOrder || 1);
       const fullContinuity = await storage.getSeriesFullContinuity(project.seriesId);
       const seriesProjects = await storage.getProjectsBySeries(project.seriesId);
 
@@ -10880,7 +10897,19 @@ Responde SOLO con un JSON válido con la estructura:
       const arcValidator = new ArcValidatorAgent();
 
       let previousContext = "";
-      const currentOrder = project.seriesOrder || 1;
+      // [Fix68] Detección de precuela. Para una precuela (seriesOrder=0,
+      // projectSubtype="prequel") el "volumen actual" es 0 y los snapshots
+      // de los demás libros son el FUTURO, no el pasado. currentOrder se usa
+      // para filtrar prev volumes; para una precuela todos los demás
+      // volúmenes son posteriores y los queremos como contexto para no
+      // contradecir, así que tratamos a la precuela como volumen -1 a
+      // efectos de filtrado (todos los snapshots de la serie son "previos"
+      // en términos de "ya escritos").
+      const isPrequelArc = (project as any).projectSubtype === "prequel" || project.seriesOrder === 0;
+      const effectiveVolumeNumber = isPrequelArc
+        ? 0
+        : (typeof project.seriesOrder === "number" && project.seriesOrder > 0 ? project.seriesOrder : 1);
+      const currentOrder = isPrequelArc ? Number.MAX_SAFE_INTEGER : effectiveVolumeNumber;
       const fullContinuity = await storage.getSeriesFullContinuity(project.seriesId);
       const seriesProjectsForArc = await storage.getProjectsBySeries(project.seriesId);
       const prevSnapshots = fullContinuity.projectSnapshots.filter(s => {
@@ -10888,27 +10917,44 @@ Responde SOLO con un JSON válido con la estructura:
         const matchingProject = seriesProjectsForArc.find(p => p.id === s.projectId);
         return (matchingProject?.seriesOrder || 999) < currentOrder;
       });
-      if (prevSnapshots.length > 0) {
-        previousContext = prevSnapshots.map(s => `Synopsis: ${s.synopsis || "N/A"}\nHilos no resueltos: ${JSON.stringify(s.unresolvedThreads)}`).join("\n---\n");
+      // [Fix68] Para precuela, los manuscritos importados de la serie también
+      // son contexto inverso (libros posteriores que pueden existir solo como
+      // manuscript imports y no como projectSnapshots).
+      const prevManuscriptsArc = fullContinuity.manuscriptSnapshots.filter(ms => {
+        return (ms.seriesOrder || 999) < currentOrder;
+      });
+      const contextParts: string[] = [];
+      for (const s of prevSnapshots) {
+        contextParts.push(`Synopsis: ${s.synopsis || "N/A"}\nHilos no resueltos: ${JSON.stringify(s.unresolvedThreads)}`);
+      }
+      for (const ms of prevManuscriptsArc) {
+        const snap = ms.snapshot as any;
+        if (snap?.synopsis || snap?.unresolvedThreads) {
+          contextParts.push(`Synopsis: ${snap.synopsis || "N/A"}\nHilos no resueltos: ${JSON.stringify(snap.unresolvedThreads || [])}`);
+        }
+      }
+      if (contextParts.length > 0) {
+        previousContext = contextParts.join("\n---\n");
       }
 
       const result = await arcValidator.execute({
         projectTitle: project.title,
         seriesTitle: series.title,
-        volumeNumber: project.seriesOrder || 1,
+        volumeNumber: effectiveVolumeNumber,
         totalVolumes: series.totalPlannedBooks || 10,
         chaptersSummary,
         milestones,
         plotThreads: threads,
         worldBible: worldBible || {},
         previousVolumesContext: previousContext || undefined,
+        isPrequel: isPrequelArc,
       });
 
       if (result.result) {
         await storage.createArcVerification({
           seriesId: project.seriesId,
           projectId: project.id,
-          volumeNumber: project.seriesOrder || 1,
+          volumeNumber: effectiveVolumeNumber,
           status: result.result.passed ? "passed" : "needs_attention",
           overallScore: result.result.overallScore,
           milestonesChecked: result.result.milestonesChecked,
@@ -10938,7 +10984,7 @@ Responde SOLO con un JSON válido con la estructura:
           const updateData: any = {};
           if (tp.resolvedInVolume) {
             updateData.status = "resolved";
-            updateData.resolvedVolume = project.seriesOrder || 1;
+            updateData.resolvedVolume = effectiveVolumeNumber;
           } else if (tp.progressedInVolume) {
             updateData.status = "developing";
           } else if (tp.currentStatus === "abandoned") {

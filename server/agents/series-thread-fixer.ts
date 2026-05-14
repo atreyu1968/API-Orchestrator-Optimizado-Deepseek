@@ -250,12 +250,18 @@ export class SeriesThreadFixerAgent extends BaseAgent {
     });
   }
 
-  async execute(input: ThreadFixerInput): Promise<AgentResponse & { result?: ThreadFixerResult }> {
+  async execute(input: ThreadFixerInput & { isPrequel?: boolean }): Promise<AgentResponse & { result?: ThreadFixerResult }> {
     const milestonesForVolume = input.milestones.filter(m => m.volumeNumber === input.volumeNumber);
-    const activeThreads = input.plotThreads.filter(t => 
-      t.status === "active" || t.status === "developing" || 
-      (t.introducedVolume <= input.volumeNumber && !t.resolvedVolume)
-    );
+    // [Fix68] Para precuela: solo hilos específicos de Vol. 0 (introducedVolume<=0
+    // y sin resolver). Los hilos de Vol. 1+ pertenecen a libros POSTERIORES y NO
+    // deben proponerse como correcciones en la precuela (evita inyectar setup de
+    // tramas de Vol. 1 dentro de Vol. 0).
+    const activeThreads = input.isPrequel
+      ? input.plotThreads.filter(t => (t.introducedVolume ?? 1) <= 0 && !t.resolvedVolume)
+      : input.plotThreads.filter(t =>
+          t.status === "active" || t.status === "developing" ||
+          (t.introducedVolume <= input.volumeNumber && !t.resolvedVolume)
+        );
 
     if (milestonesForVolume.length === 0 && activeThreads.length === 0) {
       return {

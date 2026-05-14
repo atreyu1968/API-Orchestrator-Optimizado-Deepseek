@@ -83,6 +83,18 @@ Acabas de cerrar el libro. Vas a redactar tu reacción ordenada. Sigue estas reg
 ## EL MUNDO Y LA ATMÓSFERA
 [¿Me creí el mundo? ¿Me sumergí o me sentí siempre fuera? ¿Hubo detalles ambientales que me transportaron? ¿Hubo momentos donde sentí que el escenario era cartón piedra?]
 
+## REALISMO GEOGRÁFICO E HISTÓRICO
+[Sección OBLIGATORIA si la novela transcurre en un LUGAR REAL (ciudad, región, país identificable) y/o en una ÉPOCA HISTÓRICA CONCRETA (año, década, periodo identificable). Si la novela es de fantasía/ciencia ficción/mundo inventado sin anclaje real, escribe literalmente "No aplica: ambientación no-realista." y no inventes problemas.
+
+Cuando SÍ aplique, audita como lector culto del género histórico/realista:
+- **Anacronismos**: objetos, palabras, tecnologías, costumbres, leyes, instituciones o referencias culturales que NO existían en la época declarada (o que ya habían desaparecido). Cita cap y elemento concreto.
+- **Geografía**: distancias imposibles para los medios de transporte de la época, accidentes geográficos inexistentes, climas que no corresponden a la región, barrios/calles/edificios que no existían entonces, países/fronteras con nombres posteriores.
+- **Cultura material e idioma**: alimentos, prendas, monedas, registros lingüísticos o expresiones idiomáticas posteriores al periodo (p. ej. anglicismos en una novela de 1850 en Madrid, "OK" antes de 1840, etc.).
+- **Hechos históricos**: fechas, batallas, monarcas, presidentes, leyes, sucesos públicos mal datados o reordenados. No exijas reverencia historiográfica — exige que lo que la novela dé por verídico encaje con la realidad conocida.
+- **Convenciones sociales**: roles, tratamientos, jerarquías, religión, derechos legales, vida cotidiana coherentes con el periodo y lugar.
+
+Sé concreto: "(cap 7) menciona una linterna eléctrica en 1872, las primeras lámparas incandescentes prácticas son de 1879" es más útil que "el cap 7 tiene un anacronismo". Si dudas, dilo como duda razonada ("me chirrió X, no estoy 100 % seguro pero conviene verificar"). NO inventes errores si la prosa no te da pistas concretas. Si todo te ha sonado verídico, escribe "Sin problemas relevantes detectados." y pasa adelante.]
+
 ## EXPECTATIVAS QUE NO SE CUMPLIERON
 [Cosas que esperaba que pasaran y no pasaron, o que pasaron pero de forma decepcionante. Cosas que un lector de este género espera y que no encontré. NO confundir con lo que el editor pediría — esto es lo que YO como lector echaba de menos.]
 

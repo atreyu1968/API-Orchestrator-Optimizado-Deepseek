@@ -5112,15 +5112,26 @@ export class ReeditOrchestrator {
         try {
           const seriesId = (project as any).seriesId as number;
           const currentOrder = (project as any).seriesOrder ?? 1;
-          // No existe helper específico por serie en storage; filtramos en memoria
-          // sobre el listado completo de reedit_projects. Es best-effort: si falla,
-          // caemos a la rama estricta (esVolumenIntermedio = false).
-          const allReedits = await storage.getAllReeditProjects().catch(() => [] as any[]);
-          const hasLaterVolumes = Array.isArray(allReedits)
-            && allReedits.some((s: any) =>
-              Number(s?.seriesId ?? 0) === Number(seriesId)
-              && Number(s?.seriesOrder ?? 0) > Number(currentOrder));
-          esVolumenIntermedio = hasLaterVolumes;
+          // [Fix68] Precuela (projectSubtype==="prequel" o seriesOrder===0):
+          // cronológicamente vienen libros DESPUÉS, así que ya por definición
+          // es "volumen intermedio" — los hilos largos pueden quedar abiertos
+          // porque pertenecen al futuro. Esto evita falsos positivos del
+          // auditor de cierre cuando aún no existen reedit_projects de los
+          // volúmenes posteriores.
+          const isPrequel = (project as any).projectSubtype === "prequel" || Number(currentOrder) === 0;
+          if (isPrequel) {
+            esVolumenIntermedio = true;
+          } else {
+            // No existe helper específico por serie en storage; filtramos en memoria
+            // sobre el listado completo de reedit_projects. Es best-effort: si falla,
+            // caemos a la rama estricta (esVolumenIntermedio = false).
+            const allReedits = await storage.getAllReeditProjects().catch(() => [] as any[]);
+            const hasLaterVolumes = Array.isArray(allReedits)
+              && allReedits.some((s: any) =>
+                Number(s?.seriesId ?? 0) === Number(seriesId)
+                && Number(s?.seriesOrder ?? 0) > Number(currentOrder));
+            esVolumenIntermedio = hasLaterVolumes;
+          }
         } catch {
           esVolumenIntermedio = false;
         }
@@ -5151,6 +5162,9 @@ export class ReeditOrchestrator {
       const seriesContextForReeditReviewers = await buildSeriesContextForReviewers({
         seriesId: (project as any).seriesId,
         seriesOrder: (project as any).seriesOrder,
+        // [Fix68] Distingue precuela (vol 0) de vol 1 para que el Beta del
+        // pipeline de reedit no reciba los hitos del libro equivocado.
+        projectSubtype: (project as any).projectSubtype,
       });
 
       tasks.push(holisticAgent.runReview({ projectTitle, chapters: reviewerChapters, seriesContext: seriesContextForReeditReviewers })

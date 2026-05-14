@@ -12,6 +12,13 @@ interface ArcValidatorInput {
   plotThreads: SeriesPlotThread[];
   worldBible: any;
   previousVolumesContext?: string;
+  // [Fix68] Si el proyecto es una PRECUELA (Vol. 0), la verificación cambia:
+  // los hilos del Vol. 1+ NO son exigibles aquí (su planteamiento y cierre
+  // están en libros POSTERIORES), los snapshots se tratan como "volúmenes
+  // posteriores ya escritos" (no anteriores), y la nota deja claro que se
+  // valida coherencia inversa (la precuela no contradice los libros que
+  // vienen después), no progresión de hilos.
+  isPrequel?: boolean;
 }
 
 export interface MilestoneVerification {
@@ -143,16 +150,36 @@ export class ArcValidatorAgent extends BaseAgent {
 
   async execute(input: ArcValidatorInput): Promise<AgentResponse & { result?: ArcValidatorResult }> {
     const milestonesForVolume = input.milestones.filter(m => m.volumeNumber === input.volumeNumber);
-    const activeThreads = input.plotThreads.filter(t => 
-      t.status === "active" || t.status === "developing" || 
-      (t.introducedVolume <= input.volumeNumber && !t.resolvedVolume)
-    );
+    // [Fix68] Para precuelas: solo cuentan hilos cuyo `introducedVolume <= 0`
+    // (es decir, hilos específicos de la precuela). Los hilos con
+    // `introducedVolume >= 1` pertenecen a libros POSTERIORES y NO deben
+    // exigirse aquí. Sin este filtro la rúbrica determinista (L411-420)
+    // exigiría una `threadProgressionRate >= 0.5` para hilos que la precuela
+    // no tiene por qué progresar.
+    const activeThreads = input.isPrequel
+      ? input.plotThreads.filter(t => (t.introducedVolume ?? 1) <= 0 && !t.resolvedVolume)
+      : input.plotThreads.filter(t =>
+          t.status === "active" || t.status === "developing" ||
+          (t.introducedVolume <= input.volumeNumber && !t.resolvedVolume)
+        );
 
-    if (milestonesForVolume.length === 0 && activeThreads.length === 0) {
+    // [Fix68] Para precuela, si NO hay hitos/hilos Vol. 0 pero SÍ hay
+    // `previousVolumesContext` (snapshots de libros posteriores), debemos
+    // ejecutar igualmente el prompt para detectar contradicciones inversas
+    // (coherencia con el futuro). Solo se devuelve el early-return si
+    // tampoco tenemos contexto contra el que validar.
+    const prequelHasInverseContext = input.isPrequel
+      && !!input.previousVolumesContext
+      && input.previousVolumesContext.trim().length > 0;
+
+    if (milestonesForVolume.length === 0 && activeThreads.length === 0 && !prequelHasInverseContext) {
       return {
         content: "No hay hitos ni hilos definidos para verificar.",
         result: {
-          overallScore: 100,
+          // [Fix68] Para precuelas sin hitos/hilos Vol. 0 ni contexto inverso,
+          // damos 90 (no 100) para reflejar que la verificación es por defecto,
+          // no por evidencia.
+          overallScore: input.isPrequel ? 90 : 100,
           passed: true,
           milestonesChecked: 0,
           milestonesFulfilled: 0,
@@ -160,10 +187,16 @@ export class ArcValidatorAgent extends BaseAgent {
           threadsResolved: 0,
           milestoneVerifications: [],
           threadProgressions: [],
-          findings: ["No hay hitos ni hilos argumentales definidos para este volumen. Define hitos e hilos en la guia de serie para habilitar la verificacion automatica."],
+          findings: input.isPrequel
+            ? ["Precuela sin hitos/hilos específicos de Vol. 0 ni libros posteriores escritos contra los que verificar coherencia inversa. La validez de la precuela depende del Beta/Holístico/FR."]
+            : ["No hay hitos ni hilos argumentales definidos para este volumen. Define hitos e hilos en la guia de serie para habilitar la verificacion automatica."],
           classifiedFindings: [],
-          recommendations: "Sube una guia de serie y usa 'Extraer Hitos' para definir automaticamente los puntos de verificacion del arco.",
-          arcHealthSummary: "Sin elementos de arco definidos - el volumen no puede ser verificado hasta que se definan hitos y/o hilos argumentales.",
+          recommendations: input.isPrequel
+            ? "Define hitos específicos de Vol. 0 desde la guia de serie si quieres habilitar verificación determinista de la precuela."
+            : "Sube una guia de serie y usa 'Extraer Hitos' para definir automaticamente los puntos de verificacion del arco.",
+          arcHealthSummary: input.isPrequel
+            ? "Precuela sin elementos de arco propios: verificación deferida al Beta/Holístico/FR."
+            : "Sin elementos de arco definidos - el volumen no puede ser verificado hasta que se definan hitos y/o hilos argumentales.",
         }
       };
     }
@@ -228,8 +261,14 @@ export class ArcValidatorAgent extends BaseAgent {
 `).join("\n")
       : "No hay hilos argumentales activos definidos.";
 
-    const previousContext = input.previousVolumesContext 
-      ? `\nCONTEXTO DE VOLUMENES ANTERIORES:\n${input.previousVolumesContext}`
+    // [Fix68] Para precuela, los snapshots de la serie son volúmenes
+    // POSTERIORES (cronológicamente la precuela ocurre antes). El validador
+    // los usa para verificar coherencia inversa (la precuela no contradice
+    // lo que viene después).
+    const previousContext = input.previousVolumesContext
+      ? (input.isPrequel
+          ? `\nCONTEXTO DE VOLÚMENES POSTERIORES YA ESCRITOS (cronológicamente FUTURO; la precuela NO debe contradecirlos):\n${input.previousVolumesContext}`
+          : `\nCONTEXTO DE VOLUMENES ANTERIORES:\n${input.previousVolumesContext}`)
       : "";
 
     const worldBiblePreview = {
@@ -239,7 +278,14 @@ export class ArcValidatorAgent extends BaseAgent {
 
     const prompt = `
 SERIE: "${input.seriesTitle}"
-VOLUMEN: ${input.volumeNumber} de ${input.totalVolumes}
+${input.isPrequel
+  ? `VOLUMEN: PRECUELA (Vol. 0) — ocurre cronológicamente ANTES de los ${input.totalVolumes} volúmenes principales planificados.
+
+ESTA NOVELA ES UNA PRECUELA. Reglas específicas:
+- Solo verifica los HITOS PENDIENTES listados abajo (que pertenecen al Vol. 0). Si la lista está vacía, no exijas hitos del Vol. 1+ como sustituto: pertenecen a libros POSTERIORES.
+- Solo verifica progresión/cierre de los HILOS ARGUMENTALES listados abajo (los específicos de la precuela). Hilos planteados para libros posteriores NO se incluyen aquí y NO debes exigirlos.
+- Usa el CONTEXTO DE VOLÚMENES POSTERIORES (si lo hay) para detectar CONTRADICCIONES (anacronismos respecto a libros posteriores, personajes con conocimientos/edad incompatible, lugares/reglas del mundo incoherentes). Estas sí son fallos del arco.`
+  : `VOLUMEN: ${input.volumeNumber} de ${input.totalVolumes}`}
 PROYECTO: "${input.projectTitle}"
 ${previousContext}
 
@@ -408,6 +454,18 @@ IMPORTANTE: Responde UNICAMENTE con JSON valido siguiendo el formato especificad
           const unresolved = result.threadProgressions?.filter(tp => !(tp.resolvedInVolume || tp.currentStatus === "resolved")) || [];
           computedFindings.push(`Solo ${resolvedThreads}/${totalThreads} hilos resueltos (${Math.round(threadResolutionRate * 100)}%). Quedan abiertos: ${unresolved.slice(0, 5).map(tp => tp.threadName).join(" | ")}`);
         }
+      } else if (input.isPrequel) {
+        // [Fix68] Precuela: NO exigimos progresión ni resolución de hilos —
+        // los hilos de Vol. 1+ se filtran fuera; los específicos de Vol. 0
+        // pueden o no resolverse. Score = 100% hitos requeridos (si los
+        // hay); si no hay hitos ni hilos específicos de Vol. 0, se aprueba
+        // por defecto porque la validez de la precuela depende del Beta/
+        // Holístico/FR y de la coherencia inversa contra volúmenes
+        // posteriores, no de la rúbrica de hitos.
+        computedScore = milestonesForVolume.length > 0
+          ? Math.round(requiredRate * 100)
+          : 90;
+        computedPassed = milestonesForVolume.length === 0 || requiredRate >= 1;
       } else {
         // Volumen intermedio: hilos pueden quedar abiertos. Solo exigimos hitos requeridos.
         // Score = 60% required milestones + 25% threads progressed + 15% threads resolved.
