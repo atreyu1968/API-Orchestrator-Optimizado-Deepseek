@@ -10512,9 +10512,30 @@ CRITERIOS:
         // como input principal para inventar una novela apropiada al estilo.
         const existingGuides = await storage.getStyleGuidesByPseudonym(params.pseudonymId);
         const activeGuides = existingGuides.filter((g: any) => g.isActive);
-        if (activeGuides.length > 0) {
-          params.existingStyleGuides = activeGuides.map((g: any) => g.content);
+        // [Fix71] Diferenciamos AUSENTE vs ENVIADA VACÍA:
+        // - `selectedStyleGuideIds` no presente / no array → usar TODAS las
+        //   activas (compatibilidad con clientes previos).
+        // - Array presente (incluida lista vacía) → respetar selección literal
+        //   del usuario (puede ser ninguna).
+        const hasExplicitSelection = Array.isArray(params.selectedStyleGuideIds);
+        const requestedIds: number[] = hasExplicitSelection
+          ? params.selectedStyleGuideIds.map((n: any) => Number(n)).filter((n: any) => Number.isFinite(n))
+          : [];
+        const chosenGuides = hasExplicitSelection
+          ? activeGuides.filter((g: any) => requestedIds.includes(g.id))
+          : activeGuides;
+        // Avisamos si el cliente mandó IDs que no pertenecen al pseudónimo o
+        // no están activos: se descartan en silencio pero al menos queda traza.
+        if (hasExplicitSelection && requestedIds.length > chosenGuides.length) {
+          const validIds = chosenGuides.map((g: any) => g.id);
+          const dropped = requestedIds.filter((id: number) => !validIds.includes(id));
+          console.warn(`[Guides:Fix71] Descartados ${dropped.length} styleGuideId(s) no pertenecientes/inactivos del pseudónimo ${params.pseudonymId}: ${dropped.join(", ")}`);
         }
+        if (chosenGuides.length > 0) {
+          params.existingStyleGuides = chosenGuides.map((g: any) => g.content);
+        }
+        // Guarda los IDs realmente usados para vincularlos al proyecto después.
+        params._chosenStyleGuideIds = chosenGuides.map((g: any) => g.id);
         // Defaults de género/tono desde el pseudónimo si el cliente no los envió.
         const pseud = await storage.getPseudonym(params.pseudonymId);
         if (pseud) {
@@ -10522,6 +10543,13 @@ CRITERIOS:
           params.pseudonymBio = params.pseudonymBio ?? pseud.bio ?? undefined;
           params.pseudonymGenre = params.pseudonymGenre || pseud.defaultGenre || undefined;
           params.pseudonymTone = params.pseudonymTone || pseud.defaultTone || undefined;
+        }
+        // [Fix71] Enforcement server-side: sin género efectivo NO arrancamos.
+        // Antes el proyecto caía al fallback literal "fantasy" en L10822 → era
+        // exactamente el bug que el usuario reportó. Fallamos el job con un
+        // mensaje claro para que el frontend lo muestre.
+        if (!params.pseudonymGenre || !String(params.pseudonymGenre).trim()) {
+          throw new Error('Para "Novela para Pseudónimo" es obligatorio un género: selecciónalo en el formulario o configura un género por defecto en el pseudónimo. Sin género la IA tiende a inventar fantasía aunque el seudónimo escriba otro tipo de novela.');
         }
         // Pistas para el plan de capítulos del agente.
         params.chapterCountHint = params.chapterCount;
@@ -10631,14 +10659,22 @@ CRITERIOS:
           }
           validatedStyleGuideId = sg.id;
         } else if (body.guideType === "pseudonym_style" && targetPseudonymId) {
-          // En "novela para pseudónimo" el styleGuide nunca lo elige el usuario:
-          // se vincula automáticamente la primera guía de estilo activa del
-          // pseudónimo, que es la que el agente usó como input para inventar la
-          // novela. Así el proyecto resultante hereda esa voz al ejecutarse.
+          // En "novela para pseudónimo" vinculamos la PRIMERA guía elegida por
+          // el usuario en el formulario (Fix71). Si no eligió ninguna o no
+          // mandó la lista, caemos al comportamiento previo (primera activa).
           const pseudGuides = await storage.getStyleGuidesByPseudonym(targetPseudonymId);
-          const activeSg = pseudGuides.find((g: any) => g.isActive);
-          if (activeSg) {
-            validatedStyleGuideId = activeSg.id;
+          const chosenIds: number[] = Array.isArray((params as any)._chosenStyleGuideIds)
+            ? (params as any)._chosenStyleGuideIds
+            : [];
+          let chosenSg = null as any;
+          if (chosenIds.length > 0) {
+            chosenSg = pseudGuides.find((g: any) => chosenIds.includes(g.id) && g.isActive);
+          }
+          if (!chosenSg) {
+            chosenSg = pseudGuides.find((g: any) => g.isActive);
+          }
+          if (chosenSg) {
+            validatedStyleGuideId = chosenSg.id;
           }
         }
       }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -401,6 +401,17 @@ function PseudonymStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: a
   const { data: allStyleGuides = [] } = useQuery<StyleGuide[]>({ queryKey: ["/api/style-guides"] });
   const [selectedPseudonym, setSelectedPseudonym] = useState<string>("");
 
+  // [Fix71] Override de género/tono. Si el usuario los rellena, predominan
+  // sobre los defaults del pseudónimo (que muchas veces están vacíos y dejaban
+  // al LLM caer a "fantasy" por defecto). Vacío = usar el default del seudónimo.
+  const [genreOverride, setGenreOverride] = useState<string>("");
+  const [toneOverride, setToneOverride] = useState<string>("");
+
+  // [Fix71] Selección de guías de estilo activas a usar como input.
+  // Antes se concatenaban TODAS las activas sin opción. Ahora el usuario marca
+  // cuáles incluir (por defecto todas las activas siguen marcadas).
+  const [selectedGuideIds, setSelectedGuideIds] = useState<Set<number>>(new Set());
+
   // Parámetros del proyecto a crear (la IA inventa la idea, pero el usuario
   // sigue controlando estructura y formato del libro).
   const [projectTitle, setProjectTitle] = useState("");
@@ -417,6 +428,15 @@ function PseudonymStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: a
     ? allStyleGuides.filter((sg) => sg.pseudonymId === pseudonym.id && sg.isActive)
     : [];
   const hasStyleGuide = existingGuides.length > 0;
+
+  // [Fix71] Al cambiar de pseudónimo, resetea overrides y marca por defecto
+  // todas las guías activas del nuevo seudónimo (comportamiento previo).
+  useEffect(() => {
+    setGenreOverride("");
+    setToneOverride("");
+    setSelectedGuideIds(new Set(existingGuides.map((g) => g.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPseudonym]);
 
   return (
     <div className="space-y-4">
@@ -451,10 +471,42 @@ function PseudonymStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: a
             {pseudonym.defaultTone && <p><strong>Tono habitual:</strong> {pseudonym.defaultTone}</p>}
             <div className="mt-2 pt-2 border-t">
               {hasStyleGuide ? (
-                <p className="text-muted-foreground">
-                  <strong>{existingGuides.length}</strong> guía(s) de estilo activa(s).
-                  La IA las leerá completas para inventar una novela coherente con la voz del seudónimo.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-muted-foreground text-xs">
+                    Elige qué guía(s) de estilo usará la IA como referencia ({existingGuides.length} activa(s)).
+                    Marca al menos una.
+                  </p>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {existingGuides.map((sg) => {
+                      const checked = selectedGuideIds.has(sg.id);
+                      return (
+                        <label
+                          key={sg.id}
+                          className="flex items-start gap-2 text-sm cursor-pointer hover-elevate p-1.5 rounded"
+                          data-testid={`check-pseud-styleguide-${sg.id}`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 rounded"
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = new Set(selectedGuideIds);
+                              if (e.target.checked) next.add(sg.id);
+                              else next.delete(sg.id);
+                              setSelectedGuideIds(next);
+                            }}
+                          />
+                          <span className="leading-tight">{sg.title}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {selectedGuideIds.size === 0 && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="text-no-guide-selected-warning">
+                      ⚠️ No has marcado ninguna guía. La IA improvisará a partir de la biografía y el género/tono.
+                    </p>
+                  )}
+                </div>
               ) : (
                 <p className="text-amber-700 dark:text-amber-300" data-testid="text-no-style-guide-warning">
                   ⚠️ Este seudónimo aún no tiene ninguna guía de estilo activa. La IA tendrá que improvisar a partir de la biografía y el género/tono. Para mejores resultados, crea primero una guía en la pestaña "Estilo de Autor" o impórtala en la sección de seudónimos.
@@ -463,6 +515,41 @@ function PseudonymStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: a
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {pseudonym && (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="pseud-genre-override">
+              Género para esta novela {pseudonym.defaultGenre ? <span className="text-xs text-muted-foreground">(default: {pseudonym.defaultGenre})</span> : <span className="text-xs text-amber-700 dark:text-amber-300">(obligatorio: el seudónimo no tiene default)</span>}
+            </Label>
+            <Select value={genreOverride} onValueChange={setGenreOverride}>
+              <SelectTrigger id="pseud-genre-override" data-testid="select-pseud-genre">
+                <SelectValue placeholder={pseudonym.defaultGenre ? `Usar default (${pseudonym.defaultGenre})` : "Seleccionar género..."} />
+              </SelectTrigger>
+              <SelectContent>
+                {IDEA_GENRES.map((g) => (
+                  <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="pseud-tone-override">
+              Tono para esta novela {pseudonym.defaultTone ? <span className="text-xs text-muted-foreground">(default: {pseudonym.defaultTone})</span> : ""}
+            </Label>
+            <Select value={toneOverride} onValueChange={setToneOverride}>
+              <SelectTrigger id="pseud-tone-override" data-testid="select-pseud-tone">
+                <SelectValue placeholder={pseudonym.defaultTone ? `Usar default (${pseudonym.defaultTone})` : "Seleccionar tono..."} />
+              </SelectTrigger>
+              <SelectContent>
+                {IDEA_TONES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
       )}
 
       <Separator />
@@ -541,13 +628,25 @@ function PseudonymStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: a
         data-testid="button-generate-pseudonym-novel"
         onClick={() => {
           if (!pseudonym) return;
+          // [Fix71] Override de género/tono si el usuario los rellenó; si no,
+          // cae al default del pseudónimo. Si NINGUNO está disponible avisamos.
+          const effectiveGenre = genreOverride || pseudonym.defaultGenre || "";
+          const effectiveTone = toneOverride || pseudonym.defaultTone || "";
+          if (!effectiveGenre) {
+            alert("Selecciona un género para esta novela. El seudónimo no tiene un género por defecto y sin él la IA tiende a inventar fantasía.");
+            return;
+          }
           onGenerate({
             guideType: "pseudonym_style",
             pseudonymId: pseudonym.id,
             pseudonymName: pseudonym.name,
             pseudonymBio: pseudonym.bio,
-            pseudonymGenre: pseudonym.defaultGenre,
-            pseudonymTone: pseudonym.defaultTone,
+            pseudonymGenre: effectiveGenre,
+            pseudonymTone: effectiveTone || undefined,
+            // [Fix71] IDs concretos de guías de estilo a usar como input
+            // (subset de las activas). Si quedó vacío, el backend cae al
+            // comportamiento previo (todas las activas) para no romper flujos.
+            selectedStyleGuideIds: Array.from(selectedGuideIds),
             // Asignación: el proyecto resultante queda vinculado al mismo pseudónimo.
             assignPseudonymId: pseudonym.id,
             projectTitle: projectTitle.trim() || undefined,

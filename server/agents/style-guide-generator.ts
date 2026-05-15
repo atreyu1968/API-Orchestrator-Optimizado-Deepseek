@@ -251,9 +251,22 @@ ${params.pseudonymBio ? `- Biografía: ${params.pseudonymBio}` : '- (Sin biograf
 ${params.pseudonymGenre ? `- Género principal habitual: ${params.pseudonymGenre}` : ''}
 ${params.pseudonymTone ? `- Tono narrativo habitual: ${params.pseudonymTone}` : ''}
 
+${params.pseudonymGenre ? `🔒 GÉNERO OBLIGATORIO DE ESTA NOVELA: ${params.pseudonymGenre.toUpperCase()}
+- La novela que inventes DEBE pertenecer EXACTAMENTE a este género. NO es opcional.
+- PROHIBIDO escribir fantasía, ciencia ficción o mundo inventado si el género declarado es otro (p. ej. romance, histórica, thriller, literaria, misterio, horror).
+- PROHIBIDO añadir elementos sobrenaturales/mágicos/futuristas si el género no los admite.
+- Si el género es "historical", "historical_thriller" o similar: ambientación realista en época concreta, sin magia.
+- Si el género es "romance": el motor central es la relación amorosa, no la aventura/épica.
+- Si el género es "literary": prosa de carácter, sin tropos de género de fantasía.
+- Si tienes dudas entre dos géneros válidos, elige siempre el más cercano al declarado, NUNCA fantasía por defecto.
+- Esta regla está POR ENCIMA de cualquier otra consideración estilística del pseudónimo.` : `⚠️ ATENCIÓN: no se ha declarado género para esta novela. Deduce un género plausible a partir de la biografía y las guías de estilo del pseudónimo. NO uses fantasía por defecto si las pistas apuntan a otro género (romance, histórica, literaria, etc.).`}
+
 ${params.existingStyleGuides?.length
-  ? `GUÍA(S) DE ESTILO ACTIVA(S) DEL PSEUDÓNIMO (lectura OBLIGATORIA — la novela debe ajustarse a estas reglas):\n\n${params.existingStyleGuides.join('\n\n---\n\n')}`
-  : '⚠️ ATENCIÓN: este pseudónimo no tiene aún guía de estilo activa. Deduce su voz a partir de la biografía, el género y el tono indicados, y sé conservador.'}
+  ? `GUÍA(S) DE ESTILO ACTIVA(S) DEL PSEUDÓNIMO (lectura OBLIGATORIA — la novela debe ajustarse a estas reglas de VOZ/ESTILO):
+⚠️ Estas guías describen CÓMO escribe el pseudónimo (voz, ritmo, recursos), NO el género de la nueva novela. Si el género declarado arriba no coincide con el género usado en las guías como ejemplo, mantén el GÉNERO declarado y adapta solo la VOZ.
+
+${params.existingStyleGuides.join('\n\n---\n\n')}`
+  : '⚠️ ATENCIÓN: este pseudónimo no tiene aún guía de estilo activa (o no se ha seleccionado ninguna). Deduce su voz a partir de la biografía, el género y el tono indicados, y sé conservador.'}
 
 Parámetros del proyecto a planificar:
 - Número de capítulos: ${chapters}
