@@ -319,8 +319,10 @@ N) "calma_engañosa"  — aparente respiro; bajo la superficie algo se está pud
 REGLAS DE VARIEDAD (ANTI-MONOTONÍA — OBLIGATORIAS):
 1. Cada capítulo lleva un campo "tipo_capitulo" con UNA letra del catálogo (A-N).
 2. NINGÚN tipo puede repetirse en 3 capítulos consecutivos. Si los caps 8, 9, 10 son todos "investigacion", la respuesta es INVÁLIDA.
-3. El acto 2 (parte central) debe usar AL MENOS 5 tipos distintos del catálogo. Si solo usas 2-3 tipos en todo el acto medio, la respuesta es INVÁLIDA.
-4. NO todos los capítulos deben terminar en cliffhanger. Rota: cliffhanger / pregunta abierta / escena reposada / revelación silenciosa / cambio de POV / final ambiguo. Como mucho 60% de cliffhangers, el resto otros tipos de cierre.
+3. El acto 2 (parte central) debe usar AL MENOS min(7, N) tipos distintos del catálogo, donde N = número de capítulos del acto 2. Es decir: si el acto medio tiene 18-22 caps, exige 7+ tipos (con 5 tipos rotados en bucle ABCDEABCDE el lector percibe la misma monotonía que si fueran todos iguales); si el acto medio tiene 6 caps, exige los 6 tipos distintos; si tiene 4 caps, los 4. Nunca menos. Mezcla el orden — no rotes en bucle.
+3b. PATRONES ROTATORIOS PROHIBIDOS: si el acto 2 tiene 8 o más capítulos, ningún par de letras consecutivas (AB, CD, etc.) puede aparecer 3 veces o más como secuencia. Es decir, NO puedes tener "…AB…AB…AB…" ni "…CD…CD…CD…" ni "…CE…CE…CE…" recorriendo el acto medio. Rompe la rotación con tipos intercalados distintos. (En actos cortos <8 caps esta regla no aplica.)
+3c. FUNCIÓN ESTRUCTURAL — VARIEDAD SEMÁNTICA: la "funcion_estructural" (etiqueta semántica del rol del cap: "emboscada", "encuentro con mentor", "casi confesión", "investigación de pista", "discusión con antagonista", etc.) NO puede repetirse en más de ceil(N/4) capítulos del acto 2 (con tope de 3). Es decir: en un acto 2 de 20 caps, máx 3 repeticiones de la misma función; en uno de 12 caps, máx 3; en uno de 8 caps, máx 2; en uno de 4 caps, máx 1. Si planeas "4 emboscadas" o "5 encuentros tensos con el interés romántico" en un acto largo, la respuesta es INVÁLIDA — el lector lo percibe como "siempre pasa lo mismo aunque cambien los detalles". Usa funciones estructurales DISTINTAS para cada beat del desarrollo.
+4. NO todos los capítulos deben terminar en cliffhanger. Rota: cliffhanger / pregunta abierta / escena reposada / revelación silenciosa / cambio de POV / final ambiguo. NINGÚN tipo_cierre puede superar el 50% del acto 2 (antes era 60% solo para cliffhangers — ahora vale para cualquier cierre repetido). Si la mitad o más del acto medio termina igual, la respuesta es INVÁLIDA. (En actos muy cortos de 2-3 caps esta regla no aplica con el mismo rigor; varía cuanto puedas.)
 5. NO todos los capítulos deben tener reflexión interna del protagonista. Algunos son puro exterior (acción, diálogo, observación). Solo añade reflexión interna donde la FORMA lo permite (intimo, viaje_transicion, calma_engañosa, después de revelacion). En presion_unica / persecucion / set_piece NO la metas.
 6. Las subtramas activas pueden variar de 1 a 3 según el tipo: un capítulo intimo o de presion_unica puede tener UNA sola subtrama activa; un montaje o paralelismo puede llevar 3-4. NO fuerces "2 subtramas" en cada capítulo.
 7. Los diálogos también varían: dialogo_central tiene muchísimos, persecucion o set_piece pueden no tener ninguno. NO fuerces "2-3 diálogos" en cada capítulo.
@@ -394,8 +396,10 @@ C. RITMO ACTO 3: distribuye "eventos_pivotales" sin que el acto 3 acumule >50% d
 ⚠️ AUTO-CHEQUEO ANTES DE RESPONDER:
 1. Lista mentalmente los tipo_capitulo en orden (1=A, 2=B, 3=B, 4=A, ...).
 2. Verifica que NINGÚN tipo se repite 3 veces seguidas.
-3. Verifica que el acto 2 (caps centrales) usa al menos 5 tipos distintos.
-4. Verifica que tipo_cierre varía (no todos cliffhanger).
+3. Verifica que el acto 2 (caps centrales) usa AL MENOS min(7, N) tipos distintos, donde N = número de caps del acto 2. Si N≥7 debes usar 7+; si N<7 usa todos distintos.
+3b. Si N≥8, recorre el acto 2 buscando pares de letras (cap N + cap N+1) que se repitan: si encuentras 3 veces "…AB…AB…AB…" o cualquier otro par repetido, rompe la rotación intercalando tipos distintos. (Si N<8, salta este paso.)
+3c. Cuenta cuántos caps del acto 2 comparten la MISMA "funcion_estructural". El máximo permitido es ceil(N/4) con tope de 3. Si algún rótulo lo supera, reescribe esos caps con funciones estructurales distintas.
+4. Cuenta los "tipo_cierre" del acto 2: si alguno supera el 50% de los caps del acto medio (con N≥4), redistribúyelos.
 5. Verifica que toda "cosecha" tiene su "siembra" en capítulos anteriores con el mismo ID.
 6. Verifica que toda decisión perjudicial del antagonista lleva "justificacion_antagonica" rellena.
 7. Verifica que el acto 3 no concentra >50% de "eventos_pivotales".

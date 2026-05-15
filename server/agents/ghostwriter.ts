@@ -80,6 +80,15 @@ interface GhostwriterInput {
    * `buildPreviousChaptersFullText`. Cadena vacía si no hay capítulos previos.
    */
   previousChaptersFullText?: string;
+  /**
+   * [Fix70-B] Vista compacta del MOLDE ESCÉNICO de los últimos 5 caps ya
+   * escritos: tipo_capitulo, funcion_estructural, tipo_cierre + primera y
+   * última línea. NO incluye prosa completa (eso ya viaja en
+   * `previousChaptersFullText`). Se usa para detectar patrones repetitivos
+   * en ventana de 3-5 caps que el aviso "no como el anterior" no captura.
+   * Construido por el Orquestador con `buildRecentSceneMolds`.
+   */
+  recentSceneMolds?: string;
 }
 
 const SYSTEM_PROMPT = `
@@ -951,6 +960,41 @@ export class GhostwriterAgent extends BaseAgent {
     Estas prohibiciones son OBLIGATORIAS. Si necesitas expresar una idea o reacción
     similar, usa una formulación COMPLETAMENTE NUEVA (otras palabras, otra imagen,
     otra estructura). El objetivo es que cada capítulo tenga textura propia.
+    ═══════════════════════════════════════════════════════════════════
+    `;
+    }
+
+    if (input.recentSceneMolds && input.recentSceneMolds.trim().length > 0) {
+      prompt += `
+
+    ═══════════════════════════════════════════════════════════════════
+    🎭 MOLDE ESCÉNICO RECIENTE — NO REPETIR (Fix70)
+    ═══════════════════════════════════════════════════════════════════
+    Estos son los moldes estructurales de los últimos capítulos ya escritos
+    (tipo + función estructural + tipo de cierre + primera y última línea):
+
+    ${input.recentSceneMolds}
+
+    REGLAS OBLIGATORIAS para este capítulo:
+    1. Si el cap actual quedaría con el MISMO trío (tipo_capitulo + funcion_estructural
+       + tipo_cierre) que cualquiera de los caps listados arriba, DEBES variar la
+       ejecución: cambia el punto de entrada (no abras como ellos), cambia el modo
+       dominante (si los recientes son acción → mete diálogo o introspección; si
+       son diálogo → mete acción exterior), cambia la escala temporal (tiempo real
+       vs. compresión), cambia el registro (denso vs. ligero).
+    2. NO abras este capítulo con una primera línea estructuralmente parecida a
+       las "Abre:" listadas (no empieces con el mismo elemento — clima, llegada
+       a un sitio, despertar, observación, etc. — si ya se usó arriba).
+    3. NO cierres este capítulo con una última línea estructuralmente parecida a
+       las "Cierra:" listadas (si los recientes terminan con golpe físico, no
+       termines con golpe; si terminan con frase enigmática, no la repitas).
+    4. Si la función estructural planificada para este cap coincide con una que
+       ya aparece arriba, dale un ÁNGULO distinto (otra locación, otro POV,
+       otro stake), porque el lector ya leyó algo similar muy recientemente.
+
+    Estas reglas son OBLIGATORIAS: su incumplimiento genera la sensación de
+    "siempre pasa lo mismo" en el acto medio. Aplica con criterio editorial sin
+    contradecir el outline del capítulo.
     ═══════════════════════════════════════════════════════════════════
     `;
     }

@@ -831,6 +831,58 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
   }
 
   /**
+   * [Fix70-B] Construye una vista compacta del MOLDE ESCÉNICO de los últimos
+   * `windowSize` capítulos ya escritos antes del actual. Inyecta SOLO metadatos
+   * estructurales (tipo_capitulo, funcion_estructural, tipo_cierre) más la
+   * primera y última línea narrativa — NO la prosa completa (eso ya lo cubre
+   * `buildPreviousChaptersFullText`). El Ghostwriter usa esto para detectar
+   * patrones repetitivos en ventana de 3-5 caps que el aviso "no como el
+   * anterior" no captura. Devuelve cadena vacía si no hay caps previos válidos.
+   */
+  static buildRecentSceneMolds(
+    completedChapters: Chapter[],
+    escaletaCapitulos: any[] | undefined,
+    currentChapterNumber: number,
+    windowSize: number = 5
+  ): string {
+    const escaleta = Array.isArray(escaletaCapitulos) ? escaletaCapitulos : [];
+
+    const eligible = completedChapters
+      .filter(c => c.status === "completed")
+      .filter(c => Number.isFinite(c.chapterNumber) && c.chapterNumber > 0 && c.chapterNumber < currentChapterNumber)
+      .filter(c => {
+        const content = ((c as any).editedContent || c.originalContent || c.content || "") as string;
+        return content.trim().length > 200;
+      })
+      .sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+    const recent = eligible.slice(-windowSize);
+    if (recent.length === 0) return "";
+
+    const truncate = (s: string, n: number): string =>
+      s.length > n ? s.slice(0, n).trim() + "…" : s;
+
+    const lines: string[] = [];
+    for (const ch of recent) {
+      const plan = escaleta.find((p: any) => Number(p?.numero) === ch.chapterNumber) || {};
+      const tipo = (plan.tipo_capitulo || "?").toString().trim() || "?";
+      const funcion = (plan.funcion_estructural || "—").toString().trim() || "—";
+      const cierre = (plan.tipo_cierre || "—").toString().trim() || "—";
+
+      const content = ((ch as any).editedContent || ch.originalContent || ch.content || "") as string;
+      const paragraphs = content.split(/\n+/).map(p => p.trim()).filter(p => p.length > 0);
+      const firstPara = paragraphs[0] || "";
+      const lastPara = paragraphs[paragraphs.length - 1] || "";
+
+      lines.push(`- Cap ${ch.chapterNumber} [tipo=${tipo} · función=${funcion} · cierre=${cierre}]`);
+      lines.push(`    Abre: ${truncate(firstPara, 140)}`);
+      lines.push(`    Cierra: ${truncate(lastPara, 140)}`);
+    }
+
+    return lines.join("\n");
+  }
+
+  /**
    * Construye el bloque de TEXTO ÍNTEGRO de los volúmenes anteriores de una serie
    * para inyectarlo al Architect (1M de contexto DeepSeek V4). Igual que con el
    * Narrador, usa eviction "newest first" cuando se excede el presupuesto.
@@ -2193,6 +2245,11 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
           // el Narrador ve lo que de verdad se escribió, no solo extractos.
           // Evita errores de continuidad por información perdida en resúmenes.
           const previousChaptersFullText = Orchestrator.buildPreviousChaptersFullText(chapters, sectionData.numero);
+          const recentSceneMolds = Orchestrator.buildRecentSceneMolds(
+            chapters,
+            (worldBibleData as any)?.escaleta_capitulos,
+            sectionData.numero
+          );
 
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
@@ -2209,6 +2266,7 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
             extendedGuideContent: extendedGuideContent || undefined,
             previousChapterContent: isStalled ? undefined : previousContent,
             previousChaptersFullText,
+            recentSceneMolds: recentSceneMolds || undefined,
             editorialCritique: this.midNovelBetaCritique || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
@@ -3017,6 +3075,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           allChaptersForCtxResume,
           sectionData.numero
         );
+        const recentSceneMoldsResume = Orchestrator.buildRecentSceneMolds(
+          allChaptersForCtxResume,
+          (worldBibleData as any)?.escaleta_capitulos,
+          sectionData.numero
+        );
 
         let chapterContent = "";
         let approved = false;
@@ -3068,6 +3131,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             extendedGuideContent: extendedGuideContent || undefined,
             previousChapterContent: isStalledResume ? undefined : previousContent,
             previousChaptersFullText: previousChaptersFullTextResume,
+            recentSceneMolds: recentSceneMoldsResume || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
