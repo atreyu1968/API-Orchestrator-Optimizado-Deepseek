@@ -594,14 +594,26 @@ export class GhostwriterAgent extends BaseAgent {
         if (p.ubicacion_actual || p.lastLocation) {
           parts.push(`    📍 Ubicación actual: ${p.ubicacion_actual || p.lastLocation}`);
         }
-        if (p.objetos_actuales?.length > 0 || p.currentItems?.length > 0) {
-          parts.push(`    🎒 Objetos: [${(p.objetos_actuales || p.currentItems).join(", ")}]`);
+        // [Fix72] Normalizamos a array antes de .join: el WB a veces guarda
+        // estos campos como string (el LLM rellena mal el JSON o la
+        // hidratación legacy los dejó así) y `?.length > 0` es true también
+        // para strings, así que entraba al if y reventaba en .join.
+        const objetos = Array.isArray(p.objetos_actuales) ? p.objetos_actuales
+                       : Array.isArray(p.currentItems) ? p.currentItems
+                       : (typeof (p.objetos_actuales || p.currentItems) === "string" && (p.objetos_actuales || p.currentItems).trim()) ? [(p.objetos_actuales || p.currentItems)] : [];
+        if (objetos.length > 0) {
+          parts.push(`    🎒 Objetos: [${objetos.join(", ")}]`);
         }
-        if (p.heridas_activas?.length > 0 || p.activeInjuries?.length > 0) {
-          parts.push(`    🩹 Heridas activas: [${(p.heridas_activas || p.activeInjuries).join(", ")}]`);
+        const heridas = Array.isArray(p.heridas_activas) ? p.heridas_activas
+                       : Array.isArray(p.activeInjuries) ? p.activeInjuries
+                       : (typeof (p.heridas_activas || p.activeInjuries) === "string" && (p.heridas_activas || p.activeInjuries).trim()) ? [(p.heridas_activas || p.activeInjuries)] : [];
+        if (heridas.length > 0) {
+          parts.push(`    🩹 Heridas activas: [${heridas.join(", ")}]`);
         }
-        if (p.conocimiento_acumulado?.length > 0 || p.accumulatedKnowledge?.length > 0) {
-          const knowledge = p.conocimiento_acumulado || p.accumulatedKnowledge;
+        const knowledge = Array.isArray(p.conocimiento_acumulado) ? p.conocimiento_acumulado
+                         : Array.isArray(p.accumulatedKnowledge) ? p.accumulatedKnowledge
+                         : (typeof (p.conocimiento_acumulado || p.accumulatedKnowledge) === "string" && (p.conocimiento_acumulado || p.accumulatedKnowledge).trim()) ? [(p.conocimiento_acumulado || p.accumulatedKnowledge)] : [];
+        if (knowledge.length > 0) {
           parts.push(`    🧠 Sabe: [${knowledge.join("; ")}]`);
         }
         if (p.estado_emocional || p.currentEmotionalState) {
