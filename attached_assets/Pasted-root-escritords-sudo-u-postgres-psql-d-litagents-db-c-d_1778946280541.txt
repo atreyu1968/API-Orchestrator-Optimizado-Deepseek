@@ -1,0 +1,38 @@
+root@escritords:~# sudo -u postgres psql -d litagents_db -c "\dt"
+sudo -u postgres psql -d litagents_db -c "SELECT COUNT(*) AS proyectos FROM projects;"
+                   List of relations
+ Schema |           Name           | Type  |   Owner   
+--------+--------------------------+-------+-----------
+ public | activity_logs            | table | litagents
+ public | agent_statuses           | table | litagents
+ public | ai_usage_events          | table | litagents
+ public | audiobook_chapters       | table | litagents
+ public | audiobook_projects       | table | litagents
+ public | book_catalog             | table | litagents
+ public | chapters                 | table | litagents
+ public | chat_messages            | table | litagents
+ public | chat_proposals           | table | litagents
+ public | chat_sessions            | table | litagents
+ public | continuity_snapshots     | table | litagents
+ public | conversations            | table | litagents
+ public | extended_guides          | table | litagents
+ public | generated_guides         | table | litagents
+ public | guide_generation_jobs    | table | litagents
+ public | imported_chapters        | table | litagents
+ public | imported_manuscripts     | table | litagents
+ public | kdp_metadata             | table | litagents
+ public | messages                 | table | litagents
+ public | name_blacklist           | table | litagents
+ public | project_back_matter      | table | litagents
+ public | project_queue            | table | litagents
+ public | projects                 | table | litagents
+ public | proofreading_chapters    | table | litagents
+ public | proofreading_projects    | table | litagents
+ public | pseudonyms               | table | litagents
+ public | publishers               | table | litagents
+ public | queue_state              | table | litagents
+ public | reedit_audit_reports     | table | litagents
+ public | reedit_chapters          | table | litagents
+ public | reedit_projects          | table | litagents
+ public | reedit_world_bibles      | table | litagents
+:
