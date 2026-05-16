@@ -131,6 +131,15 @@ ALTER TABLE translations ADD COLUMN IF NOT EXISTS auto_beta_loop BOOLEAN DEFAULT
 ALTER TABLE translations ADD COLUMN IF NOT EXISTS auto_beta_loop_max_iterations INTEGER DEFAULT 2;
 ALTER TABLE translations ADD COLUMN IF NOT EXISTS beta_review_notes TEXT;
 ALTER TABLE translations ADD COLUMN IF NOT EXISTS beta_review_iterations_run INTEGER DEFAULT 0;
+-- [Fix75] Notas /10 independientes del Holístico y del Beta (proyectos y reediciones)
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS holistic_score    INTEGER;
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS holistic_score_at TIMESTAMP;
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS beta_score        INTEGER;
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS beta_score_at     TIMESTAMP;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS holistic_score    INTEGER;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS holistic_score_at TIMESTAMP;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS beta_score        INTEGER;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS beta_score_at     TIMESTAMP;
 SQL
 
 echo "   Ejecutando db:push como superusuario postgres..."
