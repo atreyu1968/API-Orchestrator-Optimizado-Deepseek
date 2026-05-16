@@ -3153,7 +3153,11 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
       }
 
       const seriesTitle = req.body.seriesTitle || `Serie de ${project.title}`;
-      const totalPlannedBooks = req.body.totalPlannedBooks || 3;
+      const rawPlanned = parseInt(req.body.totalPlannedBooks);
+      const totalPlannedBooks = Number.isFinite(rawPlanned) && rawPlanned > 0 ? rawPlanned : 3;
+      if (totalPlannedBooks < 1 || totalPlannedBooks > 50) {
+        return res.status(400).json({ error: "El total de libros planeados debe estar entre 1 y 50" });
+      }
       const generateGuide = req.body.generateGuide ?? false;
 
       const newSeries = await storage.createSeries({
@@ -3227,10 +3231,92 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
         }
       }
 
+      // [Fix73] Crear los proyectos esqueleto para los volúmenes restantes de
+      // la serie. Antes, el endpoint solo convertía el libro actual en vol 1
+      // y generaba la guía de la serie, pero el usuario tenía que crear a
+      // mano los proyectos del vol 2..N. Replicamos aquí la lógica del
+      // endpoint hermano `/api/reedit-projects/convert-to-series` (L3594+).
+      let projectsCreated = 0;
+      if (totalPlannedBooks > 1) {
+        const remaining = totalPlannedBooks - 1;
+        const assignedOrders: number[] = [];
+        for (let i = 2; i <= totalPlannedBooks; i++) assignedOrders.push(i);
+
+        // Heredamos la styleGuide activa del pseudónimo (si la hay) para que
+        // los nuevos volúmenes ya nazcan vinculados a la voz correcta.
+        let activeStyleGuideId: number | null = project.styleGuideId ?? null;
+        if (!activeStyleGuideId && project.pseudonymId) {
+          try {
+            const pseudoStyleGuides = await storage.getStyleGuidesByPseudonym(project.pseudonymId);
+            const activeGuide = pseudoStyleGuides.find((g: any) => g.isActive);
+            if (activeGuide) activeStyleGuideId = activeGuide.id;
+          } catch (e: any) {
+            console.warn("[API:Fix73] No se pudo cargar la styleGuide del pseudónimo:", e.message);
+          }
+        }
+
+        // Generamos títulos coherentes con el libro existente. Best-effort:
+        // si el LLM falla, caemos a un fallback "{seriesTitle} — Libro N".
+        let generatedTitles: string[] = [];
+        try {
+          const { default: OpenAI } = await import("openai");
+          const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
+          const titlePrompt = `Eres un experto en títulos de novelas. La serie se llama "${seriesTitle.trim()}" y el primer libro es "${project.title}" (género: ${project.genre}, tono: ${project.tone}).\n\nGenera exactamente ${remaining} título(s) para los libros restantes de la serie (posiciones: ${assignedOrders.join(", ")}). Los títulos deben:\n- Ser coherentes con el estilo y temática del primer libro\n- Sonar como títulos reales de novela, no genéricos\n- Estar en el mismo idioma que el primer libro\n\nResponde SOLO con un JSON array de strings, sin explicaciones. Ejemplo: ["Título 1", "Título 2"]`;
+
+          const titleResponse = await ai.chat.completions.create({
+            model: "deepseek-v4-flash",
+            messages: [{ role: "user", content: titlePrompt }],
+            temperature: 0.8,
+            max_tokens: 1024,
+            ...({ thinking: { type: "disabled" } } as any),
+          });
+
+          const titleText = (titleResponse.choices?.[0]?.message?.content || "").replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+          const parsed = JSON.parse(titleText);
+          if (Array.isArray(parsed) && parsed.length >= remaining) {
+            generatedTitles = parsed.slice(0, remaining).map((t: any) => String(t).trim());
+          }
+        } catch (e: any) {
+          console.warn("[API:Fix73] No se pudieron generar títulos para los volúmenes restantes, usando fallback:", e.message);
+        }
+
+        for (let i = 0; i < remaining; i++) {
+          const order = assignedOrders[i];
+          const title = generatedTitles[i] || `${seriesTitle.trim()} — Libro ${order}`;
+
+          try {
+            await storage.createProject({
+              title,
+              genre: project.genre,
+              tone: project.tone,
+              chapterCount: project.chapterCount || 35,
+              hasPrologue: project.hasPrologue ?? true,
+              hasEpilogue: project.hasEpilogue ?? true,
+              hasAuthorNote: project.hasAuthorNote ?? false,
+              workType: "series",
+              seriesId: newSeries.id,
+              seriesOrder: order,
+              pseudonymId: project.pseudonymId ?? null,
+              styleGuideId: activeStyleGuideId,
+              kindleUnlimitedOptimized: project.kindleUnlimitedOptimized ?? false,
+            });
+            projectsCreated++;
+          } catch (createError: any) {
+            console.error(`[API:Fix73] Error creando proyecto vol ${order}:`, createError.message);
+          }
+        }
+      }
+
+      const messageParts = [`Proyecto convertido en libro #1 de la serie "${newSeries.title}"`];
+      if (projectsCreated > 0) messageParts.push(`${projectsCreated} proyecto(s) creados para los volúmenes restantes`);
+      if (guideGenerated) messageParts.push("guía de serie generada");
+
       res.json({
         project: updated,
         series: newSeries,
-        message: `Proyecto convertido en libro #1 de la serie "${newSeries.title}"${guideGenerated ? ". Guía de serie generada." : ""}`,
+        projectsCreated,
+        guideGenerated,
+        message: messageParts.join(". ") + ".",
       });
     } catch (error: any) {
       console.error("Error converting project to series:", error);
