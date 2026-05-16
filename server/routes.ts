@@ -13,10 +13,43 @@ import { generateManuscriptDocx } from "./services/docx-exporter";
 import { generateManuscriptEpub, generateGenericManuscriptEpub } from "./services/epub-exporter";
 import { generateBackMatterMarkdown } from "./services/back-matter-generator";
 import { z } from "zod";
+import { calculateRealCost, formatCostForStorage } from "./cost-calculator";
+
+// [Fix74] Helper para registrar consumo de tokens de llamadas crudas a
+// DeepSeek que no pasan por BaseAgent (p.ej. generadores de títulos, WB
+// unifiers, asesoramientos puntuales). Antes estas llamadas no aparecían en
+// `ai_usage_events` y el coste real por libro estaba infravalorado.
+async function recordRawAiUsage(
+  response: any,
+  opts: { agentName: string; model: string; projectId?: number | null; operation?: string }
+): Promise<void> {
+  try {
+    const usage = response?.usage || {};
+    const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens || 0;
+    const inputTokens = usage.prompt_tokens || 0;
+    const outputTokens = Math.max((usage.completion_tokens || 0) - reasoningTokens, 0);
+    const thinkingTokens = reasoningTokens;
+    if (inputTokens === 0 && outputTokens === 0 && thinkingTokens === 0) return;
+    const costs = calculateRealCost(opts.model, inputTokens, outputTokens, thinkingTokens);
+    await storage.createAiUsageEvent({
+      projectId: opts.projectId ?? null,
+      agentName: opts.agentName,
+      model: opts.model,
+      inputTokens,
+      outputTokens,
+      thinkingTokens,
+      inputCostUsd: formatCostForStorage(costs.inputCost),
+      outputCostUsd: formatCostForStorage(costs.outputCost + costs.thinkingCost),
+      totalCostUsd: formatCostForStorage(costs.totalCost),
+      operation: opts.operation || "generate",
+    });
+  } catch (err) {
+    console.error(`[recordRawAiUsage:${opts.agentName}] Failed to log AI usage event:`, err);
+  }
+}
 import { CopyEditorAgent, cancelProject, ItalianReviewerAgent } from "./agents";
 import { ReeditOrchestrator } from "./orchestrators/reedit-orchestrator";
 import { chatService } from "./services/chatService";
-import { calculateRealCost } from "./cost-calculator";
 
 const workTypeEnum = z.enum(["standalone", "series", "trilogy"]);
 
@@ -3270,6 +3303,7 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
             max_tokens: 1024,
             ...({ thinking: { type: "disabled" } } as any),
           });
+          await recordRawAiUsage(titleResponse, { agentName: "series-volume-titler", model: "deepseek-v4-flash", projectId, operation: "generate-titles" });
 
           const titleText = (titleResponse.choices?.[0]?.message?.content || "").replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
           const parsed = JSON.parse(titleText);
@@ -3641,6 +3675,7 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
           max_tokens: 32768,
           ...({ thinking: { type: "disabled" } } as any),
         });
+        await recordRawAiUsage(wbResponse, { agentName: "series-wb-unifier", model: "deepseek-v4-flash", operation: "unify-world-bible" });
 
         let worldBibleData: any = {};
         try {
@@ -3715,6 +3750,7 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
             max_tokens: 1024,
             ...({ thinking: { type: "disabled" } } as any),
           });
+          await recordRawAiUsage(titleResponse, { agentName: "series-volume-titler", model: "deepseek-v4-flash", operation: "generate-titles" });
 
           const titleText = (titleResponse.choices?.[0]?.message?.content || "").replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
           const parsed = JSON.parse(titleText);
@@ -3893,6 +3929,7 @@ ${series.seriesGuide.substring(0, 50000)}`;
             temperature: 0.3,
             ...({ thinking: { type: "disabled" } } as any),
           });
+          await recordRawAiUsage(response, { agentName: "series-milestones-extractor", model: "deepseek-v4-flash", operation: "extract-milestones" });
           break; // Success, exit loop
         } catch (err: any) {
           const isRateLimit = err?.message?.includes("RATELIMIT") || 
@@ -8681,6 +8718,7 @@ CRITERIOS:
         max_tokens: 4096,
         ...({ thinking: { type: "disabled" } } as any),
       });
+      await recordRawAiUsage(response, { agentName: "reedit-vs-rewrite-assessor", model: "deepseek-v4-flash", operation: "assess-prose" });
 
       const responseText = response.choices?.[0]?.message?.content || "";
       let assessment: any = null;
@@ -8961,6 +8999,7 @@ CRITERIOS:
         max_tokens: 4096,
         ...({ thinking: { type: "disabled" } } as any),
       });
+      await recordRawAiUsage(response, { agentName: "reedit-vs-rewrite-assessor", model: "deepseek-v4-flash", operation: "assess-prose" });
 
       const responseText = response.choices?.[0]?.message?.content || "";
       let assessment: any = null;

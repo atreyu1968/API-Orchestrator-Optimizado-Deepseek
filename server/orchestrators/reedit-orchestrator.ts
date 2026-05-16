@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import { BaseAgent } from "../agents/base-agent";
 import { Orchestrator } from "../orchestrator";
+import { runWithProjectContext } from "../utils/agent-context";
 import type { ReeditProject, ReeditChapter } from "@shared/schema";
 import { 
   ChapterExpansionAnalyzer, 
@@ -2778,6 +2779,10 @@ export class ReeditOrchestrator {
   }
 
   async processProject(projectId: number): Promise<void> {
+    return runWithProjectContext(projectId, () => this._processProject(projectId));
+  }
+
+  private async _processProject(projectId: number): Promise<void> {
     const project = await storage.getReeditProject(projectId);
     if (!project) {
       throw new Error(`Reedit project ${projectId} not found`);
@@ -4223,6 +4228,10 @@ export class ReeditOrchestrator {
   }
 
   async runFinalReviewOnly(projectId: number): Promise<void> {
+    return runWithProjectContext(projectId, () => this._runFinalReviewOnly(projectId));
+  }
+
+  private async _runFinalReviewOnly(projectId: number): Promise<void> {
     console.log(`[ReeditOrchestrator] Running FULL final review only for project ${projectId}`);
     
     const project = await storage.getReeditProject(projectId);
@@ -4880,6 +4889,10 @@ export class ReeditOrchestrator {
   }
 
   async applyReviewerCorrections(projectId: number): Promise<void> {
+    return runWithProjectContext(projectId, () => this._applyReviewerCorrections(projectId));
+  }
+
+  private async _applyReviewerCorrections(projectId: number): Promise<void> {
     const project = await storage.getReeditProject(projectId);
     if (!project) {
       throw new Error(`Project ${projectId} not found`);
@@ -5469,6 +5482,13 @@ export class ReeditOrchestrator {
   // sobre `editedContent` de los reedit_chapters. Retorna un resumen agregado y persiste
   // un audit_report `holistic_beta_applied` con el detalle por instrucción.
   async applyHolisticBetaInstructions(
+    projectId: number,
+    selectedIds: number[]
+  ): Promise<{ applied: number; failed: number; skipped: number; summary: string }> {
+    return runWithProjectContext(projectId, () => this._applyHolisticBetaInstructions(projectId, selectedIds));
+  }
+
+  private async _applyHolisticBetaInstructions(
     projectId: number,
     selectedIds: number[]
   ): Promise<{ applied: number; failed: number; skipped: number; summary: string }> {

@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { calculateRealCost, formatCostForStorage } from "../cost-calculator";
 import { storage } from "../storage";
+import { getCurrentProjectId } from "../utils/agent-context";
 
 const ai = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
@@ -234,7 +235,18 @@ export abstract class BaseAgent {
           thinkingTokens: reasoningTokens,
         };
 
-        if (projectId && (tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0 || tokenUsage.thinkingTokens > 0)) {
+        // [Fix74] Contabilizar tokens SIEMPRE que haya consumo, no solo cuando
+        // el caller pase projectId explícito. Antes, los agentes que llamaban a
+        // `generateContent(prompt)` sin projectId calculaban tokens pero nunca
+        // los persistían en `ai_usage_events`, así que el coste real por libro
+        // estaba muy infravalorado. Ahora caemos al projectId del
+        // AsyncLocalStorage que el orchestrator establece al arrancar cada
+        // pipeline. Si tampoco hay contexto (p.ej. llamada cruda desde un
+        // endpoint que no pertenece a un proyecto concreto), se guarda con
+        // projectId=null — el schema lo permite y entra en los agregados
+        // globales pero no se atribuye a ningún libro.
+        const effectiveProjectId = projectId ?? getCurrentProjectId();
+        if (tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0 || tokenUsage.thinkingTokens > 0) {
           const costs = calculateRealCost(
             modelToUse,
             tokenUsage.inputTokens,
@@ -244,7 +256,7 @@ export abstract class BaseAgent {
 
           try {
             await storage.createAiUsageEvent({
-              projectId,
+              projectId: effectiveProjectId ?? null,
               agentName: this.config.name,
               model: modelToUse,
               inputTokens: tokenUsage.inputTokens,

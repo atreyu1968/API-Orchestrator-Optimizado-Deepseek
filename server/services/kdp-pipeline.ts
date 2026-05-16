@@ -45,6 +45,18 @@ interface RunPipelineParams {
 }
 
 export async function runKdpPipeline(params: RunPipelineParams): Promise<void> {
+  // [Fix74] Asociar el árbol de llamadas al projectId (o reeditProjectId como
+  // fallback) para que cualquier agente que invoque generateContent dentro
+  // del pipeline registre tokens atribuidos al libro correcto.
+  const { runWithProjectContext } = await import("../utils/agent-context");
+  const ctxId = params.projectId ?? params.reeditProjectId;
+  if (ctxId != null) {
+    return runWithProjectContext(ctxId, () => _runKdpPipeline(params));
+  }
+  return _runKdpPipeline(params);
+}
+
+async function _runKdpPipeline(params: RunPipelineParams): Promise<void> {
   const { kdpMetadataId, projectId, reeditProjectId, selectedMarketIds, primaryMarketId, pseudonymName } = params;
 
   const setProgress = async (status: string, progress: PipelineProgress) => {

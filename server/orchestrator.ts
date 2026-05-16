@@ -40,6 +40,7 @@ import { extractStyleDirectives } from "./utils/style-directives";
 import { repairJson } from "./utils/json-repair";
 import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper } from "./utils/series-context-builder";
 import { calculateRealCost } from "./cost-calculator";
+import { runWithProjectContext } from "./utils/agent-context";
 
 interface OrchestratorCallbacks {
   onAgentStatus: (role: string, status: string, message?: string) => void;
@@ -1003,6 +1004,10 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
   }
 
   async generateNovel(project: Project): Promise<void> {
+    return runWithProjectContext(project.id, () => this._generateNovel(project));
+  }
+
+  private async _generateNovel(project: Project): Promise<void> {
     // [Fix30] Resetear la crítica del Beta de mid-novela al iniciar nueva generación.
     this.midNovelBetaCritique = "";
     this.midNovelBetaAttempted = false;
@@ -2928,6 +2933,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   }
 
   async resumeNovel(project: Project): Promise<void> {
+    return runWithProjectContext(project.id, () => this._resumeNovel(project));
+  }
+
+  private async _resumeNovel(project: Project): Promise<void> {
     try {
       const existingTokens = {
         inputTokens: project.totalInputTokens || 0,
@@ -5003,6 +5012,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   }
 
   async runFinalReviewOnly(project: Project): Promise<void> {
+    return runWithProjectContext(project.id, () => this._runFinalReviewOnly(project));
+  }
+
+  private async _runFinalReviewOnly(project: Project): Promise<void> {
     try {
       this.cumulativeTokens = {
         inputTokens: project.totalInputTokens || 0,
@@ -5714,6 +5727,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   }
 
   async runHolisticReview(project: Project): Promise<HolisticReviewerResult> {
+    return runWithProjectContext(project.id, () => this._runHolisticReview(project));
+  }
+
+  private async _runHolisticReview(project: Project): Promise<HolisticReviewerResult> {
     const ctx = await this.loadFullNovelContext(project);
     const seriesContext = await this.buildSeriesContextForReviewers(project);
 
@@ -7464,6 +7481,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   }
 
   async applyEditorialNotes(
+    project: Project,
+    notesText: string,
+    preParsedInstructions?: EditorialInstruction[]
+  ): Promise<void> {
+    return runWithProjectContext(project.id, () => this._applyEditorialNotes(project, notesText, preParsedInstructions));
+  }
+
+  private async _applyEditorialNotes(
     project: Project,
     notesText: string,
     preParsedInstructions?: EditorialInstruction[]

@@ -1,4 +1,7 @@
 import OpenAI from "openai";
+import { storage } from "../storage";
+import { calculateRealCost, formatCostForStorage } from "../cost-calculator";
+import { getCurrentProjectId } from "../utils/agent-context";
 
 const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
 
@@ -507,8 +510,34 @@ Si necesitas sugerir nombres de personajes, inventa nombres COMPLETAMENTE NUEVOS
   });
 
   const text = response.choices?.[0]?.message?.content || "";
-  const inputTokens = response.usage?.prompt_tokens || 0;
-  const outputTokens = response.usage?.completion_tokens || 0;
+  const usage: any = response.usage || {};
+  const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens || 0;
+  const inputTokens = usage.prompt_tokens || 0;
+  const outputTokens = Math.max((usage.completion_tokens || 0) - reasoningTokens, 0);
+
+  // [Fix74] Registrar consumo en ai_usage_events. Antes esta generación de
+  // guías no se contabilizaba en el agregado de coste — sólo los callers
+  // (routes.ts) guardaban los tokens dentro de `generatedGuides.inputTokens`,
+  // y nunca aparecían en el dashboard global de gasto AI.
+  if (inputTokens > 0 || outputTokens > 0 || reasoningTokens > 0) {
+    try {
+      const costs = calculateRealCost("deepseek-v4-flash", inputTokens, outputTokens, reasoningTokens);
+      await storage.createAiUsageEvent({
+        projectId: getCurrentProjectId() ?? null,
+        agentName: `style-guide-generator:${params.guideType}`,
+        model: "deepseek-v4-flash",
+        inputTokens,
+        outputTokens,
+        thinkingTokens: reasoningTokens,
+        inputCostUsd: formatCostForStorage(costs.inputCost),
+        outputCostUsd: formatCostForStorage(costs.outputCost + costs.thinkingCost),
+        totalCostUsd: formatCostForStorage(costs.totalCost),
+        operation: "generate",
+      });
+    } catch (err) {
+      console.error("[style-guide-generator] Failed to log AI usage event:", err);
+    }
+  }
 
   let title = "";
   switch (params.guideType) {
