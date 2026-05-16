@@ -5756,10 +5756,24 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       "Lector Holístico", "deepseek-v4-flash", undefined, "holistic_review"
     );
 
+    // [Fix75] Persistimos la nota /10 que el Holístico acaba de emitir,
+    // independiente de finalScore y de betaScore. Si el parser no la encontró
+    // (`score === null`), no escribimos para no pisar la nota previa.
+    if (typeof result.score === "number") {
+      try {
+        await storage.updateProject(project.id, {
+          holisticScore: result.score,
+          holisticScoreAt: new Date(),
+        } as any);
+      } catch (e) {
+        console.warn(`[Fix75] No se pudo persistir holisticScore: ${(e as Error).message}`);
+      }
+    }
+
     await storage.createActivityLog({
       projectId: project.id,
       level: "info",
-      message: `Revisión holística completada: ${result.totalChaptersRead} capítulos / ${result.totalWordsRead.toLocaleString("es-ES")} palabras leídas. Informe de ${result.notesText.length.toLocaleString("es-ES")} caracteres generado.`,
+      message: `Revisión holística completada: ${result.totalChaptersRead} capítulos / ${result.totalWordsRead.toLocaleString("es-ES")} palabras leídas. Informe de ${result.notesText.length.toLocaleString("es-ES")} caracteres generado${typeof result.score === "number" ? ` (puntuación holística ${result.score}/10).` : "."}`,
       agentRole: "editor",
     });
 
@@ -5872,13 +5886,22 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     );
 
     // [Fix38] Persistimos las nuevas notas para la próxima re-lectura.
+    // [Fix75] Persistimos también la nota /10 que el Beta acaba de emitir,
+    // independiente de finalScore. Si el parser no encontró el bloque
+    // PUNTUACION_BETA (`score === null`), no escribimos para no pisar la nota
+    // previa.
     try {
-      await storage.updateProject(project.id, {
+      const patch: any = {
         lastBetaNotes: result.notesText.slice(0, 24000),
         lastBetaNotesAt: new Date(),
-      } as any);
+      };
+      if (typeof result.score === "number") {
+        patch.betaScore = result.score;
+        patch.betaScoreAt = new Date();
+      }
+      await storage.updateProject(project.id, patch);
     } catch (e) {
-      console.warn(`[Fix38] No se pudo persistir lastBetaNotes: ${(e as Error).message}`);
+      console.warn(`[Fix38/Fix75] No se pudo persistir lastBetaNotes/betaScore: ${(e as Error).message}`);
     }
 
     await storage.createActivityLog({

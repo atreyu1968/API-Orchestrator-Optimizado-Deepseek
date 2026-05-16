@@ -1282,6 +1282,47 @@ export default function Dashboard() {
                         </p>
                       </div>
                     </div>
+
+                    {/* [Fix75] Notas independientes del Holístico y del Beta sobre el mismo manuscrito. Casi nunca coinciden con el Final Reviewer; eso es esperable y útil. Target comercial: Beta ≥ 9. */}
+                    {(((currentProject as any).holisticScore ?? null) !== null || ((currentProject as any).betaScore ?? null) !== null) && (
+                      <div className="mt-4 pt-4 border-t border-border/50">
+                        <p className="text-sm font-medium mb-2">Notas adicionales de los lectores</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          {(() => {
+                            const renderScoreCard = (label: string, hint: string, score: number | null, testId: string) => {
+                              if (score === null) {
+                                return (
+                                  <div className="p-3 rounded border border-border/40 bg-background/40">
+                                    <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                                    <p className="text-xs text-muted-foreground">Sin nota aún</p>
+                                  </div>
+                                );
+                              }
+                              const color = score >= 9
+                                ? 'text-green-600 dark:text-green-400'
+                                : score >= 7
+                                  ? 'text-yellow-600 dark:text-yellow-400'
+                                  : 'text-red-600 dark:text-red-400';
+                              return (
+                                <div className="p-3 rounded border border-border/40 bg-background/40">
+                                  <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                                  <p className={`text-2xl font-bold ${color}`} data-testid={testId}>{score}/10</p>
+                                  <p className="text-[11px] text-muted-foreground mt-1">{hint}</p>
+                                </div>
+                              );
+                            };
+                            const holistic = (currentProject as any).holisticScore ?? null;
+                            const beta = (currentProject as any).betaScore ?? null;
+                            return (
+                              <>
+                                {renderScoreCard("Lector Holístico (editor severo)", "Diagnóstico estructural profesional.", holistic, "text-holistic-score")}
+                                {renderScoreCard("Lector Beta (lector real)", "Sensación de lectura. Target comercial: 9+.", beta, "text-beta-score")}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    )}
                     
                     {/* Show Final Review Issues if available */}
                     {fullProjectDetail?.finalReviewResult && (fullProjectDetail.finalReviewResult as any).issues?.length > 0 && (

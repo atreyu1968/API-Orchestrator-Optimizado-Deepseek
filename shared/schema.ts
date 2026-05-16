@@ -89,6 +89,15 @@ export const projects = pgTable("projects", {
   maxRevisionCycles: integer("max_revision_cycles").default(3),
   finalReviewResult: jsonb("final_review_result"),
   finalScore: integer("final_score"),
+  // [Fix75] Notas independientes /10 de los dos lectores post-finalización
+  // (Holístico = editor profesional severo; Beta = lector cualificado real).
+  // Las tres notas (finalScore + holisticScore + betaScore) son
+  // independientes: las emite cada agente con su propio criterio y casi nunca
+  // coinciden. La nota comercialmente "publicable" target es Beta >= 9.
+  holisticScore: integer("holistic_score"),
+  holisticScoreAt: timestamp("holistic_score_at"),
+  betaScore: integer("beta_score"),
+  betaScoreAt: timestamp("beta_score_at"),
   totalInputTokens: integer("total_input_tokens").default(0),
   totalOutputTokens: integer("total_output_tokens").default(0),
   totalThinkingTokens: integer("total_thinking_tokens").default(0),
@@ -663,6 +672,14 @@ export const reeditProjects = pgTable("reedit_projects", {
   currentChapter: integer("current_chapter").default(0),
   currentActivity: text("current_activity"), // Real-time progress message shown in UI
   bestsellerScore: integer("bestseller_score"), // 1-10 final score
+  // [Fix75] Notas independientes /10 del Holístico y del Beta tras Stage 8.
+  // Equivalentes a holisticScore/betaScore en `projects`. Las tres notas
+  // (bestsellerScore = Final Reviewer + holisticScore + betaScore) son
+  // independientes y casi nunca coinciden. Target comercial: Beta >= 9.
+  holisticScore: integer("holistic_score"),
+  holisticScoreAt: timestamp("holistic_score_at"),
+  betaScore: integer("beta_score"),
+  betaScoreAt: timestamp("beta_score_at"),
   finalReviewResult: jsonb("final_review_result"),
   structureAnalysis: jsonb("structure_analysis"), // Chapter order issues, duplicates detected
   styleGuideId: integer("style_guide_id").references(() => styleGuides.id, { onDelete: "set null" }),

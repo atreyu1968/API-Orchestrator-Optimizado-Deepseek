@@ -1881,15 +1881,57 @@ export default function ReeditPage() {
                       isProcessing={selectedProjectData.status === "processing"} 
                     />
 
-                    {selectedProjectData.bestsellerScore && (
+                    {(selectedProjectData.bestsellerScore || (selectedProjectData as any).holisticScore || (selectedProjectData as any).betaScore) && (
                       <Card className="bg-muted/50">
-                        <CardContent className="pt-6">
-                          <div className="flex items-center justify-between gap-4 flex-wrap">
-                            <div>
-                              <p className="text-sm text-muted-foreground">Puntuación Bestseller</p>
-                              <ScoreDisplay score={selectedProjectData.bestsellerScore} />
+                        <CardContent className="pt-6 space-y-3">
+                          {selectedProjectData.bestsellerScore && (
+                            <div className="flex items-center justify-between gap-4 flex-wrap">
+                              <div>
+                                <p className="text-sm text-muted-foreground">Puntuación Bestseller (Final Reviewer)</p>
+                                <ScoreDisplay score={selectedProjectData.bestsellerScore} />
+                              </div>
                             </div>
-                          </div>
+                          )}
+                          {/* [Fix75] Notas independientes del Holístico y del Beta sobre el manuscrito ya reeditado. Target comercial: Beta ≥ 9. */}
+                          {(((selectedProjectData as any).holisticScore ?? null) !== null || ((selectedProjectData as any).betaScore ?? null) !== null) && (
+                            <div className={selectedProjectData.bestsellerScore ? "pt-3 border-t border-border/50" : ""}>
+                              <p className="text-sm font-medium mb-2">Notas adicionales de los lectores</p>
+                              <div className="grid grid-cols-2 gap-3">
+                                {(() => {
+                                  const renderScoreCard = (label: string, hint: string, score: number | null, testId: string) => {
+                                    if (score === null) {
+                                      return (
+                                        <div className="p-3 rounded border border-border/40 bg-background/40">
+                                          <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                                          <p className="text-xs text-muted-foreground">Sin nota aún</p>
+                                        </div>
+                                      );
+                                    }
+                                    const color = score >= 9
+                                      ? 'text-green-600 dark:text-green-400'
+                                      : score >= 7
+                                        ? 'text-yellow-600 dark:text-yellow-400'
+                                        : 'text-red-600 dark:text-red-400';
+                                    return (
+                                      <div className="p-3 rounded border border-border/40 bg-background/40">
+                                        <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                                        <p className={`text-2xl font-bold ${color}`} data-testid={testId}>{score}/10</p>
+                                        <p className="text-[11px] text-muted-foreground mt-1">{hint}</p>
+                                      </div>
+                                    );
+                                  };
+                                  const holistic = (selectedProjectData as any).holisticScore ?? null;
+                                  const beta = (selectedProjectData as any).betaScore ?? null;
+                                  return (
+                                    <>
+                                      {renderScoreCard("Lector Holístico (editor severo)", "Diagnóstico estructural profesional.", holistic, "text-reedit-holistic-score")}
+                                      {renderScoreCard("Lector Beta (lector real)", "Sensación de lectura. Target comercial: 9+.", beta, "text-reedit-beta-score")}
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     )}

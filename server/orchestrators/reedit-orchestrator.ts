@@ -5181,11 +5181,11 @@ export class ReeditOrchestrator {
       });
 
       tasks.push(holisticAgent.runReview({ projectTitle, chapters: reviewerChapters, seriesContext: seriesContextForReeditReviewers })
-        .then(r => ({ kind: "holistic_review", ok: true, payload: { notesText: r.notesText, totalChaptersRead: r.totalChaptersRead } }))
+        .then(r => ({ kind: "holistic_review", ok: true, payload: { notesText: r.notesText, totalChaptersRead: r.totalChaptersRead, score: r.score } }))
         .catch(e => ({ kind: "holistic_review", ok: false, error: (e as Error).message })));
 
       tasks.push(betaAgent.runReview({ projectTitle, chapters: reviewerChapters, seriesContext: seriesContextForReeditReviewers })
-        .then(r => ({ kind: "beta_review", ok: true, payload: { notesText: r.notesText, totalChaptersRead: r.totalChaptersRead } }))
+        .then(r => ({ kind: "beta_review", ok: true, payload: { notesText: r.notesText, totalChaptersRead: r.totalChaptersRead, score: r.score } }))
         .catch(e => ({ kind: "beta_review", ok: false, error: (e as Error).message })));
 
       // [Fix32] Auditoría de cierre de tramas y subtramas sobre el manuscrito completo.
@@ -5248,6 +5248,28 @@ export class ReeditOrchestrator {
         } else {
           console.error(`[ReeditOrchestrator Stage8] ${r.kind} falló: ${r.error}`);
         }
+      }
+
+      // [Fix75] Persistir las notas /10 propias del Holístico y del Beta en el
+      // reedit project para que la UI las muestre junto al bestsellerScore del
+      // Final Reviewer. Se persiste cada una solo si el agente la emitió.
+      try {
+        const holisticPayloadScore = results.find(r => r.kind === "holistic_review" && r.ok)?.payload as { score?: number | null } | undefined;
+        const betaPayloadScore = results.find(r => r.kind === "beta_review" && r.ok)?.payload as { score?: number | null } | undefined;
+        const scorePatch: any = {};
+        if (typeof holisticPayloadScore?.score === "number") {
+          scorePatch.holisticScore = holisticPayloadScore.score;
+          scorePatch.holisticScoreAt = new Date();
+        }
+        if (typeof betaPayloadScore?.score === "number") {
+          scorePatch.betaScore = betaPayloadScore.score;
+          scorePatch.betaScoreAt = new Date();
+        }
+        if (Object.keys(scorePatch).length > 0) {
+          await storage.updateReeditProject(projectId, scorePatch);
+        }
+      } catch (e) {
+        console.warn(`[ReeditOrchestrator Stage8][Fix75] No se pudieron persistir holisticScore/betaScore: ${(e as Error).message}`);
       }
 
       // [Fix34] Replicar el "mismo proceso" del pipeline principal: parsear las notas
@@ -5379,6 +5401,22 @@ export class ReeditOrchestrator {
         return;
       }
       const notesText = (beta?.notesText || "").trim();
+
+      // [Fix75] Persistimos la nota /10 del Beta en cada iteración para que
+      // la UI refleje siempre la última lectura disponible. Se hace ANTES del
+      // early-return de "sin observaciones" para que una traducción aprobada
+      // (sin pegas) deje su nota visible y no la última de la iteración anterior.
+      if (typeof (beta as any)?.score === "number") {
+        try {
+          await storage.updateReeditProject(projectId, {
+            betaScore: (beta as any).score,
+            betaScoreAt: new Date(),
+          } as any);
+        } catch (e) {
+          console.warn(`[Fix75] No se pudo persistir betaScore (auto-loop traducción iter ${iter}): ${(e as Error).message}`);
+        }
+      }
+
       if (!notesText) {
         await logReeditEvent(projectId, "info", "auto_beta_loop_translation",
           `[Fix52] Iteración ${iter}: el Beta no devolvió observaciones. Traducción APROBADA.`, {});

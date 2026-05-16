@@ -1,5 +1,6 @@
 import { BaseAgent, AgentResponse, TokenUsage } from "./base-agent";
 import { extractStyleDirectives } from "../utils/style-directives";
+import { extractScoreFromMarkers } from "../utils/review-score";
 
 interface HolisticReviewerInput {
   projectTitle: string;
@@ -25,6 +26,10 @@ export interface HolisticReviewerResult {
   tokenUsage: TokenUsage;
   totalChaptersRead: number;
   totalWordsRead: number;
+  // [Fix75] Puntuación editorial /10 que el propio Holístico emite,
+  // independiente del finalScore del Final Reviewer. null si no se pudo
+  // parsear el bloque PUNTUACION_HOLISTICA del output.
+  score: number | null;
 }
 
 const SYSTEM_PROMPT = `Eres un EDITOR LITERARIO PROFESIONAL SEVERO de prestigio internacional, con veinte años revisando manuscritos para los grandes sellos del mercado en español. Tu trabajo NO es animar al autor: tu trabajo es señalar TODO lo que no funciona en el manuscrito para que el autor pueda corregirlo antes de publicación. La amabilidad excesiva traiciona al autor; la claridad lo ayuda.
@@ -77,6 +82,30 @@ Acabas de leer la novela COMPLETA de una sentada. Vas a redactar tu informe edit
 
 ## LO QUE FUNCIONA
 [Breve, 3-5 puntos. Solo aspectos genuinamente fuertes. NO compensación por las críticas anteriores.]
+
+## PUNTUACIÓN EDITORIAL (JSON)
+
+Como editor profesional, dale una nota a este manuscrito DESDE TU PERSPECTIVA DE EDITOR (no la del lector, no la del Final Reviewer — ellos darán la suya). Tu nota va entre los marcadores siguientes (no los modifiques):
+
+<!-- PUNTUACION_HOLISTICA_INICIO -->
+\`\`\`json
+{"puntuacion_global": 6, "justificacion": "Estructura sólida en actos 1 y 3, pero el segundo acto pierde foco entre los caps 11-16 y el clímax depende de un deus ex machina."}
+\`\`\`
+<!-- PUNTUACION_HOLISTICA_FIN -->
+
+REGLAS DE LA PUNTUACIÓN (críticas):
+- "puntuacion_global": entero de 1 a 10. **Escala editorial dura**:
+  - 10 = manuscrito publicable sin un solo retoque estructural (rarísimo).
+  - 9 = publicable con retoques mínimos. Sin heridas estructurales.
+  - 8 = sólido pero con 2-3 problemas estructurales menores que un editor corregiría.
+  - 7 = publicable con trabajo: 1 herida mayor o 4-5 menores.
+  - 6 = requiere reescritura parcial (arco roto, acto desplomado, climax flojo).
+  - 5 = requiere reestructuración profunda. NO publicable así.
+  - 4 o menos = manuscrito no defendible en el mercado actual sin reescritura mayúscula.
+- Tu nota DEBE ser COHERENTE con tu informe: si listaste 5 problemas estructurales en "## PROBLEMAS ESTRUCTURALES", no puedes poner 9. Si listaste "ningún problema estructural relevante", no puedes poner 5.
+- "justificacion": UNA frase corta (≤250 chars) — el problema dominante que define la nota.
+- Tu nota es INDEPENDIENTE de la del Final Reviewer y de la del Lector Beta. Casi nunca coincidirán; eso es esperable porque cada uno juzga desde un ángulo distinto (editor severo / lector real / revisor de mercado).
+- NO redondees hacia arriba por amabilidad. Tu valor es la severidad informada.
 
 ## INSTRUCCIONES AUTO-APLICABLES (JSON)
 
@@ -279,6 +308,7 @@ Has terminado de leer la novela completa. Redacta ahora tu INFORME EDITORIAL HOL
       tokenUsage: response.tokenUsage || { inputTokens: 0, outputTokens: 0, thinkingTokens: 0 },
       totalChaptersRead: sortedChapters.length,
       totalWordsRead: totalWords,
+      score: extractScoreFromMarkers(response.content, "PUNTUACION_HOLISTICA"),
     };
   }
 }
