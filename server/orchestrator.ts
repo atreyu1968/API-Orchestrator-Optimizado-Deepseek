@@ -7276,137 +7276,291 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
    * proyecto (el manuscrito ya está completed). El usuario siempre puede
    * lanzar la revisión manual desde el dashboard si esto falla.
    */
-  private async runAutoHolisticReviewLoop(project: Project): Promise<void> {
+  /**
+   * [Fix77] Helper de persistencia para pendingEditorialParse desde el loop
+   * Holístico+Beta. Centraliza la escritura + activity log + notificación SSE
+   * para evitar duplicación entre los distintos puntos de salida del bucle.
+   */
+  private async persistAutoReviewResult(
+    projectId: Project["id"],
+    parsed: { resumen_general?: string | null; instrucciones: any[] },
+    source: string
+  ): Promise<void> {
+    const instructions = parsed.instrucciones || [];
+    const payload = {
+      resumen_general: parsed.resumen_general || null,
+      instrucciones: instructions,
+      count: instructions.length,
+      completedAt: new Date().toISOString(),
+      source,
+    };
     try {
-      this.callbacks.onAgentStatus("editor", "thinking",
-        "Auto-revisión post-finalización en marcha (Holístico + Beta en paralelo)..."
-      );
+      await storage.updateProject(projectId, { pendingEditorialParse: payload as any });
+      this.callbacks.onAutoReviewReady?.({
+        count: instructions.length,
+        resumen: parsed.resumen_general || null,
+      });
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error("[Fix77] persist pendingEditorialParse failed:", e);
+      await storage.createActivityLog({
+        projectId,
+        level: "error",
+        message: `Auto-revisión generó ${instructions.length} instrucción(es) (source=${source}), pero NO se pudieron persistir: ${errMsg.slice(0, 240)}. Lanza la revisión manual desde el dashboard.`,
+        agentRole: "editor",
+      });
+    }
+  }
 
-      // [Fix25] Holístico + Beta en paralelo. Aprovechamos que ambos leen
-      // la misma novela completa (1M ctx) para tener dos perspectivas
-      // independientes — editor profesional y lector cualificado — sin
-      // duplicar el tiempo de espera. Si uno falla, seguimos con el otro.
-      const [holisticOutcome, betaOutcome] = await Promise.allSettled([
-        this.runHolisticReview(project),
-        this.runBetaReview(project),
-      ]);
+  private async runAutoHolisticReviewLoop(project: Project): Promise<void> {
+    // [Fix77] Bucle iterativo Holístico + Beta hasta que el Beta dé ≥ 9/10
+    // o se agoten 3 iteraciones. Entre iteraciones se aplican automáticamente
+    // las instrucciones parseadas (flujo desatendido, sin OK humano). Si la
+    // última iteración aún tiene instrucciones pendientes, se persisten en
+    // pendingEditorialParse para revisión manual (compat con el flujo previo).
+    const TARGET_BETA_SCORE = 9;
+    const MAX_ITERATIONS = 3;
+    let iter = 0;
+    let currentProject: Project = project;
+    let prevBetaScore: number | null = null;
+    let stalledSameScore = 0;
 
-      const holisticNotes = holisticOutcome.status === "fulfilled"
-        ? (holisticOutcome.value?.notesText || "").trim()
-        : "";
-      const betaNotes = betaOutcome.status === "fulfilled"
-        ? (betaOutcome.value?.notesText || "").trim()
-        : "";
+    try {
+      await storage.createActivityLog({
+        projectId: project.id, level: "info",
+        message: `[Fix77] Auto-revisión Holístico+Beta iniciada (target Beta ≥ ${TARGET_BETA_SCORE}/10, máx ${MAX_ITERATIONS} iteraciones).`,
+        agentRole: "editor",
+      });
 
-      // [Fix76] Tras Holístico + Beta, si ambos han emitido veredictos sobre
-      // las acciones administrativas pendientes, las consolidamos y aplicamos
-      // de forma desatendida (solo las que ambos aprueban como "apply"). Las
-      // discrepancias se quedan pendientes para revisión humana.
-      const holisticVerdicts = holisticOutcome.status === "fulfilled"
-        ? (holisticOutcome.value?.adminActionVerdicts || [])
-        : [];
-      const betaVerdicts = betaOutcome.status === "fulfilled"
-        ? (betaOutcome.value?.adminActionVerdicts || [])
-        : [];
-      const holisticSucceeded = holisticOutcome.status === "fulfilled";
-      const betaSucceeded = betaOutcome.status === "fulfilled";
-      if (holisticSucceeded || betaSucceeded) {
-        try {
-          await this.applyConfirmedAdminActions(
-            project.id,
-            holisticVerdicts,
-            betaVerdicts,
-            { holisticSucceeded, betaSucceeded }
-          );
-        } catch (e) {
-          console.error("[Fix76] applyConfirmedAdminActions falló:", e);
+      while (iter < MAX_ITERATIONS) {
+        iter++;
+
+        // Chequeo de cancelación entre iteraciones — si el usuario archivó/canceló
+        // el proyecto, salimos limpio sin tocar el manuscrito.
+        const cancelCheck = await storage.getProject(project.id);
+        if (!cancelCheck || cancelCheck.status === "cancelled" || cancelCheck.status === "archived") {
           await storage.createActivityLog({
-            projectId: project.id,
-            level: "warn",
-            message: `Fix76: la verificación desatendida de acciones administrativas falló: ${(e as Error).message?.slice(0, 200) || String(e)}. Las acciones siguen pendientes.`,
+            projectId: project.id, level: "info",
+            message: `[Fix77] Auto-revisión abortada en iteración ${iter}: proyecto en status="${cancelCheck?.status || "deleted"}".`,
+            agentRole: "editor",
+          });
+          return;
+        }
+        currentProject = cancelCheck;
+
+        this.callbacks.onAgentStatus("editor", "thinking",
+          `Auto-revisión Holístico+Beta iteración ${iter}/${MAX_ITERATIONS} (target Beta ≥ ${TARGET_BETA_SCORE})...`
+        );
+
+        // [Fix25] Holístico + Beta en paralelo. Si uno falla, seguimos con el otro.
+        const [holisticOutcome, betaOutcome] = await Promise.allSettled([
+          this.runHolisticReview(currentProject),
+          this.runBetaReview(currentProject),
+        ]);
+
+        const holisticNotes = holisticOutcome.status === "fulfilled"
+          ? (holisticOutcome.value?.notesText || "").trim()
+          : "";
+        const betaNotes = betaOutcome.status === "fulfilled"
+          ? (betaOutcome.value?.notesText || "").trim()
+          : "";
+        const betaScore: number | null = betaOutcome.status === "fulfilled"
+          ? (typeof betaOutcome.value?.score === "number" ? betaOutcome.value.score : null)
+          : null;
+        const holisticScore: number | null = holisticOutcome.status === "fulfilled"
+          ? (typeof holisticOutcome.value?.score === "number" ? holisticOutcome.value.score : null)
+          : null;
+
+        // [Fix76] Verificación desatendida de pendingAdminActions (delete/merge…)
+        const holisticVerdicts = holisticOutcome.status === "fulfilled"
+          ? (holisticOutcome.value?.adminActionVerdicts || [])
+          : [];
+        const betaVerdicts = betaOutcome.status === "fulfilled"
+          ? (betaOutcome.value?.adminActionVerdicts || [])
+          : [];
+        const holisticSucceeded = holisticOutcome.status === "fulfilled";
+        const betaSucceeded = betaOutcome.status === "fulfilled";
+        if (holisticSucceeded || betaSucceeded) {
+          try {
+            await this.applyConfirmedAdminActions(
+              project.id,
+              holisticVerdicts,
+              betaVerdicts,
+              { holisticSucceeded, betaSucceeded }
+            );
+          } catch (e) {
+            console.error("[Fix76] applyConfirmedAdminActions falló:", e);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              message: `Fix76: la verificación desatendida de acciones administrativas falló: ${(e as Error).message?.slice(0, 200) || String(e)}. Las acciones siguen pendientes.`,
+              agentRole: "editor",
+            });
+          }
+        }
+
+        if (holisticOutcome.status === "rejected") {
+          const msg = holisticOutcome.reason instanceof Error ? holisticOutcome.reason.message : String(holisticOutcome.reason);
+          console.error("[AutoHolisticReview] holistic failed:", holisticOutcome.reason);
+          await storage.createActivityLog({
+            projectId: project.id, level: "warn",
+            message: `Iter ${iter}: Lector Holístico falló: ${msg.slice(0, 200)}. Continuamos con Beta si está disponible.`,
             agentRole: "editor",
           });
         }
-      }
+        if (betaOutcome.status === "rejected") {
+          const msg = betaOutcome.reason instanceof Error ? betaOutcome.reason.message : String(betaOutcome.reason);
+          console.error("[AutoHolisticReview] beta failed:", betaOutcome.reason);
+          await storage.createActivityLog({
+            projectId: project.id, level: "warn",
+            message: `Iter ${iter}: Lector Beta falló: ${msg.slice(0, 200)}. Continuamos con Holístico si está disponible.`,
+            agentRole: "editor",
+          });
+        }
 
-      if (holisticOutcome.status === "rejected") {
-        const msg = holisticOutcome.reason instanceof Error ? holisticOutcome.reason.message : String(holisticOutcome.reason);
-        console.error("[AutoHolisticReview] holistic failed:", holisticOutcome.reason);
+        // Concatenamos ambos informes con cabeceras claras para que el parser
+        // entienda que son dos voces sobre el MISMO manuscrito y deduplique.
+        const sections: string[] = [];
+        if (holisticNotes) {
+          sections.push(`═══════════════════════════════════════════════════════════════════\nINFORME DEL LECTOR HOLÍSTICO (editor profesional)\n═══════════════════════════════════════════════════════════════════\n\n${holisticNotes}`);
+        }
+        if (betaNotes) {
+          sections.push(`═══════════════════════════════════════════════════════════════════\nINFORME DEL LECTOR BETA (lector cualificado)\n═══════════════════════════════════════════════════════════════════\n\n${betaNotes}\n\nNOTA: Si el Holístico ya señaló un problema y el Beta lo confirma con sus propias palabras, NO los dupliques: agrégalos como una sola instrucción reforzada.`);
+        }
+        const notes = sections.join("\n\n");
+
+        const scoreLabel = `Holístico=${holisticScore ?? "?"}, Beta=${betaScore ?? "?"}`;
+
+        // [Fix77 architect] Distinguir "manuscrito limpio" de "ambos lectores fallaron".
+        // El primer caso es éxito (no hay nada que tocar); el segundo es fallo operativo
+        // que NO debe enmascararse como aprobación.
+        if (!notes) {
+          if (!holisticSucceeded && !betaSucceeded) {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "error",
+              message: `[Fix77] Iter ${iter}: ambos lectores fallaron en esta iteración. Auto-revisión abortada SIN marcar el manuscrito como aprobado — lanza la revisión manual desde el dashboard cuando puedas.`,
+              agentRole: "editor",
+            });
+            return;
+          }
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "success",
+            message: `[Fix77] Iter ${iter}: sin notas del lector que terminó OK (${scoreLabel}). Manuscrito limpio. Auto-revisión finalizada.`,
+            agentRole: "editor",
+          });
+          this.callbacks.onAutoReviewReady?.({ count: 0, resumen: "Sin observaciones" });
+          return;
+        }
+
+        // [Fix77] Si el Beta ya nos da ≥9, terminamos. Persistimos la última
+        // tanda de instrucciones para que el usuario pueda aplicar pulido
+        // opcional si quiere, pero no las aplicamos automáticamente — el
+        // criterio comercial está superado.
+        if (betaScore !== null && betaScore >= TARGET_BETA_SCORE) {
+          const parsed = await this.parseEditorialNotesOnly(currentProject, notes).catch(() => ({ resumen_general: null, instrucciones: [] as any[] }));
+          await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_target_reached");
+          await storage.createActivityLog({
+            projectId: project.id, level: "success",
+            message: `[Fix77] Iter ${iter}: Beta=${betaScore}/10 ≥ ${TARGET_BETA_SCORE} (${scoreLabel}). Target alcanzado. ${parsed.instrucciones.length} sugerencia(s) opcional(es) de pulido disponibles en el dashboard.`,
+            agentRole: "editor",
+          });
+          return;
+        }
+
+        // [Fix77 architect] Parser puede fallar (timeout, JSON inválido). Si lo hace,
+        // persistimos las notas crudas en pendingEditorialParse y abortamos el loop
+        // (mismo patrón que runAutoBetaLoop) en lugar de caer al catch global y
+        // perder material accionable.
+        let parsed: { resumen_general?: string | null; instrucciones: any[] };
+        try {
+          parsed = await this.parseEditorialNotesOnly(currentProject, notes);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `[Fix77] Iter ${iter}: el parser de notas falló (${msg.slice(0, 200)}). Persistimos las notas crudas en pendingEditorialParse para revisión manual y abortamos el loop.`,
+            agentRole: "editor",
+          });
+          await this.persistAutoReviewResult(
+            project.id,
+            { resumen_general: notes.slice(0, 500), instrucciones: [] },
+            "auto_holistic_parser_failed",
+          );
+          return;
+        }
+        const instructions = parsed.instrucciones || [];
+
+        // Sin instrucciones aplicables: aunque el Beta no haya llegado a 9, no
+        // hay nada concreto que aplicar. Persistimos y terminamos.
+        if (instructions.length === 0) {
+          await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_no_instructions");
+          await storage.createActivityLog({
+            projectId: project.id, level: "info",
+            message: `[Fix77] Iter ${iter}: ${scoreLabel}. Ambos lectores escribieron prosa pero el parser no extrajo instrucciones aplicables. Auto-revisión finalizada.`,
+            agentRole: "editor",
+          });
+          return;
+        }
+
+        // Anti-estancamiento: si dos iteraciones consecutivas dan exactamente
+        // el mismo score Beta, dejamos de aplicar más correcciones (el sistema
+        // no está progresando y solo gastaría tokens).
+        if (betaScore !== null && prevBetaScore !== null && betaScore === prevBetaScore) {
+          stalledSameScore++;
+        } else {
+          stalledSameScore = 0;
+        }
+        if (stalledSameScore >= 1) {
+          await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_stalled");
+          await storage.createActivityLog({
+            projectId: project.id, level: "warning",
+            message: `[Fix77] Iter ${iter}: Beta=${betaScore}/10 sin mejora respecto a la iteración previa (${scoreLabel}). Estancamiento detectado, auto-revisión finalizada. ${instructions.length} instrucción(es) persistida(s) para revisión manual.`,
+            agentRole: "editor",
+          });
+          return;
+        }
+        prevBetaScore = betaScore;
+
+        // Última iteración: persistimos para revisión manual sin aplicar más.
+        if (iter >= MAX_ITERATIONS) {
+          await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_max_iter");
+          await storage.createActivityLog({
+            projectId: project.id, level: "warning",
+            message: `[Fix77] Máximo de iteraciones alcanzado (${MAX_ITERATIONS}) con ${scoreLabel}. ${instructions.length} instrucción(es) persistida(s) para revisión manual.`,
+            agentRole: "editor",
+          });
+          return;
+        }
+
+        // Aplicar las instrucciones automáticamente y re-leer en la siguiente
+        // iteración. Marcamos el status para que el monitor de congelación use
+        // el timeout extendido (Fix36, mismo patrón que runAutoBetaLoop).
         await storage.createActivityLog({
-          projectId: project.id, level: "warn",
-          message: `Lector Holístico falló en auto-revisión: ${msg.slice(0, 200)}. Continuamos con Beta si está disponible.`,
+          projectId: project.id, level: "info",
+          message: `[Fix77] Iter ${iter}: ${scoreLabel}. Aplicando ${instructions.length} instrucción(es) automáticamente y volviendo a leer...`,
           agentRole: "editor",
         });
-      }
-      if (betaOutcome.status === "rejected") {
-        const msg = betaOutcome.reason instanceof Error ? betaOutcome.reason.message : String(betaOutcome.reason);
-        console.error("[AutoHolisticReview] beta failed:", betaOutcome.reason);
-        await storage.createActivityLog({
-          projectId: project.id, level: "warn",
-          message: `Lector Beta falló en auto-revisión: ${msg.slice(0, 200)}. Continuamos con Holístico si está disponible.`,
-          agentRole: "editor",
-        });
-      }
-
-      // Concatenamos ambos informes con cabeceras claras para que el parser
-      // entienda que son dos voces sobre el MISMO manuscrito y deduplique.
-      const sections: string[] = [];
-      if (holisticNotes) {
-        sections.push(`═══════════════════════════════════════════════════════════════════\nINFORME DEL LECTOR HOLÍSTICO (editor profesional)\n═══════════════════════════════════════════════════════════════════\n\n${holisticNotes}`);
-      }
-      if (betaNotes) {
-        sections.push(`═══════════════════════════════════════════════════════════════════\nINFORME DEL LECTOR BETA (lector cualificado)\n═══════════════════════════════════════════════════════════════════\n\n${betaNotes}\n\nNOTA: Si el Holístico ya señaló un problema y el Beta lo confirma con sus propias palabras, NO los dupliques: agrégalos como una sola instrucción reforzada.`);
-      }
-      const notes = sections.join("\n\n");
-      if (!notes) {
-        await storage.createActivityLog({
-          projectId: project.id,
-          level: "info",
-          message: "Auto-revisión completada sin notas: el manuscrito está limpio (o ambos lectores fallaron).",
-          agentRole: "editor",
-        });
-        this.callbacks.onAutoReviewReady?.({ count: 0, resumen: "Sin observaciones" });
-        return;
-      }
-
-      const parsed = await this.parseEditorialNotesOnly(project, notes);
-      const payload = {
-        resumen_general: parsed.resumen_general || null,
-        instrucciones: parsed.instrucciones,
-        count: parsed.instrucciones.length,
-        completedAt: new Date().toISOString(),
-        source: "auto_holistic",
-      };
-
-      // FIX architect: solo notificamos al cliente que las instrucciones están
-      // "listas" si la persistencia funcionó. De lo contrario, el dashboard
-      // recibiría un evento optimista sin nada que cargar al hacer click.
-      let persisted = false;
-      try {
-        await storage.updateProject(project.id, { pendingEditorialParse: payload as any });
-        persisted = true;
-      } catch (e) {
-        const errMsg = e instanceof Error ? e.message : String(e);
-        console.error("[AutoHolisticReview] persist pendingEditorialParse failed:", e);
-        await storage.createActivityLog({
-          projectId: project.id,
-          level: "error",
-          message: `Auto-revisión holística generó ${parsed.instrucciones.length} instrucción(es), pero NO se pudieron persistir: ${errMsg.slice(0, 240)}. Lanza la revisión manual desde el dashboard.`,
-          agentRole: "editor",
-        });
-      }
-
-      if (persisted) {
-        await storage.createActivityLog({
-          projectId: project.id,
-          level: "info",
-          message: `Auto-revisión holística lista: ${parsed.instrucciones.length} instrucción(es) detectada(s). Disponible en el dashboard para aplicar.`,
-          agentRole: "editor",
-        });
-        this.callbacks.onAutoReviewReady?.({
-          count: parsed.instrucciones.length,
-          resumen: parsed.resumen_general || null,
-        });
+        await storage.updateProject(project.id, { status: "applying_editorial" });
+        try {
+          await this.applyEditorialNotes(currentProject, "", instructions);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          await storage.createActivityLog({
+            projectId: project.id, level: "error",
+            message: `[Fix77] Iter ${iter}: applyEditorialNotes falló (${msg.slice(0, 200)}). Auto-revisión abortada; manuscrito restaurado a status="completed" y notas persistidas para revisión manual.`,
+            agentRole: "editor",
+          });
+          try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
+          await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_apply_failed");
+          return;
+        }
+        // Tras aplicar, applyEditorialNotes restaura el status a "completed".
+        // Re-cargamos el proyecto para la siguiente iteración.
+        const reloaded = await storage.getProject(project.id);
+        if (reloaded) currentProject = reloaded;
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -10612,9 +10766,13 @@ Responde SOLO con un JSON válido con la estructura:
     // activos, el Beta-loop tiene prioridad porque cubre el flujo completo
     // y ambos escriben en pendingEditorialParse + emiten auto_review_ready,
     // así que correrlos en paralelo se pisaría mutuamente.
+    // [Fix77] El loop Holístico+Beta iterativo (hasta Beta ≥ 9) corre por
+    // defecto, sin necesidad de marcar nada en el proyecto. Solo se omite
+    // si el usuario ha activado explícitamente el autoBetaLoop clásico
+    // (solo-Beta) que cubre un flujo equivalente con otro criterio.
     if ((project as any).autoBetaLoop) {
       void this.runAutoBetaLoop(project);
-    } else if ((project as any).autoHolisticReview) {
+    } else {
       void this.runAutoHolisticReviewLoop(project);
     }
   }
