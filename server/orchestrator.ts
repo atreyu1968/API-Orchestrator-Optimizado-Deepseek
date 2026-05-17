@@ -41,6 +41,7 @@ import { repairJson } from "./utils/json-repair";
 import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper } from "./utils/series-context-builder";
 import { calculateRealCost } from "./cost-calculator";
 import { runWithProjectContext } from "./utils/agent-context";
+import type { AdminActionVerdict } from "./utils/review-score";
 
 interface OrchestratorCallbacks {
   onAgentStatus: (role: string, status: string, message?: string) => void;
@@ -5734,10 +5735,18 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     const ctx = await this.loadFullNovelContext(project);
     const seriesContext = await this.buildSeriesContextForReviewers(project);
 
+    // [Fix76] Cargamos las acciones administrativas pendientes desde el
+    // proyecto fresco (pueden haber cambiado tras el último cirujano) y se
+    // las pasamos al Holístico para que las verifique mientras lee.
+    const freshForAdmin = (await storage.getProject(project.id)) || project;
+    const pendingAdminActions = Array.isArray((freshForAdmin as any).pendingAdminActions)
+      ? (freshForAdmin as any).pendingAdminActions as any[]
+      : [];
+
     await storage.createActivityLog({
       projectId: project.id,
       level: "info",
-      message: `Iniciando revisión holística de la novela completa (${ctx.chapters.length} capítulos)${seriesContext ? " [Fix57: con contexto de serie]" : ""}.`,
+      message: `Iniciando revisión holística de la novela completa (${ctx.chapters.length} capítulos)${seriesContext ? " [Fix57: con contexto de serie]" : ""}${pendingAdminActions.length > 0 ? ` [Fix76: con ${pendingAdminActions.length} acción(es) admin a verificar]` : ""}.`,
       agentRole: "editor",
     });
 
@@ -5749,6 +5758,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       generoObjetivo: project.genre || undefined,
       longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
       seriesContext,
+      pendingAdminActions: pendingAdminActions.map((a: any) => ({
+        id: Number(a?.id),
+        type: String(a?.type || ""),
+        targetChapter: Number(a?.targetChapter),
+        targetLabel: a?.targetLabel || null,
+        secondaryChapter: typeof a?.secondaryChapter === "number" ? a.secondaryChapter : null,
+        reason: String(a?.reason || ""),
+      })).filter((a: any) => Number.isFinite(a.id) && Number.isFinite(a.targetChapter)),
     }, project.id);
 
     await this.trackTokenUsage(
@@ -5869,6 +5886,19 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       agentRole: "editor",
     });
 
+    // [Fix76] Mismas acciones administrativas pendientes que se pasan al
+    // Holístico. Las leemos del freshProject que ya cargamos arriba.
+    const pendingAdminActionsBeta = Array.isArray((freshProject as any).pendingAdminActions)
+      ? ((freshProject as any).pendingAdminActions as any[]).map(a => ({
+          id: Number(a?.id),
+          type: String(a?.type || ""),
+          targetChapter: Number(a?.targetChapter),
+          targetLabel: a?.targetLabel || null,
+          secondaryChapter: typeof a?.secondaryChapter === "number" ? a.secondaryChapter : null,
+          reason: String(a?.reason || ""),
+        })).filter(a => Number.isFinite(a.id) && Number.isFinite(a.targetChapter))
+      : [];
+
     const result = await this.betaReader.runReview({
       projectTitle: project.title,
       chapters: ctx.chapters,
@@ -5878,6 +5908,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
       previousBetaNotes,
       seriesContext,
+      pendingAdminActions: pendingAdminActionsBeta,
     }, project.id);
 
     await this.trackTokenUsage(
@@ -7267,6 +7298,37 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         ? (betaOutcome.value?.notesText || "").trim()
         : "";
 
+      // [Fix76] Tras Holístico + Beta, si ambos han emitido veredictos sobre
+      // las acciones administrativas pendientes, las consolidamos y aplicamos
+      // de forma desatendida (solo las que ambos aprueban como "apply"). Las
+      // discrepancias se quedan pendientes para revisión humana.
+      const holisticVerdicts = holisticOutcome.status === "fulfilled"
+        ? (holisticOutcome.value?.adminActionVerdicts || [])
+        : [];
+      const betaVerdicts = betaOutcome.status === "fulfilled"
+        ? (betaOutcome.value?.adminActionVerdicts || [])
+        : [];
+      const holisticSucceeded = holisticOutcome.status === "fulfilled";
+      const betaSucceeded = betaOutcome.status === "fulfilled";
+      if (holisticSucceeded || betaSucceeded) {
+        try {
+          await this.applyConfirmedAdminActions(
+            project.id,
+            holisticVerdicts,
+            betaVerdicts,
+            { holisticSucceeded, betaSucceeded }
+          );
+        } catch (e) {
+          console.error("[Fix76] applyConfirmedAdminActions falló:", e);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warn",
+            message: `Fix76: la verificación desatendida de acciones administrativas falló: ${(e as Error).message?.slice(0, 200) || String(e)}. Las acciones siguen pendientes.`,
+            agentRole: "editor",
+          });
+        }
+      }
+
       if (holisticOutcome.status === "rejected") {
         const msg = holisticOutcome.reason instanceof Error ? holisticOutcome.reason.message : String(holisticOutcome.reason);
         console.error("[AutoHolisticReview] holistic failed:", holisticOutcome.reason);
@@ -7356,6 +7418,240 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         agentRole: "editor",
       });
     }
+  }
+
+  /**
+   * [Fix76] Consolida los veredictos del Holístico y del Beta sobre las
+   * acciones administrativas pendientes (delete_chapter, merge_chapters...)
+   * y aplica las que ambos lectores aprueban como "apply", de forma
+   * desatendida (sin confirmación humana). Las acciones donde los lectores
+   * discrepan o cualquiera dice "keep_pending" se mantienen en el listado
+   * para revisión manual. Las que ambos descartan como "discard" se eliminan
+   * del listado.
+   *
+   * Política conservadora (el usuario prefiere mantener material a borrarlo
+   * por error):
+   *   - APPLY iff ambos lectores dijeron "apply" sobre la misma id.
+   *     (Excepción: si uno de los dos falló/timeout y no emitió veredictos,
+   *     basta con el "apply" del lector superviviente, porque el flujo es
+   *     desatendido — preferimos avanzar a quedarnos colgados eternamente.)
+   *   - DISCARD iff ambos dijeron "discard" (o uno "discard" + el otro no
+   *     respondió). Se elimina del listado sin ejecutar nada.
+   *   - KEEP_PENDING en cualquier otro caso (discrepancia explícita, "keep
+   *     pending" de cualquiera, o no se encontró veredicto para esa id).
+   *
+   * Solo ejecuta `delete_chapter` automáticamente. El resto de tipos
+   * (merge_chapters, split_chapter, move_content, swap_chapters,
+   * reorder_chapters) requieren lógica específica de reorganización que
+   * todavía no está implementada — para esos, "apply" se loguea pero la
+   * acción se mantiene pendiente.
+   */
+  async applyConfirmedAdminActions(
+    projectId: number,
+    holisticVerdicts: AdminActionVerdict[],
+    betaVerdicts: AdminActionVerdict[],
+    reviewerStatus: { holisticSucceeded: boolean; betaSucceeded: boolean } = {
+      holisticSucceeded: true,
+      betaSucceeded: true,
+    }
+  ): Promise<{ applied: number; discarded: number; keptPending: number }> {
+    const fresh = await storage.getProject(projectId);
+    if (!fresh) return { applied: 0, discarded: 0, keptPending: 0 };
+    const existing: any[] = Array.isArray((fresh as any).pendingAdminActions)
+      ? (fresh as any).pendingAdminActions
+      : [];
+    if (existing.length === 0) return { applied: 0, discarded: 0, keptPending: 0 };
+
+    const hMap = new Map<number, AdminActionVerdict>();
+    for (const v of holisticVerdicts) hMap.set(v.id, v);
+    const bMap = new Map<number, AdminActionVerdict>();
+    for (const v of betaVerdicts) bMap.set(v.id, v);
+
+    // [Fix76 post-review] IDs procesados en esta pasada (los que llegamos a
+    // resolver como apply/discard). Necesario al final para hacer un merge
+    // seguro: re-leemos pendingAdminActions desde BD justo antes de
+    // persistir, y conservamos cualquier acción nueva que otro proceso haya
+    // añadido entre nuestra lectura inicial y la escritura.
+    const processedAppliedOrDiscarded = new Set<number>();
+    const survivors: any[] = [];
+    let applied = 0;
+    let discarded = 0;
+    let keptPending = 0;
+
+    for (const action of existing) {
+      const id = Number(action?.id);
+      if (!Number.isFinite(id)) {
+        survivors.push(action);
+        continue;
+      }
+      const h = hMap.get(id);
+      const b = bMap.get(id);
+
+      // [Fix76 post-review] Política estricta. Para auto-aplicar destrucción
+      // de capítulos exigimos UNANIMIDAD entre los dos lectores que se
+      // ejecutaron con éxito. Si uno de los dos lectores falló globalmente
+      // (timeout, error), el superviviente puede decidir solo: preferimos
+      // avanzar el flujo desatendido a quedarnos colgados eternamente. Pero
+      // si un lector se ejecutó con éxito y NO emitió veredicto para esa id
+      // (la omitió o el parser la dropeó), eso NO cuenta como "absent
+      // benigno" — bloquea la decisión y la acción se mantiene pendiente.
+      type VerdictState = "apply" | "keep_pending" | "discard" | "missing" | "failed_globally";
+      let decision: "apply" | "discard" | "keep_pending";
+      const hVerdict: VerdictState =
+        h ? h.verdict : (reviewerStatus.holisticSucceeded ? "missing" : "failed_globally");
+      const bVerdict: VerdictState =
+        b ? b.verdict : (reviewerStatus.betaSucceeded ? "missing" : "failed_globally");
+
+      const hBlocks = hVerdict === "missing";
+      const bBlocks = bVerdict === "missing";
+
+      if (hBlocks || bBlocks) {
+        // Lector ejecutado con éxito pero omitió esta id → bloqueo.
+        decision = "keep_pending";
+      } else {
+        const effective: Array<"apply" | "keep_pending" | "discard"> = [];
+        if (hVerdict !== "failed_globally") effective.push(hVerdict);
+        if (bVerdict !== "failed_globally") effective.push(bVerdict);
+
+        if (effective.length === 0) {
+          decision = "keep_pending";
+        } else if (effective.every(v => v === "apply")) {
+          decision = "apply";
+        } else if (effective.every(v => v === "discard")) {
+          decision = "discard";
+        } else {
+          decision = "keep_pending";
+        }
+      }
+
+      if (decision === "keep_pending") {
+        survivors.push(action);
+        keptPending++;
+        const fmt = (v: VerdictState) => v === "missing" ? "sin-veredicto" : v === "failed_globally" ? "lector-falló" : v;
+        const reasonSummary = `Holístico=${fmt(hVerdict)}, Beta=${fmt(bVerdict)}`;
+        await storage.createActivityLog({
+          projectId,
+          level: "info",
+          message: `Fix76: acción admin id=${id} (${action?.type} sobre ${action?.targetLabel || `cap ${action?.targetChapter}`}) se mantiene pendiente — ${reasonSummary}.`,
+          agentRole: "editor",
+        });
+        continue;
+      }
+
+      if (decision === "discard") {
+        discarded++;
+        processedAppliedOrDiscarded.add(id);
+        await storage.createActivityLog({
+          projectId,
+          level: "info",
+          message: `Fix76: acción admin id=${id} (${action?.type} sobre ${action?.targetLabel || `cap ${action?.targetChapter}`}) DESCARTADA por ambos lectores. ${h?.motivo ? `Holístico: ${h.motivo.slice(0, 200)}` : ""}${b?.motivo ? ` | Beta: ${b.motivo.slice(0, 200)}` : ""}`.trim(),
+          agentRole: "editor",
+        });
+        continue;
+      }
+
+      // decision === "apply"
+      const actionType = String(action?.type || "");
+      if (actionType === "delete_chapter") {
+        const targetChapter = Number(action?.targetChapter);
+        if (!Number.isFinite(targetChapter)) {
+          survivors.push(action);
+          keptPending++;
+          continue;
+        }
+        try {
+          const allChapters = await storage.getChaptersByProject(projectId);
+          const target = allChapters.find(c => Number(c.chapterNumber) === targetChapter);
+          if (!target) {
+            await storage.createActivityLog({
+              projectId,
+              level: "warn",
+              message: `Fix76: acción admin id=${id} (delete_chapter sobre cap ${targetChapter}) aprobada por ambos lectores, pero el cap ya no existe en el manuscrito. Se elimina del listado sin ejecutar nada.`,
+              agentRole: "editor",
+            });
+            // Se considera "aplicada" porque el efecto deseado (cap ausente)
+            // ya está cumplido. No la mantenemos pendiente.
+            applied++;
+            processedAppliedOrDiscarded.add(id);
+            continue;
+          }
+          await storage.deleteChapter(target.id);
+          applied++;
+          processedAppliedOrDiscarded.add(id);
+          await storage.createActivityLog({
+            projectId,
+            level: "info",
+            message: `Fix76: APLICADA acción admin id=${id} — ${action?.targetLabel || `cap ${targetChapter}`} eliminado de forma desatendida tras verificación Holístico+Beta. ${h?.motivo ? `Holístico: ${h.motivo.slice(0, 180)}` : ""}${b?.motivo ? ` | Beta: ${b.motivo.slice(0, 180)}` : ""}`.trim(),
+            agentRole: "editor",
+          });
+        } catch (e) {
+          survivors.push(action);
+          keptPending++;
+          await storage.createActivityLog({
+            projectId,
+            level: "error",
+            message: `Fix76: acción admin id=${id} (delete_chapter sobre cap ${targetChapter}) aprobada pero falló al ejecutarse: ${(e as Error).message?.slice(0, 240) || String(e)}. Se mantiene pendiente.`,
+            agentRole: "editor",
+          });
+        }
+      } else {
+        // Otros tipos (merge_chapters, split_chapter, etc.) no tienen
+        // ejecutor automático todavía. Se mantienen pendientes con un log
+        // explicativo para que el usuario sepa que los lectores los
+        // aprobaron y solo falta la mecánica de aplicación.
+        survivors.push(action);
+        keptPending++;
+        await storage.createActivityLog({
+          projectId,
+          level: "info",
+          message: `Fix76: acción admin id=${id} (${actionType}) aprobada por ambos lectores pero el tipo no tiene ejecutor automático todavía. Se mantiene pendiente para revisión manual.`,
+          agentRole: "editor",
+        });
+      }
+    }
+
+    // [Fix76 post-review] Merge anti-TOCTOU: re-leemos pendingAdminActions
+    // desde BD justo antes de escribir. Si otro proceso añadió acciones
+    // nuevas entre nuestra lectura inicial y este momento (p.ej. el cirujano
+    // estructural emitió otra recomendación mientras leíamos), las
+    // preservamos en la escritura final en vez de pisarlas con `survivors`.
+    // Solo eliminamos del listado los IDs que en ESTA pasada resolvimos como
+    // apply o discard (processedAppliedOrDiscarded); el resto del listado
+    // actual de BD se conserva tal cual.
+    try {
+      const latest = await storage.getProject(projectId);
+      const latestList: any[] = Array.isArray((latest as any)?.pendingAdminActions)
+        ? (latest as any).pendingAdminActions
+        : [];
+      const finalList = latestList.filter(a => {
+        const aid = Number(a?.id);
+        if (!Number.isFinite(aid)) return true;
+        return !processedAppliedOrDiscarded.has(aid);
+      });
+      const addedConcurrently = latestList.length - existing.length;
+      await storage.updateProject(projectId, { pendingAdminActions: finalList } as any);
+      if (addedConcurrently > 0) {
+        await storage.createActivityLog({
+          projectId,
+          level: "info",
+          message: `Fix76: detectadas ${addedConcurrently} acción(es) admin añadida(s) por otro proceso durante la verificación; se preservan en el listado.`,
+          agentRole: "editor",
+        });
+      }
+    } catch (e) {
+      console.error("[Fix76] Failed to persist updated pendingAdminActions:", e);
+    }
+
+    if (applied > 0 || discarded > 0) {
+      await storage.createActivityLog({
+        projectId,
+        level: "info",
+        message: `Fix76: verificación desatendida completada — ${applied} aplicada(s), ${discarded} descartada(s), ${keptPending} pendiente(s).`,
+        agentRole: "editor",
+      });
+    }
+
+    return { applied, discarded, keptPending };
   }
 
   /**

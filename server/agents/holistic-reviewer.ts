@@ -1,6 +1,19 @@
 import { BaseAgent, AgentResponse, TokenUsage } from "./base-agent";
 import { extractStyleDirectives } from "../utils/style-directives";
-import { extractScoreFromMarkers } from "../utils/review-score";
+import { extractScoreFromMarkers, extractAdminActionVerdicts, type AdminActionVerdict } from "../utils/review-score";
+
+// [Fix76] Resumen mínimo de una acción administrativa pendiente que el
+// Holístico debe verificar. Lo construye el orquestador a partir de
+// projects.pendingAdminActions y se inyecta en el prompt para que el editor
+// decida apply / keep_pending / discard tras leer el manuscrito completo.
+export interface PendingAdminActionForReview {
+  id: number;
+  type: string;
+  targetChapter: number;
+  targetLabel?: string | null;
+  secondaryChapter?: number | null;
+  reason: string;
+}
 
 interface HolisticReviewerInput {
   projectTitle: string;
@@ -19,6 +32,11 @@ interface HolisticReviewerInput {
   // contexto para NO penalizar arcos intencionalmente abiertos cuando este
   // libro NO es el último de la serie.
   seriesContext?: string;
+  // [Fix76] Acciones administrativas pendientes (delete_chapter, etc.) que
+  // el Holístico debe verificar tras leer el manuscrito completo. Si llega
+  // un array no vacío, el agente añade a su informe un bloque
+  // VEREDICTO_ADMIN_ACCIONES con apply / keep_pending / discard por cada id.
+  pendingAdminActions?: PendingAdminActionForReview[];
 }
 
 export interface HolisticReviewerResult {
@@ -30,6 +48,9 @@ export interface HolisticReviewerResult {
   // independiente del finalScore del Final Reviewer. null si no se pudo
   // parsear el bloque PUNTUACION_HOLISTICA del output.
   score: number | null;
+  // [Fix76] Veredictos por acción administrativa pendiente. Vacío si no se
+  // pasó pendingAdminActions o el modelo no devolvió el bloque.
+  adminActionVerdicts: AdminActionVerdict[];
 }
 
 const SYSTEM_PROMPT = `Eres un EDITOR LITERARIO PROFESIONAL SEVERO de prestigio internacional, con veinte años revisando manuscritos para los grandes sellos del mercado en español. Tu trabajo NO es animar al autor: tu trabajo es señalar TODO lo que no funciona en el manuscrito para que el autor pueda corregirlo antes de publicación. La amabilidad excesiva traiciona al autor; la claridad lo ayuda.
@@ -270,6 +291,58 @@ export class HolisticReviewerAgent extends BaseAgent {
       ? `\n\n${input.seriesContext}`
       : "";
 
+    // [Fix76] Si hay acciones administrativas pendientes (delete_chapter,
+    // merge_chapters...) emitidas por el cirujano estructural, el editor las
+    // verifica ahora: tiene el manuscrito entero delante, puede comprobar si
+    // la integración de prosa quedó bien y emitir veredicto. El flujo es
+    // desatendido: si Holístico y Beta dicen "apply" sobre la misma id, el
+    // orquestador la ejecuta sin confirmación humana.
+    const pendingAdmin = (input.pendingAdminActions || []).filter(a => a && typeof a.id === "number");
+    const adminBlock = pendingAdmin.length === 0 ? "" : `\n\n═══════════════════════════════════════════════════════════════════
+## ACCIONES ADMINISTRATIVAS PENDIENTES DE VERIFICACIÓN (CRÍTICO)
+═══════════════════════════════════════════════════════════════════
+
+El sistema de cirugía estructural ha emitido ${pendingAdmin.length} acción(es) administrativa(s) pendiente(s). Cada una propone una operación DESTRUCTIVA (borrar o fusionar capítulos) que NO se ha aplicado todavía porque requiere verificación. AHORA QUE HAS LEÍDO EL MANUSCRITO COMPLETO debes decidir, para cada acción, si:
+
+- **apply**: la integración de la prosa quedó bien (el contenido del cap origen ya está incorporado en el cap destino, o el cap es genuinamente redundante/innecesario). La acción puede ejecutarse de forma desatendida.
+- **keep_pending**: dudas, no puedes verificarlo desde el texto, o el efecto podría perder información narrativa importante. Se mantiene pendiente para revisión humana.
+- **discard**: la acción es claramente errónea (el cap origen contiene material único e insustituible NO integrado en otra parte; borrarlo destruiría la novela). Se descarta del listado.
+
+LISTA DE ACCIONES A EVALUAR:
+${pendingAdmin.map(a => `- id=${a.id} | tipo=${a.type} | sobre ${a.targetLabel || `cap ${a.targetChapter}`}${typeof a.secondaryChapter === "number" ? ` (afecta también a cap ${a.secondaryChapter})` : ""} | motivo emitido por el cirujano: ${a.reason}`).join("\n")}
+
+CRITERIO DE VERIFICACIÓN PARA delete_chapter:
+1. Localiza el cap que se propone borrar (targetChapter).
+2. Si su contenido narrativo (escenas, revelaciones, beats de personaje, info de mundo) ya aparece en otro cap del manuscrito → **apply**.
+3. Si su contenido es redundante con cosas que ya están dichas o es un cap huérfano que no aporta → **apply**.
+4. Si contiene material ÚNICO que no está en ningún otro cap (motivación del villano, arco de un personaje, escena clave de mundo) → **discard** y explica qué se perdería.
+5. Si hay duda razonable o el cap mezcla material único con material ya integrado → **keep_pending**.
+
+CRITERIO PARA merge_chapters / split_chapter / move_content / swap_chapters / reorder_chapters:
+- Si la operación SOLO ejecuta una reorganización segura ya descrita en la prosa de los caps afectados → **apply**.
+- Si requiere reescritura que el sistema desatendido no puede hacer bien → **keep_pending**.
+- Si la fusión propuesta crearía un cap incoherente o destruiría material → **discard**.
+
+Tras emitir todas las demás secciones del informe, añade UN bloque JSON entre estos marcadores literales (no los modifiques, no añadas otros), con UN veredicto por cada id de la lista de arriba:
+
+<!-- VEREDICTO_ADMIN_ACCIONES_INICIO -->
+\`\`\`json
+{
+  "veredictos": [
+    { "id": ${pendingAdmin[0].id}, "veredicto": "apply", "motivo": "El contenido del cap X ya aparece integrado en cap Y línea Z; borrarlo no pierde información." }
+  ]
+}
+\`\`\`
+<!-- VEREDICTO_ADMIN_ACCIONES_FIN -->
+
+REGLAS DEL VEREDICTO (críticas — el sistema lo parsea automáticamente):
+- Tienes que devolver EXACTAMENTE ${pendingAdmin.length} objeto(s) en el array "veredictos", uno por cada id de la lista (${pendingAdmin.map(a => a.id).join(", ")}). NO omitas ninguno. NO inventes ids nuevos.
+- "id": el número entero EXACTO de la lista de arriba.
+- "veredicto": exactamente uno de "apply", "keep_pending", "discard".
+- "motivo": 1-2 frases CONCRETAS que justifican el veredicto, citando caps específicos. Para "apply" deja claro DÓNDE está integrado el material. Para "discard" deja claro QUÉ se perdería.
+- Sé CONSERVADOR. Ante la mínima duda → "keep_pending". El usuario prefiere mantener un cap dudoso a borrarlo por error.
+- Tu veredicto es INDEPENDIENTE del que emita el Lector Beta. Solo si AMBOS coincidimos en "apply" la acción se ejecuta automáticamente. Si nuestros veredictos divergen, la acción queda pendiente.`;
+
     const metaBlock = `## DATOS DEL MANUSCRITO
 Título: ${input.projectTitle}
 Género objetivo: ${input.generoObjetivo || "(no especificado)"}
@@ -281,7 +354,7 @@ Palabras totales aproximadas: ${totalWords.toLocaleString("es-ES")}`;
       .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(sección vacía)"}`)
       .join("");
 
-    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}
+    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${adminBlock}
 
 ═══════════════════════════════════════════════════════════════════
 NOVELA COMPLETA A REVISAR
@@ -309,6 +382,9 @@ Has terminado de leer la novela completa. Redacta ahora tu INFORME EDITORIAL HOL
       totalChaptersRead: sortedChapters.length,
       totalWordsRead: totalWords,
       score: extractScoreFromMarkers(response.content, "PUNTUACION_HOLISTICA"),
+      adminActionVerdicts: pendingAdmin.length > 0
+        ? extractAdminActionVerdicts(response.content)
+        : [],
     };
   }
 }

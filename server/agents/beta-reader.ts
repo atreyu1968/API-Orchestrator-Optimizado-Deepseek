@@ -1,6 +1,7 @@
 import { BaseAgent, AgentResponse, TokenUsage } from "./base-agent";
 import { extractStyleDirectives } from "../utils/style-directives";
-import { extractScoreFromMarkers, countAutoInstructions } from "../utils/review-score";
+import { extractScoreFromMarkers, countAutoInstructions, extractAdminActionVerdicts, type AdminActionVerdict } from "../utils/review-score";
+import type { PendingAdminActionForReview } from "./holistic-reviewer";
 
 interface BetaReaderInput {
   projectTitle: string;
@@ -28,6 +29,10 @@ interface BetaReaderInput {
   // contexto para NO quejarse de arcos intencionalmente abiertos cuando este
   // libro NO es el último de la serie.
   seriesContext?: string;
+  // [Fix76] Acciones administrativas pendientes que el Beta también verifica
+  // tras leer el manuscrito completo. Mismo contrato que el Holístico: si
+  // ambos coinciden en "apply", el orquestador la ejecuta sin confirmación.
+  pendingAdminActions?: PendingAdminActionForReview[];
 }
 
 const TRANSLATION_LANG_NAMES: Record<string, string> = {
@@ -44,6 +49,9 @@ export interface BetaReaderResult {
   // independiente del finalScore del Final Reviewer. null si no se pudo
   // parsear el bloque PUNTUACION_BETA del output.
   score: number | null;
+  // [Fix76] Veredictos por acción administrativa pendiente. Vacío si no se
+  // pasó pendingAdminActions o el modelo no devolvió el bloque.
+  adminActionVerdicts: AdminActionVerdict[];
 }
 
 const SYSTEM_PROMPT = `Eres un LECTOR BETA CUALIFICADO: lees mucho dentro del género, conoces los códigos del mercado en español, y tu valor para el autor es contarle CÓMO TE HA SENTADO la novela como lector real, no como crítico ni como editor. No analizas: reaccionas con criterio. Tu voz es honesta, en primera persona, conversacional pero exigente. NO eres un fan acrítico: si algo te aburrió, lo dices; si un personaje no te cayó bien, lo cuentas; si un giro lo viste venir, lo confiesas.
@@ -273,6 +281,54 @@ export class BetaReaderAgent extends BaseAgent {
       ? `\n\n${input.seriesContext}`
       : "";
 
+    // [Fix76] Mismo bloque que en el Holístico — el Beta da su propia
+    // verificación como LECTOR (¿se nota que falta algo si borramos este cap?
+    // ¿el material ya está en otro?). Si Holístico y Beta coinciden en
+    // "apply", el orquestador ejecuta la acción sin intervención humana.
+    const pendingAdmin = (input.pendingAdminActions || []).filter(a => a && typeof a.id === "number");
+    const adminBlock = pendingAdmin.length === 0 ? "" : `\n\n═══════════════════════════════════════════════════════════════════
+## ACCIONES ADMINISTRATIVAS PENDIENTES DE VERIFICACIÓN (CRÍTICO)
+═══════════════════════════════════════════════════════════════════
+
+El cirujano estructural ha propuesto ${pendingAdmin.length} acción(es) DESTRUCTIVA(s) (borrar/fusionar capítulos) que NO se han aplicado todavía porque requieren verificación. Como LECTOR que acaba de cerrar el libro tienes una perspectiva única: ¿se notaría si se aplica? ¿el cap origen es prescindible porque su contenido ya estaba dicho en otro sitio, o aporta algo único que echarías de menos?
+
+Para cada acción decides:
+- **apply**: como lector NO echarías de menos ese cap. Su contenido ya está cubierto en otro cap, o el cap es un sobrante que ralentiza. Puede borrarse de forma desatendida.
+- **keep_pending**: dudas, no te queda claro si se pierde algo. Se queda pendiente para revisión humana.
+- **discard**: ese cap contiene escenas/personajes/revelaciones que NO están en ningún otro sitio. Borrarlo dañaría el libro como lector. Se descarta del listado.
+
+LISTA DE ACCIONES A EVALUAR:
+${pendingAdmin.map(a => `- id=${a.id} | tipo=${a.type} | sobre ${a.targetLabel || `cap ${a.targetChapter}`}${typeof a.secondaryChapter === "number" ? ` (afecta también a cap ${a.secondaryChapter})` : ""} | motivo emitido por el cirujano: ${a.reason}`).join("\n")}
+
+CÓMO DECIDIR COMO LECTOR (delete_chapter):
+1. Busca mentalmente qué pasa en ese cap.
+2. Si lo que pasa ya lo recuerdas en otro cap (la escena, la revelación, la decisión del personaje) → **apply**.
+3. Si el cap te aburrió, no aportaba, o lo notaste como relleno → **apply**.
+4. Si el cap contiene ALGO único que te marcó (motivación clave del villano, escena emotiva con un secundario, hito de mundo) y NO lo encuentras en otra parte → **discard**, di QUÉ se perdería.
+5. Si hay material mezclado o duda razonable → **keep_pending**.
+
+Para merge_chapters / split_chapter / move_content / swap_chapters / reorder_chapters: aplica el mismo criterio (¿la operación deja la lectura mejor o peor?, ¿alguien echaría algo de menos?).
+
+Tras emitir todas las demás secciones del informe (incluyendo MI PUNTUACIÓN COMERCIAL e INSTRUCCIONES_AUTOAPLICABLES), añade UN bloque JSON entre estos marcadores literales (no los modifiques), con UN veredicto por cada id de la lista:
+
+<!-- VEREDICTO_ADMIN_ACCIONES_INICIO -->
+\`\`\`json
+{
+  "veredictos": [
+    { "id": ${pendingAdmin[0].id}, "veredicto": "apply", "motivo": "Como lector ya tenía esa escena cubierta en el cap Y; no echaría de menos el cap X." }
+  ]
+}
+\`\`\`
+<!-- VEREDICTO_ADMIN_ACCIONES_FIN -->
+
+REGLAS DEL VEREDICTO (críticas — el sistema lo parsea automáticamente):
+- EXACTAMENTE ${pendingAdmin.length} objeto(s) en "veredictos", uno por cada id (${pendingAdmin.map(a => a.id).join(", ")}). NO omitas ninguno. NO inventes ids.
+- "id": el número entero EXACTO de la lista.
+- "veredicto": exactamente "apply", "keep_pending" o "discard".
+- "motivo": 1-2 frases EN PRIMERA PERSONA DE LECTOR. Para "apply" di qué cap cubre lo mismo. Para "discard" di qué se perdería.
+- Sé CONSERVADOR. Ante la mínima duda → "keep_pending".
+- Tu veredicto es INDEPENDIENTE del Holístico. Solo si AMBOS coincidimos en "apply" la acción se aplica automáticamente.`;
+
     // [Fix75] Política revisada respecto a Fix38: el Beta SIEMPRE debe emitir
     // al menos 3 instrucciones en cada lectura. Lo que cambia entre lecturas
     // NO es "si repito o no repito" sino "cómo evoluciono mi crítica": pegas
@@ -296,7 +352,7 @@ Palabras totales aproximadas: ${totalWords.toLocaleString("es-ES")}`;
       .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(sección vacía)"}`)
       .join("");
 
-    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${translationBlock}${previousNotesBlock}
+    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${adminBlock}${translationBlock}${previousNotesBlock}
 
 ═══════════════════════════════════════════════════════════════════
 NOVELA COMPLETA QUE ACABAS DE LEER
@@ -351,6 +407,9 @@ Acabas de cerrar el libro. Redacta ahora tus IMPRESIONES DE LECTOR BETA siguiend
       totalChaptersRead: sortedChapters.length,
       totalWordsRead: totalWords,
       score: extractScoreFromMarkers(response.content, "PUNTUACION_BETA"),
+      adminActionVerdicts: pendingAdmin.length > 0
+        ? extractAdminActionVerdicts(response.content)
+        : [],
     };
   }
 }
