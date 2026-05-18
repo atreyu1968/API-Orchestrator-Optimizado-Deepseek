@@ -535,6 +535,14 @@ export class ArchitectAgent extends BaseAgent {
     y del mundo (lugares, léxico, reglas).
 
     ⛔ REGLAS INVIOLABLES PARA EL DISEÑO DE ESTE NUEVO VOLUMEN:
+    0. EL PROTAGONISTA DE LA SERIE ES EL QUE FIGURA COMO "🌟 PROTAGONISTA ÚNICO"
+       en la biblia inyectada más abajo. La escaleta de este nuevo volumen DEBE
+       girar en torno a ese personaje: él lleva el arco vertebrador, abre y
+       cierra el libro, toma la decisión final. PROHIBIDO "ascender" a un
+       personaje secundario (love interest, sidekick, mentor, antagonista
+       carismático) al rol de protagonista — esos personajes siguen siendo
+       secundarios aunque tengan mucho tiempo en pantalla. La cámara y el POV
+       narrativo permanecen con el protagonista oficial.
     1. PROHIBIDO renombrar a un personaje establecido — usa el nombre EXACTO.
     2. PROHIBIDO cambiarle el físico, la edad, la profesión, la familia o la
        motivación nuclear. Si necesitas evolución, debe ser CONSISTENTE con

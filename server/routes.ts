@@ -80,6 +80,11 @@ const updateSeriesSchema = z.object({
   workType: z.enum(["series", "trilogy"]).optional(),
   totalPlannedBooks: z.number().min(1).max(100).optional(),
   pseudonymId: z.number().nullable().optional(),
+  // [Fix79] Permitir corregir el protagonista oficial de la serie cuando la
+  // extracción automática del worldBible vol 1 (o la primera consolidación
+  // sin anchor) eligió mal. Es la única vía soportada para mover el anchor
+  // — el resto del sistema lo trata como inmutable.
+  protagonistName: z.string().min(1).max(200).nullable().optional(),
 });
 
 const activeStreams = new Map<number, Set<Response>>();
@@ -3193,13 +3198,40 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
       }
       const generateGuide = req.body.generateGuide ?? false;
 
+      // [Fix79] Extraemos el protagonista del worldBible del vol 1 ANTES de
+      // crear la serie. Este nombre se persistirá como anchor inviolable: en
+      // los volúmenes 2+ ningún secundario podrá "ascender" a protagonista.
+      // Heurística: el primer personaje del array `characters` (o el primero
+      // con `role` que contenga "protagon"/"main"). Si no hay worldBible o no
+      // encontramos uno claro, lo dejamos null y el consolidator lo fijará
+      // tras la primera regeneración.
+      let initialProtagonistName: string | null = null;
+      try {
+        const vol1Wb = await storage.getWorldBibleByProject(projectId);
+        const chars = Array.isArray(vol1Wb?.characters) ? (vol1Wb!.characters as any[]) : [];
+        if (chars.length > 0) {
+          const explicit = chars.find((c: any) => {
+            const r = String(c?.role || c?.rol || "").toLowerCase();
+            return r.includes("protagon") || r === "main" || r.includes("principal");
+          });
+          const picked = explicit || chars[0];
+          initialProtagonistName = String(picked?.name || picked?.nombre || "").trim() || null;
+        }
+      } catch (e: any) {
+        console.warn("[Fix79] No se pudo extraer protagonista del worldBible del vol 1:", e.message);
+      }
+
       const newSeries = await storage.createSeries({
         title: seriesTitle,
         description: `Serie creada automáticamente a partir del proyecto "${project.title}"`,
         workType: totalPlannedBooks === 3 ? "trilogy" : "series",
         totalPlannedBooks,
         pseudonymId: project.pseudonymId,
+        protagonistName: initialProtagonistName,
       });
+      if (initialProtagonistName) {
+        console.log(`[Fix79] Protagonista oficial de la serie ${newSeries.id} fijado al crear: "${initialProtagonistName}".`);
+      }
 
       const updated = await storage.updateProject(projectId, {
         workType: "series",
@@ -3527,13 +3559,40 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
       }
 
       const allTitles = resolvedBooks.map((b: any) => b.title);
+
+      // [Fix79] Anchor del protagonista único — leído del worldBible del libro
+      // con seriesOrder más bajo. Para libros importados sin WB estructurado
+      // dejamos null; el consolidator lo fijará tras la primera regeneración.
+      let initialProtagonistName: string | null = null;
+      try {
+        const firstBook = resolvedBooks[0]; // ya están ordenados por seriesOrder
+        if (firstBook && firstBook._type === "reedit") {
+          const firstWb = await storage.getReeditWorldBibleByProject(firstBook.id);
+          const chars = Array.isArray(firstWb?.characters) ? (firstWb!.characters as any[]) : [];
+          if (chars.length > 0) {
+            const explicit = chars.find((c: any) => {
+              const r = String(c?.role || c?.rol || "").toLowerCase();
+              return r.includes("protagon") || r === "main" || r.includes("principal");
+            });
+            const picked = explicit || chars[0];
+            initialProtagonistName = String(picked?.name || picked?.nombre || "").trim() || null;
+          }
+        }
+      } catch (e: any) {
+        console.warn("[Fix79] No se pudo extraer protagonista del primer libro:", e.message);
+      }
+
       const newSeries = await storage.createSeries({
         title: seriesTitle.trim(),
         description: `Serie creada a partir de ${resolvedBooks.length} libro(s): ${allTitles.join(", ")}`,
         workType: plannedCount === 3 ? "trilogy" : "series",
         totalPlannedBooks: plannedCount,
         pseudonymId: targetPseudonymId,
+        protagonistName: initialProtagonistName,
       });
+      if (initialProtagonistName) {
+        console.log(`[Fix79] Protagonista de la serie ${newSeries.id} (reedit) fijado al crear: "${initialProtagonistName}".`);
+      }
 
       for (const book of resolvedBooks) {
         if (book._type === "imported") {

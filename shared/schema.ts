@@ -60,6 +60,14 @@ export const series = pgTable("series", {
   parentSeriesId: integer("parent_series_id").references((): any => series.id, { onDelete: "set null" }),
   spinoffProtagonist: text("spinoff_protagonist"),
   spinoffContext: text("spinoff_context"),
+  // [Fix79] Anchor inviolable del protagonista único de la serie. Se fija la
+  // primera vez que se convierte un libro a serie (extrayendo el personaje
+  // principal del worldBible del vol 1) o tras consolidar la SWB la primera
+  // vez. Una vez fijado, NO se sobreescribe — los volúmenes posteriores
+  // están OBLIGADOS a mantenerlo como protagonista (sin "ascender"
+  // secundarios). El consolidador, el Architect y el Ghostwriter lo
+  // reciben en prompt como regla absoluta.
+  protagonistName: text("protagonist_name"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

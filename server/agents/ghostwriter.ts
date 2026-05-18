@@ -794,6 +794,11 @@ export class GhostwriterAgent extends BaseAgent {
     los volúmenes previos.
 
     REGLAS INVIOLABLES AL ESCRIBIR:
+    - EL PROTAGONISTA DE LA SERIE ES EL QUE FIGURA COMO "🌟 PROTAGONISTA ÚNICO"
+      en la biblia. La cámara narrativa y el POV permanecen con ese personaje
+      — incluso si un secundario tiene escena propia, sigue siendo secundario.
+      PROHIBIDO darle el peso emocional, las decisiones nucleares o el arco
+      vertebrador a otro personaje.
     - Usa el NOMBRE EXACTO de cada personaje (no traduzcas, no abrevies salvo
       que la biblia indique un apodo establecido).
     - Respeta el FÍSICO canónico (color de ojos/pelo, altura, cicatrices,

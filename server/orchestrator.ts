@@ -10846,11 +10846,15 @@ Responde SOLO con un JSON válido con la estructura:
       ? (existing.worldBible as SeriesWorldBibleConsolidated)
       : undefined;
 
-    console.log(`[Fix78] Consolidando Biblia de Serie ${seriesId} con ${volumesInput.length} volúmenes (triggered by project ${triggeringProjectId}).`);
+    // [Fix79] Anchor inviolable del protagonista único.
+    const protagonistAnchor = series?.protagonistName?.trim() || undefined;
+
+    console.log(`[Fix78] Consolidando Biblia de Serie ${seriesId} con ${volumesInput.length} volúmenes (triggered by project ${triggeringProjectId})${protagonistAnchor ? `, anchor="${protagonistAnchor}"` : ""}.`);
     const result = await this.seriesWBConsolidator.execute({
       seriesTitle: series?.title,
       volumes: volumesInput,
       previousConsolidated,
+      protagonistAnchor,
     });
 
     const saved = await storage.upsertSeriesWorldBible({
@@ -10858,6 +10862,22 @@ Responde SOLO con un JSON válido con la estructura:
       worldBible: result.worldBible as any,
       sourceVolumeIds: volumesInput.map(v => v.order) as any,
     });
+
+    // [Fix79] Si la serie aún no tiene `protagonistName` fijado, lo
+    // persistimos a partir de la primera consolidación. Una vez fijado, NO se
+    // sobreescribe: los volúmenes posteriores deben mantenerlo como anchor.
+    if (!protagonistAnchor) {
+      const protagonist = SeriesWorldBibleConsolidatorAgent.extractProtagonistName(result.worldBible);
+      if (protagonist) {
+        try {
+          await storage.updateSeries(seriesId, { protagonistName: protagonist });
+          console.log(`[Fix79] Protagonista de la serie ${seriesId} fijado por primera vez: "${protagonist}".`);
+        } catch (e) {
+          console.warn(`[Fix79] No se pudo persistir protagonistName: ${(e as Error).message}`);
+        }
+      }
+    }
+
     console.log(`[Fix78] Biblia de Serie ${seriesId} consolidada v${saved.version} (${result.worldBible.personajes.length} personajes, ${result.worldBible.lugares.length} lugares).`);
     return saved;
   }
