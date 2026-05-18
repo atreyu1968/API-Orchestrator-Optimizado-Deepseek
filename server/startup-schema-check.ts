@@ -17,6 +17,7 @@ const REQUIRED_COLUMNS: RequiredColumn[] = [
   { table: "translations", column: "auto_beta_loop_max_iterations", addedIn: "Fix55" },
   { table: "translations", column: "beta_review_notes", addedIn: "Fix55" },
   { table: "translations", column: "beta_review_iterations_run", addedIn: "Fix55" },
+  { table: "series", column: "protagonist_name", addedIn: "Fix79" },
 ];
 
 const REQUIRED_TABLES: RequiredTable[] = [
