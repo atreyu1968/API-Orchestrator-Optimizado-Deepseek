@@ -255,6 +255,19 @@ export const worldBibles = pgTable("world_bibles", {
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+// [Fix78] World Bible consolidada a nivel de serie. Se regenera al final de
+// cada volumen incorporando todos los volúmenes completos, con fichas ricas
+// de personajes (físico, voz, motivación, arco) para que el Architect y el
+// Ghostwriter de volúmenes siguientes NO renombren ni reinventen rasgos.
+export const seriesWorldBibles = pgTable("series_world_bibles", {
+  id: serial("id").primaryKey(),
+  seriesId: integer("series_id").notNull().unique().references(() => series.id, { onDelete: "cascade" }),
+  worldBible: jsonb("world_bible").notNull().default({}),
+  sourceVolumeIds: jsonb("source_volume_ids").notNull().default([]),
+  version: integer("version").notNull().default(1),
+  generatedAt: timestamp("generated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 export const thoughtLogs = pgTable("thought_logs", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -322,6 +335,11 @@ export const insertWorldBibleSchema = createInsertSchema(worldBibles).omit({
   updatedAt: true,
 });
 
+export const insertSeriesWorldBibleSchema = createInsertSchema(seriesWorldBibles).omit({
+  id: true,
+  generatedAt: true,
+});
+
 export const insertThoughtLogSchema = createInsertSchema(thoughtLogs).omit({
   id: true,
   createdAt: true,
@@ -373,6 +391,9 @@ export type InsertChapter = z.infer<typeof insertChapterSchema>;
 
 export type WorldBible = typeof worldBibles.$inferSelect;
 export type InsertWorldBible = z.infer<typeof insertWorldBibleSchema>;
+
+export type SeriesWorldBible = typeof seriesWorldBibles.$inferSelect;
+export type InsertSeriesWorldBible = z.infer<typeof insertSeriesWorldBibleSchema>;
 
 export type ThoughtLog = typeof thoughtLogs.$inferSelect;
 export type InsertThoughtLog = z.infer<typeof insertThoughtLogSchema>;

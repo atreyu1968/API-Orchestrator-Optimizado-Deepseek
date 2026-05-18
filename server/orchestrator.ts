@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { SeriesWorldBibleConsolidatorAgent, type SeriesWorldBibleConsolidated } from "./agents/series-world-bible-consolidator";
 import { 
   ArchitectAgent, 
   GhostwriterAgent, 
@@ -150,6 +151,10 @@ export type FinalReviewOutcome =
 
 export class Orchestrator {
   private architect = new ArchitectAgent();
+  // [Fix78] Consolidador de Biblia de Serie — extrae fichas canónicas de
+  // personajes y mundo de TODOS los volúmenes previos para que el Architect
+  // y el Ghostwriter del nuevo volumen NO renombren ni reinventen rasgos.
+  private seriesWBConsolidator = new SeriesWorldBibleConsolidatorAgent();
   private originalityCritic = new OriginalityCriticAgent();
   private ghostwriter = new GhostwriterAgent();
   private editor = new EditorAgent();
@@ -1231,6 +1236,22 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           console.warn(`[Orchestrator] Falló buildPreviousVolumesFullText: ${(e as Error).message}`);
         }
       }
+      // [Fix78] Biblia de Serie consolidada — fichas canónicas para que
+      // Architect/Ghostwriter respeten protagonistas y mundo ya establecidos.
+      let seriesUnifiedWorldBibleStr = "";
+      if (project.seriesId) {
+        try {
+          seriesUnifiedWorldBibleStr = await this.loadSeriesUnifiedWorldBibleStr(
+            project.seriesId,
+            project.id,
+          );
+          if (seriesUnifiedWorldBibleStr) {
+            console.log(`[Fix78] Inyectando Biblia de Serie al Architect/Ghostwriter (${seriesUnifiedWorldBibleStr.length} chars).`);
+          }
+        } catch (e) {
+          console.warn(`[Fix78] loadSeriesUnifiedWorldBibleStr falló: ${(e as Error).message}`);
+        }
+      }
       let pseudonymCatalog = "";
       if (project.pseudonymId) {
         try {
@@ -1287,6 +1308,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             projectId: project.id,
             previousVolumesFullText,
             pseudonymCatalog,
+            seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
             extendedGuideContent: extendedGuideContent || undefined,
           });
 
@@ -1701,6 +1723,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                   hasEpilogue: project.hasEpilogue,
                   hasAuthorNote: project.hasAuthorNote,
                   architectInstructions: revisionInstructions,
+                  seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
                   kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
                   forbiddenNames,
                   projectId: project.id,
@@ -1825,6 +1848,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 hasAuthorNote: project.hasAuthorNote,
                 architectInstructions: project.architectInstructions || undefined,
                 plotIntegrityFeedback: audit.instrucciones_revision,
+                seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
                 kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
                 forbiddenNames,
                 projectId: project.id,
@@ -2008,6 +2032,7 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
                   hasAuthorNote: project.hasAuthorNote,
                   architectInstructions: project.architectInstructions || undefined,
                   betaReaderFeedback: betaFeedback,
+                  seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
                   kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
                   forbiddenNames,
                   projectId: project.id,
@@ -2274,6 +2299,7 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
             previousChaptersFullText,
             recentSceneMolds: recentSceneMolds || undefined,
             editorialCritique: this.midNovelBetaCritique || undefined,
+            seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -2945,7 +2971,21 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         thinkingTokens: project.totalThinkingTokens || 0,
       };
       this.cumulativeTokens = existingTokens;
-      
+
+      // [Fix78] Biblia de Serie consolidada — disponible también en resume
+      // para que la segunda mitad del libro respete fichas canónicas.
+      let seriesUnifiedWorldBibleStr = "";
+      if (project.seriesId) {
+        try {
+          seriesUnifiedWorldBibleStr = await this.loadSeriesUnifiedWorldBibleStr(project.seriesId, project.id);
+          if (seriesUnifiedWorldBibleStr) {
+            console.log(`[Fix78][resume] Inyectando Biblia de Serie (${seriesUnifiedWorldBibleStr.length} chars).`);
+          }
+        } catch (e) {
+          console.warn(`[Fix78][resume] loadSeriesUnifiedWorldBibleStr falló: ${(e as Error).message}`);
+        }
+      }
+
       await storage.updateProject(project.id, { status: "generating" });
 
       const worldBible = await storage.getWorldBibleByProject(project.id);
@@ -3142,6 +3182,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousChapterContent: isStalledResume ? undefined : previousContent,
             previousChaptersFullText: previousChaptersFullTextResume,
             recentSceneMolds: recentSceneMoldsResume || undefined,
+            seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -10709,6 +10750,118 @@ Responde SOLO con un JSON válido con la estructura:
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // [Fix78] Biblia de Serie consolidada — helpers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Lee la Biblia de Serie consolidada y la devuelve renderizada como bloque
+   * de texto listo para inyectar al Architect/Ghostwriter.
+   *
+   * Si la SWB todavía no existe en BD pero hay al menos 1 volumen previo
+   * COMPLETADO, la genera on-demand (caso típico: primera ejecución tras
+   * desplegar Fix78 sobre una serie que ya tenía volúmenes terminados).
+   * Devuelve "" si la serie no tiene volúmenes previos o el agente falla.
+   */
+  private async loadSeriesUnifiedWorldBibleStr(
+    seriesId: number,
+    currentProjectId: number,
+  ): Promise<string> {
+    let swb = await storage.getSeriesWorldBible(seriesId);
+    if (!swb) {
+      // On-demand: solo si hay al menos 1 volumen previo completado.
+      const all = await storage.getProjectsBySeries(seriesId);
+      const previousCompleted = all
+        .filter(p => p.id !== currentProjectId && p.status === "completed")
+        .sort((a, b) => (a.seriesOrder ?? 0) - (b.seriesOrder ?? 0));
+      if (previousCompleted.length === 0) return "";
+      try {
+        swb = await this.regenerateSeriesWorldBible(seriesId, currentProjectId);
+      } catch (e) {
+        console.warn(`[Fix78] On-demand consolidator falló: ${(e as Error).message}`);
+        return "";
+      }
+      if (!swb) return "";
+    }
+    try {
+      const consolidated = swb.worldBible as SeriesWorldBibleConsolidated;
+      return SeriesWorldBibleConsolidatorAgent.renderForPrompt(consolidated);
+    } catch (e) {
+      console.warn(`[Fix78] renderForPrompt falló: ${(e as Error).message}`);
+      return "";
+    }
+  }
+
+  /**
+   * Regenera la Biblia de Serie consolidada usando TODOS los volúmenes
+   * completados de la serie (excluyendo el `excludeProjectId` si así se
+   * indica — útil cuando aún no se ha marcado como completed). Persiste vía
+   * `storage.upsertSeriesWorldBible` (versión++ automática).
+   *
+   * Si no hay material de origen, devuelve la SWB existente o `undefined`.
+   */
+  private async regenerateSeriesWorldBible(
+    seriesId: number,
+    triggeringProjectId: number,
+  ): Promise<import("@shared/schema").SeriesWorldBible | undefined> {
+    const series = await storage.getSeries(seriesId);
+    const all = await storage.getProjectsBySeries(seriesId);
+    const volumes = all
+      .filter(p => p.status === "completed")
+      .sort((a, b) => (a.seriesOrder ?? 0) - (b.seriesOrder ?? 0));
+    if (volumes.length === 0) {
+      console.log(`[Fix78] regenerateSeriesWorldBible: serie ${seriesId} sin volúmenes completados — skip.`);
+      return undefined;
+    }
+
+    // Construye el material por volumen: WB en JSON + texto íntegro acotado
+    // por presupuesto compartido (600k chars = ~150k tokens).
+    const TOTAL_FULLTEXT_BUDGET = 600_000;
+    const perVolumeBudget = Math.floor(TOTAL_FULLTEXT_BUDGET / volumes.length);
+    const volumesInput: { order: number; title: string; worldBibleJson?: string; fullText?: string }[] = [];
+    for (const vol of volumes) {
+      const wb = await storage.getWorldBibleByProject(vol.id);
+      const wbJson = wb ? JSON.stringify({
+        characters: wb.characters,
+        worldRules: wb.worldRules,
+        timeline: wb.timeline,
+        plotOutline: wb.plotOutline,
+      }, null, 2) : undefined;
+      const chapters = await storage.getChaptersByProject(vol.id);
+      const fullText = Orchestrator.buildPreviousChaptersFullText(
+        chapters,
+        Number.POSITIVE_INFINITY,
+        Math.floor(perVolumeBudget / 4), // budget en tokens (chars/4)
+      );
+      volumesInput.push({
+        order: vol.seriesOrder ?? volumesInput.length + 1,
+        title: vol.title,
+        worldBibleJson: wbJson,
+        fullText: fullText || undefined,
+      });
+    }
+
+    const existing = await storage.getSeriesWorldBible(seriesId);
+    const previousConsolidated = existing
+      ? (existing.worldBible as SeriesWorldBibleConsolidated)
+      : undefined;
+
+    console.log(`[Fix78] Consolidando Biblia de Serie ${seriesId} con ${volumesInput.length} volúmenes (triggered by project ${triggeringProjectId}).`);
+    const result = await this.seriesWBConsolidator.execute({
+      seriesTitle: series?.title,
+      volumes: volumesInput,
+      previousConsolidated,
+    });
+
+    const saved = await storage.upsertSeriesWorldBible({
+      seriesId,
+      worldBible: result.worldBible as any,
+      sourceVolumeIds: volumesInput.map(v => v.order) as any,
+    });
+    console.log(`[Fix78] Biblia de Serie ${seriesId} consolidada v${saved.version} (${result.worldBible.personajes.length} personajes, ${result.worldBible.lugares.length} lugares).`);
+    return saved;
+  }
+
   private async finalizeCompletedProject(project: Project): Promise<void> {
     const processChecklist: { step: string; status: "passed" | "corrected" | "skipped"; detail: string }[] = [];
 
@@ -10746,6 +10899,17 @@ Responde SOLO con un JSON válido con la estructura:
 
     await storage.updateProject(project.id, { status: "completed" });
     await this.generateSeriesContinuitySnapshot(project);
+    // [Fix78] Tras completar un volumen de serie, regeneramos la Biblia de
+    // Serie consolidada para que el próximo volumen reciba fichas
+    // canónicas actualizadas (incluyendo evolución del personaje en este
+    // libro). Best-effort: si falla, log warning y seguimos.
+    if (project.seriesId) {
+      try {
+        await this.regenerateSeriesWorldBible(project.seriesId, project.id);
+      } catch (e) {
+        console.warn(`[Fix78] regenerateSeriesWorldBible falló para serie ${project.seriesId}: ${(e as Error).message}`);
+      }
+    }
     await this.runSeriesArcVerification(project);
     // Para novelas standalone (sin seriesId) corremos un check de arcos sintético
     // basado en la propia escaleta — detecta arcos prometidos que quedaron abiertos.
@@ -12327,6 +12491,17 @@ Responde SOLO con un JSON válido con la estructura:
     _mismatchRerouteDepth: number = 0,
     _structuralTranslateDepth: number = 0
   ): Promise<{ reroutedTo?: number[] } | void> {
+    // [Fix78] Biblia de Serie consolidada también en reescritura quirúrgica:
+    // si el QA pide cambios sobre un libro de serie, el Narrador conserva
+    // fichas canónicas en lugar de inventar rasgos al re-emitir el capítulo.
+    let seriesUnifiedWorldBibleStr = "";
+    if (project.seriesId) {
+      try {
+        seriesUnifiedWorldBibleStr = await this.loadSeriesUnifiedWorldBibleStr(project.seriesId, project.id);
+      } catch (e) {
+        console.warn(`[Fix78][qa_rewrite] loadSeriesUnifiedWorldBibleStr falló: ${(e as Error).message}`);
+      }
+    }
     const qaLabels = {
       continuity: "Centinela de Continuidad",
       voice: "Auditor de Voz",
@@ -13069,6 +13244,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       refinementInstructions: surgicalInstructions,
       previousChapterContent: originalContent,
       previousChaptersFullText: previousChaptersFullTextRewrite,
+      seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
       minWordCount: surgicalMin,
       maxWordCount: surgicalMax,
       kindleUnlimitedOptimized: false,
@@ -13115,6 +13291,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         // Reutilizamos el bloque del primer intento (los caps anteriores no
         // han cambiado entre intento y reintento del mismo capítulo).
         previousChaptersFullText: previousChaptersFullTextRewrite,
+        seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
         minWordCount: surgicalMin,
         maxWordCount: surgicalMax,
         kindleUnlimitedOptimized: false,

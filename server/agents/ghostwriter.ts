@@ -89,6 +89,16 @@ interface GhostwriterInput {
    * Construido por el Orquestador con `buildRecentSceneMolds`.
    */
   recentSceneMolds?: string;
+  /**
+   * [Fix78] World Bible consolidada de la serie. Cuando el capítulo pertenece
+   * al volumen N≥2 de una serie, el Orquestador inyecta aquí las fichas
+   * canónicas de personajes y mundo extraídas de TODOS los volúmenes previos
+   * (físico, edad, profesión, familia, voz, motivación, léxico). El
+   * Ghostwriter DEBE usar exactamente esos rasgos al describir/hacer hablar
+   * a un personaje ya establecido — prohibido cambiarle el pelo, los ojos,
+   * la edad, el nombre o la motivación.
+   */
+  seriesUnifiedWorldBible?: string;
 }
 
 const SYSTEM_PROMPT = `
@@ -773,6 +783,29 @@ export class GhostwriterAgent extends BaseAgent {
     ⚠️ ANTES DE ESCRIBIR, verifica que NINGÚN personaje listado como "dead" aparezca activo.
     ⚠️ Respeta las ubicaciones finales de cada personaje.
     ⚠️ Si un personaje tiene heridas o limitaciones, DEBEN afectar sus acciones.
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.seriesUnifiedWorldBible ? `
+    ═══════════════════════════════════════════════════════════════════
+    🔒 BIBLIA DE SERIE — RASGOS CANÓNICOS DE PERSONAJES Y MUNDO 🔒
+    ═══════════════════════════════════════════════════════════════════
+    Este capítulo pertenece a un volumen de una serie. Estas son las fichas
+    OFICIALES de los personajes y elementos del mundo, consolidadas de TODOS
+    los volúmenes previos.
+
+    REGLAS INVIOLABLES AL ESCRIBIR:
+    - Usa el NOMBRE EXACTO de cada personaje (no traduzcas, no abrevies salvo
+      que la biblia indique un apodo establecido).
+    - Respeta el FÍSICO canónico (color de ojos/pelo, altura, cicatrices,
+      tatuajes, edad). Si describes al personaje, usa ESTOS rasgos.
+    - Respeta su VOZ (tics verbales, registro, palabras suyas).
+    - Respeta sus RELACIONES (familia, parejas, alianzas) tal cual figuran.
+    - Respeta el LÉXICO del mundo (nombres de lugares, magia, tecnología,
+      organizaciones).
+    - Si la biblia se contradice con la escaleta del cap, gana la biblia
+      en cuanto a IDENTIDAD; gana la escaleta en cuanto a ACCIÓN.
+
+${input.seriesUnifiedWorldBible}
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     ${input.previousChaptersFullText ? input.previousChaptersFullText : ""}

@@ -54,6 +54,14 @@ interface ArchitectInput {
   // detecta problemas de severidad alta. El Arquitecto debe corregir SIN
   // perder lo aprobado por críticas previas.
   plotIntegrityFeedback?: string;
+
+  // [Fix78] World Bible consolidada de la serie (personajes con fichas ricas,
+  // lugares, léxico, reglas) extraída de TODOS los volúmenes previos. El
+  // Arquitecto DEBE usarla como verdad canónica: prohibido renombrar,
+  // reinventar físico/edad/profesión/familia ni cambiar motivación nuclear
+  // de los personajes ya establecidos. Si está presente, prevalece sobre
+  // cualquier deducción que el Arquitecto pueda hacer del texto íntegro.
+  seriesUnifiedWorldBible?: string;
 }
 
 const PHASE1_SYSTEM_PROMPT = `
@@ -515,6 +523,37 @@ export class ArchitectAgent extends BaseAgent {
     ${input.forbiddenNames.join(", ")}
     
     Inventa nombres COMPLETAMENTE NUEVOS, originales y memorables para TODOS los personajes.
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.seriesUnifiedWorldBible ? `
+    ═══════════════════════════════════════════════════════════════════
+    🔒 BIBLIA DE SERIE — PERSONAJES Y MUNDO YA ESTABLECIDOS 🔒
+    ═══════════════════════════════════════════════════════════════════
+    Esta es la BIBLIA OFICIAL de la serie, consolidada a partir de TODOS los
+    volúmenes ya publicados. Contiene las fichas canónicas de cada personaje
+    (nombre exacto, físico, edad, profesión, familia, voz, motivación, arco)
+    y del mundo (lugares, léxico, reglas).
+
+    ⛔ REGLAS INVIOLABLES PARA EL DISEÑO DE ESTE NUEVO VOLUMEN:
+    1. PROHIBIDO renombrar a un personaje establecido — usa el nombre EXACTO.
+    2. PROHIBIDO cambiarle el físico, la edad, la profesión, la familia o la
+       motivación nuclear. Si necesitas evolución, debe ser CONSISTENTE con
+       lo establecido (envejecer un año, ascender de rango, no "tener ahora
+       los ojos verdes cuando antes eran marrones").
+    3. PROHIBIDO inventar parejas, hijos, hermanos o relaciones que NO
+       aparezcan ya en la biblia o como hilo claramente abierto.
+    4. PROHIBIDO renombrar lugares, organizaciones, magia o tecnología
+       establecidos. Usa el léxico canónico tal cual.
+    5. SI la biblia y el texto íntegro entran en conflicto, gana la BIBLIA
+       (ya está consolidada y deduplicada). Reporta la contradicción en
+       "incoherencias_detectadas" si la encuentras.
+    6. SÍ puedes y DEBES darles NUEVOS arcos, conflictos, decisiones, etapas
+       de evolución y secundarios. La biblia limita IDENTIDAD, no destino.
+
+    Esta biblia es de USO OBLIGATORIO. Diséñala en la nueva escaleta como si
+    estos personajes y este mundo fueran inamovibles desde el cap 1.
+
+${input.seriesUnifiedWorldBible}
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     ${input.previousVolumesFullText ? `

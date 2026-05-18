@@ -1,12 +1,12 @@
 import { db } from "./db";
 import { 
-  projects, chapters, worldBibles, thoughtLogs, agentStatuses, pseudonyms, publishers, styleGuides,
+  projects, chapters, worldBibles, seriesWorldBibles, thoughtLogs, agentStatuses, pseudonyms, publishers, styleGuides,
   series, continuitySnapshots, importedManuscripts, importedChapters, extendedGuides, activityLogs,
   projectQueue, queueState, seriesArcMilestones, seriesPlotThreads, seriesArcVerifications,
   aiUsageEvents, reeditProjects, reeditChapters, reeditAuditReports, reeditWorldBibles,
   chatSessions, chatMessages, chatProposals,
   type Project, type InsertProject, type Chapter, type InsertChapter,
-  type WorldBible, type InsertWorldBible, type ThoughtLog, type InsertThoughtLog,
+  type WorldBible, type InsertWorldBible, type SeriesWorldBible, type InsertSeriesWorldBible, type ThoughtLog, type InsertThoughtLog,
   type AgentStatus, type InsertAgentStatus, type Pseudonym, type InsertPseudonym,
   type Publisher, type InsertPublisher,
   type StyleGuide, type InsertStyleGuide, type Series, type InsertSeries,
@@ -78,6 +78,8 @@ export interface IStorage {
 
   createWorldBible(data: InsertWorldBible): Promise<WorldBible>;
   getWorldBibleByProject(projectId: number): Promise<WorldBible | undefined>;
+  getSeriesWorldBible(seriesId: number): Promise<SeriesWorldBible | undefined>;
+  upsertSeriesWorldBible(data: InsertSeriesWorldBible): Promise<SeriesWorldBible>;
   getAllWorldBibles(): Promise<WorldBible[]>;
   updateWorldBible(id: number, data: Partial<WorldBible>): Promise<WorldBible | undefined>;
 
@@ -412,6 +414,33 @@ export class DatabaseStorage implements IStorage {
   async getWorldBibleByProject(projectId: number): Promise<WorldBible | undefined> {
     const [worldBible] = await db.select().from(worldBibles).where(eq(worldBibles.projectId, projectId));
     return worldBible;
+  }
+
+  async getSeriesWorldBible(seriesId: number): Promise<SeriesWorldBible | undefined> {
+    const [swb] = await db.select().from(seriesWorldBibles).where(eq(seriesWorldBibles.seriesId, seriesId));
+    return swb;
+  }
+
+  async upsertSeriesWorldBible(data: InsertSeriesWorldBible): Promise<SeriesWorldBible> {
+    // [Fix78] Upsert atómico con ON CONFLICT para evitar race conditions entre
+    // regeneración on-demand (loadSeriesUnifiedWorldBibleStr) y la del final
+    // de cada volumen (finalizeCompletedProject). Antes el get+insert/update
+    // no transaccional podía: (a) colisionar en el INSERT por seriesId UNIQUE,
+    // (b) producir lost-update al calcular version desde un valor obsoleto.
+    const [row] = await db
+      .insert(seriesWorldBibles)
+      .values(data)
+      .onConflictDoUpdate({
+        target: seriesWorldBibles.seriesId,
+        set: {
+          worldBible: data.worldBible,
+          sourceVolumeIds: data.sourceVolumeIds,
+          version: sql`${seriesWorldBibles.version} + 1`,
+          generatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
   }
 
   async getAllWorldBibles(): Promise<WorldBible[]> {
