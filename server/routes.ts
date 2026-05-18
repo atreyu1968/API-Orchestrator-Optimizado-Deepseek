@@ -3156,6 +3156,9 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid series data", details: parsed.error.flatten() });
       }
+      if (Object.keys(parsed.data).length === 0) {
+        return res.status(400).json({ error: "No fields to update" });
+      }
       
       const updated = await storage.updateSeries(id, parsed.data);
       if (!updated) {
