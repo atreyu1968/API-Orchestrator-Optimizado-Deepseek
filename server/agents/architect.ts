@@ -9,6 +9,12 @@ interface ArchitectInput {
   genre: string;
   tone: string;
   chapterCount: number;
+  // [Fix90] Rango opcional. Si ambos están presentes y `minChapterCount <
+  // maxChapterCount`, el Arquitecto decide el número final dentro del rango
+  // tras una autoauditoría de densidad de hilos. Si no, se cae al modo
+  // EXACTO con `chapterCount`.
+  minChapterCount?: number | null;
+  maxChapterCount?: number | null;
   hasPrologue?: boolean;
   hasEpilogue?: boolean;
   hasAuthorNote?: boolean;
@@ -796,6 +802,21 @@ ${input.writtenChaptersFullText}
       linea_temporal: phase1Json.linea_temporal,
     });
 
+    // [Fix90] Modo rango vs modo exacto. Si el usuario fijó un rango válido
+    // (min < max), el Arquitecto decide el número dentro de [min, max] tras
+    // autoauditoría de densidad. Si no, comportamiento clásico exacto.
+    const minRange = typeof input.minChapterCount === "number" ? input.minChapterCount : null;
+    const maxRange = typeof input.maxChapterCount === "number" ? input.maxChapterCount : null;
+    const isRangeMode =
+      minRange !== null && maxRange !== null && minRange > 0 && maxRange > minRange;
+    const promptCountLabel = isRangeMode
+      ? `${minRange}-${maxRange} CAPÍTULOS (rango aprobado por el usuario)`
+      : `EXACTAMENTE ${input.chapterCount} CAPÍTULOS`;
+    // Para el cálculo de extensión/concisión usamos el peor caso del rango
+    // (maxRange) cuando aplica; el resto del prompt sigue refiriéndose a
+    // `chapterCount` como número de referencia para el slider del usuario.
+    const referenceCount = isRangeMode ? maxRange! : input.chapterCount;
+
     const phase2Prompt = `
     ${commonContext}
 
@@ -805,38 +826,71 @@ ${input.writtenChaptersFullText}
     ${phase1Summary}
 
     ═══════════════════════════════════════════════════════════════════
-    ⛔ REQUISITO ABSOLUTO: EXACTAMENTE ${input.chapterCount} CAPÍTULOS ⛔
+    ⛔ REQUISITO ABSOLUTO: ${promptCountLabel} ⛔
     ═══════════════════════════════════════════════════════════════════
-    
+    ${isRangeMode ? `
+    EL USUARIO HA APROBADO UN RANGO de capítulos para que TÚ decidas el número
+    final según cuántos hilos argumentales aguante la premisa de forma orgánica.
+    Esto significa que NO debes rellenar capítulos vacíos: si la historia se
+    sostiene con ${minRange} capítulos densos, entrega ${minRange}; si admite
+    ${maxRange} sin caer en repetición, entrega ${maxRange}.
+
+    🔍 AUTOAUDITORÍA OBLIGATORIA DE DENSIDAD (paso interno antes de responder):
+    Tras esbozar la escaleta, REVISA SECUENCIAS DE 3+ CAPÍTULOS CONSECUTIVOS
+    donde el progreso narrativo sea REDUNDANTE (mismo conflicto sin escalada,
+    misma escena en sitios distintos, mismo subgrupo de personajes repitiendo
+    dinámica, capítulos puente sin información nueva). Si detectas esa zona:
+    - INTENTA primero refundir 2-3 capítulos en uno con más densidad
+    - Si tras refundir aún quedan caps débiles, REDUCE el total hacia ${minRange}
+    - SOLO sube el total hacia ${maxRange} si tienes hilos+subtramas+giros
+      suficientes para mantener "información nueva + escalada" en cada cap
+
+    ⛔ PROHIBIDO inflar para llegar al máximo del rango con capítulos puente,
+    repetición de conflictos ya planteados o subtramas decorativas sin impacto.
+    El Holístico y el Lector Beta posteriormente PENALIZAN duramente el
+    decaimiento de ritmo, y la corrección a posteriori (podar/fusionar caps)
+    no se puede aplicar automáticamente.
+
+    📋 REPORTE OBLIGATORIO EN EL JSON: incluye además del array
+    "escaleta_capitulos" un campo "decision_numero_capitulos" con la forma:
+    {
+      "elegido": <número entre ${minRange} y ${maxRange}>,
+      "rango_aprobado": [${minRange}, ${maxRange}],
+      "justificacion": "<2-4 frases explicando por qué ese número es el óptimo: cuántos hilos activos sostienen la novela, dónde estaría el riesgo de relleno si subieras, dónde quedaría tema sin desarrollar si bajaras>"
+    }
+    ` : `
     EL NÚMERO DE CAPÍTULOS NO ES TU DECISIÓN. DEBES generar EXACTAMENTE ${input.chapterCount} entradas en "escaleta_capitulos", numeradas del 1 al ${input.chapterCount}.
-    ${input.hasPrologue ? "ADEMÁS: Prólogo como capítulo número 0." : ""}
-    ${input.hasEpilogue ? "ADEMÁS: Epílogo como capítulo número -1." : ""}
-    
+
     Si la historia te parece "terminada" antes del capítulo ${input.chapterCount}:
     - Expande subtramas existentes
     - Añade complicaciones y obstáculos
     - Desarrolla más los arcos de personajes secundarios
-    
+    `}
+    ${input.hasPrologue ? "ADEMÁS: Prólogo como capítulo número 0." : ""}
+    ${input.hasEpilogue ? "ADEMÁS: Epílogo como capítulo número -1." : ""}
+
     CADA capítulo debe tener:
     - ⛔ TÍTULO OBLIGATORIO: Campo "titulo" con valor literario (2-6 palabras), NUNCA vacío
-    - ⛔ OBJETIVO_NARRATIVO OBLIGATORIO: párrafo narrativo de ${input.chapterCount > 25 ? "60-120" : "100-200"} palabras (no etiqueta) describiendo qué ocurre realmente en el capítulo. Sin esto el Narrador no tiene sinopsis y escribe a ciegas.
-    - Beats detallados (mínimo ${input.chapterCount > 25 ? "4" : "6"} por capítulo, cada beat 1-2 oraciones concisas)
+    - ⛔ OBJETIVO_NARRATIVO OBLIGATORIO: párrafo narrativo de ${referenceCount > 25 ? "60-120" : "100-200"} palabras (no etiqueta) describiendo qué ocurre realmente en el capítulo. Sin esto el Narrador no tiene sinopsis y escribe a ciegas.
+    - Beats detallados (mínimo ${referenceCount > 25 ? "4" : "6"} por capítulo, cada beat 1-2 oraciones concisas)
     - Información nueva
     - Conflicto central
     - Continuidad de entrada/salida
-    ${input.chapterCount > 25 ? `
-    ⚡ ESCALETA LARGA (${input.chapterCount} capítulos) — concisión obligatoria:
+    ${referenceCount > 25 ? `
+    ⚡ ESCALETA LARGA (hasta ${referenceCount} capítulos) — concisión obligatoria:
     Para que la respuesta no se trunque por output cap (65K tokens), cada capítulo
     debe ser CONCISO. NO escribas 200 palabras de objetivo_narrativo si caben 80;
     NO escribas 8 beats si bastan 4-5 bien elegidos. Calidad > extensión. El Narrador
     luego expande cada capítulo a 2000-4000 palabras con esta semilla. Tu trabajo es
     semilla narrativa, no la novela.` : ""}
-    
+
     ⚠️ VERIFICACIÓN FINAL: Antes de responder, CUENTA las entradas en escaleta_capitulos.
-    Si no hay EXACTAMENTE ${input.chapterCount} capítulos, tu respuesta es INVÁLIDA.
-    Verifica también que CADA capítulo tenga "objetivo_narrativo" con >= ${input.chapterCount > 25 ? "60" : "100"} palabras de prosa y "beats" con >= ${input.chapterCount > 25 ? "4" : "6"} entradas. Sin esto la respuesta es INVÁLIDA.
-    
-    Responde ÚNICAMENTE con el JSON que contenga "escaleta_capitulos".
+    ${isRangeMode
+      ? `El total debe estar DENTRO del rango [${minRange}, ${maxRange}]. Fuera del rango la respuesta es INVÁLIDA.`
+      : `Si no hay EXACTAMENTE ${input.chapterCount} capítulos, tu respuesta es INVÁLIDA.`}
+    Verifica también que CADA capítulo tenga "objetivo_narrativo" con >= ${referenceCount > 25 ? "60" : "100"} palabras de prosa y "beats" con >= ${referenceCount > 25 ? "4" : "6"} entradas. Sin esto la respuesta es INVÁLIDA.
+
+    Responde ÚNICAMENTE con el JSON que contenga "escaleta_capitulos"${isRangeMode ? " y \"decision_numero_capitulos\"" : ""}.
     `;
 
     this.config.systemPrompt = PHASE2_SYSTEM_PROMPT;

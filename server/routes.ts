@@ -484,12 +484,35 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Cannot edit a project while it's generating" });
       }
 
-      const allowedFields = ["title", "premise", "genre", "tone", "chapterCount", "hasPrologue", "hasEpilogue", "hasAuthorNote", "pseudonymId", "styleGuideId", "extendedGuideId", "workType", "seriesId", "seriesOrder", "projectSubtype", "minWordCount", "minWordsPerChapter", "maxWordsPerChapter", "kindleUnlimitedOptimized", "architectInstructions", "autoBetaLoop", "autoBetaLoopMaxIterations", "autoHolisticReview"];
+      const allowedFields = ["title", "premise", "genre", "tone", "chapterCount", "minChapterCount", "maxChapterCount", "hasPrologue", "hasEpilogue", "hasAuthorNote", "pseudonymId", "styleGuideId", "extendedGuideId", "workType", "seriesId", "seriesOrder", "projectSubtype", "minWordCount", "minWordsPerChapter", "maxWordsPerChapter", "kindleUnlimitedOptimized", "architectInstructions", "autoBetaLoop", "autoBetaLoopMaxIterations", "autoHolisticReview"];
       const updateData: Record<string, any> = {};
       
       for (const field of allowedFields) {
         if (req.body[field] !== undefined) {
           updateData[field] = req.body[field];
+        }
+      }
+
+      // [Fix90 post-review] Paridad con la validación Zod de POST: si el
+      // usuario manda min y max (o uno solo manteniendo el otro), exigir
+      // min > 0 && max > min. Si manda null para limpiar el rango, ok.
+      if ("minChapterCount" in updateData || "maxChapterCount" in updateData) {
+        const effectiveMin =
+          updateData.minChapterCount !== undefined
+            ? updateData.minChapterCount
+            : (project as any).minChapterCount;
+        const effectiveMax =
+          updateData.maxChapterCount !== undefined
+            ? updateData.maxChapterCount
+            : (project as any).maxChapterCount;
+        if (typeof effectiveMin === "number" && typeof effectiveMax === "number") {
+          if (effectiveMin <= 0 || effectiveMax <= effectiveMin) {
+            return res.status(400).json({
+              error: "Invalid chapter range",
+              message:
+                "El mínimo debe ser mayor que 0 y estrictamente menor que el máximo.",
+            });
+          }
         }
       }
 

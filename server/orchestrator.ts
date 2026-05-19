@@ -1329,6 +1329,9 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             genre: project.genre,
             tone: project.tone,
             chapterCount: project.chapterCount,
+            // [Fix90] Rango opcional para autodecisión del Arquitecto.
+            minChapterCount: (project as any).minChapterCount ?? null,
+            maxChapterCount: (project as any).maxChapterCount ?? null,
             hasPrologue: project.hasPrologue,
             hasEpilogue: project.hasEpilogue,
             hasAuthorNote: project.hasAuthorNote,
@@ -1398,12 +1401,26 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             const escaletaLength = worldBibleData.escaleta_capitulos?.length || 0;
             const hasChapters = escaletaLength > 0;
             
-            const expectedChapters = project.chapterCount + 
-              (project.hasPrologue ? 1 : 0) + 
-              (project.hasEpilogue ? 1 : 0) + 
+            // [Fix90] Si hay rango aprobado, validamos que el total esté
+            // dentro de [min+extras, max+extras]; si no, modo clásico exacto.
+            const extrasCount =
+              (project.hasPrologue ? 1 : 0) +
+              (project.hasEpilogue ? 1 : 0) +
               (project.hasAuthorNote ? 1 : 0);
-            const hasEnoughChapters = escaletaLength >= expectedChapters;
-            
+            const fix90Min = (project as any).minChapterCount as number | null | undefined;
+            const fix90Max = (project as any).maxChapterCount as number | null | undefined;
+            const fix90RangeMode =
+              typeof fix90Min === "number" &&
+              typeof fix90Max === "number" &&
+              fix90Min > 0 &&
+              fix90Max > fix90Min;
+            const expectedChapters = project.chapterCount + extrasCount;
+            const expectedMin = fix90RangeMode ? fix90Min! + extrasCount : expectedChapters;
+            const expectedMax = fix90RangeMode ? fix90Max! + extrasCount : escaletaLength; // sin tope superior en exacto
+            const hasEnoughChapters = fix90RangeMode
+              ? escaletaLength >= expectedMin && escaletaLength <= expectedMax
+              : escaletaLength >= expectedChapters;
+
             if (!hasCharacters || !hasChapters) {
               lastArchitectError = `World Bible vacía o incompleta: ${hasCharacters ? '✓' : '✗'} personajes (${worldBibleData.world_bible?.personajes?.length || 0}), ${hasChapters ? '✓' : '✗'} capítulos (${escaletaLength})`;
               console.error(`[Orchestrator] Architect attempt ${architectAttempt}: ${lastArchitectError}`);
@@ -1421,7 +1438,9 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 continue;
               }
             } else if (!hasEnoughChapters) {
-              lastArchitectError = `Escaleta incompleta: generados ${escaletaLength} capítulos, esperados ${expectedChapters} (${project.chapterCount} capítulos + extras)`;
+              lastArchitectError = fix90RangeMode
+                ? `Escaleta fuera de rango: generados ${escaletaLength}, esperados entre ${expectedMin} y ${expectedMax} (rango ${fix90Min}-${fix90Max} + ${extrasCount} extras)`
+                : `Escaleta incompleta: generados ${escaletaLength} capítulos, esperados ${expectedChapters} (${project.chapterCount} capítulos + extras)`;
               console.error(`[Orchestrator] Architect attempt ${architectAttempt}: ${lastArchitectError}`);
               
               if (architectAttempt < MAX_ARCHITECT_RETRIES) {
@@ -1750,6 +1769,9 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                   genre: project.genre,
                   tone: project.tone,
                   chapterCount: project.chapterCount,
+                  // [Fix90 post-review] Mantener rango en retry de originalidad.
+                  minChapterCount: (project as any).minChapterCount ?? null,
+                  maxChapterCount: (project as any).maxChapterCount ?? null,
                   hasPrologue: project.hasPrologue,
                   hasEpilogue: project.hasEpilogue,
                   hasAuthorNote: project.hasAuthorNote,
@@ -1770,9 +1792,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
                 if (!retryResult.error && !retryResult.timedOut && retryResult.content?.trim()) {
                   const reviewedData = this.parseArchitectOutput(retryResult.content);
-                  const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
+                  // [Fix90 post-review] Validación range-aware en retry.
                   const reviewedLen = reviewedData?.escaleta_capitulos?.length || 0;
-                  if (reviewedData && reviewedData.world_bible?.personajes?.length && reviewedLen >= expectedChapters - 2) {
+                  const acceptCount = this.isAcceptableEscaletaCount(project, reviewedLen);
+                  const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
+                  if (reviewedData && reviewedData.world_bible?.personajes?.length && acceptCount) {
                     console.log(`[Orchestrator] Arquitecto revisó el outline tras crítica de originalidad: ${reviewedData.world_bible.personajes.length} personajes, ${reviewedLen}/${expectedChapters} capítulos. Reemplazando outline anterior.`);
                     worldBibleData = reviewedData;
                     await storage.createActivityLog({
@@ -1875,6 +1899,9 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 genre: project.genre,
                 tone: project.tone,
                 chapterCount: project.chapterCount,
+                // [Fix90 post-review] Mantener rango en retry de integridad.
+                minChapterCount: (project as any).minChapterCount ?? null,
+                maxChapterCount: (project as any).maxChapterCount ?? null,
                 hasPrologue: project.hasPrologue,
                 hasEpilogue: project.hasEpilogue,
                 hasAuthorNote: project.hasAuthorNote,
@@ -1896,9 +1923,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
               if (!retryResult.error && !retryResult.timedOut && retryResult.content?.trim()) {
                 const reviewedData = this.parseArchitectOutput(retryResult.content);
-                const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
+                // [Fix90 post-review] Validación range-aware.
                 const reviewedLen = reviewedData?.escaleta_capitulos?.length || 0;
-                if (reviewedData && reviewedData.world_bible?.personajes?.length && reviewedLen >= expectedChapters - 2) {
+                const acceptCount = this.isAcceptableEscaletaCount(project, reviewedLen);
+                const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
+                if (reviewedData && reviewedData.world_bible?.personajes?.length && acceptCount) {
                   console.log(`[Orchestrator] Arquitecto revisó tras Auditor: ${reviewedLen}/${expectedChapters} capítulos. Sustituyendo y re-auditando.`);
                   worldBibleData = reviewedData;
                   await storage.createActivityLog({
@@ -2060,6 +2089,9 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
                   genre: project.genre,
                   tone: project.tone,
                   chapterCount: project.chapterCount,
+                  // [Fix90 post-review] Mantener rango en retry de beta-reader.
+                  minChapterCount: (project as any).minChapterCount ?? null,
+                  maxChapterCount: (project as any).maxChapterCount ?? null,
                   hasPrologue: project.hasPrologue,
                   hasEpilogue: project.hasEpilogue,
                   hasAuthorNote: project.hasAuthorNote,
@@ -2081,14 +2113,16 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
 
                 if (!retryResult.error && !retryResult.timedOut && retryResult.content?.trim()) {
                   const reviewedData = this.parseArchitectOutput(retryResult.content);
-                  const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
+                  // [Fix90 post-review] Validación range-aware.
                   const reviewedLen = reviewedData?.escaleta_capitulos?.length || 0;
+                  const acceptCount = this.isAcceptableEscaletaCount(project, reviewedLen);
+                  const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
                   // Fix 9 (architect review): además de personajes y caps, exigir matriz_arcos
                   // y estructura_tres_actos para evitar "escaletas fantasma" que solo tengan
                   // la lista de capítulos pero pierdan la columna vertebral estructural.
                   const hasMatrizArcos = !!(reviewedData as any)?.matriz_arcos;
                   const hasEstructura = !!(reviewedData as any)?.estructura_tres_actos;
-                  if (reviewedData && reviewedData.world_bible?.personajes?.length && reviewedLen >= expectedChapters - 2 && hasMatrizArcos && hasEstructura) {
+                  if (reviewedData && reviewedData.world_bible?.personajes?.length && acceptCount && hasMatrizArcos && hasEstructura) {
                     console.log(`[Orchestrator] Arquitecto rediseñó tras feedback del Lector Beta (iter ${betaIter}): ${reviewedData.world_bible.personajes.length} personajes, ${reviewedLen}/${expectedChapters} capítulos, matriz_arcos✓, estructura_tres_actos✓. Re-evaluando...`);
                     worldBibleData = reviewedData;
                     await storage.createActivityLog({
@@ -10206,6 +10240,29 @@ Responde SOLO con un JSON válido con la estructura:
     });
   }
 
+  /**
+   * [Fix90 post-review] Helper compartido para validar si la longitud de la
+   * escaleta es aceptable. En modo rango (min<max definidos) se exige que
+   * `escaletaLength` esté en `[min+extras, max+extras]`. En modo exacto se
+   * mantiene la semántica clásica: aceptar si `>= expectedChapters - 2`
+   * (tolerancia de los retries por originalidad/integridad/beta).
+   */
+  private isAcceptableEscaletaCount(project: Project, escaletaLength: number): boolean {
+    const extras =
+      (project.hasPrologue ? 1 : 0) +
+      (project.hasEpilogue ? 1 : 0) +
+      (project.hasAuthorNote ? 1 : 0);
+    const min = (project as any).minChapterCount as number | null | undefined;
+    const max = (project as any).maxChapterCount as number | null | undefined;
+    const rangeMode =
+      typeof min === "number" && typeof max === "number" && min > 0 && max > min;
+    if (rangeMode) {
+      return escaletaLength >= min! + extras && escaletaLength <= max! + extras;
+    }
+    const expected = project.chapterCount + extras;
+    return escaletaLength >= expected - 2;
+  }
+
   private buildSectionsList(project: Project, worldBibleData: ParsedWorldBible): SectionData[] {
     const sections: SectionData[] = [];
     const escaleta = worldBibleData.escaleta_capitulos || [];
@@ -10347,8 +10404,37 @@ Responde SOLO con un JSON válido con la estructura:
       });
     }
 
-    // Build chapters 1 through chapterCount by looking up by numero, not by array index
-    for (let chapterNum = 1; chapterNum <= project.chapterCount; chapterNum++) {
+    // [Fix90 post-review] En modo rango el Arquitecto puede haber elegido
+    // menos capítulos que `project.chapterCount` (que sigue siendo el "anchor"
+    // del slider del usuario). Si iteramos hasta chapterCount, fabricaríamos
+    // entradas vacías para los capítulos que el Arquitecto decidió no incluir,
+    // y la generación seguiría produciendo capítulos puente sin objetivo —
+    // exactamente el síntoma que Fix90 quería evitar. Derivamos el total real
+    // del escaleta cuando hay rango activo; en modo exacto mantenemos la
+    // semántica anterior (iterar hasta chapterCount) para no alterar nada.
+    const fix90MinB = (project as any).minChapterCount as number | null | undefined;
+    const fix90MaxB = (project as any).maxChapterCount as number | null | undefined;
+    const fix90RangeModeB =
+      typeof fix90MinB === "number" &&
+      typeof fix90MaxB === "number" &&
+      fix90MinB > 0 &&
+      fix90MaxB > fix90MinB;
+    let lastChapterNum = project.chapterCount;
+    if (fix90RangeModeB) {
+      const regularNums = escaleta
+        .map((c: any) => (typeof c.numero === "number" ? c.numero : 0))
+        .filter((n: number) => n >= 1);
+      const maxFromEscaleta = regularNums.length > 0 ? Math.max(...regularNums) : 0;
+      // Aceptamos solo si el max está dentro del rango aprobado (que ya validó
+      // el orquestador antes); si por algún drift quedó fuera, caemos al
+      // chapterCount original como red de seguridad.
+      if (maxFromEscaleta >= fix90MinB! && maxFromEscaleta <= fix90MaxB!) {
+        lastChapterNum = maxFromEscaleta;
+      }
+    }
+
+    // Build chapters 1 through lastChapterNum by looking up by numero, not by array index
+    for (let chapterNum = 1; chapterNum <= lastChapterNum; chapterNum++) {
       const chapterData = findChapterByNumero(chapterNum);
       sections.push({
         numero: chapterNum,

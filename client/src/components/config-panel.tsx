@@ -77,6 +77,9 @@ const configSchema = z.object({
   genre: z.string().min(1, "Selecciona un género"),
   tone: z.string().min(1, "Selecciona un tono"),
   chapterCount: z.number().min(1).max(350), // Increased for bookbox support
+  // [Fix90] Rango opcional. Si ambos están a null, comportamiento clásico exacto.
+  minChapterCount: z.number().min(1).max(350).nullable().optional(),
+  maxChapterCount: z.number().min(1).max(350).nullable().optional(),
   hasPrologue: z.boolean().default(false),
   hasEpilogue: z.boolean().default(false),
   hasAuthorNote: z.boolean().default(false),
@@ -114,6 +117,8 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
       genre: defaultValues?.genre || "fantasy",
       tone: defaultValues?.tone || "dramatic",
       chapterCount: defaultValues?.chapterCount || 10,
+      minChapterCount: (defaultValues as any)?.minChapterCount ?? null,
+      maxChapterCount: (defaultValues as any)?.maxChapterCount ?? null,
       hasPrologue: defaultValues?.hasPrologue || false,
       hasEpilogue: defaultValues?.hasEpilogue || false,
       hasAuthorNote: defaultValues?.hasAuthorNote || false,
@@ -674,6 +679,71 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
             </FormItem>
           )}
         />
+
+        {/* [Fix90] Rango opcional para que el Arquitecto decida el número
+            final según los hilos que aguante la premisa. Si quedan vacíos,
+            se usa el número exacto del slider de arriba. */}
+        {!isBookbox && (
+          <div className="rounded-md border border-border bg-muted/30 p-3 space-y-3">
+            <div className="text-sm font-medium">Rango flexible (opcional)</div>
+            <p className="text-xs text-muted-foreground">
+              Si rellenas mín. y máx., el Arquitecto decide el número final
+              de capítulos dentro de ese rango tras auditar la densidad de
+              hilos argumentales. Déjalo vacío para usar el número exacto del
+              slider de arriba.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="minChapterCount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Mínimo</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={100}
+                        placeholder="Ej: 20"
+                        value={field.value ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          field.onChange(v ? parseInt(v) : null);
+                        }}
+                        data-testid="input-min-chapter-count"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="maxChapterCount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Máximo</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={100}
+                        placeholder="Ej: 35"
+                        value={field.value ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          field.onChange(v ? parseInt(v) : null);
+                        }}
+                        data-testid="input-max-chapter-count"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </div>
+        )}
 
         <FormField
           control={form.control}

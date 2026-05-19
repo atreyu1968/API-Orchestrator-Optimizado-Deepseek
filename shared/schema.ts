@@ -78,6 +78,13 @@ export const projects = pgTable("projects", {
   genre: text("genre").notNull().default("fantasy"),
   tone: text("tone").notNull().default("dramatic"),
   chapterCount: integer("chapter_count").notNull().default(5),
+  // [Fix90] Rango opcional para que el Arquitecto decida el número final de
+  // capítulos dentro de [min, max] según cuántos hilos argumentales aguante
+  // realmente la premisa. Si son null o iguales a chapterCount se mantiene
+  // el comportamiento anterior (número exacto). Si min < max el Arquitecto
+  // ejecuta una autoauditoría de densidad y justifica el número elegido.
+  minChapterCount: integer("min_chapter_count"),
+  maxChapterCount: integer("max_chapter_count"),
   hasPrologue: boolean("has_prologue").notNull().default(false),
   hasEpilogue: boolean("has_epilogue").notNull().default(false),
   hasAuthorNote: boolean("has_author_note").notNull().default(false),
@@ -334,7 +341,23 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
   createdAt: true,
   status: true,
   currentChapter: true,
-});
+}).refine(
+  // [Fix90] Si el usuario manda ambos min y max, exigimos min < max (con un
+  // delta razonable). Si solo manda uno o ninguno, no se valida y caemos al
+  // modo exacto.
+  (data) => {
+    const min = (data as any).minChapterCount;
+    const max = (data as any).maxChapterCount;
+    if (typeof min === "number" && typeof max === "number") {
+      return min > 0 && max > min;
+    }
+    return true;
+  },
+  {
+    message: "minChapterCount debe ser > 0 y estrictamente menor que maxChapterCount",
+    path: ["maxChapterCount"],
+  },
+);
 
 export const insertPublisherSchema = createInsertSchema(publishers).omit({
   id: true,
