@@ -3268,7 +3268,15 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
           // system prompt sí lee ambos). Sin esto, el modelo recibía solo
           // título + total de libros en el user message y producía guías
           // genéricas desconectadas del libro real.
-          const seriesContext = `Serie basada en el libro ya escrito "${project.title}".\n\n${bookSummary}`;
+          // [Fix85] Si extrajimos el protagonista del worldBible del vol 1
+          // lo prefijamos al bookSummary y lo pasamos como anchor explícito
+          // al agente — antes el modelo a veces se inventaba un protagonista
+          // que no aparecía en el libro original porque sólo recibía la
+          // lista de "Personajes principales" sin marcar cuál era el lead.
+          const protagonistLine = initialProtagonistName
+            ? `PROTAGONISTA OFICIAL (extraído del libro original, NO INVENTAR OTRO): ${initialProtagonistName}\n`
+            : "";
+          const seriesContext = `Serie basada en el libro ya escrito "${project.title}".\n\n${protagonistLine}${bookSummary}`;
           const guideResult = await generateStyleGuide({
             guideType: "series_writing",
             seriesTitle: seriesTitle.trim(),
@@ -3276,6 +3284,7 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
             seriesIdea: seriesContext,
             seriesTotalBooks: totalPlannedBooks || 3,
             seriesWorkType: totalPlannedBooks === 3 ? "trilogy" : "series",
+            seriesProtagonistAnchor: initialProtagonistName || undefined,
             pseudonymName,
             language: "es",
           });
@@ -3705,6 +3714,15 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
 
       const seriesForbiddenNames = await extractForbiddenNames(newSeries.id);
 
+      // [Fix85] Prefijo con el protagonista oficial extraído del primer
+      // libro (Fix79) para evitar que el agente invente un protagonista que
+      // no aparece en los libros originales. Si no hay anchor, dejamos el
+      // prefijo vacío y el agente decidirá libremente como antes.
+      const reeditProtagonistLine = initialProtagonistName
+        ? `PROTAGONISTA OFICIAL (extraído del primer libro, NO INVENTAR OTRO): ${initialProtagonistName}\n\n`
+        : "";
+      const reeditSeriesContext = `${reeditProtagonistLine}Serie compuesta por los siguientes libros ya escritos:\n${bookSummaries.join("\n\n")}`;
+
       // [Fix83] Paridad con el endpoint hermano de proyectos: envolvemos
       // toda la generación de la guía en try/catch para no perder la serie
       // ya creada si el agente falla, y surface-amos el error en la
@@ -3718,10 +3736,11 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
           // [Fix83] Pasamos el resumen como `seriesDescription` Y `seriesIdea`
           // por el mismo motivo que en el endpoint hermano: la rama del user
           // message solo concatena `seriesIdea`.
-          seriesDescription: `Serie compuesta por los siguientes libros ya escritos:\n${bookSummaries.join("\n\n")}`,
-          seriesIdea: `Serie compuesta por los siguientes libros ya escritos:\n${bookSummaries.join("\n\n")}`,
+          seriesDescription: reeditSeriesContext,
+          seriesIdea: reeditSeriesContext,
           seriesTotalBooks: plannedCount,
           seriesWorkType: plannedCount === 3 ? "trilogy" : "series",
+          seriesProtagonistAnchor: initialProtagonistName || undefined,
           pseudonymName,
           language: firstLang,
           forbiddenNames: seriesForbiddenNames.length > 0 ? seriesForbiddenNames : undefined,

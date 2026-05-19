@@ -27,6 +27,13 @@ interface GenerateGuideParams {
   seriesTotalBooks?: number;
   seriesWorkType?: string;
   seriesIdea?: string;
+  // [Fix85] Anchor inviolable del protagonista único de la serie (Fix79).
+  // Cuando se pasa, el system prompt y el user message le ordenan al modelo
+  // que centre toda la guía en ESTE personaje y NO invente uno nuevo. Antes
+  // (Fix83) solo pasábamos el `bookSummary` con la lista de personajes y
+  // el modelo elegía libremente, a menudo bautizando un protagonista que
+  // no aparecía en el libro original.
+  seriesProtagonistAnchor?: string;
   language?: string;
   forbiddenNames?: string[];
 }
@@ -358,12 +365,20 @@ Tu tarea es crear una GUÍA DE ESCRITURA PARA SERIE literaria.
 
 Información de la serie:
 - Título: ${params.seriesTitle}
+${params.seriesProtagonistAnchor ? `- PROTAGONISTA OFICIAL DE LA SERIE: ${params.seriesProtagonistAnchor}` : ''}
 ${params.seriesIdea ? `- Idea/Concepto: ${params.seriesIdea}` : ''}
 ${params.seriesDescription ? `- Descripción: ${params.seriesDescription}` : ''}
 ${params.seriesTotalBooks ? `- Libros planificados: ${params.seriesTotalBooks}` : ''}
 ${params.seriesWorkType ? `- Tipo: ${params.seriesWorkType}` : ''}
 ${params.genre ? `- Género: ${params.genre}` : ''}
 ${params.pseudonymName ? `- Autor/Pseudónimo: ${params.pseudonymName}` : ''}
+${params.seriesProtagonistAnchor ? `
+REGLA INVIOLABLE — PROTAGONISTA ÚNICO:
+- El protagonista oficial y único de esta serie es **${params.seriesProtagonistAnchor}**.
+- NO inventes, renombres ni sustituyas a este personaje bajo ningún concepto.
+- Toda la guía (visión global, arcos, planificación de volúmenes, ejemplos) debe centrarse en ${params.seriesProtagonistAnchor} como protagonista en TODOS los volúmenes.
+- Si la descripción del libro de origen menciona otros nombres, son secundarios; el protagonista sigue siendo ${params.seriesProtagonistAnchor}.
+- En la sección "PLANIFICACIÓN DE VOLÚMENES", cada sinopsis debe mencionar explícitamente a ${params.seriesProtagonistAnchor} como personaje principal del volumen.` : ''}
 
 Crea una guía EXHAUSTIVA para mantener la coherencia y calidad a lo largo de toda la serie:
 
@@ -493,7 +508,12 @@ Si necesitas sugerir nombres de personajes, inventa nombres COMPLETAMENTE NUEVOS
       userMessage = `Inventa una novela original apropiada para el pseudónimo "${params.pseudonymName}" basándote en su(s) guía(s) de estilo, biografía, género y tono indicados en el system prompt. Genera la guía de escritura completa de esa novela inventada (premisa, estructura, personajes, plan capítulo a capítulo, época, reglas de escritura, escena modelo). Recuerda comenzar con la línea "TÍTULO DE LA NOVELA: ..." obligatoriamente.`;
       break;
     case "series_writing":
-      userMessage = `Genera una guía de escritura exhaustiva para la serie "${params.seriesTitle}"${params.seriesTotalBooks ? ` (${params.seriesTotalBooks} volúmenes planificados)` : ''}.${params.seriesIdea ? ` Concepto de la serie: ${params.seriesIdea}` : ''} La guía debe asegurar coherencia narrativa, estilística y argumental a lo largo de toda la serie.${params.seriesTotalBooks && params.seriesTotalBooks > 1 ? ` Incluye al final una sección "PLANIFICACIÓN DE VOLÚMENES" con título sugerido y sinopsis breve para cada uno de los ${params.seriesTotalBooks} libros planificados.` : ''}`;
+      // [Fix85] Si tenemos el anchor del protagonista (Fix79), lo
+      // repetimos en el user message para reforzar la regla inviolable
+      // declarada en el system prompt. El modelo prioriza el último
+      // mensaje, así que sin esto a veces inventaba otro protagonista
+      // pese a la regla en el system.
+      userMessage = `Genera una guía de escritura exhaustiva para la serie "${params.seriesTitle}"${params.seriesTotalBooks ? ` (${params.seriesTotalBooks} volúmenes planificados)` : ''}.${params.seriesProtagonistAnchor ? ` El protagonista oficial y único de la serie es ${params.seriesProtagonistAnchor} — NO inventes otro protagonista; toda la guía debe girar en torno a este personaje.` : ''}${params.seriesIdea ? ` Concepto de la serie: ${params.seriesIdea}` : ''} La guía debe asegurar coherencia narrativa, estilística y argumental a lo largo de toda la serie.${params.seriesTotalBooks && params.seriesTotalBooks > 1 ? ` Incluye al final una sección "PLANIFICACIÓN DE VOLÚMENES" con título sugerido y sinopsis breve para cada uno de los ${params.seriesTotalBooks} libros planificados${params.seriesProtagonistAnchor ? `, mencionando a ${params.seriesProtagonistAnchor} explícitamente como protagonista en cada sinopsis` : ''}.` : ''}`;
       break;
   }
 
