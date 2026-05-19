@@ -23,6 +23,12 @@ const SCHEMA_PATCHES: string[] = [
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "last_holistic_notes" text`,
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "last_holistic_notes_at" timestamp`,
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "final_score_at" timestamp`,
+  // [Fix90] Rango opcional min/max de capítulos para que el Arquitecto audite
+  // densidad y decida el número final en lugar de rellenar con tramas puente.
+  // Ambas columnas son NULL por defecto: proyectos existentes mantienen el
+  // comportamiento clásico exacto vía `chapterCount`.
+  `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "min_chapter_count" integer`,
+  `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "max_chapter_count" integer`,
 ];
 
 let schemaEnsured = false;
