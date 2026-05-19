@@ -140,6 +140,15 @@ ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS holistic_score    INTEGER;
 ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS holistic_score_at TIMESTAMP;
 ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS beta_score        INTEGER;
 ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS beta_score_at     TIMESTAMP;
+-- [Fix79] Anchor inviolable del protagonista único de la serie
+ALTER TABLE series          ADD COLUMN IF NOT EXISTS protagonist_name  TEXT;
+-- [Fix82] Notas íntegras del Holístico + timestamps para finalScore/Holístico
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS last_holistic_notes    TEXT;
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS last_holistic_notes_at TIMESTAMP;
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS final_score_at         TIMESTAMP;
+-- [Fix90] Rango opcional min/max de capítulos (NULL = modo exacto clásico)
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS min_chapter_count INTEGER;
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS max_chapter_count INTEGER;
 SQL
 
 echo "   Ejecutando db:push como superusuario postgres..."
