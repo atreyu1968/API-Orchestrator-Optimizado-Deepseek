@@ -406,6 +406,40 @@ export async function registerRoutes(
     }
   });
 
+  // [Fix86] Guard de orden de serie: bloquea crear/generar un volumen N>1
+  // cuando los volúmenes anteriores aún no existen (modo "exists", al crear
+  // o reasignar seriesOrder) o no están completados (modo "completed", al
+  // disparar la generación). Antes el usuario podía pulsar "Generar" en el
+  // esqueleto del vol 3 sin haber escrito el vol 2, y el Ghostwriter
+  // arrancaba sin poder leer el texto del volumen anterior.
+  async function assertPreviousSeriesVolumes(
+    seriesId: number | null | undefined,
+    seriesOrder: number | null | undefined,
+    mode: "exists" | "completed",
+    excludeProjectId?: number,
+  ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+    if (!seriesId || !seriesOrder || seriesOrder <= 1) return { ok: true };
+    const siblings = await storage.getProjectsBySeries(seriesId);
+    for (let order = 1; order < seriesOrder; order++) {
+      const sib = siblings.find(p => p.seriesOrder === order && p.id !== excludeProjectId);
+      if (!sib) {
+        return {
+          ok: false,
+          status: 409,
+          message: `No puedes ${mode === "completed" ? "generar" : "crear"} el volumen ${seriesOrder} de la serie porque el volumen ${order} todavía no existe. Crea los volúmenes anteriores antes de continuar.`,
+        };
+      }
+      if (mode === "completed" && sib.status !== "completed") {
+        return {
+          ok: false,
+          status: 409,
+          message: `No puedes generar el volumen ${seriesOrder} porque el volumen ${order} ("${sib.title}") todavía no está completado (estado actual: ${sib.status}). Termina los volúmenes anteriores antes de continuar.`,
+        };
+      }
+    }
+    return { ok: true };
+  }
+
   app.post("/api/projects", async (req: Request, res: Response) => {
     try {
       console.log("[API] POST /api/projects - body keys:", Object.keys(req.body || {}), "title:", req.body?.title);
@@ -413,6 +447,15 @@ export async function registerRoutes(
       if (!parsed.success) {
         console.error("Project validation failed:", JSON.stringify(parsed.error.flatten()));
         return res.status(400).json({ error: "Invalid project data", details: parsed.error.flatten() });
+      }
+      // [Fix86] Bloqueo de creación si el seriesOrder>1 y los volúmenes
+      // anteriores aún no existen como proyectos.
+      if (parsed.data.workType === "series" && parsed.data.seriesId && parsed.data.seriesOrder && parsed.data.seriesOrder > 1) {
+        const check = await assertPreviousSeriesVolumes(parsed.data.seriesId, parsed.data.seriesOrder, "exists");
+        if (!check.ok) {
+          console.warn(`[Fix86] POST /api/projects bloqueado: ${check.message}`);
+          return res.status(check.status).json({ error: "Series order violation", message: check.message });
+        }
       }
       console.log("[API] Parsed data keys:", Object.keys(parsed.data), "title:", parsed.data.title);
       const project = await storage.createProject(parsed.data);
@@ -463,6 +506,13 @@ export async function registerRoutes(
         if (seriesParsed.data.workType === "standalone") {
           updateData.seriesId = null;
           updateData.seriesOrder = null;
+        } else if (seriesParsed.data.workType === "series" && seriesParsed.data.seriesId && seriesParsed.data.seriesOrder && seriesParsed.data.seriesOrder > 1) {
+          // [Fix86] Bloqueo al reasignar seriesOrder>1: vols 1..N-1 deben existir.
+          const check = await assertPreviousSeriesVolumes(seriesParsed.data.seriesId, seriesParsed.data.seriesOrder, "exists", id);
+          if (!check.ok) {
+            console.warn(`[Fix86] PATCH /api/projects/${id} bloqueado: ${check.message}`);
+            return res.status(check.status).json({ error: "Series order violation", message: check.message });
+          }
         }
       }
 
@@ -856,6 +906,18 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project is already generating" });
       }
 
+      // [Fix86] Bloqueo de generación si el proyecto es vol N>1 de una serie
+      // y algún volumen anterior no está completado. El Ghostwriter necesita
+      // el texto íntegro de los volúmenes previos para coherencia (Fix78);
+      // sin ellos terminados, la generación arrancaría a ciegas.
+      if (project.workType === "series" && project.seriesId && project.seriesOrder && project.seriesOrder > 1) {
+        const check = await assertPreviousSeriesVolumes(project.seriesId, project.seriesOrder, "completed", id);
+        if (!check.ok) {
+          console.warn(`[Fix86] POST /api/projects/${id}/generate bloqueado: ${check.message}`);
+          return res.status(check.status).json({ error: "Series order violation", message: check.message });
+        }
+      }
+
       res.json({ message: "Generation started", projectId: id });
 
       const sendToStreams = (data: any) => {
@@ -938,6 +1000,19 @@ export async function registerRoutes(
         return res.status(400).json({ 
           error: `Cannot resume project with status "${project.status}". Only paused, cancelled, or error projects can be resumed.` 
         });
+      }
+
+      // [Fix86] Mismo gate que /generate: reanudar un vol N>1 también requiere
+      // que los volúmenes anteriores estén completados (el Ghostwriter lee su
+      // texto íntegro para coherencia). Sin esto, una reanudación podría
+      // continuar generando capítulos basados en volúmenes inexistentes o
+      // borrados desde el último arranque.
+      if (project.workType === "series" && project.seriesId && project.seriesOrder && project.seriesOrder > 1) {
+        const check = await assertPreviousSeriesVolumes(project.seriesId, project.seriesOrder, "completed", id);
+        if (!check.ok) {
+          console.warn(`[Fix86] POST /api/projects/${id}/resume bloqueado: ${check.message}`);
+          return res.status(check.status).json({ error: "Series order violation", message: check.message });
+        }
       }
 
       console.log(`[Resume] Updating project ${id} status to generating`);
