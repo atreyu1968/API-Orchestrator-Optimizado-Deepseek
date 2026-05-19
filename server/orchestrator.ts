@@ -5589,15 +5589,52 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // chat editorial o desde un futuro botón "operaciones administrativas".
       if (autoInstructions.pendingAdministrative.length > 0) {
         const lines = autoInstructions.pendingAdministrative.map(p => {
-          const tipoLabel = p.tipo === "fusionar" ? "FUSIÓN DE CAPÍTULOS" : "DIRECTIVA TRANSVERSAL DE ESTILO";
+          const tipoLabel = p.tipo === "fusionar"
+            ? "FUSIÓN DE CAPÍTULOS"
+            : p.tipo === "structural_restructure"
+              ? "REESTRUCTURACIÓN ESTRUCTURAL (Fix87)"
+              : "DIRECTIVA TRANSVERSAL DE ESTILO";
           return `  • [${tipoLabel}] ${p.descripcion}\n      → Detalle: ${p.motivo.slice(0, 240)}${p.motivo.length > 240 ? "…" : ""}`;
         }).join("\n");
         await storage.createActivityLog({
           projectId: project.id,
           level: "warning",
-          message: `Fix 14 — Operaciones que requieren confirmación humana (NO se aplicarán automáticamente con las demás):\n${lines}\n\nFusiones: usa el chat editorial pidiendo "fusiona el cap X con el Y" o aplica el borrado y reescritura por separado. Directivas transversales: regístralas para el siguiente pase de Pulido.`,
+          message: `Operaciones que requieren confirmación humana (NO se aplicarán automáticamente con las demás):\n${lines}\n\nFusiones: usa el chat editorial pidiendo "fusiona el cap X con el Y" o aplica el borrado y reescritura por separado. Directivas transversales: regístralas para el siguiente pase de Pulido. Reestructuraciones estructurales (Fix87): se han persistido en "Acciones administrativas pendientes" — revísalas y decide si las aplicas con la herramienta de gestión de capítulos o las descartas.`,
           agentRole: "editor",
         });
+
+        // [Fix87] Persistir las reestructuraciones estructurales en
+        // projects.pendingAdminActions con type "structural_restructure". El
+        // resto (fusionar / global_style) sigue solo en activity log porque
+        // pendingAdminActions está pensado para acciones cap-level con
+        // targetChapter; aquí persistimos solo lo "structural_restructure"
+        // que el usuario sí necesita ver como tarjeta pendiente. Sin
+        // targetChapter (= 0) porque puede afectar a varios o ser global,
+        // y el `descripcion` ya incluye los caps en su prefijo.
+        const structuralReshapes = autoInstructions.pendingAdministrative.filter(p => p.tipo === "structural_restructure");
+        if (structuralReshapes.length > 0) {
+          try {
+            const fresh = await storage.getProject(project.id);
+            const existing = Array.isArray((fresh as any)?.pendingAdminActions) ? (fresh as any).pendingAdminActions : [];
+            const nextId = existing.reduce((max: number, a: any) => Math.max(max, Number(a?.id) || 0), 0) + 1;
+            const merged = [
+              ...existing,
+              ...structuralReshapes.map((p, idx) => ({
+                id: nextId + idx,
+                type: "structural_restructure",
+                targetChapter: 0,
+                targetLabel: p.descripcion.slice(0, 160),
+                secondaryChapter: null,
+                reason: p.motivo,
+                source: "holistic-beta-auto-loop",
+                createdAt: new Date().toISOString(),
+              })),
+            ];
+            await storage.updateProject(project.id, { pendingAdminActions: merged } as any);
+          } catch (persistErr: any) {
+            console.error("[Fix87] Failed to persist structural_restructure admin actions:", persistErr?.message || persistErr);
+          }
+        }
       }
 
       // Fix 14: si hay instrucciones multi-capítulo SIN plan_por_capitulo, avisar
@@ -6240,6 +6277,35 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           motivo: instrucciones_correccion || descripcion,
         });
         continue;
+      }
+
+      // [Fix87] Si la instrucción es de tipo "estructural" pero su redacción
+      // describe una operación que el cirujano cap-a-cap NO puede ejecutar
+      // (eliminar/podar caps, fusionar caps, añadir capítulo/escena entre
+      // caps existentes, mover/reordenar caps, dividir cap en N, reescribir
+      // clímax/acto entero, reestructuración global), la rutamos a
+      // pendingAdministrative ANTES de mandarla al flujo de reescritura. El
+      // caller (parseEditorialNotesOnly) la persiste en pendingAdminActions
+      // con type "structural_restructure" para que el usuario decida.
+      //
+      // El check mira: descripcion + instrucciones_correccion +
+      // todas las strings de plan_por_capitulo (donde el Holístico a veces
+      // esconde la operación destructiva ("Borrar este capítulo y trasladar
+      // X al cap N+1") con tipo "estructural" en el envoltorio).
+      if (tipo === "estructural") {
+        const planText = plan_por_capitulo
+          ? Object.values(plan_por_capitulo).join(" | ")
+          : "";
+        const reshapeCorpus = `${descripcion} | ${instrucciones_correccion} | ${planText}`;
+        if (this.isMultiChapterStructuralReshape(reshapeCorpus)) {
+          const capsLabel = caps.length > 0 ? `caps ${caps.sort((a, b) => a - b).join(", ")}` : "(sin caps específicos)";
+          pendingAdministrative.push({
+            tipo: "structural_restructure",
+            descripcion: `[Estructural ${capsLabel}] ${descripcion}`,
+            motivo: instrucciones_correccion || descripcion,
+          });
+          continue; // NO entra en el array de instrucciones aplicables.
+        }
       }
 
       // Validación Fix 14: multi-cap (caps>1) en tipos puntual/estructural REQUIERE
@@ -7434,6 +7500,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     let prevBetaScore: number | null = null;
     let prevHolisticScore: number | null = null;
     let stalledIterations = 0;
+    // [Fix89] Trackeo del score inicial para detectar progreso acumulado. Se
+    // setean en la PRIMERA iteración con un score no-nulo. Sirven para la
+    // salida por "convergencia aceptable": si tras varias iteraciones el
+    // Holístico subió ≥+2 desde el inicio Y el Beta se mantiene ≥(TARGET-1),
+    // aceptamos la mejor versión y ejecutamos ortotipográfica en lugar de
+    // descartar el progreso por no haber clavado el target dual estricto.
+    let initialBetaScore: number | null = null;
+    let initialHolisticScore: number | null = null;
     let bestSnapshot: { beta: number; holistic: number; chapters: { id: number; chapterNumber: number; content: string }[] } | null = null;
 
     // [Fix81 v2] Snapshot estructural: captura ID + chapterNumber + content por
@@ -7477,10 +7551,59 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       return { restored, missing, structuralDrift };
     };
 
+    // [Fix89] Helper de "convergencia aceptable": el loop puede salir como
+    // éxito SIN clavar el target dual estricto (Beta≥9 AND Holístico≥8) si
+    // el manuscrito ha mejorado sustancialmente pero las críticas restantes
+    // del Holístico son estructurales no aplicables (que ahora Fix87 ruta a
+    // pendingAdminActions). En ese caso el cirujano cap-a-cap no puede
+    // avanzar más por sí mismo y bloquear la ortotipográfica final castiga
+    // injustamente al manuscrito.
+    //
+    // Criterio (todos los tres):
+    //   1. holisticScore − initialHolisticScore ≥ +2  (progreso real y grande)
+    //   2. betaScore ≥ TARGET_BETA_SCORE − 1  (≥8, Beta estable cerca del target)
+    //   3. holisticScore ≥ initialHolisticScore + 2  (redundante con 1; tracking puro)
+    // Si se cumple, restauramos el bestSnapshot (puede ser el actual o uno
+    // previo mejor) y ejecutamos ortotipográfica final. Logueamos como
+    // "convergence_accepted" con el delta H/B desde el arranque.
+    const tryAcceptableConvergenceExit = async (
+      currentScores: { beta: number | null; holistic: number | null },
+      reason: string,
+    ): Promise<boolean> => {
+      if (initialHolisticScore === null) return false;
+      if (currentScores.beta === null || currentScores.holistic === null) return false;
+      const holisticDelta = currentScores.holistic - initialHolisticScore;
+      const betaOk = currentScores.beta >= (TARGET_BETA_SCORE - 1);
+      const holisticImproved = holisticDelta >= 2;
+      if (!betaOk || !holisticImproved) return false;
+      // Restaurar el mejor snapshot si lo tenemos y es ≥ la versión actual
+      // por combined score (Fix81 ya garantiza que bestSnapshot es la mejor
+      // combinación vista; restaurar es no-op si la iter actual ES la mejor).
+      let restoreNote = "";
+      if (bestSnapshot) {
+        const r = await restoreSnapshot(bestSnapshot.chapters);
+        restoreNote = r.restored > 0
+          ? ` Restaurados ${r.restored} capítulo(s) del mejor snapshot (Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}).${r.structuralDrift ? " ⚠️ Drift estructural: " + r.missing + " cap(s) del snapshot ya no existen." : ""}`
+          : "";
+      }
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "success",
+        message: `[Fix89] CONVERGENCIA ACEPTABLE en iter ${iter} (${reason}). Holístico subió de ${initialHolisticScore} → ${currentScores.holistic} (+${holisticDelta}) y Beta=${currentScores.beta} (≥${TARGET_BETA_SCORE - 1}). El target dual estricto (Beta≥${TARGET_BETA_SCORE} AND Holístico≥${TARGET_HOLISTIC_SCORE}) no se alcanzó porque las críticas restantes son estructurales no aplicables por el cirujano cap-a-cap (ver acciones administrativas pendientes).${restoreNote} Ejecutando corrección ortotipográfica final sobre la mejor versión.`,
+        agentRole: "editor",
+      });
+      await this.runOrthotypographicPassAndUpdate(currentProject);
+      this.callbacks.onAutoReviewReady?.({
+        count: 0,
+        resumen: `Convergencia aceptable: Beta=${currentScores.beta}, Holístico=${currentScores.holistic} (Δ+${holisticDelta} desde inicio).`,
+      });
+      return true;
+    };
+
     try {
       await storage.createActivityLog({
         projectId: project.id, level: "info",
-        message: `[Fix81] Auto-revisión Holístico+Beta iniciada (target DUAL: Beta ≥ ${TARGET_BETA_SCORE}/10 AND Holístico ≥ ${TARGET_HOLISTIC_SCORE}/10, máx ${MAX_ITERATIONS} iteraciones).`,
+        message: `[Fix81] Auto-revisión Holístico+Beta iniciada (target DUAL: Beta ≥ ${TARGET_BETA_SCORE}/10 AND Holístico ≥ ${TARGET_HOLISTIC_SCORE}/10, máx ${MAX_ITERATIONS} iteraciones). [Fix89] Salida adicional por convergencia aceptable si Holístico sube ≥+2 desde inicio y Beta≥${TARGET_BETA_SCORE - 1}.`,
         agentRole: "editor",
       });
 
@@ -7522,6 +7645,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         const holisticScore: number | null = holisticOutcome.status === "fulfilled"
           ? (typeof holisticOutcome.value?.score === "number" ? holisticOutcome.value.score : null)
           : null;
+
+        // [Fix89] Capturar scores iniciales (primera iter con score no-nulo).
+        if (initialBetaScore === null && betaScore !== null) initialBetaScore = betaScore;
+        if (initialHolisticScore === null && holisticScore !== null) initialHolisticScore = holisticScore;
 
         // [Fix76] Verificación desatendida de pendingAdminActions (delete/merge…)
         const holisticVerdicts = holisticOutcome.status === "fulfilled"
@@ -7733,10 +7860,18 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         // Sin instrucciones aplicables: aunque el Beta no haya llegado a 9, no
         // hay nada concreto que aplicar. Persistimos y terminamos.
         if (instructions.length === 0) {
+          // [Fix89] Antes de salir como "sin target alcanzado", probamos la
+          // salida por convergencia aceptable. Es el caso típico tras Fix87:
+          // el Holístico solo emite estructurales no aplicables que se rutan
+          // a pendingAdminActions y la lista queda vacía, pero el manuscrito
+          // sí ha mejorado respecto al inicio del loop.
+          if (await tryAcceptableConvergenceExit({ beta: betaScore, holistic: holisticScore }, "sin instrucciones aplicables")) {
+            return;
+          }
           await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_no_instructions");
           await storage.createActivityLog({
             projectId: project.id, level: "info",
-            message: `[Fix81] Iter ${iter}: ${scoreLabel}. Ambos lectores escribieron prosa pero el parser no extrajo instrucciones aplicables. Auto-revisión finalizada SIN target dual alcanzado.`,
+            message: `[Fix81] Iter ${iter}: ${scoreLabel}. Ambos lectores escribieron prosa pero el parser no extrajo instrucciones aplicables (o todas se rutaron a acciones administrativas por Fix87). Auto-revisión finalizada SIN target dual alcanzado.`,
             agentRole: "editor",
           });
           return;
@@ -7756,6 +7891,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           stalledIterations = 0;
         }
         if (stalledIterations >= 2) {
+          // [Fix89] Antes de declarar estancamiento total, probamos la salida
+          // por convergencia aceptable (Holístico ≥ initial+2 AND Beta ≥ 8).
+          // Caso típico: el Holístico subió de 5 → 7 y se atasca porque las
+          // críticas restantes son estructurales no aplicables, pero el Beta
+          // sigue alto. No tiene sentido descartar la mejora.
+          if (await tryAcceptableConvergenceExit({ beta: betaScore, holistic: holisticScore }, "estancamiento tras 2 iters sin mejora")) {
+            return;
+          }
           await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_stalled");
           await storage.createActivityLog({
             projectId: project.id, level: "warning",
@@ -7769,6 +7912,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
         // Última iteración: persistimos para revisión manual sin aplicar más.
         if (iter >= MAX_ITERATIONS) {
+          // [Fix89] Antes de cerrar por máximo, intentamos convergencia aceptable.
+          if (await tryAcceptableConvergenceExit({ beta: betaScore, holistic: holisticScore }, `máximo de iteraciones (${MAX_ITERATIONS}) alcanzado`)) {
+            return;
+          }
           await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_max_iter");
           await storage.createActivityLog({
             projectId: project.id, level: "warning",
@@ -14074,6 +14221,63 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
   // en el capítulo Y», «dividir el capítulo en dos», «mover la escena del cap A
   // al cap B», «reordenar los capítulos», «reestructuración global del
   // manuscrito».
+  // [Fix87] Detección a NIVEL DE INSTRUCCIÓN del Holístico/Beta — opera sobre
+  // `descripcion + instrucciones_correccion + plan_por_capitulo` ANTES de pasar
+  // la instrucción al cirujano cap-a-cap. Cubre el mismo conjunto de verbos
+  // estructurales que `isStructuralRestructureInstruction` (que opera sobre la
+  // razón del cirujano DESPUÉS de fallar) más variantes propias del informe
+  // editorial: "podar caps X-Y", "añadir escena entre cap N y cap M",
+  // "reescribir el clímax desde cero", "reestructurar el tercer acto", etc.
+  //
+  // Lo que matchea aquí NO va al cirujano: se ruta a `pendingAdministrative`
+  // y se persiste como acción admin con type "structural_restructure" para que
+  // el usuario decida manualmente (eliminar/fusionar caps con la herramienta
+  // adecuada, encolar un Architect.restructure_arc, o descartar). Antes de
+  // este fix, estas instrucciones consumían una llamada al cirujano por cada
+  // capítulo afectado para que cada una devolviese "no es cirugía local";
+  // ese coste era inútil y, peor, el loop Fix81 contaba 0 aplicadas y
+  // abortaba sin avanzar el manuscrito ni avisar de la causa real.
+  private isMultiChapterStructuralReshape(text: string): boolean {
+    const r = (text || "").toLowerCase().trim();
+    if (!r) return false;
+    const patterns = [
+      // Eliminar/borrar/podar capítulos enteros desde un informe editorial.
+      /(eliminar|borrar|suprimir|quitar|podar|recortar)\s+(?:el\s+|este\s+|los?\s+|un\s+)?cap[ií]tulos?\b/,
+      // Fusionar / unir / combinar / consolidar / condensar capítulos.
+      /(fusionar|unir|combinar|consolidar|condensar)\s+(?:los?\s+|el\s+|\d+\s+|varios?\s+)?cap[ií]tulos?/,
+      /fusi[oó]n\s+(?:de\s+(?:los?\s+)?cap[ií]tulos?|con\s+(?:el\s+|otro\s+)?cap[ií]tulo)/,
+      // Insertar / añadir CAPÍTULO nuevo (capítulo entero — siempre estructural).
+      /(insertar|intercalar|añadir|agregar|incluir|introducir)\s+(?:un\s+)?(?:nuevo\s+)?cap[ií]tulo\b/,
+      // Insertar escena/sección SOLO si se cruza una frontera entre capítulos
+      // (en cuyo caso afecta a la estructura). "Añadir una escena adicional"
+      // dentro de UN capítulo es puntual y NO debe rutarse a admin.
+      /(insertar|intercalar|añadir|agregar|incluir|introducir)\s+(?:un\s+|una\s+|nuevo\s+|nueva\s+)?(escena|secci[oó]n)\s+(?:entre\s+(?:los\s+)?cap[ií]tulos?|antes\s+del?\s+cap[ií]tulo|despu[eé]s\s+del?\s+cap[ií]tulo|en\s+un\s+cap[ií]tulo\s+nuevo)/,
+      // [Fix87 post-review] Restringido: la inserción de escena solo cuenta
+      // como reshape si menciona explícitamente capítulos (cruza fronteras).
+      // "Añadir escena después del diálogo" dentro de UN capítulo es puntual.
+      /añadir\s+(?:una\s+)?escena\s+(?:nueva\s+)?(?:entre\s+(?:los\s+)?cap[ií]tulos?|antes\s+del?\s+cap[ií]tulo|despu[eé]s\s+del?\s+cap[ií]tulo)/,
+      // Mover / trasladar capítulo concreto a otra posición.
+      /(mover|trasladar|reubicar)\s+(?:el\s+|este\s+)?cap[ií]tulo\s+-?\d+/,
+      /mover\s+(?:su\s+|el\s+|este\s+)?(?:contenido|texto|escena|secci[oó]n|p[aá]rrafo)\s+(?:al?|hacia|a\s+otro)\s+cap[ií]tulo/,
+      // Reordenar / renumerar capítulos.
+      /reordenar\s+(?:los?\s+)?cap[ií]tulos?/,
+      /renumerar\s+(?:los?\s+)?cap[ií]tulos?/,
+      // Dividir capítulo en N partes/capítulos independientes (estructural).
+      /(dividir|partir)\s+(?:el\s+|este\s+)?cap[ií]tulo\s+en\s+(?:dos|tres|cuatro|cinco|seis|varios?|m[uú]ltiples?|\d+)\s+(?:partes?|cap[ií]tulos?|secciones?\s+independientes?)/,
+      // Reescribir clímax / final / acto entero (no es cirugía local).
+      /reescrib[ie]r\s+(?:el\s+|completamente\s+el\s+|desde\s+cero\s+el\s+)?cl[ií]max/,
+      /reescrib[ie]r\s+(?:el\s+|completamente\s+el\s+|desde\s+cero\s+el\s+)?(desenlace|final|tercer\s+acto|segundo\s+acto|primer\s+acto)/,
+      /(reestructurar|rediseñar|rehacer)\s+(?:el\s+|los\s+)?(acto|cl[ií]max|desenlace|tercer\s+acto|segundo\s+acto|primer\s+acto|arco\s+de\s+\w+)/,
+      // Extraer/sacar contenido para llevarlo a otro capítulo.
+      /(extraer|sacar)\s+(?:el\s+|este\s+|su\s+)?(?:contenido|texto|escena|secci[oó]n|p[aá]rrafo)\s+(?:del?\s+|de\s+este\s+)?cap[ií]tulo\s+(?:para|hacia|al?\s+cap)/,
+      // Etiquetas autoexplícitas del propio informe.
+      /reestructuraci[oó]n\s+(global|estructural|del\s+manuscrito|profunda)/,
+      /a\s+nivel\s+(?:de\s+)?(?:edici[oó]n\s+)?estructural/,
+      /edici[oó]n\s+estructural/,
+    ];
+    return patterns.some(re => re.test(r));
+  }
+
   private isStructuralRestructureInstruction(surgeonReason: string): boolean {
     const r = (surgeonReason || "").toLowerCase().trim();
     if (!r) return false;

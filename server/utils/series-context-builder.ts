@@ -73,6 +73,38 @@ export async function buildSeriesContextForReviewers(opts: SeriesContextOptions)
     parts.push("## CONTEXTO DE SERIE");
     parts.push("═══════════════════════════════════════════════════════════════════");
     parts.push("");
+
+    // [Fix88] BRIEF OPERATIVO al inicio del bloque. El bloque CONTEXTO DE SERIE
+    // ya describía vol N/M, milestones e hilos, pero quedaba sepultado tras los
+    // párrafos de framing y el modelo seguía aplicando rúbrica de "novela
+    // autoconclusiva" en volúmenes intermedios — penalizando ganchos abiertos,
+    // arcos no resueltos y reescritura del clímax como si fueran defectos
+    // (cuando en realidad son comportamiento esperado de un Vol. N < M).
+    // El brief de abajo es una lista corta y directiva ("PENALIZA / NO
+    // PENALICES") que el reviewer ve ANTES del resto del contexto. Es
+    // redundante con regla 5 del system prompt a propósito (refuerzo).
+    if (isPrequel) {
+      parts.push("### BRIEF OPERATIVO PARA ESTA REVISIÓN");
+      parts.push(`- Estás revisando una **PRECUELA (Vol. 0 de ${totalVolumes})**. Es el PRIMER libro cronológico de una serie en curso, NO una novela autoconclusiva.`);
+      parts.push("- **PENALIZA**: contradicciones con volúmenes posteriores (canon de la serie), incoherencias internas dentro de esta precuela, fallos de ritmo/voz/prosa, hitos OBLIGATORIOS de la precuela ausentes (ver lista abajo).");
+      parts.push("- **NO PENALICES**: hilos de serie que quedan abiertos hacia Vol. 1+, conflictos políticos/místicos/familiares sin cerrar, personajes que sobreviven (es lo esperado), cliffhanger o transición hacia el siguiente libro al final.");
+      parts.push("- **NO EMITAS** instrucciones tipo `tipo:\"estructural\"` que pidan eliminar/fusionar/podar capítulos enteros, mover caps de posición, reescribir el clímax desde cero o reestructurar actos enteros. El sistema NO las puede ejecutar automáticamente (el cirujano trabaja capítulo a capítulo). Si una crítica es estructural, expón el diagnóstico en prosa para que el usuario decida; NO la incluyas en el bloque INSTRUCCIONES_AUTOAPLICABLES.");
+      parts.push("");
+    } else {
+      const remaining = Math.max(0, totalVolumes - volumeNumber);
+      parts.push("### BRIEF OPERATIVO PARA ESTA REVISIÓN");
+      parts.push(`- Estás revisando el **VOLUMEN ${volumeNumber} DE ${totalVolumes}** ${isLastVolume ? "(ÚLTIMO VOLUMEN — cierre total)" : `(quedan ${remaining} volumen${remaining === 1 ? "" : "es"} después de éste)`}.`);
+      if (isLastVolume) {
+        parts.push("- **PENALIZA**: cualquier arco de serie que se quede abierto, hilos heredados sin cierre, promesas largas sin cobrar, hitos obligatorios ausentes, incoherencias con volúmenes previos.");
+        parts.push("- **NO PENALICES**: la introducción de elementos nuevos que cierran tramas — eso es lo esperado en el último volumen.");
+      } else {
+        parts.push("- **PENALIZA**: incoherencias internas de ESTE volumen, fallos de ritmo/voz/prosa, hitos OBLIGATORIOS de este volumen ausentes, arco autoconclusivo INTERNO de este libro mal cerrado, contradicciones con volúmenes previos ya publicados.");
+        parts.push("- **NO PENALICES**: arcos largos de serie que NO se cierran aquí (están DISEÑADOS para cerrarse en Vol. " + (volumeNumber + 1) + "+), hilos heredados que siguen abiertos, cliffhanger o gancho al final del libro, personajes que sobreviven con arcos pendientes, presencia de subtramas que apuntan al futuro.");
+      }
+      parts.push("- **NO EMITAS** instrucciones tipo `tipo:\"estructural\"` que pidan eliminar/fusionar/podar capítulos enteros, mover caps de posición, reescribir el clímax desde cero o reestructurar actos enteros. El sistema NO las puede ejecutar automáticamente (el cirujano trabaja capítulo a capítulo). Si una crítica es estructural, expón el diagnóstico en prosa para que el usuario decida; NO la incluyas en el bloque INSTRUCCIONES_AUTOAPLICABLES.");
+      parts.push("");
+    }
+
     if (isPrequel) {
       // [Fix68b] Reformulación: el Beta seguía evaluando la precuela con
       // rúbrica de "novela autoconclusiva" y quejándose de que era "solo un
