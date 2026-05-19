@@ -19,34 +19,13 @@ import { calculateRealCost, formatCostForStorage } from "./cost-calculator";
 // DeepSeek que no pasan por BaseAgent (p.ej. generadores de títulos, WB
 // unifiers, asesoramientos puntuales). Antes estas llamadas no aparecían en
 // `ai_usage_events` y el coste real por libro estaba infravalorado.
-async function recordRawAiUsage(
-  response: any,
-  opts: { agentName: string; model: string; projectId?: number | null; operation?: string }
-): Promise<void> {
-  try {
-    const usage = response?.usage || {};
-    const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens || 0;
-    const inputTokens = usage.prompt_tokens || 0;
-    const outputTokens = Math.max((usage.completion_tokens || 0) - reasoningTokens, 0);
-    const thinkingTokens = reasoningTokens;
-    if (inputTokens === 0 && outputTokens === 0 && thinkingTokens === 0) return;
-    const costs = calculateRealCost(opts.model, inputTokens, outputTokens, thinkingTokens);
-    await storage.createAiUsageEvent({
-      projectId: opts.projectId ?? null,
-      agentName: opts.agentName,
-      model: opts.model,
-      inputTokens,
-      outputTokens,
-      thinkingTokens,
-      inputCostUsd: formatCostForStorage(costs.inputCost),
-      outputCostUsd: formatCostForStorage(costs.outputCost + costs.thinkingCost),
-      totalCostUsd: formatCostForStorage(costs.totalCost),
-      operation: opts.operation || "generate",
-    });
-  } catch (err) {
-    console.error(`[recordRawAiUsage:${opts.agentName}] Failed to log AI usage event:`, err);
-  }
-}
+// [Fix80] `recordRawAiUsage` se ha extraído a `./utils/ai-usage.ts` para que
+// otros módulos (como `series-milestones-extractor`) puedan registrarse en
+// `ai_usage_events` sin importar de routes.ts (que crearía ciclos).
+import { recordRawAiUsage } from "./utils/ai-usage";
+import {
+  extractMilestonesAndThreadsFromGuide,
+} from "./utils/series-milestones-extractor";
 import { CopyEditorAgent, cancelProject, ItalianReviewerAgent } from "./agents";
 import { ReeditOrchestrator } from "./orchestrators/reedit-orchestrator";
 import { chatService } from "./services/chatService";
@@ -3294,6 +3273,37 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
 
           guideGenerated = true;
           console.log(`[API] Series guide generated for series #${newSeries.id} from project #${projectId}`);
+
+          // [Fix80] Extracción automática de hitos e hilos tras generar la
+          // guía — antes el usuario tenía que llamar a /guide/extract a
+          // mano y, hasta que lo hacía, los volúmenes 2+ se generaban sin
+          // referencias de planificación. Fire-and-forget para no bloquear
+          // la respuesta del endpoint (la extracción tarda ~30s); si el
+          // usuario inicia la generación del vol 2 antes de que termine,
+          // los volúmenes posteriores la usarán igualmente porque el
+          // orchestrator lee los hitos/hilos en cada generación.
+          const newSeriesId = newSeries.id;
+          const guideContent = guideResult.content;
+          void (async () => {
+            try {
+              const extracted = await extractMilestonesAndThreadsFromGuide({
+                seriesId: newSeriesId,
+                seriesGuide: guideContent,
+                skipIfExists: true,
+                projectId,
+              });
+              console.log(
+                `[Fix80] Auto-extracción tras convert-to-series #${newSeriesId}: ` +
+                `${extracted.milestonesCreated} hitos, ${extracted.threadsCreated} hilos` +
+                (extracted.skipped ? ` (skipped: ${extracted.skipReason})` : ""),
+              );
+            } catch (extractError: any) {
+              console.warn(
+                `[Fix80] Auto-extracción falló para serie #${newSeriesId} (no bloqueante):`,
+                extractError?.message || extractError,
+              );
+            }
+          })();
         } catch (guideError: any) {
           console.error("[API] Error generating series guide:", guideError);
         }
@@ -3699,6 +3709,34 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
         seriesGuideFileName: "ai-generated-from-imports.md",
       });
 
+      // [Fix80] Auto-extracción tras reedit→series — fire-and-forget para
+      // no bloquear el endpoint ~30s. Si el usuario lanza generación del
+      // siguiente volumen antes de que termine, los volúmenes posteriores
+      // la usarán igualmente.
+      {
+        const newSeriesId = newSeries.id;
+        const guideContent = guideResult.content;
+        void (async () => {
+          try {
+            const extracted = await extractMilestonesAndThreadsFromGuide({
+              seriesId: newSeriesId,
+              seriesGuide: guideContent,
+              skipIfExists: true,
+            });
+            console.log(
+              `[Fix80] Auto-extracción tras reedit→series #${newSeriesId}: ` +
+              `${extracted.milestonesCreated} hitos, ${extracted.threadsCreated} hilos` +
+              (extracted.skipped ? ` (skipped: ${extracted.skipReason})` : ""),
+            );
+          } catch (extractError: any) {
+            console.warn(
+              `[Fix80] Auto-extracción falló para serie #${newSeriesId} (reedit, no bloqueante):`,
+              extractError?.message || extractError,
+            );
+          }
+        })();
+      }
+
       const hasWorldBibleData = allCharacters.length > 0 || allLocations.length > 0 || allTimeline.length > 0 || allLoreRules.length > 0;
 
       if (hasWorldBibleData) {
@@ -3927,6 +3965,11 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
   });
 
   // Extract milestones and plot threads from series guide using AI
+  // [Fix80] La lógica vive ahora en `./utils/series-milestones-extractor.ts`
+  // para que `convert-to-series` (ambos endpoints) también la pueda invocar
+  // automáticamente tras crear la serie. El endpoint sigue exponiéndose para
+  // re-extracción manual: por defecto `force=true` aquí (es una acción
+  // explícita del usuario, debe poder repetirse si edita la guía).
   app.post("/api/series/:id/guide/extract", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
@@ -3934,147 +3977,35 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
       if (!series) {
         return res.status(404).json({ error: "Series not found" });
       }
-
       if (!series.seriesGuide) {
         return res.status(400).json({ error: "No series guide uploaded. Upload a guide first." });
       }
 
-      const { default: OpenAI } = await import("openai");
-      const ai = new OpenAI({
-        apiKey: process.env.DEEPSEEK_API_KEY!,
-        baseURL: "https://api.deepseek.com",
+      console.log(`[ExtractMilestones] Starting extraction for series ${id} (guide=${series.seriesGuide.length} chars)`);
+      const out = await extractMilestonesAndThreadsFromGuide({
+        seriesId: id,
+        seriesGuide: series.seriesGuide,
+        skipIfExists: false,
       });
-
-      const extractionPrompt = `Analiza esta guía de serie literaria y extrae:
-
-1. HITOS NARRATIVOS (plot milestones): Eventos clave que DEBEN ocurrir en volúmenes específicos
-2. HILOS ARGUMENTALES (plot threads): Tramas secundarias que atraviesan múltiples volúmenes
-
-Responde ÚNICAMENTE en JSON válido con esta estructura exacta:
-{
-  "milestones": [
-    {
-      "description": "Descripción del hito",
-      "volumeNumber": 1,
-      "milestoneType": "plot_point|character_development|revelation|conflict_resolution|setup",
-      "isRequired": true
-    }
-  ],
-  "threads": [
-    {
-      "threadName": "Nombre del hilo",
-      "description": "Descripción del hilo argumental",
-      "introducedVolume": 1,
-      "importance": "major|minor|subplot"
-    }
-  ]
-}
-
-GUÍA DE SERIE:
-${series.seriesGuide.substring(0, 50000)}`;
-
-      console.log(`[ExtractMilestones] Starting extraction for series ${id}`);
-      console.log(`[ExtractMilestones] Series guide length: ${series.seriesGuide?.length || 0} chars`);
-
-      // Retry logic for rate limiting
-      let response;
-      let attempts = 0;
-      const maxAttempts = 5;
-      
-      while (attempts < maxAttempts) {
-        try {
-          attempts++;
-          console.log(`[ExtractMilestones] Attempt ${attempts}/${maxAttempts}`);
-          response = await ai.chat.completions.create({
-            model: "deepseek-v4-flash",
-            messages: [{ role: "user", content: extractionPrompt }],
-            temperature: 0.3,
-            ...({ thinking: { type: "disabled" } } as any),
-          });
-          await recordRawAiUsage(response, { agentName: "series-milestones-extractor", model: "deepseek-v4-flash", operation: "extract-milestones" });
-          break; // Success, exit loop
-        } catch (err: any) {
-          const isRateLimit = err?.message?.includes("RATELIMIT") || 
-                             err?.message?.includes("429") ||
-                             err?.message?.includes("Rate limit");
-          if (isRateLimit && attempts < maxAttempts) {
-            const waitTime = Math.pow(2, attempts) * 10; // 20s, 40s, 80s, 160s
-            console.log(`[ExtractMilestones] Rate limit hit (attempt ${attempts}/${maxAttempts}). Waiting ${waitTime}s...`);
-            await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
-          } else {
-            throw err;
-          }
-        }
-      }
-
-      if (!response) {
-        return res.status(503).json({ error: "Servicio temporalmente no disponible. Inténtalo en unos minutos." });
-      }
-
-      const text = (response as any)?.choices?.[0]?.message?.content || "";
-      
-      console.log(`[ExtractMilestones] Raw response length: ${text.length} chars`);
-      console.log(`[ExtractMilestones] Response preview: ${text.substring(0, 500)}...`);
-
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        console.error(`[ExtractMilestones] No JSON found in response. Full text: ${text}`);
-        return res.status(500).json({ error: "No se pudo parsear la respuesta de la IA. Inténtalo de nuevo." });
-      }
-
-      let extracted;
-      try {
-        extracted = JSON.parse(jsonMatch[0]);
-      } catch (parseError) {
-        console.error(`[ExtractMilestones] JSON parse error:`, parseError);
-        console.error(`[ExtractMilestones] JSON string that failed: ${jsonMatch[0].substring(0, 500)}...`);
-        return res.status(500).json({ error: "Error parseando JSON de la respuesta de IA" });
-      }
-
-      console.log(`[ExtractMilestones] Extracted milestones: ${extracted.milestones?.length || 0}, threads: ${extracted.threads?.length || 0}`);
-
-      const results = { milestonesCreated: 0, threadsCreated: 0 };
-
-      for (const m of extracted.milestones || []) {
-        await storage.createMilestone({
-          seriesId: id,
-          description: m.description,
-          volumeNumber: m.volumeNumber || 1,
-          milestoneType: m.milestoneType || "plot_point",
-          isRequired: m.isRequired !== false,
-        });
-        results.milestonesCreated++;
-      }
-
-      for (const t of extracted.threads || []) {
-        await storage.createPlotThread({
-          seriesId: id,
-          threadName: t.threadName,
-          description: t.description,
-          introducedVolume: t.introducedVolume || 1,
-          importance: t.importance || "major",
-          status: "active",
-        });
-        results.threadsCreated++;
-      }
-
-      res.json({
-        message: `Extraídos ${results.milestonesCreated} hitos y ${results.threadsCreated} hilos argumentales`,
-        ...results,
-        extracted
+      return res.json({
+        message: `Extraídos ${out.milestonesCreated} hitos y ${out.threadsCreated} hilos argumentales`,
+        milestonesCreated: out.milestonesCreated,
+        threadsCreated: out.threadsCreated,
+        extracted: out.extracted,
       });
     } catch (error: any) {
       console.error("Error extracting from series guide:", error);
       const errorMessage = error?.message || String(error);
       const isRateLimit = errorMessage.includes("RATELIMIT") || errorMessage.includes("429");
-      res.status(isRateLimit ? 429 : 500).json({ 
-        error: isRateLimit 
-          ? "Límite de tasa excedido. Espera unos minutos e inténtalo de nuevo." 
+      return res.status(isRateLimit ? 429 : 500).json({
+        error: isRateLimit
+          ? "Límite de tasa excedido. Espera unos minutos e inténtalo de nuevo."
           : "No se pudo extraer de la guía",
-        details: errorMessage.substring(0, 500)
+        details: errorMessage.substring(0, 500),
       });
     }
   });
+
 
   app.get("/api/pseudonyms", async (req: Request, res: Response) => {
     try {

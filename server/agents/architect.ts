@@ -62,6 +62,15 @@ interface ArchitectInput {
   // de los personajes ya establecidos. Si está presente, prevalece sobre
   // cualquier deducción que el Arquitecto pueda hacer del texto íntegro.
   seriesUnifiedWorldBible?: string;
+  /**
+   * [Fix80] Bloque markdown con HITOS OBLIGATORIOS del volumen actual e
+   * HILOS argumentales abiertos de la serie. Antes de Fix80 estos datos
+   * solo se inyectaban a los lectores (Holístico/Beta) en `series-context-
+   * builder.ts`; el Architect del Vol 2 no sabía qué hitos debía planificar
+   * ni qué hilos continuar, así que diseñaba escaletas desconectadas de
+   * la guía de serie. Ahora se inyecta también aquí.
+   */
+  seriesMilestonesAndThreads?: string;
 }
 
 const PHASE1_SYSTEM_PROMPT = `
@@ -562,6 +571,24 @@ export class ArchitectAgent extends BaseAgent {
     estos personajes y este mundo fueran inamovibles desde el cap 1.
 
 ${input.seriesUnifiedWorldBible}
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.seriesMilestonesAndThreads ? `
+    ═══════════════════════════════════════════════════════════════════
+    🎯 HITOS E HILOS DE LA SERIE — PLANIFICACIÓN INVIOLABLE 🎯
+    ═══════════════════════════════════════════════════════════════════
+    Estos son los HITOS NARRATIVOS planeados para ESTE volumen y los HILOS
+    ARGUMENTALES de la serie tal y como están registrados a partir de la
+    guía oficial. Tu escaleta DEBE:
+    - PLANIFICAR cada hito [OBLIGATORIO] dentro de los capítulos de este
+      libro, asignándolo a una escena concreta (preferiblemente con un
+      capítulo concreto en mente). NO los dejes implícitos.
+    - CONTINUAR los hilos abiertos: hazlos avanzar, da pistas, profundízalos.
+      NO los cierres salvo que un hito de este volumen indique resolución.
+    - PROHIBIDO adelantar hitos reservados a volúmenes posteriores. Esos
+      pertenecen a libros futuros y deben permanecer pendientes aquí.
+
+${input.seriesMilestonesAndThreads}
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     ${input.previousVolumesFullText ? `

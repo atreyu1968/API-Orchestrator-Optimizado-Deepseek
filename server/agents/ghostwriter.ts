@@ -99,6 +99,14 @@ interface GhostwriterInput {
    * la edad, el nombre o la motivación.
    */
   seriesUnifiedWorldBible?: string;
+  /**
+   * [Fix80] Bloque markdown con HITOS OBLIGATORIOS del volumen actual e
+   * HILOS argumentales abiertos de la serie. El Architect ya los planifica
+   * en la escaleta, pero el Ghostwriter los recibe también para no diluir
+   * un hito clave a un párrafo de paso ni cerrar un hilo que el outline
+   * dejó deliberadamente abierto.
+   */
+  seriesMilestonesAndThreads?: string;
 }
 
 const SYSTEM_PROMPT = `
@@ -811,6 +819,24 @@ export class GhostwriterAgent extends BaseAgent {
       en cuanto a IDENTIDAD; gana la escaleta en cuanto a ACCIÓN.
 
 ${input.seriesUnifiedWorldBible}
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.seriesMilestonesAndThreads ? `
+    ═══════════════════════════════════════════════════════════════════
+    🎯 HITOS E HILOS DE LA SERIE — REFERENCIA AL ESCRIBIR 🎯
+    ═══════════════════════════════════════════════════════════════════
+    Estos son los hitos planificados para este volumen y los hilos abiertos
+    de la serie. La escaleta del capítulo (sectionData) ya está alineada con
+    ellos. Al escribir:
+    - Si una escena cumple un hito OBLIGATORIO, dale el peso narrativo que
+      merece: NO lo diluyas a una línea de paso ni lo cuentes en sumario.
+    - Si un hilo abierto aparece en este capítulo, hazlo VIVO en la prosa
+      (gesto, diálogo, pensamiento), no como mero recordatorio expositivo.
+    - PROHIBIDO cerrar un hilo abierto que el outline NO indique resolver
+      en este capítulo. PROHIBIDO adelantar un hito reservado a volúmenes
+      posteriores aunque la escena lo permita.
+
+${input.seriesMilestonesAndThreads}
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     ${input.previousChaptersFullText ? input.previousChaptersFullText : ""}

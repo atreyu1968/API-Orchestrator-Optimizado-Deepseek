@@ -1252,6 +1252,36 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           console.warn(`[Fix78] loadSeriesUnifiedWorldBibleStr falló: ${(e as Error).message}`);
         }
       }
+      // [Fix80] Hitos e hilos de la serie planificada — inyectados al
+      // Architect (para que los integre en la escaleta) y al Ghostwriter
+      // (para que los respete al escribir). Antes solo viajaban a los
+      // lectores (Holístico/Beta).
+      let seriesMilestonesBlockStr: string | undefined;
+      if (project.seriesId) {
+        try {
+          const { buildSeriesMilestonesAndThreadsBlock } = await import(
+            "./utils/series-milestones-extractor"
+          );
+          const seriesData = await storage.getSeries(project.seriesId);
+          const isPrequel =
+            (project as any).projectSubtype === "prequel" || project.seriesOrder === 0;
+          seriesMilestonesBlockStr = await buildSeriesMilestonesAndThreadsBlock({
+            seriesId: project.seriesId,
+            volumeNumber: typeof project.seriesOrder === "number" && project.seriesOrder > 0
+              ? project.seriesOrder
+              : 1,
+            totalVolumes: seriesData?.totalPlannedBooks || 0,
+            isPrequel,
+          });
+          if (seriesMilestonesBlockStr) {
+            console.log(
+              `[Fix80] Inyectando Hitos/Hilos de la serie al Architect/Ghostwriter (${seriesMilestonesBlockStr.length} chars).`,
+            );
+          }
+        } catch (e) {
+          console.warn(`[Fix80] buildSeriesMilestonesAndThreadsBlock falló: ${(e as Error).message}`);
+        }
+      }
       let pseudonymCatalog = "";
       if (project.pseudonymId) {
         try {
@@ -1309,6 +1339,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             previousVolumesFullText,
             pseudonymCatalog,
             seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+            seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
             extendedGuideContent: extendedGuideContent || undefined,
           });
 
@@ -1724,6 +1755,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                   hasAuthorNote: project.hasAuthorNote,
                   architectInstructions: revisionInstructions,
                   seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+            seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
                   kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
                   forbiddenNames,
                   projectId: project.id,
@@ -1849,6 +1881,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 architectInstructions: project.architectInstructions || undefined,
                 plotIntegrityFeedback: audit.instrucciones_revision,
                 seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+            seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
                 kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
                 forbiddenNames,
                 projectId: project.id,
@@ -2033,6 +2066,7 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
                   architectInstructions: project.architectInstructions || undefined,
                   betaReaderFeedback: betaFeedback,
                   seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+            seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
                   kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
                   forbiddenNames,
                   projectId: project.id,
@@ -2300,6 +2334,7 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
             recentSceneMolds: recentSceneMolds || undefined,
             editorialCritique: this.midNovelBetaCritique || undefined,
             seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+            seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -2985,6 +3020,26 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           console.warn(`[Fix78][resume] loadSeriesUnifiedWorldBibleStr falló: ${(e as Error).message}`);
         }
       }
+      // [Fix80] Hitos/hilos de la serie también en resume.
+      let seriesMilestonesBlockStr: string | undefined;
+      if (project.seriesId) {
+        try {
+          const { buildSeriesMilestonesAndThreadsBlock } = await import("./utils/series-milestones-extractor");
+          const seriesData = await storage.getSeries(project.seriesId);
+          const isPrequel = (project as any).projectSubtype === "prequel" || project.seriesOrder === 0;
+          seriesMilestonesBlockStr = await buildSeriesMilestonesAndThreadsBlock({
+            seriesId: project.seriesId,
+            volumeNumber: typeof project.seriesOrder === "number" && project.seriesOrder > 0 ? project.seriesOrder : 1,
+            totalVolumes: seriesData?.totalPlannedBooks || 0,
+            isPrequel,
+          });
+          if (seriesMilestonesBlockStr) {
+            console.log(`[Fix80][resume] Inyectando Hitos/Hilos (${seriesMilestonesBlockStr.length} chars).`);
+          }
+        } catch (e) {
+          console.warn(`[Fix80][resume] buildSeriesMilestonesAndThreadsBlock falló: ${(e as Error).message}`);
+        }
+      }
 
       await storage.updateProject(project.id, { status: "generating" });
 
@@ -3183,6 +3238,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousChaptersFullText: previousChaptersFullTextResume,
             recentSceneMolds: recentSceneMoldsResume || undefined,
             seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+            seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
           });
 
@@ -12522,6 +12578,23 @@ Responde SOLO con un JSON válido con la estructura:
         console.warn(`[Fix78][qa_rewrite] loadSeriesUnifiedWorldBibleStr falló: ${(e as Error).message}`);
       }
     }
+    // [Fix80] Hitos/hilos de la serie también en reescritura quirúrgica.
+    let seriesMilestonesBlockStr: string | undefined;
+    if (project.seriesId) {
+      try {
+        const { buildSeriesMilestonesAndThreadsBlock } = await import("./utils/series-milestones-extractor");
+        const seriesData = await storage.getSeries(project.seriesId);
+        const isPrequel = (project as any).projectSubtype === "prequel" || project.seriesOrder === 0;
+        seriesMilestonesBlockStr = await buildSeriesMilestonesAndThreadsBlock({
+          seriesId: project.seriesId,
+          volumeNumber: typeof project.seriesOrder === "number" && project.seriesOrder > 0 ? project.seriesOrder : 1,
+          totalVolumes: seriesData?.totalPlannedBooks || 0,
+          isPrequel,
+        });
+      } catch (e) {
+        console.warn(`[Fix80][qa_rewrite] buildSeriesMilestonesAndThreadsBlock falló: ${(e as Error).message}`);
+      }
+    }
     const qaLabels = {
       continuity: "Centinela de Continuidad",
       voice: "Auditor de Voz",
@@ -13265,6 +13338,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       previousChapterContent: originalContent,
       previousChaptersFullText: previousChaptersFullTextRewrite,
       seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+      seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
       minWordCount: surgicalMin,
       maxWordCount: surgicalMax,
       kindleUnlimitedOptimized: false,
@@ -13312,6 +13386,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         // han cambiado entre intento y reintento del mismo capítulo).
         previousChaptersFullText: previousChaptersFullTextRewrite,
         seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+        seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
         minWordCount: surgicalMin,
         maxWordCount: surgicalMax,
         kindleUnlimitedOptimized: false,
