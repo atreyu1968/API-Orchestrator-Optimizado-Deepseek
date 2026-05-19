@@ -141,13 +141,72 @@ PRINCIPIOS DE CONTINUIDAD FÍSICA
 3. CAUSALIDAD MECÁNICA: Cada acción es consecuencia de una anterior.
 
 ═══════════════════════════════════════════════════════════════════
-PROHIBICIONES ABSOLUTAS - VEROSIMILITUD NARRATIVA
+⛔ PROHIBICIONES ABSOLUTAS — VEROSIMILITUD NARRATIVA (REGLA CRÍTICA) ⛔
 ═══════════════════════════════════════════════════════════════════
-NUNCA planifiques:
-1. RESCATES NO SEMBRADOS - Ningún personaje/objeto/habilidad puede aparecer sin establecerse previamente
-2. COINCIDENCIAS INVEROSÍMILES - Nada de "justo en ese momento llegó X"
-3. SOLUCIONES MÁGICAS - No introducir reglas/tecnología justo cuando se necesitan
-4. REGLA DE SETUP/PAYOFF - Todo payoff requiere un setup previo (mínimo 2 capítulos de anticipación)
+El mayor pecado de una novela mal planificada es resolver conflictos con
+soluciones FÁCILES, RÁPIDAS o NO GANADAS por los personajes. El lector
+detecta inmediatamente cuando el conflicto se desinfla porque al autor le
+faltaba estructura, y abandona el libro. NUNCA planifiques:
+
+1. ⛔ DEUS EX MACHINA — Prohibido TERMINANTEMENTE que un problema se
+   resuelva por:
+   - Un personaje/poder/objeto/aliado que aparece de la nada en el
+     capítulo del clímax (o cerca) sin haber sido sembrado MÍNIMO 2-3
+     capítulos antes con presencia activa, no una mención de pasada.
+   - Una revelación oportuna ("¡resulta que el villano era su padre!",
+     "¡resulta que tenía el antídoto en el bolsillo!") que no tenga
+     pistas explícitas plantadas en al menos 2 capítulos previos.
+   - Una habilidad nueva del protagonista que se "descubre justo a
+     tiempo" sin entrenamiento, coste o consecuencia previa.
+   - Una intervención externa (cataclismo natural, autoridad que llega,
+     enemigo común que aparece) que rescata al protagonista sin que él
+     haya hecho NADA para provocarla.
+   - Cualquier solución que, si la eliminas, deja al personaje muerto o
+     atrapado: si solo "funciona" porque el autor lo necesita, es DEM.
+
+2. ⛔ SOLUCIONES FÁCILES Y RÁPIDAS — El protagonista NUNCA debe resolver
+   un conflicto mayor:
+   - En menos capítulos de los que le costó plantearlo (regla 1:1
+     mínimo entre setup y resolución de cualquier subtrama relevante).
+   - Sin pagar un coste TANGIBLE (físico, emocional, moral, social,
+     material). Si gana sin perder nada, el lector siente que no
+     importaba.
+   - Por suerte, casualidad, "el malo se descuidó" o el antagonista
+     comete un error tonto sin estar caracterizado como descuidado.
+   - Convenciendo al antagonista con un discurso de 1 escena: las
+     decisiones de personajes se ganan con MÚLTIPLES interacciones,
+     contradicciones internas y al menos un fracaso intermedio.
+   - Con un atajo técnico/mágico que NO tenía limitaciones declaradas
+     previamente y aparece exactamente cuando hace falta.
+
+3. ⛔ RESCATES NO SEMBRADOS — Ningún personaje/objeto/habilidad/regla
+   puede aparecer sin establecerse previamente, con uso activo en
+   escena (no solo nombrado).
+
+4. ⛔ COINCIDENCIAS INVEROSÍMILES — Nada de "justo en ese momento
+   llegó X", "casualmente tenía la información clave", "se encontraron
+   por azar en el sitio exacto". Las coincidencias se permiten SOLO al
+   inicio de la novela (gancho); NUNCA para resolver conflictos.
+
+5. ⛔ SOLUCIONES MÁGICAS — No introducir reglas/tecnología/poderes JUSTO
+   cuando se necesitan. Toda regla mágica/tecnológica usada en el clímax
+   debe haber sido demostrada en acción (no solo descrita) al menos
+   2 veces en la primera mitad del libro, con sus LIMITACIONES también
+   demostradas.
+
+6. ⛔ REGLA DE SETUP/PAYOFF — Todo payoff requiere setup previo:
+   - Mínimo 2 capítulos de anticipación visible al lector.
+   - Para el clímax: mínimo 3 capítulos previos con tensión escalada.
+   - El setup debe parecer NATURAL en su momento, no un "anuncio" del
+     payoff (Chéjov, no spoiler).
+
+📋 VERIFICACIÓN OBLIGATORIA AL CERRAR LA ESCALETA: recorre los capítulos
+del último tercio (clímax y resolución) y para CADA elemento que resuelve
+un conflicto (personaje que ayuda, objeto que se usa, habilidad que se
+ejecuta, información que se revela), identifica el capítulo EXACTO previo
+donde ese elemento fue sembrado con presencia activa. Si no encuentras
+ese capítulo, REESCRIBE la resolución o añade el setup. Si la resolución
+solo funciona porque "el autor lo decidió", está PROHIBIDA.
 
 ═══════════════════════════════════════════════════════════════════
 ⚠️ CLARIDAD DE IDENTIDADES — ANTI-CONFUSIÓN (REGLA CRÍTICA) ⚠️
@@ -355,6 +414,52 @@ REGLAS DE CALIDAD GENERAL:
 9. Cada capítulo debe tener AL MENOS 5 beats sustanciales (cada beat 1-3 oraciones). Algunos tipos (set_piece, persecucion) pueden llevar 7-10 beats; otros (intimo, calma_engañosa) bastan con 4-5.
 10. Cada "informacion_nueva" debe ser GENUINAMENTE NUEVA — no repetir de capítulos anteriores.
 11. Los conflictos deben escalar progresivamente a lo largo del acto 2, NO mantenerse en meseta.
+
+═══════════════════════════════════════════════════════════════════
+⛔ ANTI-DEUS-EX-MACHINA Y ANTI-SOLUCIONES FÁCILES (REGLA CRÍTICA) ⛔
+═══════════════════════════════════════════════════════════════════
+Las prohibiciones globales de la Fase 1 (Deus Ex Machina, soluciones
+fáciles/rápidas, rescates no sembrados, coincidencias, soluciones
+mágicas) se aplican AQUÍ con especial dureza al diseñar cada capítulo:
+
+12. ⛔ EN EL CLÍMAX Y RESOLUCIÓN: el protagonista DEBE resolver el
+    conflicto principal con recursos, aliados, información y habilidades
+    que ya estaban sembrados con presencia activa en capítulos previos.
+    Para cada capítulo del último tercio, en su "objetivo_narrativo"
+    o "beats" identifica explícitamente qué setup previo se está
+    cosechando (e.g. "Marta usa el contacto policial que conoció en cap
+    7"). Si un elemento clave aparece sin antecedente, REVISA y siembra
+    antes (cap más temprano) o ELIMINA esa solución.
+
+13. ⛔ NINGÚN capítulo puede resolver un conflicto mayor planteado en
+    un solo capítulo previo. Mínimo 2-3 capítulos de tensión escalada
+    antes de cualquier resolución parcial; mínimo 4-5 antes del clímax.
+    Si la escaleta resuelve algo demasiado rápido, EXPANDE el setup
+    (más obstáculos intermedios, más fracasos del protagonista) en
+    lugar de acortar el conflicto.
+
+14. ⛔ CADA resolución debe costar algo TANGIBLE al protagonista
+    (pérdida física, emocional, moral, social, relacional, material).
+    En el objetivo_narrativo del capítulo de resolución, NOMBRA
+    explícitamente el coste. "Gana sin perder nada" = INVÁLIDO.
+
+15. ⛔ PROHIBIDO usar revelaciones oportunas como motor de resolución
+    ("¡resulta que tenía el antídoto!", "¡resulta que el villano era
+    su hermano!", "¡aparece la caballería!") salvo que las pistas
+    estén plantadas en MÍNIMO 2 capítulos previos como beats visibles
+    al lector. Si planeas una revelación así, añade los capítulos de
+    siembra ANTES en la escaleta o desecha la revelación.
+
+16. ⛔ PROHIBIDAS las "salidas de comodín": personajes/poderes/objetos
+    que aparecen en un cap del último tercio sin haber existido antes
+    en la escaleta. Si en el cap 22 aparece un aliado que salva al
+    prota, ese aliado debe haber estado en escena (con beat propio,
+    no solo nombrado) en al menos 2 capítulos previos.
+
+📋 AUDITORÍA OBLIGATORIA antes de devolver el JSON: recorre los caps
+del último tercio. Para cada uno, identifica internamente los setups
+de los que tira. Si encuentras una resolución sin setup previo, la
+respuesta es INVÁLIDA — corrige antes de responder.
 
 TÍTULOS - OBLIGATORIOS:
 ⛔ TODOS los capítulos DEBEN tener un "titulo" EVOCADOR y LITERARIO (2-6 palabras). NUNCA vacío o genérico.
