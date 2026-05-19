@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/form";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import { Play, RotateCcw, BookOpen, FileText, ScrollText, User, Library, BookMarked, Plus, Trash2, Zap, Repeat } from "lucide-react";
+import { Play, RotateCcw, BookOpen, FileText, ScrollText, User, Library, BookMarked, Plus, Trash2, Zap, Repeat, Sparkles, CheckCircle2 } from "lucide-react";
 import type { Pseudonym, StyleGuide, Series, ExtendedGuide } from "@shared/schema";
 
 const genres = [
@@ -863,6 +863,39 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
           </span>
         </div>
 
+        {/* [Fix84] Indicador informativo: el loop nuevo Holístico+Beta (Fix77/Fix81)
+            corre por defecto sin necesidad de ningún flag (ver orquestador
+            L11195-11198). Esta casilla queda marcada y deshabilitada — es solo
+            visibilidad, no toca el backend. La casilla "Auto-loop con Lector Beta"
+            de abajo activa el camino LEGACY (Fix47) y, si se marca, sustituye
+            al loop nuevo (mutua exclusión). */}
+        <div
+          className="flex items-start gap-3 rounded-md border border-primary/30 bg-primary/5 p-3"
+          data-testid="indicator-auto-holistic-beta-loop"
+        >
+          <Checkbox
+            checked
+            disabled
+            aria-label="Auto-revisión Holístico+Beta activada por defecto"
+            data-testid="checkbox-auto-holistic-beta-loop"
+            className="mt-0.5 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+          />
+          <div className="flex items-start gap-2 flex-1">
+            <Sparkles className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Auto-revisión Holístico + Beta</span>
+                <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold text-primary">
+                  <CheckCircle2 className="h-3 w-3" /> Activa por defecto
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-snug">
+                Al terminar la novela se ejecuta automáticamente un bucle iterativo (hasta 8 iteraciones) que combina al Lector Holístico y al Lector Beta. El manuscrito se reescribe hasta alcanzar el objetivo dual <span className="font-mono">Beta ≥ 9 AND Holístico ≥ 8</span>, con instantáneas para no perder versiones mejores. Tras aprobar se aplica la corrección ortotipográfica final.
+              </p>
+            </div>
+          </div>
+        </div>
+
         <FormField
           control={form.control}
           name="autoBetaLoop"
@@ -879,9 +912,9 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
                 <div className="flex items-center gap-2 flex-1">
                   <Repeat className="h-4 w-4 text-muted-foreground" />
                   <div>
-                    <FormLabel className="font-medium cursor-pointer">Auto-loop con Lector Beta</FormLabel>
+                    <FormLabel className="font-medium cursor-pointer">Auto-loop legacy (solo Lector Beta)</FormLabel>
                     <FormDescription className="text-xs">
-                      Al terminar la novela, el Beta lee → aplica correcciones → re-lee, en bucle, hasta que apruebe (≤3 obs, ninguna alta) o se alcance el máximo de iteraciones. Consume tokens.
+                      Alternativa al ciclo Holístico+Beta de arriba: si marcas esta opción, el Beta lee → aplica correcciones → re-lee, en bucle, hasta que apruebe (≤3 obs, ninguna alta) o se alcance el máximo de iteraciones. <strong>Sustituye al loop por defecto</strong> (no se ejecutan ambos). Consume tokens.
                     </FormDescription>
                   </div>
                 </div>
