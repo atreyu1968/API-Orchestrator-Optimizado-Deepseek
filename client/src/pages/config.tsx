@@ -148,6 +148,19 @@ export default function ConfigPage() {
         title: "Convertido en serie",
         description: data.message,
       });
+      // [Fix83] Antes, si la generación de la guía de serie fallaba en el
+      // backend, el catch silencioso dejaba al usuario creyendo que todo
+      // había ido bien y luego el vol 2 salía "en blanco" sin guía. Ahora
+      // el backend devuelve `guideError` y aquí lo surfaceamos como un
+      // segundo toast destructivo, para que el usuario sepa que tiene que
+      // regenerar la guía manualmente desde el taller de guías.
+      if (data.guideError) {
+        toast({
+          title: "Guía de serie NO generada",
+          description: `${data.guideError}. Genera la guía manualmente desde el taller de guías para que los siguientes volúmenes tengan referencia.`,
+          variant: "destructive",
+        });
+      }
     },
     onError: (error: any) => {
       toast({

@@ -3222,6 +3222,12 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
       });
 
       let guideGenerated = false;
+      // [Fix83] Capturamos el mensaje de error del agente de guía para
+      // surface-arlo al frontend. Antes, si `generateStyleGuide` fallaba
+      // (timeout, error del modelo, etc.), el catch silenciaba el problema
+      // y `series.seriesGuide` quedaba null sin que el usuario lo supiera —
+      // luego abría el vol 2 y lo veía "en blanco".
+      let guideError: string | null = null;
 
       if (generateGuide) {
         try {
@@ -3256,10 +3262,18 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
             if (pseud) pseudonymName = pseud.name;
           }
 
+          // [Fix83] Pasamos el resumen del libro como `seriesIdea` además de
+          // `seriesDescription`. La rama `series_writing` del user message
+          // solo concatena `seriesIdea`, no `seriesDescription` (aunque el
+          // system prompt sí lee ambos). Sin esto, el modelo recibía solo
+          // título + total de libros en el user message y producía guías
+          // genéricas desconectadas del libro real.
+          const seriesContext = `Serie basada en el libro ya escrito "${project.title}".\n\n${bookSummary}`;
           const guideResult = await generateStyleGuide({
             guideType: "series_writing",
             seriesTitle: seriesTitle.trim(),
-            seriesDescription: `Serie basada en el libro ya escrito "${project.title}".\n\n${bookSummary}`,
+            seriesDescription: seriesContext,
+            seriesIdea: seriesContext,
             seriesTotalBooks: totalPlannedBooks || 3,
             seriesWorkType: totalPlannedBooks === 3 ? "trilogy" : "series",
             pseudonymName,
@@ -3304,8 +3318,13 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
               );
             }
           })();
-        } catch (guideError: any) {
-          console.error("[API] Error generating series guide:", guideError);
+        } catch (err: any) {
+          // [Fix83] Antes este catch silenciaba el error y dejaba al usuario
+          // creyendo que todo había ido bien. Ahora lo persistimos para
+          // devolverlo en la respuesta y que el frontend muestre un toast
+          // de advertencia con la causa concreta.
+          console.error("[API] Error generating series guide:", err);
+          guideError = err?.message || String(err) || "Error desconocido generando la guía de serie";
         }
       }
 
@@ -3389,12 +3408,18 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
       const messageParts = [`Proyecto convertido en libro #1 de la serie "${newSeries.title}"`];
       if (projectsCreated > 0) messageParts.push(`${projectsCreated} proyecto(s) creados para los volúmenes restantes`);
       if (guideGenerated) messageParts.push("guía de serie generada");
+      // [Fix83] Si la guía falló, lo decimos explícitamente en el mensaje
+      // (además de devolver `guideError` para el toast del frontend).
+      if (generateGuide && !guideGenerated && guideError) {
+        messageParts.push(`ATENCIÓN: la guía de serie NO se generó (${guideError})`);
+      }
 
       res.json({
         project: updated,
         series: newSeries,
         projectsCreated,
         guideGenerated,
+        guideError,
         message: messageParts.join(". ") + ".",
       });
     } catch (error: any) {
@@ -3680,61 +3705,76 @@ Escribe en formato Markdown claro y organizado. Sé específico con datos concre
 
       const seriesForbiddenNames = await extractForbiddenNames(newSeries.id);
 
-      const guideResult = await generateStyleGuide({
-        guideType: "series_writing",
-        seriesTitle: seriesTitle.trim(),
-        seriesDescription: `Serie compuesta por los siguientes libros ya escritos:\n${bookSummaries.join("\n\n")}`,
-        seriesTotalBooks: plannedCount,
-        seriesWorkType: plannedCount === 3 ? "trilogy" : "series",
-        pseudonymName,
-        language: firstLang,
-        forbiddenNames: seriesForbiddenNames.length > 0 ? seriesForbiddenNames : undefined,
-      });
+      // [Fix83] Paridad con el endpoint hermano de proyectos: envolvemos
+      // toda la generación de la guía en try/catch para no perder la serie
+      // ya creada si el agente falla, y surface-amos el error en la
+      // respuesta como `guideError` para que el frontend pueda alertar.
+      let reeditGuideGenerated = false;
+      let reeditGuideError: string | null = null;
+      try {
+        const guideResult = await generateStyleGuide({
+          guideType: "series_writing",
+          seriesTitle: seriesTitle.trim(),
+          // [Fix83] Pasamos el resumen como `seriesDescription` Y `seriesIdea`
+          // por el mismo motivo que en el endpoint hermano: la rama del user
+          // message solo concatena `seriesIdea`.
+          seriesDescription: `Serie compuesta por los siguientes libros ya escritos:\n${bookSummaries.join("\n\n")}`,
+          seriesIdea: `Serie compuesta por los siguientes libros ya escritos:\n${bookSummaries.join("\n\n")}`,
+          seriesTotalBooks: plannedCount,
+          seriesWorkType: plannedCount === 3 ? "trilogy" : "series",
+          pseudonymName,
+          language: firstLang,
+          forbiddenNames: seriesForbiddenNames.length > 0 ? seriesForbiddenNames : undefined,
+        });
 
-      await storage.createGeneratedGuide({
-        title: guideResult.title,
-        content: guideResult.content,
-        guideType: "series_writing",
-        sourceAuthor: null,
-        sourceIdea: null,
-        sourceGenre: null,
-        pseudonymId: targetPseudonymId,
-        seriesId: newSeries.id,
-        inputTokens: guideResult.inputTokens,
-        outputTokens: guideResult.outputTokens,
-      });
+        await storage.createGeneratedGuide({
+          title: guideResult.title,
+          content: guideResult.content,
+          guideType: "series_writing",
+          sourceAuthor: null,
+          sourceIdea: null,
+          sourceGenre: null,
+          pseudonymId: targetPseudonymId,
+          seriesId: newSeries.id,
+          inputTokens: guideResult.inputTokens,
+          outputTokens: guideResult.outputTokens,
+        });
 
-      await storage.updateSeries(newSeries.id, {
-        seriesGuide: guideResult.content,
-        seriesGuideFileName: "ai-generated-from-imports.md",
-      });
+        await storage.updateSeries(newSeries.id, {
+          seriesGuide: guideResult.content,
+          seriesGuideFileName: "ai-generated-from-imports.md",
+        });
+        reeditGuideGenerated = true;
 
-      // [Fix80] Auto-extracción tras reedit→series — fire-and-forget para
-      // no bloquear el endpoint ~30s. Si el usuario lanza generación del
-      // siguiente volumen antes de que termine, los volúmenes posteriores
-      // la usarán igualmente.
-      {
-        const newSeriesId = newSeries.id;
-        const guideContent = guideResult.content;
-        void (async () => {
-          try {
-            const extracted = await extractMilestonesAndThreadsFromGuide({
-              seriesId: newSeriesId,
-              seriesGuide: guideContent,
-              skipIfExists: true,
-            });
-            console.log(
-              `[Fix80] Auto-extracción tras reedit→series #${newSeriesId}: ` +
-              `${extracted.milestonesCreated} hitos, ${extracted.threadsCreated} hilos` +
-              (extracted.skipped ? ` (skipped: ${extracted.skipReason})` : ""),
-            );
-          } catch (extractError: any) {
-            console.warn(
-              `[Fix80] Auto-extracción falló para serie #${newSeriesId} (reedit, no bloqueante):`,
-              extractError?.message || extractError,
-            );
-          }
-        })();
+        // [Fix80] Auto-extracción tras reedit→series — fire-and-forget para
+        // no bloquear el endpoint ~30s. Solo se lanza si la guía se generó
+        // correctamente (sin guía no hay nada que extraer).
+        {
+          const newSeriesId = newSeries.id;
+          const guideContent = guideResult.content;
+          void (async () => {
+            try {
+              const extracted = await extractMilestonesAndThreadsFromGuide({
+                seriesId: newSeriesId,
+                seriesGuide: guideContent,
+                skipIfExists: true,
+              });
+              console.log(
+                `[Fix80] Auto-extracción tras reedit→series #${newSeriesId}: ` +
+                `${extracted.milestonesCreated} hitos, ${extracted.threadsCreated} hilos` +
+                (extracted.skipped ? ` (skipped: ${extracted.skipReason})` : ""),
+              );
+            } catch (extractError: any) {
+              console.warn(
+                `[Fix80] Auto-extracción falló para serie #${newSeriesId} (reedit, no bloqueante):`,
+                extractError?.message || extractError,
+              );
+            }
+          })();
+        }
+      } catch (err: any) {
+        console.error("[API] Error generating series guide (reedit→series):", err);
+        reeditGuideError = err?.message || String(err) || "Error desconocido generando la guía de serie";
       }
 
       const hasWorldBibleData = allCharacters.length > 0 || allLocations.length > 0 || allTimeline.length > 0 || allLoreRules.length > 0;
@@ -3888,14 +3928,19 @@ Deduplica personajes y localizaciones que aparezcan en múltiples libros, unific
       if (projectsCreated > 0) parts.push(`${projectsCreated} proyecto(s) creados para libros restantes.`);
       if (createdPseudonym) parts.push(`Seudónimo "${createdPseudonym.name}" creado.`);
       if (styleGuideGenerated) parts.push("Guía de estilo generada.");
-      parts.push("Guía de serie generada.");
+      // [Fix83] El "Guía de serie generada." dejaba de ser cierto si el
+      // agente fallaba; ahora respeta `reeditGuideGenerated` y, si falló,
+      // añadimos una nota de ATENCIÓN con el mensaje del error.
+      if (reeditGuideGenerated) parts.push("Guía de serie generada.");
+      else if (reeditGuideError) parts.push(`ATENCIÓN: la guía de serie NO se generó (${reeditGuideError}).`);
       if (hasWorldBibleData) parts.push("World Bible unificado generado.");
 
       res.json({
         series: newSeries,
         booksLinked: resolvedBooks.length,
         projectsCreated,
-        guideGenerated: true,
+        guideGenerated: reeditGuideGenerated,
+        guideError: reeditGuideError,
         worldBibleGenerated: hasWorldBibleData,
         pseudonymCreated: !!createdPseudonym,
         styleGuideGenerated,

@@ -264,6 +264,17 @@ export default function ReeditSeriesPage() {
         title: "Serie Creada",
         description: data.message || `Serie "${seriesTitle}" creada con ${selectedBooks.length} libro(s).`,
       });
+      // [Fix83] Si el backend reporta que la guía falló, mostramos un toast
+      // destructivo adicional. Antes el fallo se silenciaba en la consola y
+      // la serie quedaba sin `seriesGuide`, así que los vols 2+ no tenían
+      // referencia para el Architect/Ghostwriter.
+      if (data.guideError) {
+        toast({
+          title: "Guía de serie NO generada",
+          description: `${data.guideError}. Genera la guía manualmente desde el taller de guías para que los siguientes volúmenes tengan referencia.`,
+          variant: "destructive",
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/imported-manuscripts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/series"] });
