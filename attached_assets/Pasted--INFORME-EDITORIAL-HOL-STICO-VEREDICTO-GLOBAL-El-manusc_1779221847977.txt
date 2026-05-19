@@ -1,0 +1,165 @@
+# INFORME EDITORIAL HOLÍSTICO
+
+## VEREDICTO GLOBAL
+El manuscrito "El eco del asfalto" tiene una atmósfera poderosa y una voz narrativa que sostiene bien el tono del thriller negro, pero padece de problemas estructurales graves que lo hacen no publicable en su estado actual. El segundo acto se desinfla entre los capítulos 11 y 16, donde la acción se detiene para dar paso a largas secuencias de exposición y preparación que rompen la tensión acumulada en el arranque. El clímax, aunque visualmente efectivo, depende de una coincidencia forzada (Irati aparece justo con la pistola en el momento exacto) que funciona como deus ex machina y traiciona el realismo que la novela había construido. El final, con la llamada telefónica que remite a 1989, es un cliffhanger genérico que no resuelve la trama interna del volumen ni ofrece una recompensa al lector, lo que resulta particularmente problemático tratándose del primer libro de una serie de seis. La novela necesita una reestructuración profunda del tercer acto y una poda quirúrgica de los capítulos redundantes del desarrollo medio.
+
+## PROBLEMAS ESTRUCTURALES (crítico)
+
+1. **Segundo acto deshinchado (caps 11-16)**: Tras el tiroteo del capítulo 10, la novela entra en una meseta de baja tensión que se extiende durante seis capítulos. Zubiri convalece en el hospital, habla con Nerea sobre balística, recibe visitas de Irati, negocia con Aldecoa, investiga desde su piso. Hay una repetición mecánica de escenas de investigación rutinaria (llamar a contactos, revisar documentos, esperar resultados) que no avanzan la trama con la urgencia que el género exige. El capítulo 12 (Irati visita a Zubiri en su piso) es casi idéntico en estructura y función al capítulo 13 (la visita al banco), y ambos podrían fusionarse sin pérdida.
+
+2. **Clímax por deus ex machina (cap 21)**: La resolución del enfrentamiento con el Turco depende de que Irati, que ha escapado del almacén segundos antes, reaparezca milagrosamente con la pistola de Zubiri (que había caído al suelo durante el forcejeo) para disparar al sicario en el momento exacto. No hay preparación para este giro: no se ha mostrado a Irati recogiendo el arma al huir, ni hay un plano de ella decidiendo volver. La novela ha evitado durante 20 capítulos construir un personaje capaz de un acto así, y el resultado es un final que no honra la lógica interna de la historia. El lector siente que el autor "salvó" al protagonista con una coincidencia, no con una consecuencia de las acciones previas.
+
+3. **Trama de Landa introducida y abandonada (caps 14-24)**: El abogado Javier Landa, presentado como la conexión clave con 1989 y el verdadero hilo maestro de la conspiración, aparece tarde (cap 14), se investiga en off durante tres capítulos (Zubiri habla con Jon que investiga en la hemeroteca), y se resuelve con una foto borrosa en Santander que no lleva a ninguna parte. Al final del libro, Landa sigue sin aparecer en escena, sin que su historia tenga consecuencia en la resolución del caso Gorka. Si el plan de serie es que Landa sea relevante en volúmenes posteriores, el libro debe al menos cerrar su propia investigación con un hallazgo sustancial; si no, es un señuelo narrativo que distrae sin recompensa.
+
+4. **Epílogo redundante (epílogo / cap -1)**: El epílogo repite casi textualmente la llamada telefónica que ya ocurre en el capítulo 29. El único material nuevo —la reflexión interna de Zubiri sobre 1989 y la imagen final del cigarrillo— está ya implícito o cubierto en el capítulo anterior. La escena no aporta información nueva, no cambia el estado emocional del protagonista (que ya estaba "roto" antes de la llamada) y no prepara ninguna línea de continuación que no estuviera ya activa. El epílogo es un capítulo huérfano que alarga innecesariamente el cierre.
+
+## ARCOS DE PERSONAJE (mayor)
+
+**Íñigo Zubiri**: El arco funciona en el trazo grueso (de policía rutinario a investigador obsesivo que desafía el sistema), pero la evolución se produce por acumulación de eventos externos —disparo, traición de Aldecoa, secuestro de Irati— sin que Zubiri tome decisiones activas que revelen transformación interna. Su momento de mayor agencia es entregar la cinta a Jon (cap 26), pero la decisión se comunica en diálogo plano, sin conflicto interno visible. Falta la escena donde Zubiri elige realmente entre su seguridad y la verdad.
+
+**Irati Lazkano**: Comienza fuerte (cap 3) como hermana firme que reclama justicia, pero su arco se interrumpe abruptamente. Desaparece entre los caps 13 y 20, y cuando reaparece en el almacén está reducida a víctima silenciosa. Su transformación a "salvadora" (cap 21, dispara al Turco) no está preparada: no hay escenas que muestren su determinación, su aprendizaje del uso de armas o su decisión consciente de asumir riesgos. El personaje es usado como mcguffin en el tercer acto, no como protagonista de su propia historia.
+
+**Patxi Aldecoa**: Su arco está bien planteado (el comisario que se dobla para proteger a su hija), pero la revelación del motivo (cap 20) llega demasiado tarde y se resuelve en diálogo expositivo. El lector necesita ver el conflicto de Aldecoa antes de saber su causa, no escucharlo después. Echa en falta una escena en el segundo acto donde se muestre a Aldecoa bajo presión, tomando decisiones ambiguas, para que el giro final tenga peso dramático.
+
+**El Turco**: Es un antagonista funcional pero unidimensional. Toda su caracterización se reduce a su físico y su eficacia letal. Nunca sabemos qué lo motiva, si tiene alguna lealtad más allá del dinero, o si existe algún matiz en su psicología. Como resultado, su muerte no produce ninguna emoción en el lector, ni siquiera la catarsis de ver caer al villano.
+
+## CONTINUIDAD Y COHERENCIA INTERNA (mayor)
+
+1. **Herida de Zubiri (caps 10-21)**: Zubiri recibe un disparo en el hombro izquierdo que requiere cirugía y tres horas de quirófano (cap 11). En el capítulo 21, durante la pelea con el Turco en el almacén, Zubiri forcejea, rueda por el suelo, golpea con una tuerca y se pone de pie repetidamente usando el brazo izquierdo sin que el dolor o la limitación física sean relevantes para la escena. La herida desaparece cuando la acción lo requiere y reaparece solo en momentos de pausa reflexiva. No hay coherencia en la discapacidad como factor narrativo.
+
+2. **El Seat blanco (caps 3, 14, 17-18)**: Es establecido como una presencia ominosa que sigue a Zubiri e Irati. En el capítulo 17, Zubiri lo ve en San Francisco. En el capítulo 18, Bermejo lo menciona en la oferta. Pero el coche nunca vuelve a aparecer después, y su función como amenaza concreta queda diluida. Sabemos que el Turco lo conducía, pero ¿por qué dejó de seguirlos? ¿Por qué no lo usó en el clímax? Es un hilo que se abandona sin explicación.
+
+3. **Número de cajas de seguridad (caps 12-13)**: En el capítulo 12, la libreta de Gorka dice "Original en el 23". En el capítulo 13, Irati accede a la caja número 47. Luego el director del banco menciona que la caja original que Irati pidió era la 23, pero él les ofreció la 47 por error burocrático. Esta contradicción —que debería ser un momento de suspenso o revelación— se resuelve en un diálogo funcional que no aclara qué contenía realmente la caja 23. Parece un error de continuidad no resuelto.
+
+4. **La cinta original (caps 6-20)**: Gorka hizo tres copias: una en el banco (cap 13), una en el piso (cap 4), una con Ainhoa (cap 19). La del banco es robada/destruida por Aldecoa (cap 16-20). La del piso es la que escucha Nerea (cap 6). La de Ainhoa es la que Zubiri entrega a Jon (cap 26). Pero en cap 20, Zubiri dice a Aldecoa que la cinta del banco era "la original". Si había tres copias, ¿cuál era la "original"? Esta ambigüedad debilita el valor probatorio que la novela misma le asigna a las cintas.
+
+## RITMO Y TENSIÓN (mayor)
+
+**Arranque (prólogo - cap 5)**: Excelente. El prólogo establece tono, modus operandi y la marca del reloj como detalle enigma. Los capítulos 1-5 mantienen la tensión mediante la combinación de investigación forense, conflicto con Aldecoa y la progresiva implicación de Irati. El ritmo es el adecuado para un thriller policíaco de escuela.
+
+**Desarrollo medio (caps 6-16)**: Problema severo de ritmo. Los caps 7 (Aldecoa se niega a investigar), 8 (Saturio en el bar) y 9 (vigilancia del puerto) son variaciones sobre la misma estructura: Zubiri obtiene información de una fuente que le advierte del peligro. Hay una redundancia de escenas de "advertencia" que no añaden nueva tensión, solo confirman lo que el lector ya sabe (Errasti es peligroso). Los caps 11-16 son un bloque lento donde Zubiri convalece, habla, toma café y espera. La información importante (la desaparición de la cinta, la suspensión de Aldecoa, la amenaza a Irati) se comunica en diálogos expositivos en lugar de escenas de acción.
+
+**Tercer acto (caps 17-26)**: Se recupera parcialmente con el secuestro de Irati y la persecución, pero el clímax del cap 21 queda lastrado por el deus ex machina ya señalado. Los caps 22-26 son anticlimáticos: Zubiri e Irati hablan en el hospital, Zubiri visita a Ainhoa, Zubiri entrega la cinta a Jon, Zubiri se enfrenta a Errasti en su despacho. El enfrentamiento verbal con Errasti (cap 28) es la escena más lograda del tercer acto, pero llega tarde y no compensa la falta de tensión de los caps previos.
+
+**Resolución (caps 27-29 / epílogo)**: Acelera para cerrar todos los hilos en cascada. El archivo del caso, la suspensión de Aldecoa, la rueda de prensa de Errasti, la llamada final. La información se amontona sin espacio para que el lector procese las consecuencias emocionales. El epílogo es redundante y no aporta un cierre temático.
+
+## ESCENAS Y CAPÍTULOS PROBLEMÁTICOS (mayor/menor)
+
+- **Cap 14 — Capítulo huérfano**: La investigación sobre Landa en la hemeroteca, que Jon realiza en off, no tiene presencia escénica en el capítulo en sí. El capítulo consiste en Zubiri caminando por el Casco Viejo, encontrando la cabina, llamando a Jon y recibiendo respuestas por teléfono. Toda la información podría fusionarse con el capítulo 12 o el 15. Es una escena de transición disfrazada de capítulo.
+
+- **Cap 19 — Repetición estructural del cap 13**: Zubiri visita a Ainhoa Elizondo (exmujer de Gorka) y recibe otra copia de la cinta. La escena es calcada de la visita al banco (cap 13): Zubiri y otra persona acceden a un lugar donde Gorka dejó pruebas, hay un momento de tensión burocrática (Ainhoa duda), y finalmente recibe el sobre con la cinta. La repetición diluye el impacto de cada hallazgo.
+
+- **Cap 26 — "El sobre de la periodista"**: La entrega de la cinta a Jon se resuelve en apenas tres páginas de diálogo en la redacción. El momento que debería ser el punto de no retorno de la novela —Zubiri renuncia al control de la investigación y confía en un periodista— pasa sin peso dramático. No hay conflicto interno visible, no hay duda genuina en Zubiri.
+
+- **Cap 10 — Acción calcada del cap 9**: Ambos capítulos presentan una secuencia de acción similar: Zubiri llega a un lugar, se enfrenta al Turco, hay disparos, Zubiri resulta herido, Irati huye. La estructura es idéntica. El capítulo 10 es innecesario porque no añade información nueva: el Turco ya ha sido presentado, la amenaza ya está establecida, la vulnerabilidad de Zubiri ya ha sido demostrada.
+
+- **Epílogo / cap -1**: Como ya señalé en problemas estructurales, es un capítulo huérfano que debería eliminarse. Su contenido necesario (Zubiri recibe la llamada sobre 1989) se ha cubierto en cap 29 con más eficacia.
+
+## REPETICIONES Y CLICHÉS (menor)
+
+**Estructuras de escena repetidas**: La novela tiene al menos cuatro escenas donde Zubiri se reúne con un informante en un bar (Saturio en cap 8, Jon en cap 14, Bittor en caps 16 y 25, Saturio de nuevo en cap 17). Todas siguen el mismo patrón: Zubiri llega, pide café, recibe información crítica, le advierten del peligro, se queda fumando. La repetición desgasta el recurso.
+
+**Set-pieces calcadas**: El enfrentamiento en la nave (cap 10) y el enfrentamiento en el almacén (cap 21) comparten la misma estructura: Zubiri entra en un espacio industrial, encuentra a un personaje en peligro (primero Irati, luego Irati otra vez), forcejea con el Turco, hay disparos, Zubiri es herido o está a punto de serlo, alguien interviene para salvarlo. La novela solo tiene un patrón de acción.
+
+**Clichés del género no subvertidos**: El policía solitario y divorciado que fuma en la oscuridad (cap 5); el compañero corrupto que se redime demasiado tarde (Aldecoa); la viuda/hermana que se convierte en aliada y posible interés romántico (Irati, aunque aquí no se consuma); el villano que explica su plan en su despacho (Errasti en cap 28); la llamada telefónica anónima que abre el segundo caso (cap 29). Ninguno de estos arquetipos recibe una vuelta de tuerca que los haga originales.
+
+**Diálogos que paran la trama**: La novela tiene varios pasajes donde los personajes se sientan a explicar lo que ha pasado o lo que va a pasar, en lugar de mostrarlo en acción. Ejemplos: cap 12 (Irati visita a Zubiri y le explica lo que encontró en la libreta), cap 15 (Zubiri explica el caso a Aldecoa), cap 22 (Irati y Zubiri hablan en el hospital sobre lo que ha ocurrido), cap 24 (Jon explica la historia de Landa a Zubiri en el cementerio). La exposición domina sobre la escena.
+
+## SUGERENCIAS CONCRETAS DE CORRECCIÓN
+
+1. **Eliminar cap 10 y fusionar su información con cap 9**: La segunda visita al Turco (cap 10) es redundante; la lesión de Zubiri y la huida de Irati ya ocurren en cap 9. Fusionar ambas escenas en una única secuencia de acción en la nave de Santurtzi, con Zubiri siendo herido e Irati escapando al mismo tiempo. El material adicional (la conversación con Aldecoa en el hospital, la bala de la OTAN) se pasa al capítulo 11.
+
+2. **Reestructurar el clímax del capítulo 21**: Irati no debe aparecer con la pistola por casualidad. Reescribir la escena para que Irati, al huir del almacén, se encuentre con el coche de Zubiri (que él dejó a doscientos metros) o con un teléfono público, y llame a la policía. Zubiri debe sobrevivir al Turco por sus propios medios —quizás usando el entorno, una distracción, o la jeringuilla contra el propio Turco— para que la victoria sea suya, no un regalo externo.
+
+3. **Podar los caps 11-16**: Eliminar el cap 12 (Irati visita a Zubiri en su piso) y fusionar su contenido (la libreta de Gorka, el nombre Landa) con el cap 13 (la visita al banco). Reducir los caps 14-15 a uno solo (Zubiri investiga a Landa simultáneamente con la búsqueda de Irati) para mantener tensión narrativa.
+
+4. **Reposicionar la revelación de Aldecoa (cap 20)**: Mostrar la presión de Aldecoa antes del cap 20. Una escena en el capítulo 7 o 8 donde Aldecoa recibe una llamada telefónica que lo pone tenso (podría ser el Turco amenazando a su hija) y el lector no sabe de qué se trata, creando suspenso. La revelación completa llega en cap 20, pero con el piso dramático ya preparado.
+
+5. **Desarrollar la presencia de Irati en el tercer acto**: Entre caps 17 y 21, añadir al menos una escena donde Irati tome una decisión activa (quizás contacta a un amigo que tiene un coche, o llama a otro periodista, o intenta ella misma localizar al Turco con los contactos de Gorka). No debe ser solo víctima pasiva; debe ganarse su momento de salvadora.
+
+6. **Eliminar el epílogo (cap -1)**: La llamada telefónica ya está en cap 29. Eliminar el epílogo y, si se necesita un cierre visual, terminar con la imagen del cigarrillo en el cenicero del capítulo 29, que es más potente.
+
+7. **Revisar las escenas de bar repetitivas**: Unificar las reuniones con Saturio (cap 8 y cap 17) en una sola escena más densa. Eliminar la reunión del cap 14 (Jon en el bar) y convertirla en una llamada telefónica de treinta segundos.
+
+8. **Añadir una escena de riesgo personal para Zubiri entre caps 11-16**: Para evitar la meseta del segundo acto, incluir una escena donde Zubiri —de baja y sin placa— intenta acceder por su cuenta a Químicas del Norte y casi es descubierto, o donde el Turco lo localiza en su piso y hay un breve enfrentamiento. Esto mantendría la sensación de peligro constante.
+
+9. **Resolver la continuidad de las cintas**: Unificar el número de copias. Que Gorka hiciera solo dos: una en el banco (que Aldecoa destruye) y una con Ainhoa (que Zubiri entrega a Jon). La del piso (cap 4) debería ser la misma que la del banco (Zubiri la encontró en el piso, la llevó al banco donde Irati la guarda), eliminando confusión.
+
+10. **Añadir un cierre interno de la trama de Landa**: Aunque Landa sea relevante para la serie, este libro necesita una recompensa concreta. En la escena final con Jon (cap 26), añadir que el contacto fotográfico de Santander ha confirmado que Landa vive, y que tiene documentos que vinculan a Errasti con la muerte de 1989. Que el lector sienta que el caso Gorka ha abierto una puerta real hacia el pasado.
+
+## LO QUE FUNCIONA
+
+1. **La atmósfera y la voz narrativa**: La prosa de Braccaioli (si el autor ha emulado su guía de estilo) está lograda. La tercera persona limitada con focalización interna en Zubiri funciona perfectamente para el thriller; la distancia íntima, el tono contenido pero amenazante, la lluvia como estado mental constante. Los fragmentos nominales ("Silencio. Un coche. Dos faros cortando la niebla.") crean urgencia. La cadencia sincopada en acción y la frase más larga en reflexión es correcta.
+
+2. **Prólogo y primeros tres capítulos**: El arranque es sólido. La ejecución de Gorka en el prólogo es visceral y establece el modus operandi del asesino. El capítulo 1 (Zubiri en la escena del crimen, el detalle de la marca del reloj) es una introducción ejemplar al método del protagonista. El capítulo 3 (interrogatorio a Irati) funciona como presentación de un personaje secundario fuerte.
+
+3. **El enfrentamiento verbal con Errasti (cap 28)**: Es la escena mejor escrita del tercer acto. El diálogo entre Zubiri y Errasti transmite poder, amenaza y desesperación contenida. La amenaza final de Zubiri ("El óxido siempre vuelve") funciona como declaración temática, y la fisura en la máscara de Errasti es el momento más dramático de todo el enfrentamiento.
+
+4. **El personaje de Jon Arregi**: Como periodista cínico y aliado funcional, Jon está bien trazado y aporta un contrapunto necesario a la seriedad de Zubiri. Sus breves intervenciones (caps 2, 14, 23, 26) son consistentes: el mismo humor seco, la misma libreta Moleskine, la misma lealtad a su código profesional.
+
+5. **La ambientación de Bilbao**: La novela usa la geografía urbana de Bilbao de forma coherente y atmosférica: Zorroza, Santutxu, el Casco Viejo, San Francisco, el puerto de Artxanda. La ciudad no es solo decorado, sino un personaje más, con su lluvia, sus olores y su corrupción estructural.
+
+## PUNTUACIÓN EDITORIAL (JSON)
+
+<!-- PUNTUACION_HOLISTICA_INICIO -->
+```json
+{"puntuacion_global": 5, "justificacion": "Manuscrito con atmósfera sólida y arranque potente, pero el segundo acto se desploma, el clímax depende de un deus ex machina, el epílogo es redundante, y la trama de Landa queda inconclusa sin recompensa interna. Requiere reestructuración profunda del tercer acto y poda quirúrgica del desarrollo medio."}
+```
+<!-- PUNTUACION_HOLISTICA_FIN -->
+
+## INSTRUCCIONES AUTO-APLICABLES (JSON)
+
+<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->
+```json
+{
+  "instrucciones": [
+    {
+      "capitulos_afectados": [10],
+      "categoria": "trama",
+      "descripcion": "Eliminar Cap 10 por redundancia estructural con Cap 9.",
+      "instrucciones_correccion": "Eliminar el capítulo 10 entero. Su contenido narrativo (Zubiri herido en la nave, Irati huye, el Turco huye) ya está cubierto en el capítulo 9. Absorber la información de la conversación posterior de Zubiri con Nerea sobre la bala de la OTAN en el capítulo 11.",
+      "tipo": "eliminar",
+      "prioridad": "alta"
+    },
+    {
+      "capitulos_afectados": [21],
+      "categoria": "trama",
+      "descripcion": "Reescribir clímax para eliminar deus ex machina de Irati con la pistola.",
+      "instrucciones_correccion": "Reescribir la secuencia final del capítulo 21. Eliminar la aparición repentina de Irati con la pistola de Zubiri. Irati debe huir del almacén al principio de la pelea. Zubiri debe vencer al Turco usando su ingenio —quizás usando la jeringuilla contra él, o un golpe con la tuerca en un momento de distracción, o el entorno del almacén (una viga, un palet). Si Irati regresa, debe ser porque ella ha llamado a la policía desde un teléfono público, y la policía llega justo para detener al Turco herido, no para dispararle.",
+      "tipo": "estructural",
+      "prioridad": "alta",
+      "plan_por_capitulo": {
+        "21": "Reescribir desde 'El Turco se colocó sobre él...' hasta el final. Irati huye al inicio. Zubiri forcejea, logra liberar un brazo, golpea al Turco con la tuerca en la sien, el Turco cae pero se levanta, Zubiri usa la jeringuilla que ha caído al suelo para pinchar al Turco en el cuello. El Turco se desploma. Zubiri cae agotado. Minutos después, llega la policía (Irati llamó desde una cabina cercana)."
+      }
+    },
+    {
+      "capitulos_afectados": [11, 12, 13, 14, 15, 16],
+      "categoria": "ritmo",
+      "descripcion": "Podar y fusionar caps 11-16 para evitar meseta narrativa.",
+      "instrucciones_correccion": "Eliminar cap 12 entero (visita de Irati al piso de Zubiri). Fusionar su información (la libreta de Gorka, el nombre Landa) con el cap 13 (visita al banco). Reducir caps 14-15 a un único capítulo: Zubiri convaleciente investiga a Landa llamando a Jon, mientras simultáneamente recibe la visita de Irati con la libreta. El cap 16 (la cinta desaparece) debe ocurrir un capítulo antes: moverlo justo después del cap 13, antes de la investigación de Landa, para mantener la sensación de urgencia. El bloque resultante debe tener 4 caps, no 6.",
+      "tipo": "estructural",
+      "prioridad": "alta",
+      "plan_por_capitulo": {
+        "12": "ELIMINAR. Contenido absorbido por cap 13.",
+        "14": "FUSIONAR con cap 15 en un solo capítulo. Que la investigación de Landa por Jon ocurra en diálogo telefónico mientras Zubiri recibe la visita de Irati en su piso. La tensión de la desaparición de la cinta (actual cap 16) debe interrumpir esta escena, creando urgencia."
+      }
+    },
+    {
+      "capitulos_afectados": [7, 20],
+      "categoria": "personaje",
+      "descripcion": "Añadir foreshadowing de la presión sobre Aldecoa en el capítulo 7.",
+      "instrucciones_correccion": "En el capítulo 7, durante la conversación entre Zubiri y Aldecoa en el despacho, añadir una llamada telefónica que interrumpa la escena. Aldecoa descuelga, escucha, palidece visiblemente, cuelga y dice 'Nada, una equivocación'. Zubiri nota su turbación pero no pregunta. Esta escena prepara el terreno para la revelación del capítulo 20 (la hija amenazada) y cohesiona el arco de Aldecoa.",
+      "tipo": "estructural",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [17, 18, 19],
+      "categoria": "personaje",
+      "descripcion": "Añadir escena de agencia activa de Irati entre su secuestro y el clímax.",
+      "instrucciones_correccion": "Entre los caps 17 y 18, añadir una breve escena (un párrafo o dos) narrada desde la perspectiva de Irati mientras está secuestrada en el piso de San Francisco. No necesita ser un capítulo entero; basta con unas líneas donde Irati, sola en el piso, forcejea en silencio con las ataduras, logra aflojar una mano, y esconde el pendiente debajo de la manta como señal. Esta micro-escena la convierte en agente activo incluso en su cautiverio y prepara su momento posterior (cap 17) cuando Zubiri encuentra el pendiente.",
+      "tipo": "estructural",
+      "prioridad": "media",
+      "plan_por_capitulo": {
+        "17": "Añadir una línea tras la descripción del piso vacío: 'Irati había estado allí. La manta en la encimera, el pendiente escondido debajo como una semilla. Zubiri lo encontró porque ella quiso que lo encontrara.'"
+      }
+  
