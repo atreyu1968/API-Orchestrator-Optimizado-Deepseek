@@ -7969,7 +7969,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         });
         await storage.updateProject(project.id, { status: "applying_editorial" });
         try {
-          await this.applyEditorialNotes(currentProject, "", instructions);
+          // [Fix91] El loop ya re-ejecuta Holístico+Beta al inicio de la siguiente
+          // iteración, así que evitamos el refresco automático interno para no
+          // duplicar dos pasadas seguidas de los mismos lectores.
+          await this.applyEditorialNotes(currentProject, "", instructions, { skipReaderReviewRefresh: true });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           await storage.createActivityLog({
@@ -8274,6 +8277,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     guiaEstilo: string,
     previousFinalScore: number | null,
     modifiedChapterIds?: number[],
+    opts?: {
+      skipReaderReviewRefresh?: boolean;
+      previousHolisticScore?: number | null;
+      previousBetaScore?: number | null;
+    },
   ): Promise<void> {
     void guiaEstilo; // se mantiene en la firma para futuras necesidades del FinalReviewer.
     this.callbacks.onAgentStatus("final-reviewer", "reviewing",
@@ -8410,20 +8418,107 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         "Revisión final completada (sin puntuación)."
       );
     }
+
+    // ════════════════════════════════════════════════════════════════
+    // [Fix91] Refresco automático de las puntuaciones de los lectores
+    // (Holístico + Beta) tras aplicar revisiones, para que el usuario
+    // pueda ver de inmediato si las modificaciones han surtido efecto
+    // o han perjudicado. Los loops automáticos (Fix47 / Fix81) ya
+    // re-evalúan H+B en la siguiente iteración, así que pasan
+    // `skipReaderReviewRefresh: true` para no duplicar trabajo.
+    // ════════════════════════════════════════════════════════════════
+    if (opts?.skipReaderReviewRefresh) return;
+
+    const prevH = opts?.previousHolisticScore ?? null;
+    const prevB = opts?.previousBetaScore ?? null;
+
+    try {
+      this.callbacks.onAgentStatus("editor", "thinking",
+        "Re-evaluando manuscrito con Lector Holístico y Lector Beta tras las correcciones..."
+      );
+      // Reload project so the runners ven el manuscrito ya editado.
+      const freshProject = (await storage.getProject(project.id)) || project;
+      const [holisticOutcome, betaOutcome] = await Promise.allSettled([
+        this.runHolisticReview(freshProject),
+        this.runBetaReview(freshProject),
+      ]);
+
+      const newH: number | null = holisticOutcome.status === "fulfilled"
+        ? (typeof holisticOutcome.value?.score === "number" ? holisticOutcome.value.score : null)
+        : null;
+      const newB: number | null = betaOutcome.status === "fulfilled"
+        ? (typeof betaOutcome.value?.score === "number" ? betaOutcome.value.score : null)
+        : null;
+
+      const fmtDelta = (before: number | null, after: number | null): string => {
+        if (after == null) return "sin nota nueva";
+        if (before == null) return `${after}/10 (sin nota previa)`;
+        const d = after - before;
+        const arrow = d > 0 ? " (mejora)" : d < 0 ? " (empeora)" : " (igual)";
+        const sign = d > 0 ? "+" : "";
+        return `${before}/10 → ${after}/10${arrow} (${sign}${d.toFixed(1)})`;
+      };
+
+      const holisticLabel = `Holístico: ${fmtDelta(prevH, newH)}`;
+      const betaLabel = `Beta: ${fmtDelta(prevB, newB)}`;
+
+      const worstDelta = [
+        newH != null && prevH != null ? newH - prevH : 0,
+        newB != null && prevB != null ? newB - prevB : 0,
+      ].reduce((a, b) => Math.min(a, b), 0);
+      const bestDelta = [
+        newH != null && prevH != null ? newH - prevH : 0,
+        newB != null && prevB != null ? newB - prevB : 0,
+      ].reduce((a, b) => Math.max(a, b), 0);
+
+      const holisticFailed = holisticOutcome.status === "rejected";
+      const betaFailed = betaOutcome.status === "rejected";
+
+      // [Fix91] Si ambos lectores fallan, no podemos saber si las
+      // correcciones mejoraron o empeoraron: degradamos a `error` para que
+      // se note operativamente. Si solo falla uno, `warning` (al menos
+      // tenemos media foto). En el camino feliz, el nivel sale del delta.
+      const level: "success" | "warning" | "info" | "error" =
+        holisticFailed && betaFailed ? "error"
+        : holisticFailed || betaFailed ? "warning"
+        : worstDelta < -0.5 ? "warning"
+        : bestDelta > 0 ? "success"
+        : "info";
+      const failureNote = holisticFailed || betaFailed
+        ? ` Aviso: ${holisticFailed ? "Holístico" : ""}${holisticFailed && betaFailed ? " y " : ""}${betaFailed ? "Beta" : ""} fallaron (puntuación previa intacta).`
+        : "";
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level,
+        message: `Puntuaciones de lectores tras las correcciones: ${holisticLabel}; ${betaLabel}.${worstDelta < -0.5 ? " La nota ha bajado — revisa los cambios antes de aceptar." : bestDelta > 0 ? " Las correcciones han mejorado al menos una lectura." : ""}${failureNote}`,
+        agentRole: "editor",
+      });
+    } catch (err) {
+      console.error("[Fix91] Refresco automático de Holístico+Beta falló:", err);
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        message: `No se pudieron refrescar las puntuaciones de Lector Holístico/Beta tras las correcciones: ${(err as Error)?.message?.slice(0, 200) || String(err)}. Las correcciones SÍ se aplicaron y la puntuación del Revisor Final está actualizada.`,
+        agentRole: "editor",
+      });
+    }
   }
 
   async applyEditorialNotes(
     project: Project,
     notesText: string,
-    preParsedInstructions?: EditorialInstruction[]
+    preParsedInstructions?: EditorialInstruction[],
+    options?: { skipReaderReviewRefresh?: boolean }
   ): Promise<void> {
-    return runWithProjectContext(project.id, () => this._applyEditorialNotes(project, notesText, preParsedInstructions));
+    return runWithProjectContext(project.id, () => this._applyEditorialNotes(project, notesText, preParsedInstructions, options));
   }
 
   private async _applyEditorialNotes(
     project: Project,
     notesText: string,
-    preParsedInstructions?: EditorialInstruction[]
+    preParsedInstructions?: EditorialInstruction[],
+    options?: { skipReaderReviewRefresh?: boolean }
   ): Promise<void> {
     // Register cancellation controller so the user can abort mid-process.
     registerProjectAbortController(project.id);
@@ -8602,6 +8697,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // global para reflejar el nuevo estado y devolvemos control al usuario.
       if (nonDeletionInstructions.length === 0) {
         const previousFinalScore = project.finalScore ?? null;
+        const previousHolisticScore = (project as any).holisticScore ?? null;
+        const previousBetaScore = (project as any).betaScore ?? null;
         await storage.createActivityLog({
           projectId: project.id,
           level: "success",
@@ -8609,7 +8706,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           agentRole: "editor",
         });
         try {
-          await this.recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore);
+          await this.recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore, undefined, {
+            skipReaderReviewRefresh: options?.skipReaderReviewRefresh,
+            previousHolisticScore,
+            previousBetaScore,
+          });
         } catch (e) {
           const errMsg = e instanceof Error ? e.message : String(e);
           console.error("[ApplyEditorialNotes] Error recalculating global score after deletion-only flow:", e);
@@ -8678,6 +8779,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // de "solo eliminaciones": recalculamos la nota global y terminamos.
       if (instructions.length === 0) {
         const previousFinalScore = project.finalScore ?? null;
+        const previousHolisticScore = (project as any).holisticScore ?? null;
+        const previousBetaScore = (project as any).betaScore ?? null;
         await storage.createActivityLog({
           projectId: project.id,
           level: "success",
@@ -8685,7 +8788,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           agentRole: "editor",
         });
         try {
-          await this.recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore);
+          await this.recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore, undefined, {
+            skipReaderReviewRefresh: options?.skipReaderReviewRefresh,
+            previousHolisticScore,
+            previousBetaScore,
+          });
         } catch (e) {
           const errMsg = e instanceof Error ? e.message : String(e);
           console.error("[ApplyEditorialNotes] Error recalculating global score after macro-only flow:", e);
@@ -8782,6 +8889,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
       // Snapshot the global score BEFORE applying so we can compare later.
       const previousFinalScore = project.finalScore ?? null;
+      // [Fix91] También capturamos las notas previas de Holístico y Beta
+      // para poder mostrar el delta tras el refresco automático posterior.
+      const previousHolisticScore = (project as any).holisticScore ?? null;
+      const previousBetaScore = (project as any).betaScore ?? null;
 
       // [Fix69-C] IDs de capítulos efectivamente modificados durante esta sesión
       // editorial. Se usa para el auto-revert en `recalculateFinalScoreAfterEdits`
@@ -9140,7 +9251,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
       if (appliedCount > 0 && !cancelled) {
         try {
-          await this.recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore, Array.from(modifiedChapterIds));
+          await this.recalculateFinalScoreAfterEdits(project, worldBibleData, guiaEstilo, previousFinalScore, Array.from(modifiedChapterIds), {
+            skipReaderReviewRefresh: options?.skipReaderReviewRefresh,
+            previousHolisticScore,
+            previousBetaScore,
+          });
         } catch (reviewErr) {
           console.error("[ApplyEditorialNotes] Error en revisión final post-editorial:", reviewErr);
           await storage.createActivityLog({
@@ -11559,7 +11674,10 @@ Responde SOLO con un JSON válido con la estructura:
         // para que el monitor de congelación use el timeout extendido (Fix36).
         await storage.updateProject(project.id, { status: "applying_editorial" });
         try {
-          await this.applyEditorialNotes(currentProject, "", instructions);
+          // [Fix91] El auto-loop legacy de Beta ya re-evalúa al Lector Beta al
+          // inicio de la siguiente iter; saltamos el refresco interno para no
+          // duplicarlo.
+          await this.applyEditorialNotes(currentProject, "", instructions, { skipReaderReviewRefresh: true });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           await storage.createActivityLog({
