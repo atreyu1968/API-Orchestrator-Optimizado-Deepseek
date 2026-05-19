@@ -17,6 +17,12 @@ export const db = drizzle(pool, { schema });
  */
 const SCHEMA_PATCHES: string[] = [
   `ALTER TABLE "series" ADD COLUMN IF NOT EXISTS "protagonist_name" text`,
+  // [Fix82] Notas íntegras del último informe del Lector Holístico + marca temporal
+  // de cada nota (Holístico/Beta ya tenían timestamp, Final no). Visibilidad de
+  // las 3 notas refrescadas tras cada iteración del loop holístico+beta.
+  `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "last_holistic_notes" text`,
+  `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "last_holistic_notes_at" timestamp`,
+  `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "final_score_at" timestamp`,
 ];
 
 let schemaEnsured = false;

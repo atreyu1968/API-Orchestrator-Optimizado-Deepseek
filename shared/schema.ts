@@ -97,6 +97,12 @@ export const projects = pgTable("projects", {
   maxRevisionCycles: integer("max_revision_cycles").default(3),
   finalReviewResult: jsonb("final_review_result"),
   finalScore: integer("final_score"),
+  // [Fix82] Marca temporal de la última escritura de finalScore. Cada vuelta del
+  // loop holístico+beta dispara recalculateFinalScoreAfterEdits, que pisa la nota
+  // del Revisor Final; el timestamp permite al dashboard mostrar "actualizado X"
+  // para que el usuario distinga la nota inicial de las refrescadas tras cada
+  // iteración de reescritura.
+  finalScoreAt: timestamp("final_score_at"),
   // [Fix75] Notas independientes /10 de los dos lectores post-finalización
   // (Holístico = editor profesional severo; Beta = lector cualificado real).
   // Las tres notas (finalScore + holisticScore + betaScore) son
@@ -142,6 +148,14 @@ export const projects = pgTable("projects", {
   // Se sobreescribe tras cada runBetaReview exitoso. Truncado a 24k chars.
   lastBetaNotes: text("last_beta_notes"),
   lastBetaNotesAt: timestamp("last_beta_notes_at"),
+  // [Fix82] Texto íntegro del último informe del Lector Holístico. Antes solo
+  // persistíamos `holisticScore` (la nota /10) y se descartaba el cuerpo del
+  // informe: el usuario veía cambiar el número pero no podía leer el diagnóstico
+  // que lo justificaba. Tras Fix81, cada iteración del loop produce un nuevo
+  // informe holístico; ahora se sobreescribe aquí y el dashboard lo muestra
+  // junto al informe del Beta con su timestamp. Truncado a 24k chars.
+  lastHolisticNotes: text("last_holistic_notes"),
+  lastHolisticNotesAt: timestamp("last_holistic_notes_at"),
   // [Fix40] Acciones administrativas pendientes emitidas por el StructuralInstructionTranslator
   // (delete_chapter, merge_chapters, split_chapter, swap_chapters, reorder_chapters,
   // move_content). El sistema NO las aplica automáticamente porque son destructivas;

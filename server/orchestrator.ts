@@ -4203,8 +4203,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       await storage.updateProject(project.id, { 
         revisionCycle: revisionCycle + 1,
         finalReviewResult: result as any,
-        finalScore: scoreForDb
-      });
+        finalScore: scoreForDb,
+        finalScoreAt: new Date(), // [Fix82]
+      } as any);
       
       // === NUEVO: Procesar decisiones de trama, lesiones persistentes y capítulos huérfanos ===
       if (result) {
@@ -4578,7 +4579,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             if (recentSpread <= 1) {
               console.log(`[Orchestrator] Persistent 8↔9 oscillation over ${cyclesElapsed} cycles (best ${bestOverall}). Approving via best-score rule.`);
               const scoreForDb = Math.round(bestOverall);
-              await storage.updateProject(project.id, { finalScore: scoreForDb });
+              await storage.updateProject(project.id, { finalScore: scoreForDb, finalScoreAt: new Date() } as any); // [Fix82]
               this.callbacks.onAgentStatus("final-reviewer", "completed",
                 `Oscilación persistente (${recent.join(", ")}/10) tras ${cyclesElapsed} ciclos. Mejor puntuación ${bestOverall}/10 confirmó calidad. Sin defectos graves. APROBADO.`
               );
@@ -5497,7 +5498,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         status: "completed",
         finalScore: scoreForDb,
         finalReviewResult: reviewResult.result as any,
-      });
+        finalScoreAt: new Date(), // [Fix82]
+      } as any);
 
       const newIssueCount = reviewResult.result?.issues?.length || 0;
 
@@ -5870,18 +5872,24 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       "Lector Holístico", "deepseek-v4-flash", undefined, "holistic_review"
     );
 
-    // [Fix75] Persistimos la nota /10 que el Holístico acaba de emitir,
-    // independiente de finalScore y de betaScore. Si el parser no la encontró
-    // (`score === null`), no escribimos para no pisar la nota previa.
-    if (typeof result.score === "number") {
-      try {
-        await storage.updateProject(project.id, {
-          holisticScore: result.score,
-          holisticScoreAt: new Date(),
-        } as any);
-      } catch (e) {
-        console.warn(`[Fix75] No se pudo persistir holisticScore: ${(e as Error).message}`);
+    // [Fix82] Persistimos el texto íntegro del informe (truncado a 24k) SIEMPRE
+    // para que el dashboard pueda mostrarlo junto al del Beta; antes el cuerpo
+    // se descartaba y solo quedaba el número. La nota /10 [Fix75] sigue siendo
+    // condicional a `typeof score === "number"` para no pisar la previa cuando
+    // el parser no la encuentra — en ese caso queda informe nuevo + score viejo,
+    // y la UI usa `lastHolisticNotesAt` (no `holisticScoreAt`) para el timestamp.
+    try {
+      const patch: any = {
+        lastHolisticNotes: (result.notesText || "").slice(0, 24000),
+        lastHolisticNotesAt: new Date(),
+      };
+      if (typeof result.score === "number") {
+        patch.holisticScore = result.score;
+        patch.holisticScoreAt = new Date();
       }
+      await storage.updateProject(project.id, patch);
+    } catch (e) {
+      console.warn(`[Fix75/Fix82] No se pudo persistir holisticScore/notes: ${(e as Error).message}`);
     }
 
     await storage.createActivityLog({
@@ -8189,7 +8197,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     await storage.updateProject(project.id, {
       finalReviewResult: newResult as any,
       finalScore: newScoreForDb,
-    });
+      // [Fix82] Marca temporal: la UI usa este timestamp para mostrar
+      // "actualizado hace X" junto a la nota del Revisor Final, de modo que
+      // cada iteración del loop holístico+beta sea visible (antes la nota
+      // se sobrescribía silenciosamente).
+      finalScoreAt: new Date(),
+    } as any);
 
     if (newScoreRaw != null) {
       const delta = previousFinalScore != null ? (newScoreRaw - previousFinalScore) : null;
@@ -11628,7 +11641,8 @@ Responde SOLO con un JSON válido con la estructura:
         await storage.updateProject(project.id, {
           finalScore: scoreForDb,
           finalReviewResult: reviewResult.result as any,
-        });
+          finalScoreAt: new Date(), // [Fix82]
+        } as any);
 
         this.callbacks.onAgentStatus("final-reviewer", "reviewing",
           `Re-verificación: puntuación ${score}/10`

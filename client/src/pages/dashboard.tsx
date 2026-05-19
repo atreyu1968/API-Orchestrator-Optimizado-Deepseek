@@ -1283,40 +1283,122 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* [Fix75] Notas independientes del Holístico y del Beta sobre el mismo manuscrito. Casi nunca coinciden con el Final Reviewer; eso es esperable y útil. Target comercial: Beta ≥ 9. */}
-                    {(((currentProject as any).holisticScore ?? null) !== null || ((currentProject as any).betaScore ?? null) !== null) && (
+                    {/* [Fix82] Las tres notas del manuscrito con timestamp y texto colapsable. Tras cada iteración del loop holístico+beta se actualizan las tres; el timestamp deja claro cuál es la última y el botón "Ver informe" muestra el cuerpo del diagnóstico que justifica la nota. */}
+                    {(((currentProject as any).holisticScore ?? null) !== null
+                      || ((currentProject as any).betaScore ?? null) !== null
+                      || ((currentProject as any).lastHolisticNotes ?? null)
+                      || ((currentProject as any).lastBetaNotes ?? null)
+                      || ((currentProject as any).finalScoreAt ?? null)) && (
                       <div className="mt-4 pt-4 border-t border-border/50">
-                        <p className="text-sm font-medium mb-2">Notas adicionales de los lectores</p>
-                        <div className="grid grid-cols-2 gap-3">
+                        <p className="text-sm font-medium mb-2">Notas tras la última reedición</p>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          Tras cada iteración del loop holístico+beta se reevalúa el manuscrito. Las tres notas son independientes y casi nunca coinciden. Target dual: Beta ≥ 9 AND Holístico ≥ 8.
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           {(() => {
-                            const renderScoreCard = (label: string, hint: string, score: number | null, testId: string) => {
-                              if (score === null) {
-                                return (
-                                  <div className="p-3 rounded border border-border/40 bg-background/40">
-                                    <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                                    <p className="text-xs text-muted-foreground">Sin nota aún</p>
-                                  </div>
-                                );
-                              }
-                              const color = score >= 9
-                                ? 'text-green-600 dark:text-green-400'
-                                : score >= 7
-                                  ? 'text-yellow-600 dark:text-yellow-400'
-                                  : 'text-red-600 dark:text-red-400';
-                              return (
-                                <div className="p-3 rounded border border-border/40 bg-background/40">
-                                  <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                                  <p className={`text-2xl font-bold ${color}`} data-testid={testId}>{score}/10</p>
-                                  <p className="text-[11px] text-muted-foreground mt-1">{hint}</p>
-                                </div>
-                              );
+                            const fmtAgo = (ts: string | Date | null | undefined): string => {
+                              if (!ts) return "";
+                              const d = ts instanceof Date ? ts : new Date(ts);
+                              if (isNaN(d.getTime())) return "";
+                              const diffMs = Date.now() - d.getTime();
+                              const m = Math.floor(diffMs / 60000);
+                              if (m < 1) return "ahora mismo";
+                              if (m < 60) return `hace ${m} min`;
+                              const h = Math.floor(m / 60);
+                              if (h < 24) return `hace ${h} h`;
+                              const days = Math.floor(h / 24);
+                              return `hace ${days} d`;
                             };
-                            const holistic = (currentProject as any).holisticScore ?? null;
-                            const beta = (currentProject as any).betaScore ?? null;
+                            const scoreColor = (score: number | null) =>
+                              score === null ? 'text-muted-foreground'
+                                : score >= 9 ? 'text-green-600 dark:text-green-400'
+                                : score >= 7 ? 'text-yellow-600 dark:text-yellow-400'
+                                : 'text-red-600 dark:text-red-400';
+                            const renderNoteCard = (
+                              label: string, hint: string,
+                              score: number | null, ts: any, notes: string | null,
+                              scoreTestId: string, notesTestId: string,
+                            ) => (
+                              <div className="p-3 rounded border border-border/40 bg-background/40 flex flex-col">
+                                <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                                <div className="flex items-baseline justify-between gap-2">
+                                  <p className={`text-2xl font-bold ${scoreColor(score)}`} data-testid={scoreTestId}>
+                                    {score === null ? "—" : `${score}/10`}
+                                  </p>
+                                  {ts && (
+                                    <p className="text-[10px] text-muted-foreground" data-testid={`${scoreTestId}-ts`}>
+                                      {fmtAgo(ts)}
+                                    </p>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-muted-foreground mt-1">{hint}</p>
+                                {notes && notes.trim().length > 0 && (
+                                  <details className="mt-2 group" data-testid={`${notesTestId}-details`}>
+                                    <summary className="text-[11px] text-primary cursor-pointer hover:underline list-none flex items-center gap-1">
+                                      <ChevronDown className="h-3 w-3 group-open:hidden" />
+                                      <ChevronUp className="h-3 w-3 hidden group-open:inline" />
+                                      Ver informe ({notes.length.toLocaleString("es-ES")} car.)
+                                    </summary>
+                                    <pre
+                                      className="mt-2 text-[11px] whitespace-pre-wrap font-sans max-h-64 overflow-y-auto p-2 bg-background/60 rounded border border-border/30 text-foreground/90"
+                                      data-testid={notesTestId}
+                                    >
+                                      {notes}
+                                    </pre>
+                                  </details>
+                                )}
+                                {(!notes || notes.trim().length === 0) && score !== null && (
+                                  <p className="text-[10px] text-muted-foreground italic mt-2">Sin texto persistido para esta nota.</p>
+                                )}
+                              </div>
+                            );
+                            const cp = currentProject as any;
+                            // Editor Final: el texto va en finalReviewResult.issues (ya se muestra abajo) o en .reason; aquí solo score + timestamp.
+                            const finalNotesPreview: string | null = (() => {
+                              const fr = (fullProjectDetail as any)?.finalReviewResult;
+                              if (!fr) return null;
+                              if (typeof fr.reason === "string" && fr.reason.trim()) return fr.reason;
+                              if (Array.isArray(fr.issues) && fr.issues.length > 0) {
+                                return fr.issues.slice(0, 5).map((i: any, idx: number) =>
+                                  `${idx + 1}. [${i.severidad || i.categoria || "otro"}] ${i.descripcion || ""}`
+                                ).join("\n\n") + (fr.issues.length > 5 ? `\n\n…y ${fr.issues.length - 5} issue(s) más abajo.` : "");
+                              }
+                              return null;
+                            })();
                             return (
                               <>
-                                {renderScoreCard("Lector Holístico (editor severo)", "Diagnóstico estructural profesional.", holistic, "text-holistic-score")}
-                                {renderScoreCard("Lector Beta (lector real)", "Sensación de lectura. Target comercial: 9+.", beta, "text-beta-score")}
+                                {renderNoteCard(
+                                  "Revisor Final",
+                                  "Auditoría editorial profesional.",
+                                  cp.finalScore ?? null,
+                                  cp.finalScoreAt ?? null,
+                                  finalNotesPreview,
+                                  "text-final-score-card",
+                                  "text-final-notes",
+                                )}
+                                {renderNoteCard(
+                                  "Lector Holístico",
+                                  "Diagnóstico estructural severo.",
+                                  cp.holisticScore ?? null,
+                                  // [Fix82 code-review] Preferimos lastHolisticNotesAt sobre holisticScoreAt
+                                  // porque el texto del informe se persiste SIEMPRE (ver _runHolisticReview),
+                                  // mientras que el score solo cuando el parser lo encuentra. Si en una
+                                  // iteración hay informe pero no score parseable, queremos que la card
+                                  // refleje "actualizado hace X" aunque el score sea null.
+                                  cp.lastHolisticNotesAt ?? cp.holisticScoreAt ?? null,
+                                  cp.lastHolisticNotes ?? null,
+                                  "text-holistic-score",
+                                  "text-holistic-notes",
+                                )}
+                                {renderNoteCard(
+                                  "Lector Beta",
+                                  "Sensación de lectura. Target: 9+.",
+                                  cp.betaScore ?? null,
+                                  cp.lastBetaNotesAt ?? cp.betaScoreAt ?? null,
+                                  cp.lastBetaNotes ?? null,
+                                  "text-beta-score",
+                                  "text-beta-notes",
+                                )}
                               </>
                             );
                           })()}
