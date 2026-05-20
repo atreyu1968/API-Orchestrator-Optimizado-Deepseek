@@ -1682,6 +1682,44 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         if (architectAttempt >= MAX_ARCHITECT_RETRIES) break;
       }
 
+      // [Fix99] Guard final del bucle de retries: si el último intento dejó
+      // worldBibleData con un número de capítulos FUERA del rango aceptable
+      // (en modo rango: fuera de [min+extras, max+extras]; en modo exacto:
+      // < expected-2), NO continuamos con ese outline. Intentamos restaurar
+      // bestWorldBibleData si su count es válido; en caso contrario, anulamos
+      // worldBibleData para que el guard de abajo marque el proyecto FAILED.
+      // Antes de este fix, un último intento que devolvía p.ej. 23 capítulos
+      // (cuando se pidió rango 30-35) pasaba el guard de "escaleta no vacía"
+      // y el Narrador escribía sobre una escaleta truncada.
+      if (worldBibleData) {
+        const finalLen = worldBibleData.escaleta_capitulos?.length || 0;
+        if (!this.isAcceptableEscaletaCount(project, finalLen)) {
+          const rangeLabel = this.formatAcceptableEscaletaRange(project);
+          const bestLen = bestWorldBibleData?.escaleta_capitulos?.length || 0;
+          if (bestWorldBibleData && this.isAcceptableEscaletaCount(project, bestLen)) {
+            console.warn(`[Orchestrator] [Fix99] Último intento del Arquitecto produjo ${finalLen} caps fuera del rango aceptable ${rangeLabel}. Restaurando la mejor escaleta previa (${bestLen} caps).`);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              agentRole: "architect",
+              message: `⚠️ Último intento del Arquitecto devolvió ${finalLen} caps fuera del rango aceptable ${rangeLabel}. Restaurada la mejor escaleta previa (${bestLen} caps).`,
+              metadata: { fix: "Fix99", finalLen, bestLen, rangeLabel },
+            });
+            worldBibleData = bestWorldBibleData;
+          } else {
+            console.error(`[Orchestrator] [Fix99] Último intento produjo ${finalLen} caps fuera del rango ${rangeLabel} y no hay mejor escaleta previa válida. Marcando proyecto como FAILED.`);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "error",
+              agentRole: "architect",
+              message: `❌ Todos los intentos del Arquitecto produjeron escaletas fuera del rango aceptable ${rangeLabel} (último: ${finalLen} caps). Proyecto marcado FAILED.`,
+              metadata: { fix: "Fix99", finalLen, rangeLabel, terminal: true },
+            });
+            worldBibleData = null;
+          }
+        }
+      }
+
       if (!worldBibleData || !worldBibleData.world_bible?.personajes?.length || !worldBibleData.escaleta_capitulos?.length) {
         const errorMsg = `El Arquitecto falló después de ${MAX_ARCHITECT_RETRIES} intentos: ${lastArchitectError}. El proyecto se ha marcado como FALLIDO; reanúdalo manualmente desde el dashboard cuando quieras volver a intentarlo.`;
         console.error(`[Orchestrator] CRITICAL: ${errorMsg}`);
@@ -1807,7 +1845,8 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                       message: `✅ El Arquitecto rediseñó el outline aplicando las correcciones del Crítico de Originalidad.`,
                     });
                   } else {
-                    console.warn(`[Orchestrator] Revisión del Arquitecto produjo un outline inválido (${reviewedLen}/${expectedChapters} caps). Manteniendo outline original.`);
+                    const rangeLabel = this.formatAcceptableEscaletaRange(project);
+                    console.warn(`[Orchestrator] Revisión del Arquitecto (originalidad) RECHAZADA: ${reviewedLen} caps fuera del rango aceptable ${rangeLabel} (o sin personajes). Manteniendo outline original.`);
                   }
                 } else {
                   console.warn(`[Orchestrator] Revisión del Arquitecto falló: ${retryResult.error || "vacío/timeout"}. Manteniendo outline original.`);
@@ -1939,7 +1978,8 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                   });
                   continue;
                 } else {
-                  console.warn(`[Orchestrator] Revisión por Auditor produjo outline inválido (${reviewedLen}/${expectedChapters}). Manteniendo mejor visto.`);
+                  const rangeLabel = this.formatAcceptableEscaletaRange(project);
+                  console.warn(`[Orchestrator] Revisión por Auditor de Integridad RECHAZADA: ${reviewedLen} caps fuera del rango aceptable ${rangeLabel} (o sin personajes). Manteniendo mejor visto.`);
                   break;
                 }
               } else {
@@ -2062,7 +2102,8 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                   });
                   continue;
                 } else {
-                  console.warn(`[Orchestrator] Revisión por Auditor Estructural produjo outline inválido (${reviewedLen}/${expectedChapters}). Manteniendo mejor visto.`);
+                  const rangeLabel = this.formatAcceptableEscaletaRange(project);
+                  console.warn(`[Orchestrator] Revisión por Auditor Estructural RECHAZADA: ${reviewedLen} caps fuera del rango aceptable ${rangeLabel} (o sin personajes). Manteniendo mejor visto.`);
                   break;
                 }
               } else {
@@ -2253,7 +2294,13 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
                     // Continúa el for: el siguiente iter analizará la nueva escaleta.
                     continue;
                   } else {
-                    console.warn(`[Orchestrator] Revisión del Arquitecto (beta-reader) produjo escaleta inválida (${reviewedLen}/${expectedChapters} caps). Manteniendo mejor versión vista.`);
+                    const rangeLabel = this.formatAcceptableEscaletaRange(project);
+                    const motivo = !acceptCount
+                      ? `${reviewedLen} caps fuera del rango aceptable ${rangeLabel}`
+                      : !hasMatrizArcos || !hasEstructura
+                        ? `${reviewedLen} caps en rango, pero falta matriz_arcos o estructura_tres_actos`
+                        : "sin personajes";
+                    console.warn(`[Orchestrator] Revisión del Arquitecto (beta-reader) RECHAZADA: ${motivo}. Manteniendo mejor versión vista.`);
                     break;
                   }
                 } else {
@@ -10481,6 +10528,26 @@ Responde SOLO con un JSON válido con la estructura:
    * mantiene la semántica clásica: aceptar si `>= expectedChapters - 2`
    * (tolerancia de los retries por originalidad/integridad/beta).
    */
+  /**
+   * [Fix99] Etiqueta legible del rango aceptable de capítulos para logs.
+   * Modo rango: "[min+extras, max+extras]"; modo exacto: ">= expected-2".
+   */
+  private formatAcceptableEscaletaRange(project: Project): string {
+    const extras =
+      (project.hasPrologue ? 1 : 0) +
+      (project.hasEpilogue ? 1 : 0) +
+      (project.hasAuthorNote ? 1 : 0);
+    const min = (project as any).minChapterCount as number | null | undefined;
+    const max = (project as any).maxChapterCount as number | null | undefined;
+    const rangeMode =
+      typeof min === "number" && typeof max === "number" && min > 0 && max > min;
+    if (rangeMode) {
+      return `[${min! + extras}, ${max! + extras}] (rango ${min}-${max} + ${extras} extras)`;
+    }
+    const expected = project.chapterCount + extras;
+    return `>= ${expected - 2} (esperado ${expected})`;
+  }
+
   private isAcceptableEscaletaCount(project: Project, escaletaLength: number): boolean {
     const extras =
       (project.hasPrologue ? 1 : 0) +
