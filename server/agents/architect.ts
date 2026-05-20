@@ -433,15 +433,32 @@ aunque la prosa sea buena. Estas tres reglas son OBLIGATORIAS y se auditan
 deterministamente después de generar la escaleta:
 
 REGLA F (VARIEDAD DE FORMA DE ESCENA — anti segundo acto monótono):
-Cada capítulo lleva un campo "forma_dominante" con UN valor del catálogo:
-  - "investigacion_activa"   (el prota busca pistas, persigue, indaga)
+Cada capítulo lleva un campo "forma_dominante" con UN valor del catálogo
+UNIVERSAL (cubre cualquier género: thriller, romance, fantasía, histórica,
+literaria, ciencia ficción, drama, aventura). Interpreta los nombres de
+forma generosa según tu género:
+  Núcleo (cualquier género):
+  - "investigacion_activa"   (el prota busca/indaga ALGO — pistas, persona,
+                              verdad personal, objeto perdido, propósito)
   - "confrontacion_directa"  (cara a cara con stakes en mesa, sin escapatoria)
   - "revelacion"             (el lector reordena su modelo de la trama)
   - "introspeccion"          (escena interior, sueño, monólogo, recuerdo)
   - "accion_fisica"          (persecución, pelea, evasión, escena cinética)
   - "setback"                (el prota pierde algo concreto que tenía)
-  - "atmosferica"            (atmósfera, world-building sensorial, sin trama)
+  - "atmosferica"            (atmósfera, world-building sensorial)
   - "pivote_relacional"      (una relación entre dos personajes cambia de estado)
+  Romance / drama relacional:
+  - "escena_romantica"       (encuentro íntimo, química, tensión amorosa)
+  Literaria / familiar:
+  - "recuerdo_flashback"     (salto al pasado, memoria evocada, infancia)
+  Fantasía / histórica / aventura:
+  - "ceremonia_ritual"       (ceremonia, rito, batalla simbólica, juramento)
+  Literaria / filosófica:
+  - "dialogo_filosofico"     (debate de ideas, conversación temática profunda)
+  Comedia / aventura / contraste:
+  - "humor_alivio"           (escena cómica que descomprime tensión)
+  Cualquier género:
+  - "montaje_temporal"       (transcurso de tiempo condensado, paso de semanas)
 Esto NO sustituye a "tipo_capitulo" (A-N, estructural); describe lo que
 EXPERIMENTA EL LECTOR. Un mismo "tipo_capitulo: E (investigacion)" puede tener
 forma_dominante "investigacion_activa", "confrontacion_directa", "setback" o
@@ -449,10 +466,15 @@ forma_dominante "investigacion_activa", "confrontacion_directa", "setback" o
 RESTRICCIÓN: en cualquier ventana de 4 capítulos consecutivos del acto 2,
 ningún valor de "forma_dominante" puede aparecer más de 2 veces. Si todos son
 "investigacion_activa", el lector vive el acto 2 como "el prota va, no obtiene
-nada, vuelve, repite" — patrón explícitamente prohibido.
+nada, vuelve, repite" — patrón explícitamente prohibido. En romance esto se
+traduce como "todos los caps son escena_romantica"; en fantasía como "todos
+son accion_fisica"; en literaria como "todos son introspeccion". La regla es
+universal: variedad sensorial obligatoria.
 
 REGLA L (LEDGER DE INFORMACIÓN NUEVA — anti "no obtiene nada x4"):
-Cada capítulo lleva "categoria_info_nueva" con UN valor del catálogo:
+Cada capítulo lleva "categoria_info_nueva" con UN valor del catálogo
+UNIVERSAL. Elige el valor más cercano a tu género:
+  Núcleo (cualquier género):
   - "testigo"                (alguien declara o cuenta)
   - "evidencia_fisica"       (objeto, documento, foto, prueba)
   - "pista_falsa"            (lead que llevará a callejón sin salida)
@@ -463,6 +485,17 @@ Cada capítulo lleva "categoria_info_nueva" con UN valor del catálogo:
   - "vinculo_emocional"      (una relación humana se revela)
   - "setup_subtrama"         (siembra de subtrama / volumen siguiente)
   - "ninguna"                (solo en caps atmosféricos/introspectivos puros)
+  Romance / drama:
+  - "confesion_emocional"    (un personaje muestra algo íntimo de su interior)
+  - "declaracion_amorosa"    (declaración explícita, beso, "te quiero")
+  - "ruptura_relacional"     (alguien rompe una relación clave)
+  Fantasía / sci-fi / mitología:
+  - "regla_del_mundo"        (nueva regla mágica, ley física, sistema)
+  - "profecia_o_simbolo"     (profecía revelada, símbolo descifrado)
+  Literaria / familiar:
+  - "memoria_revelada"       (recuerdo que reescribe el pasado del personaje)
+  Cualquier género con arco de cambio:
+  - "transformacion_personal" (el protagonista o un secundario cambia de estado interior)
 Y "informacion_nueva" (texto libre) NUNCA puede ser de relleno: prohibido
 "ninguna", "sin novedades", "no obtiene nada", "callejón sin salida", "nada
 nuevo" o texto < 40 caracteres. Aunque el protagonista fracase en su objetivo,
@@ -522,23 +555,44 @@ caps 7, 12 y 18 no contienen NINGUNA referencia al hecho revelado. Si el
 material no admite ≥3 siembras textuales reales, baja la dificultad a "bajo"
 (es un detalle de color, no un giro) o elimina la revelación.
 
-REGLA T [Fix94] (FALSO ALIADO — reveal tardío + humanización previa):
-Para cada personaje del world_bible cuyo "rol" contenga "topo", "traidor",
-"falso_aliado", "antagonista_oculto", "complice_oculto", "infiltrado" o
-"doble_agente":
-  (A) La revelación de su traición debe ocurrir en el último 40% de la
-      novela (cap ≥ 60% del total). Si el personaje se descubre como topo en
-      el acto 1 o primera mitad del acto 2, el lector lo ve venir y el giro
-      pierde fuerza — patrón explícito "Cifuentes obvio desde cap 2".
+REGLA T [Fix94] (PERSONAJE DE DOBLE CARA — reveal tardío + humanización
+previa, UNIVERSAL para cualquier género):
+Para cada personaje del world_bible cuyo "rol" indique que tiene una
+identidad / lealtad / secreto oculto que se revelará a lo largo de la
+novela. Esto incluye, según el género:
+  - Thriller / espionaje: "topo", "traidor", "infiltrado", "doble_agente",
+    "antagonista_oculto", "complice_oculto", "falso_aliado", "mole".
+  - Universal: "identidad_oculta", "doble_identidad", "pasado_oculto",
+    "secreto_oscuro", "secreto_familiar", "mascara", "enmascarado",
+    "antagonista_enmascarado", "personaje_con_secreto".
+  - Romance / drama relacional: "amante_secreto", "amante_oculto",
+    "pretendiente_falso", "rival_oculto".
+  - Fantasía / aventura / mitología: "mentor_falso", "mentor_traidor",
+    "falso_elegido", "villano_enmascarado", "profeta_falso".
+  - Drama familiar / literaria: "hijo_secreto", "hija_secreta",
+    "padre_biologico_oculto", "madre_biologica_oculta", "hermano_oculto",
+    "heredero_oculto".
+Reglas (idénticas para cualquier género):
+  (A) La revelación de su verdadera identidad / lealtad / secreto debe
+      ocurrir en el último 40% de la novela (cap ≥ 60% del total). Si el
+      personaje se descubre demasiado pronto, el lector lo ve venir y el
+      giro pierde fuerza. Ejemplos: "Cifuentes obvio desde cap 2" en
+      thriller; "el amante revela que está casado en cap 3 de 12" en
+      romance; "el mentor admite servir al villano en cap 4 de 14" en
+      fantasía.
   (B) Antes del capítulo de reveal debe haber AL MENOS UN capítulo con
-      "forma_dominante" = "introspeccion" o "pivote_relacional", o
-      "categoria_info_nueva" = "vinculo_emocional", donde el personaje
-      aparezca en escena y se humanice: un momento a solas mirando fotos
-      viejas, una llamada cansada a su mujer/hijo, una conversación con el
-      protagonista donde muestre un miedo o un recuerdo aparentemente
-      sincero. Sin esto el giro funciona en lo formal pero NO DUELE — el
-      lector no había construido vínculo con el traidor y la traición es
-      solo funcional, no trágica.
+      "forma_dominante" = "introspeccion", "pivote_relacional",
+      "escena_romantica" o "recuerdo_flashback", o "categoria_info_nueva"
+      = "vinculo_emocional", "confesion_emocional" o "memoria_revelada",
+      donde el personaje aparezca en escena y se HUMANICE. Las formas
+      específicas según el género: thriller — un momento a solas mirando
+      fotos, una llamada cansada a su mujer/hijo; romance — un gesto de
+      ternura aparentemente sincero, una confesión vulnerable;
+      fantasía — un recuerdo de su juventud antes de la oscuridad, una
+      duda ante el camino que sigue; literaria/drama — un flashback con
+      tono cálido, una memoria compartida. Sin esto el giro funciona en
+      lo formal pero NO DUELE — el lector no había construido vínculo con
+      el personaje y la traición/revelación es solo funcional.
 Si no quieres seguir estas restricciones, cambia el rol del personaje en el
 world_bible a "antagonista declarado" (sin ocultación) y elimina la
 ambigüedad: el lector sabrá desde el inicio que es enemigo y no esperará un
@@ -611,8 +665,8 @@ FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
       "objetivo_narrativo": "PÁRRAFO NARRATIVO de 100-200 palabras contando qué pasa en este capítulo: situación inicial, qué hace el protagonista, qué obstáculos encuentra, qué descubre, cómo termina. ESTO ES LO QUE LEERÁ EL NARRADOR para escribir — sin esto, escribe a ciegas. NO es una etiqueta, es prosa narrativa real.",
       "arcos_que_avanza": [{"arco": "nombre", "de": "estado_antes", "a": "estado_después"}],
       "informacion_nueva": "Revelación concreta que descubre el lector (≥40 caracteres, NUNCA 'ninguna' ni 'sin novedades')",
-      "categoria_info_nueva": "testigo | evidencia_fisica | pista_falsa | revelacion_personal | antecedente_historico | conexion_red | amenaza | vinculo_emocional | setup_subtrama | ninguna",
-      "forma_dominante": "investigacion_activa | confrontacion_directa | revelacion | introspeccion | accion_fisica | setback | atmosferica | pivote_relacional",
+      "categoria_info_nueva": "testigo | evidencia_fisica | pista_falsa | revelacion_personal | antecedente_historico | conexion_red | amenaza | vinculo_emocional | setup_subtrama | ninguna | confesion_emocional | regla_del_mundo | profecia_o_simbolo | memoria_revelada | declaracion_amorosa | ruptura_relacional | transformacion_personal",
+      "forma_dominante": "investigacion_activa | confrontacion_directa | revelacion | introspeccion | accion_fisica | setback | atmosferica | pivote_relacional | escena_romantica | recuerdo_flashback | ceremonia_ritual | dialogo_filosofico | humor_alivio | montaje_temporal",
       "revelaciones_dosificadas": [
         {
           "hecho_revelado": "Solo si el cap contiene revelación importante; deja el array vacío si no",
@@ -671,12 +725,12 @@ C. RITMO ACTO 3: distribuye "eventos_pivotales" sin que el acto 3 acumule >50% d
 5. Verifica que toda "cosecha" tiene su "siembra" en capítulos anteriores con el mismo ID.
 6. Verifica que toda decisión perjudicial del antagonista lleva "justificacion_antagonica" rellena.
 7. Verifica que el acto 3 no concentra >50% de "eventos_pivotales".
-8. [Fix92-F] Recorre el acto 2 con una ventana deslizante de 4 caps: en cada ventana, cuenta cuántas veces aparece cada "forma_dominante". Si algún valor supera 2 apariciones, REESCRIBE esos caps cambiando su forma (manteniendo el avance de trama).
+8. [Fix92-F] Recorre el acto 2 con una ventana deslizante de 4 caps: en cada ventana, cuenta cuántas veces aparece cada "forma_dominante". Si algún valor supera 2 apariciones, REESCRIBE esos caps cambiando su forma (manteniendo el avance de trama). Usa cualquier valor del catálogo extendido (14 valores universales): si haces romance no encadenes "escena_romantica" 3+ veces — alterna con "pivote_relacional", "recuerdo_flashback" o "introspeccion". Si haces fantasía no abuses de "accion_fisica" — intercala "ceremonia_ritual", "dialogo_filosofico" o "atmosferica".
 9. [Fix92-L] Recorre el acto 2/3 buscando pares de caps consecutivos con "informacion_nueva" vacía, < 40 caracteres o con frases de relleno ("ninguna", "sin novedades", "no obtiene nada", "callejón sin salida"). Si encuentras un par, reescribe al menos uno con una pieza concreta que el lector pueda anotar mentalmente.
-10. [Fix92-L] Recorre el acto 2 con ventana de 4 caps: si alguna "categoria_info_nueva" supera 2 apariciones en una ventana, diversifica (alterna testigo / evidencia_fisica / vinculo_emocional / revelacion_personal / pista_falsa). "ninguna" nunca puede aparecer 2 caps seguidos.
+10. [Fix92-L] Recorre el acto 2 con ventana de 4 caps: si alguna "categoria_info_nueva" supera 2 apariciones en una ventana, diversifica usando el catálogo extendido (17 valores universales). Mezcla con valores propios de tu género: thriller — testigo / evidencia_fisica / pista_falsa / amenaza; romance — confesion_emocional / declaracion_amorosa / ruptura_relacional / vinculo_emocional; fantasía — regla_del_mundo / profecia_o_simbolo / antecedente_historico; literaria/drama — memoria_revelada / revelacion_personal / transformacion_personal. "ninguna" nunca puede aparecer 2 caps seguidos.
 11. [Fix92-D] Recorre cada "revelaciones_dosificadas" del proyecto: verifica que NINGUNA revelación con dificultad "alto" tiene modo_extraccion "sin_resistencia" y verifica que TODAS tienen al menos 1 cap en "setup_capitulos". Verifica que ningún cap acumula ≥3 revelaciones de dificultad "alto". Verifica que ningún personaje antagonista/cómplice revela ≥3 hechos en un único cap.
 12. [Fix93-S] Para cada revelación de dificultad "alto", abre TÚ MISMO los caps listados en "setup_capitulos" y comprueba que su "informacion_nueva", "objetivo_narrativo" o "eventos_pivotales" MENCIONAN tokens concretos del "hecho_revelado" (no basta con declarar el array — debe haber texto real). Exigencia: ≥3 caps con siembra textual real para dificultad "alto", ≥2 para "medio". Si no se cumple, añade las siembras o baja la dificultad.
-13. [Fix94-T] Para cada personaje del world_bible cuyo "rol" contenga topo / traidor / falso_aliado / antagonista_oculto / complice_oculto / infiltrado / doble_agente: localiza el cap de revelación de su traición y comprueba (A) que ocurre en el último 40% de la novela (cap ≥ 60% del total) y (B) que existe al menos UN cap anterior con "forma_dominante" = "introspeccion" o "pivote_relacional" o "categoria_info_nueva" = "vinculo_emocional" donde el personaje aparezca en escena humanizado (foto familiar, llamada cansada, miedo aparentemente sincero, conflicto íntimo). Si no, mueve el reveal o inserta la escena de humanización antes de devolver el JSON.
+13. [Fix94-T] Para cada personaje del world_bible cuyo "rol" indique identidad/lealtad/secreto oculto (universal, cualquier género: topo, traidor, falso_aliado, infiltrado, doble_agente, antagonista_oculto, complice_oculto, identidad_oculta, doble_identidad, pasado_oculto, secreto_familiar, mascara, amante_secreto, pretendiente_falso, mentor_falso, mentor_traidor, falso_elegido, villano_enmascarado, hijo_secreto, padre_biologico_oculto, hermano_oculto, heredero_oculto, etc.): localiza el cap de revelación del secreto y comprueba (A) que ocurre en el último 40% de la novela (cap ≥ 60% del total) y (B) que existe al menos UN cap anterior con "forma_dominante" ∈ {"introspeccion", "pivote_relacional", "escena_romantica", "recuerdo_flashback"} o "categoria_info_nueva" ∈ {"vinculo_emocional", "confesion_emocional", "memoria_revelada"} donde el personaje aparezca en escena humanizado. La escena de humanización debe adaptarse al género: thriller — foto familiar, llamada cansada, miedo sincero; romance — ternura aparentemente genuina, confesión vulnerable; fantasía — recuerdo de inocencia antes del pacto oscuro, duda visible; literaria/drama — flashback cálido, memoria compartida. Si falla A o B, mueve el reveal o inserta la escena de humanización antes de devolver el JSON.
 Si algo falla, REGENERA antes de responder. Esto es lo más importante.
 
 Responde ÚNICAMENTE con el JSON.

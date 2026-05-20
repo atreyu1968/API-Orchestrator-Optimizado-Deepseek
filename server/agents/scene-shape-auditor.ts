@@ -11,6 +11,11 @@
 // revision" que el orquestador inyecta al Arquitecto como structuralAudit-
 // Feedback para que rediseñe la escaleta.
 
+// Catálogo extendido para CUALQUIER género (thriller, romance, fantasía,
+// histórica, literaria, ciencia ficción, drama, aventura). Los 8 primeros
+// valores cubren thriller/policíaco; los 6 nuevos cubren romance, fantasía
+// y literatura. Cualquier capítulo debe encajar en uno (interpretado de
+// forma generosa para no forzar etiquetas).
 export type FormaEscena =
   | "investigacion_activa"
   | "confrontacion_directa"
@@ -19,7 +24,13 @@ export type FormaEscena =
   | "accion_fisica"
   | "setback"
   | "atmosferica"
-  | "pivote_relacional";
+  | "pivote_relacional"
+  | "escena_romantica"
+  | "recuerdo_flashback"
+  | "ceremonia_ritual"
+  | "dialogo_filosofico"
+  | "humor_alivio"
+  | "montaje_temporal";
 
 export const FORMA_ESCENA_VALORES: FormaEscena[] = [
   "investigacion_activa",
@@ -30,6 +41,12 @@ export const FORMA_ESCENA_VALORES: FormaEscena[] = [
   "setback",
   "atmosferica",
   "pivote_relacional",
+  "escena_romantica",
+  "recuerdo_flashback",
+  "ceremonia_ritual",
+  "dialogo_filosofico",
+  "humor_alivio",
+  "montaje_temporal",
 ];
 
 export type CategoriaInfoNueva =
@@ -42,7 +59,14 @@ export type CategoriaInfoNueva =
   | "amenaza"
   | "vinculo_emocional"
   | "setup_subtrama"
-  | "ninguna";
+  | "ninguna"
+  | "confesion_emocional"
+  | "regla_del_mundo"
+  | "profecia_o_simbolo"
+  | "memoria_revelada"
+  | "declaracion_amorosa"
+  | "ruptura_relacional"
+  | "transformacion_personal";
 
 export const CATEGORIA_INFO_VALORES: CategoriaInfoNueva[] = [
   "testigo",
@@ -55,6 +79,13 @@ export const CATEGORIA_INFO_VALORES: CategoriaInfoNueva[] = [
   "vinculo_emocional",
   "setup_subtrama",
   "ninguna",
+  "confesion_emocional",
+  "regla_del_mundo",
+  "profecia_o_simbolo",
+  "memoria_revelada",
+  "declaracion_amorosa",
+  "ruptura_relacional",
+  "transformacion_personal",
 ];
 
 export type ModoExtraccion =
@@ -632,18 +663,32 @@ function auditArcoSecreto(
 }
 
 // ────────────────────────────────────────────────────────────────────
-// (5) [Fix94] Falso aliado — patrón "Cifuentes era el topo desde cap 2".
-// Para cada personaje del world_bible con rol topo/traidor/falso_aliado/
-// antagonista_oculto/cómplice_oculto/infiltrado/doble_agente:
-//   (A) la revelación de su traición no puede ocurrir antes del 60% del
-//       total de caps (si ocurre antes, el lector lo ve venir y el giro
-//       pierde fuerza).
-//   (B) debe haber al menos 1 cap previo al reveal donde el personaje
-//       aparezca con "forma_dominante" en {introspeccion, pivote_relacional}
-//       o "categoria_info_nueva" == "vinculo_emocional" — la escena de
-//       duda/humanización que hace doler la traición.
+// (5) [Fix94] Personaje de doble cara — generalización universal del
+// patrón "traidor con máscara" para CUALQUIER género (no solo thriller).
+//
+// Cubre: topo / infiltrado / agente doble (thriller), amante o pretendiente
+// que oculta su verdadera intención (romance), mentor que es el villano
+// (fantasía / aventura), pariente con secreto familiar revelado tarde
+// (literaria / drama familiar), elegido falso o profecía invertida
+// (fantasía / mitología), antagonista enmascarado (cualquier género).
+//
+// Reglas (aplican igual independientemente del género):
+//   (A) La revelación de la verdadera identidad/lealtad/secreto del
+//       personaje no puede ocurrir antes del 60% del total de caps (si
+//       ocurre antes, el lector lo ve venir y el giro pierde fuerza).
+//   (B) Debe haber al menos 1 cap previo al reveal donde el personaje
+//       aparezca con "forma_dominante" en {introspeccion, pivote_relacional,
+//       escena_romantica, recuerdo_flashback} o "categoria_info_nueva" en
+//       {vinculo_emocional, confesion_emocional, memoria_revelada} — la
+//       escena de duda/humanización que hace doler la revelación, sea una
+//       traición de espía o el descubrimiento de que el "amor verdadero"
+//       mentía.
 // ────────────────────────────────────────────────────────────────────
+
+// Roles del world_bible que activan la auditoría. Cubren las máscaras
+// típicas de cada género literario, no solo del thriller.
 const TRAITOR_ROLE_PATTERNS = [
+  // Thriller / espionaje
   "topo",
   "traidor",
   "traidora",
@@ -662,6 +707,53 @@ const TRAITOR_ROLE_PATTERNS = [
   "aliado trai",
   "topo en",
   "mole",
+  // Genérico universal — identidad oculta / secreto revelable
+  "identidad oculta",
+  "identidad_oculta",
+  "doble identidad",
+  "doble_identidad",
+  "pasado oculto",
+  "pasado_oculto",
+  "secreto oscuro",
+  "secreto_oscuro",
+  "secreto familiar",
+  "secreto_familiar",
+  "secreto revelable",
+  "secreto_revelable",
+  "personaje con secreto",
+  "personaje_con_secreto",
+  "mascara",
+  "enmascarado",
+  "enmascarada",
+  "antagonista enmascarado",
+  "antagonista_enmascarado",
+  // Romance / drama relacional
+  "amante secreto",
+  "amante_secreto",
+  "amante oculto",
+  "amante_oculto",
+  "pretendiente falso",
+  "rival oculto",
+  "rival_oculto",
+  // Fantasía / aventura / mitología
+  "mentor falso",
+  "mentor_falso",
+  "mentor traidor",
+  "mentor_traidor",
+  "elegido falso",
+  "falso elegido",
+  "falso_elegido",
+  "villano enmascarado",
+  "villano_enmascarado",
+  "profeta falso",
+  // Drama familiar / literaria
+  "hijo secreto",
+  "hija secreta",
+  "padre biologico oculto",
+  "madre biologica oculta",
+  "hermano oculto",
+  "hermana oculta",
+  "heredero oculto",
 ];
 
 // Detección de reveal mediante PATRONES COPULARES/ACCIONALES que vinculan
@@ -674,6 +766,7 @@ const TRAITOR_ROLE_PATTERNS = [
 // tildes, minúsculas) y será sustituido en {NAME}. Marcadores de palabra
 // (\b) garantizan que "ana" no encaje en "anabel".
 const REVEAL_PATTERN_TEMPLATES: string[] = [
+  // === Thriller / espionaje ===
   // "<nombre> es/era/fue/resulta(ba) ser/se revela/se descubre [el] topo/traidor/infiltrad*/complice/doble agente/mole"
   "\\b{NAME}\\b[^.;]{0,40}\\b(es|era|fue|resulta\\s+ser|resultaba\\s+ser|se\\s+revela|se\\s+descubre|admite\\s+ser|confiesa\\s+ser|result[oó]\\s+ser)\\b[^.;]{0,40}\\b(el|la|un|una)?\\s*(topo|traidor|traidora|infiltrad[oa]|c[oó]mplice|doble\\s+agente|mole|falso\\s+aliado|falsa\\s+aliada)\\b",
   // "<nombre> traiciona / traicionaba / traicionó / nos traiciona"
@@ -691,6 +784,48 @@ const REVEAL_PATTERN_TEMPLATES: string[] = [
   // "doble juego / doble vida / doble cara / dos caras de <nombre>"
   "\\b(doble\\s+(juego|vida|cara|moral)|dos\\s+caras)\\b[^.;]{0,30}\\b{NAME}\\b",
   "\\b{NAME}\\b[^.;]{0,30}\\b(doble\\s+(juego|vida|cara|moral)|dos\\s+caras)\\b",
+
+  // === Universal: identidad oculta / falsa identidad (cualquier género) ===
+  // "<nombre> no es quien dice ser / no es realmente / no es lo que parece"
+  "\\b{NAME}\\b[^.;]{0,20}\\bno\\s+es\\b[^.;]{0,30}\\b(quien\\s+dice|realmente|lo\\s+que\\s+parece|qui[eé]n\\s+(creemos|creiamos|parec[ií]a))\\b",
+  // "<nombre> oculta(ba)? / esconde(ía)? su (verdadera|verdadero) (identidad|pasado|origen|nombre|naturaleza|intencion|intención)"
+  "\\b{NAME}\\b[^.;]{0,30}\\b(oculta|ocultaba|ocult[oó]|escond[ií]a|esconde|escond[ií]o)\\b[^.;]{0,25}\\b(su|una)\\b[^.;]{0,20}\\b(verdader[oa]|aut[eé]ntic[oa]|real)?\\s*(identidad|pasado|origen|nombre|naturaleza|intenci[oó]n|prop[oó]sito)\\b",
+  // "<nombre> miente/mentía/mintió/engaña SOBRE su identidad/pasado/nombre/amor/sentimientos/lealtad"
+  // Endurecido: NO basta con "{NAME} miente" suelto (ocurre en interrogatorios
+  // ordinarios); exigimos preposición + sustantivo de identidad/relación.
+  "\\b{NAME}\\b[^.;]{0,30}\\b(miente|ment[ií]a|minti[oó]|ha\\s+mentido|hab[ií]a\\s+mentido|enga[nñ]a|enga[nñ]aba|enga[nñ][oó])\\b[^.;]{0,25}\\b(sobre|acerca\\s+de|respecto\\s+a)\\b[^.;]{0,25}\\b(su|todo|todos|nuestro)?\\s*(identidad|pasado|nombre|origen|naturaleza|amor|sentimientos|intenci[oó]n|lealtad|matrimonio|familia)\\b",
+  // "<nombre> es en realidad / en verdad <X>"
+  "\\b{NAME}\\b[^.;]{0,25}\\bes\\b[^.;]{0,15}\\b(en\\s+realidad|en\\s+verdad|verdaderamente)\\b",
+  // "se descubre/sabe/revela que <nombre> [verbo de identidad/lealtad/secreto]"
+  // Endurecido: además del verbo "se descubre que <NAME>" exigimos un verbo
+  // o sustantivo de cambio-de-modelo cerca (es/era/sirve/oculta/traiciona/
+  // miente/etc.) para no marcar suspicacias rutinarias de interrogatorio.
+  "\\b(se\\s+(descubre|sabe|revela|conoce|averigua|sab[ií]a|descubri[oó]|revel[oó]))\\b[^.;]{0,30}\\bque\\b[^.;]{0,30}\\b{NAME}\\b[^.;]{0,40}\\b(es|era|fue|sirve|sirvi[oó]|serv[ií]a|oculta|ocultaba|ocult[oó]|miente|ment[ií]a|minti[oó]|traiciona|traicion[oó]|trabaja|trabajaba|no\\s+es)\\b",
+
+  // === Romance / drama relacional ===
+  // "<nombre> nunca (la|lo) am[oó] / amaba / sentía nada / fingía amor"
+  "\\b{NAME}\\b[^.;]{0,25}\\b(nunca|jamas|jam[aá]s)\\b[^.;]{0,25}\\b(am[oó]|amaba|quer[ií]a|sinti[oó]|sent[ií]a)\\b",
+  "\\b{NAME}\\b[^.;]{0,25}\\b(fing[ií]a|simulaba|aparentaba)\\b[^.;]{0,25}\\b(amor|cariño|sentimientos|inter[eé]s|querer(la|lo)?)\\b",
+  // "<nombre> usa(ba) / manipula(ba) / se aprovecha(ba) (de)"
+  "\\b{NAME}\\b[^.;]{0,25}\\b(usaba|us[oó]|usa|manipula|manipulaba|manipul[oó]|se\\s+aprovech(a|aba|[oó]))\\b",
+  // "<nombre> sigue casad[oa] / tiene otra (familia|relacion) / amante"
+  "\\b{NAME}\\b[^.;]{0,30}\\b(sigue|estaba|est[aá])\\b[^.;]{0,15}\\b(casad[oa]|comprometid[oa]|prometid[oa])\\b",
+  "\\b{NAME}\\b[^.;]{0,30}\\btiene\\b[^.;]{0,15}\\b(otra|otro)\\b[^.;]{0,20}\\b(familia|relaci[oó]n|esposa|marido|amante|hijo|hija)\\b",
+
+  // === Fantasía / mitología / aventura ===
+  // "<nombre> es (el verdadero villano|el verdadero antagonista|la oscuridad|el mal)"
+  "\\b{NAME}\\b[^.;]{0,25}\\bes\\b[^.;]{0,25}\\b(el|la)\\s+(verdader[oa])\\s+(villano|antagonista|enemigo|amenaza|oscuridad|mal)\\b",
+  // "el (verdadero|verdadera) (heredero|elegido|profeta|rey|reina) es <nombre>"
+  "\\b(el|la)\\s+(verdader[oa]|aut[eé]ntic[oa])\\s+(heredero|elegido|elegida|profeta|profetisa|rey|reina|salvador|salvadora)\\b[^.;]{0,30}\\bes\\b[^.;]{0,20}\\b{NAME}\\b",
+  // "<nombre> sirve/sirvió/serv[ií]a (al|a la) (oscuridad|sombra|enemigo|villano|orden negra)"
+  "\\b{NAME}\\b[^.;]{0,25}\\b(sirve|sirvi[oó]|serv[ií]a)\\b[^.;]{0,20}\\b(al?|a\\s+la)\\b[^.;]{0,25}\\b(oscuridad|sombra|enemigo|villano|culto|orden\\s+(negra|oscura)|reino\\s+(oscuro|prohibido))\\b",
+  // "<nombre> rompe el juramento / pacto / lealtad"
+  "\\b{NAME}\\b[^.;]{0,25}\\b(rompe|rompi[oó]|romp[ií]a|quebr[oó])\\b[^.;]{0,15}\\b(su|el|la)\\b[^.;]{0,15}\\b(juramento|pacto|voto|lealtad|alianza)\\b",
+
+  // === Drama familiar / literaria ===
+  // "<nombre> es (el|la) (verdader[oa])? (padre|madre|hijo|hija|hermano|hermana) (de|biolog[ií]c[oa])"
+  "\\b{NAME}\\b[^.;]{0,25}\\bes\\b[^.;]{0,25}\\b(el|la)\\s+(verdader[oa]|aut[eé]ntic[oa]|biol[oó]gic[oa])?\\s*(padre|madre|hijo|hija|hermano|hermana|abuelo|abuela|t[ií]o|t[ií]a)\\b",
+  "\\b(el|la)\\s+(verdader[oa]|aut[eé]ntic[oa]|biol[oó]gic[oa])\\s+(padre|madre|hijo|hija|hermano|hermana)\\b[^.;]{0,30}\\bes\\b[^.;]{0,20}\\b{NAME}\\b",
 ];
 
 // Keywords aceptadas dentro de `hecho_revelado` (campo declarativo y corto
@@ -698,6 +833,7 @@ const REVEAL_PATTERN_TEMPLATES: string[] = [
 // SÍ es seguro usar la lista de palabras clave porque el campo no contiene
 // frases de sospecha sino la revelación misma.
 const HECHO_REVEAL_KEYWORDS = [
+  // Thriller / espionaje
   "traici",
   "topo",
   "infiltrad",
@@ -720,6 +856,52 @@ const HECHO_REVEAL_KEYWORDS = [
   "es la topo",
   "falso aliado",
   "falsa aliada",
+  // Universal — identidad oculta (tokens ASCII sin acentos: el campo
+  // ya está pasado por stripAccents antes de comparar).
+  "identidad oculta",
+  "verdadera identidad",
+  "verdadero nombre",
+  "pasado oculto",
+  "secreto familiar",
+  "no es quien",
+  "no es realmente",
+  "no es lo que parece",
+  "miente",
+  "mentia",
+  "mintio",
+  "engana",
+  "enganaba",
+  "engano",
+  "en realidad es",
+  "en verdad es",
+  "mascara",
+  // Romance / drama
+  "amante secreto",
+  "amante oculto",
+  "nunca am",
+  "fingia amor",
+  "sigue casad",
+  "otra familia",
+  "otra relacion",
+  // Fantasía / mitología
+  "verdadero villano",
+  "verdadero antagonista",
+  "verdadero heredero",
+  "verdadero elegido",
+  "falso elegido",
+  "sirve al",
+  "sirve a la",
+  "rompe el juramento",
+  "rompio el juramento",
+  "rompe el pacto",
+  // Familiar / literaria
+  "hijo secreto",
+  "hija secreta",
+  "padre biolog",
+  "madre biolog",
+  "hermano oculto",
+  "hermana oculta",
+  "heredero oculto",
 ];
 
 function buildRevealRegexes(nameTokens: string[]): RegExp[] {
@@ -856,7 +1038,11 @@ function auditFalsoAliado(
       return (
         forma === "introspeccion" ||
         forma === "pivote_relacional" ||
-        categoria === "vinculo_emocional"
+        forma === "escena_romantica" ||
+        forma === "recuerdo_flashback" ||
+        categoria === "vinculo_emocional" ||
+        categoria === "confesion_emocional" ||
+        categoria === "memoria_revelada"
       );
     });
     if (!tienesHumanizacion) {
@@ -865,8 +1051,8 @@ function auditFalsoAliado(
         tipo: "sin_humanizacion_previa",
         severidad: "media",
         capitulos: [revealCap],
-        descripcion: `La traición de "${tr.nombre}" se revela en el cap ${revealCap} pero ningún capítulo anterior contiene una escena de humanización del personaje (forma_dominante "introspeccion" o "pivote_relacional", o categoria_info_nueva "vinculo_emocional" con "${tr.nombre}" en escena). El giro funciona pero NO DUELE: el lector no había construido vínculo con el traidor.`,
-        sugerencia: `Antes del cap ${revealCap}, añade al menos 1 capítulo donde "${tr.nombre}" tenga una escena que lo humanice: un momento a solas en su despacho mirando fotos, una llamada con tono cansado a un familiar, una conversación con el protagonista donde muestre algo personal (un miedo, un recuerdo, una preocupación que parezca sincera). Marca ese cap con forma_dominante "pivote_relacional" o "introspeccion" y categoria_info_nueva "vinculo_emocional". Anti patrón Cifuentes: "se derrumba solo al final lo hace menos trágico y previsible".`,
+        descripcion: `El secreto/identidad oculta de "${tr.nombre}" se revela en el cap ${revealCap} pero ningún capítulo anterior contiene una escena de humanización del personaje (forma_dominante "introspeccion", "pivote_relacional", "escena_romantica" o "recuerdo_flashback", o categoria_info_nueva "vinculo_emocional", "confesion_emocional" o "memoria_revelada" con "${tr.nombre}" en escena). El giro funciona pero NO DUELE: el lector no había construido vínculo con el personaje. (Aplica a cualquier género: traidor de thriller, amante manipulador de romance, mentor falso de fantasía, pariente con secreto familiar en drama, etc.)`,
+        sugerencia: `Antes del cap ${revealCap}, añade al menos 1 capítulo donde "${tr.nombre}" tenga una escena que lo humanice según el género: thriller — un momento a solas en su despacho mirando fotos, una llamada cansada a un familiar; romance — una confesión vulnerable al protagonista, un gesto de ternura aparentemente sincero; fantasía — un recuerdo de su juventud antes de la oscuridad, una duda ante el camino que sigue; literaria/drama — un flashback con tono cálido, una memoria compartida con el protagonista. Marca ese cap con forma_dominante "pivote_relacional", "introspeccion", "escena_romantica" o "recuerdo_flashback", y categoria_info_nueva "vinculo_emocional", "confesion_emocional" o "memoria_revelada".`,
       });
       continue;
     }
