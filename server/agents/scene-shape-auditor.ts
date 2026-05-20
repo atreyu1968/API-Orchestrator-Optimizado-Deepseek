@@ -547,8 +547,12 @@ function extractSiembraTokens(text: string): string[] {
     .replace(/[^\w\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  // [Fix96] Umbral bajado de 5 a 4 chars para capturar palabras
+  // narrativamente críticas y cortas (topo, robo, arma, caso, dato, ruta,
+  // amor, odio, celos, pacto, lazo) que antes se descartaban como ruido y
+  // generaban falsos positivos de "siembra insuficiente".
   const tokens = t.split(/\s+/).filter((tok) => {
-    if (tok.length < 5) return false;
+    if (tok.length < 4) return false;
     if (STOPWORDS_ES.has(tok)) return false;
     if (/^\d+$/.test(tok)) return false;
     return true;
@@ -581,12 +585,19 @@ function auditArcoSecreto(
   let totalRevAuditadas = 0;
   let sembradas = 0;
 
-  const corpusByCap: Record<number, string> = {};
+  // [Fix96 v2] Indexamos cada cap como SET de tokens (palabra completa),
+  // no como string para `includes` substring. Antes "ruta" matcheaba dentro
+  // de "rutina" o "rutinario" — falso positivo de siembra.
+  const tokensByCap: Record<number, Set<string>> = {};
   for (const c of all) {
-    corpusByCap[capNum(c)] = capCorpus(c)
+    const norm = capCorpus(c)
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase();
+      .toLowerCase()
+      .replace(/[^\w\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    tokensByCap[capNum(c)] = new Set(norm.split(/\s+/).filter(Boolean));
   }
 
   for (const cap of all) {
@@ -605,11 +616,36 @@ function auditArcoSecreto(
       const priorCaps = all.filter((c: any) => capNum(c) < num);
       let siembraCount = 0;
       const sembradosEn: number[] = [];
+      // [Fix96 v2] Identificamos qué tokens son nombres propios (heurística:
+      // capitalizados en el hecho original + personaje_revelador). Un hit
+      // de solo-nombre-propio NO basta como siembra (el nombre suele aparecer
+      // por contexto sin sembrar el secreto). Necesitamos ≥1 token "fuerte"
+      // (no nombre propio aislado) O ≥2 hits totales.
+      const nombrePropioTokens = new Set<string>();
+      const personajeRevelador = String(r?.personaje_revelador || "").trim();
+      if (personajeRevelador) {
+        for (const piece of personajeRevelador.split(/\s+/)) {
+          const norm = piece
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase();
+          if (norm.length >= 4) nombrePropioTokens.add(norm);
+        }
+      }
+      for (const m of hecho.matchAll(/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{3,}/g)) {
+        const norm = m[0]
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+        nombrePropioTokens.add(norm);
+      }
       for (const prev of priorCaps) {
-        const corpus = corpusByCap[capNum(prev)] || "";
-        if (!corpus) continue;
-        const hits = tokens.filter((t) => corpus.includes(t)).length;
-        if (hits >= 2) {
+        const capTokens = tokensByCap[capNum(prev)];
+        if (!capTokens || capTokens.size === 0) continue;
+        const hitTokens = tokens.filter((t) => capTokens.has(t));
+        if (hitTokens.length === 0) continue;
+        const fuertes = hitTokens.filter((t) => !nombrePropioTokens.has(t));
+        if (fuertes.length >= 1 || hitTokens.length >= 2) {
           siembraCount += 1;
           sembradosEn.push(capNum(prev));
         }
@@ -617,10 +653,25 @@ function auditArcoSecreto(
       const minSiembra = dificultad === "alto" ? 3 : 2;
       const hechoCorto = hecho.length > 90 ? hecho.slice(0, 87) + "..." : hecho;
       const declarados = Array.isArray(r?.setup_capitulos)
-        ? r.setup_capitulos.filter((n: any) => typeof n === "number")
+        ? r.setup_capitulos.filter(
+            (n: any) => typeof n === "number" && n < num
+          )
         : [];
 
-      if (siembraCount >= minSiembra) {
+      // [Fix96 v2] Crédito limitado por setup_capitulos: contamos SOLO los
+      // declarados con hit textual real (declaradosConHit), no la longitud
+      // bruta del array. Esto evita aprobar arcos con 1 siembra real + 2
+      // declarados decorativos. El check setup_capitulos_decorativo más
+      // abajo sigue avisando como media de los declarados sin hit.
+      const declaradosConHit = declarados.filter((cap: number) =>
+        sembradosEn.includes(cap)
+      );
+      const efectivamenteSembrados = Math.max(
+        siembraCount,
+        declaradosConHit.length
+      );
+
+      if (efectivamenteSembrados >= minSiembra) {
         sembradas += 1;
         // [Fix93] Discrepancia: el Arquitecto declaró setup_capitulos pero
         // los caps declarados NO contienen siembra textual real. La siembra
@@ -644,13 +695,20 @@ function auditArcoSecreto(
         continue;
       }
 
+      // [Fix96 v2] Severidad "alta" si NO hay respaldo textual real
+      // (siembraCount === 0) para dificultad "alto", aunque haya
+      // setup_capitulos declarados sin hit (array decorativo sin prosa que
+      // construya el suspense). Si hubo siembra parcial (1-2 caps con hit
+      // real), bajamos a "media" — el suspense existe aunque sea frágil.
+      const sevSiembra =
+        dificultad === "alto" && siembraCount === 0 ? "alta" : "media";
       problemas.push({
         area: "arco_secreto",
         tipo:
           dificultad === "alto"
             ? "siembra_textual_insuficiente_alto"
             : "siembra_textual_insuficiente_medio",
-        severidad: dificultad === "alto" ? "alta" : "media",
+        severidad: sevSiembra,
         capitulos: [num],
         descripcion: `El capítulo ${num} revela "${hechoCorto}" (dificultad: ${dificultad}) pero el auditor solo encuentra siembra textual real en ${siembraCount} cap(s) anterior(es)${sembradosEn.length ? ` (caps ${sembradosEn.join(", ")})` : ""}. Se exigen ≥${minSiembra} para que el lector haya construido el suspense. Declarar "setup_capitulos: [${declarados.join(", ")}]" no basta si esos caps no MENCIONAN el hecho.`,
         sugerencia: `Antes del cap ${num}, siembra el hecho en al menos ${minSiembra} caps distintos con tokens concretos del hecho ("${tokens.slice(0, 5).join('", "')}"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite ${minSiembra} siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).`,
