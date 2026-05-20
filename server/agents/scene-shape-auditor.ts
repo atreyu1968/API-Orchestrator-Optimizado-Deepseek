@@ -105,13 +105,31 @@ export const MODO_EXTRACCION_VALORES: ModoExtraccion[] = [
   "sin_resistencia",
 ];
 
+// [Fix97-A] Apuesta dramática por capítulo. Ordinal: baja(1) < media(2) <
+// alta(3) < critica(4). Mide cuánto cuesta al protagonista si fracasa en
+// este capítulo: "baja" = inconveniencia; "media" = pérdida concreta;
+// "alta" = pérdida irreversible / riesgo vital; "critica" = punto sin
+// retorno, jugarse el arco entero. Universal a cualquier género.
+export type ApuestaDramatica = "baja" | "media" | "alta" | "critica";
+export const APUESTA_VALORES: ApuestaDramatica[] = ["baja", "media", "alta", "critica"];
+const APUESTA_RANK: Record<string, number> = {
+  baja: 1,
+  media: 2,
+  alta: 3,
+  critica: 4,
+  crítica: 4,
+};
+
 export interface StructuralAuditProblem {
   area:
     | "forma_escena"
     | "ledger_info"
     | "dosificacion_revelacion"
     | "arco_secreto"
-    | "falso_aliado";
+    | "falso_aliado"
+    | "escalada_acto2"
+    | "deus_ex_machina"
+    | "trauma_protagonista";
   tipo: string;
   severidad: "alta" | "media" | "baja";
   capitulos: number[];
@@ -125,6 +143,9 @@ export interface StructuralAuditCoverage {
   revelaciones_dosificadas_pct: number;
   arco_secreto_pct: number;
   falso_aliado_pct: number;
+  apuesta_dramatica_pct: number;
+  deus_ex_machina_pct: number;
+  trauma_protagonista_pct: number;
 }
 
 export interface StructuralAuditResult {
@@ -1123,6 +1144,404 @@ function auditFalsoAliado(
 }
 
 // ────────────────────────────────────────────────────────────────────
+// [Fix97-A] Escalada de apuestas en el acto 2.
+// Catálogo APUESTA_VALORES (baja<media<alta<critica). Dos comprobaciones
+// sobre los capítulos regulares (numero >= 1):
+//   (a) Cobertura del campo "apuesta_dramatica". Si <50% del total se
+//       reclama como cobertura insuficiente (severidad media).
+//   (b) En el acto 2 (~50% central de la novela), buscar secuencias de
+//       3+ caps consecutivos con rango IGUAL o DECRECIENTE: el lector
+//       percibe un bucle de presión sin escalada (queja convergente de
+//       Holístico y Beta sobre "El eco del asfalto" caps 8-22).
+//   (c) Pico mínimo: en el acto 2 debe existir al menos UN capítulo con
+//       apuesta "alta" o "critica". Si todo el acto 2 es baja/media, el
+//       acto medio es plano (no hay punto de no retorno antes del clímax).
+// ────────────────────────────────────────────────────────────────────
+function auditEscaladaActo2(
+  escaleta: any[]
+): { problemas: StructuralAuditProblem[]; coverage: number } {
+  const { all, act2, total } = getActSlices(escaleta);
+  const problemas: StructuralAuditProblem[] = [];
+  if (total === 0) return { problemas, coverage: 1 };
+
+  const rankOf = (c: any): number | null => {
+    const v = String(c?.apuesta_dramatica || "").toLowerCase().trim();
+    if (!v) return null;
+    const r = APUESTA_RANK[v];
+    return typeof r === "number" ? r : null;
+  };
+
+  const withApuesta = all.filter((c: any) => rankOf(c) !== null);
+  const coverage = total > 0 ? withApuesta.length / total : 0;
+
+  if (total > 0 && coverage < 0.5) {
+    const ausentes = all.filter((c: any) => rankOf(c) === null).map(capNum);
+    problemas.push({
+      area: "escalada_acto2",
+      tipo: "apuesta_dramatica_ausente",
+      severidad: "media",
+      capitulos: ausentes,
+      descripcion: `Solo ${Math.round(coverage * 100)}% de los capítulos declaran "apuesta_dramatica". Sin este campo no se puede garantizar escalada en el acto 2.`,
+      sugerencia: `Asigna a cada capítulo regular un valor de "apuesta_dramatica" del catálogo: ${APUESTA_VALORES.join(", ")}. Es el COSTE que pagaría el protagonista si fracasa AQUÍ: "baja" = inconveniencia (perder tiempo, hacer enfadar a un superior); "media" = pérdida concreta (un aliado, una pista, una ventaja táctica); "alta" = pérdida irreversible o riesgo vital (cárcel, muerte de un secundario, exposición pública); "critica" = punto sin retorno (jugarse la vida, la identidad o el arco entero). El acto 2 debe ESCALAR: capítulos consecutivos con la misma apuesta producen sensación de bucle.`,
+    });
+  }
+
+  if (act2.length < 3) {
+    return { problemas, coverage };
+  }
+
+  // (b) Bucle: secuencias de ≥3 caps consecutivos no crecientes.
+  // Recorremos act2; agrupamos cada vez que rank[i+1] <= rank[i].
+  const ranked = act2.map((c: any) => ({ cap: capNum(c), r: rankOf(c) }));
+  let i = 0;
+  const bucles: number[][] = [];
+  while (i < ranked.length) {
+    if (ranked[i].r === null) {
+      i++;
+      continue;
+    }
+    let j = i;
+    const runCaps: number[] = [ranked[i].cap];
+    while (j + 1 < ranked.length && ranked[j + 1].r !== null && (ranked[j + 1].r as number) <= (ranked[j].r as number)) {
+      runCaps.push(ranked[j + 1].cap);
+      j++;
+    }
+    if (runCaps.length >= 3) bucles.push(runCaps);
+    i = j + 1;
+  }
+  for (const caps of bucles) {
+    problemas.push({
+      area: "escalada_acto2",
+      tipo: "bucle_sin_escalada",
+      severidad: "media",
+      capitulos: caps,
+      descripcion: `Caps ${caps.join(", ")} del acto 2 tienen "apuesta_dramatica" IGUAL o DECRECIENTE (${caps.length} caps consecutivos). El lector percibe un bucle de presión sin escalada: "ya entendí en el cap anterior que el protagonista está aislado / acorralado / sin pistas; no necesito leerlo otra vez".`,
+      sugerencia: `Sube la apuesta de al menos uno de los caps del medio del bucle: convierte una "media" en "alta" añadiendo una pérdida irreversible (un aliado herido, una identidad expuesta, una orden de detención), o una "alta" en "critica" añadiendo un punto sin retorno (el protagonista se la juega solo, queda inhabilitado, traiciona una norma propia). La regla universal: si dos caps consecutivos tienen la misma apuesta, el tercero DEBE subir un escalón. No basta con cambiar la forma_dominante; tiene que doler MÁS.`,
+    });
+  }
+
+  // (c) Pico mínimo en acto 2.
+  const declaradosAct2 = ranked.filter((x) => x.r !== null);
+  if (declaradosAct2.length >= 4) {
+    const maxRank = declaradosAct2.reduce((m, x) => Math.max(m, x.r as number), 0);
+    if (maxRank < 3) {
+      problemas.push({
+        area: "escalada_acto2",
+        tipo: "acto2_plano",
+        severidad: "media",
+        capitulos: declaradosAct2.map((x) => x.cap),
+        descripcion: `Todo el acto 2 (${declaradosAct2.length} caps con apuesta declarada) se mantiene en niveles "baja" o "media". No existe ningún capítulo "alta" o "critica" antes del acto 3: el lector llega al clímax sin haber sentido un punto de no retorno.`,
+        sugerencia: `Identifica el cap más cercano al centro del acto 2 que pueda absorber un punto de no retorno y súbelo a "alta" o "critica": una pérdida que el protagonista ya no podrá recuperar (muerte de un aliado, ruptura definitiva, decisión que lo coloca al otro lado de la ley). El acto 2 sin pico = acto 2 plano, queja recurrente del Beta.`,
+      });
+    }
+  }
+
+  return { problemas, coverage };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// [Fix97-B] Deus ex machina: informante / portador de prueba clave sin
+// siembra previa. Para cada "revelaciones_dosificadas" con dificultad
+// "alto" en el último 25% de la novela (cap >= 0.75 * total), si el
+// "personaje_revelador" NO es el protagonista, verificamos que el
+// personaje haya aparecido en escena en ≥2 capítulos anteriores
+// (elenco_presente, personajes_presentes, o mención textual en el
+// objetivo_narrativo / informacion_nueva / beats / sinopsis). Simétrico
+// a Fix94: Fix94 audita al traidor; éste audita al salvador.
+// Severidad alta si 0 apariciones previas (deus ex puro); severidad
+// media si 1 aparición (siembra mínima pero insuficiente).
+// ────────────────────────────────────────────────────────────────────
+function auditDeusExMachina(
+  escaleta: any[],
+  worldBible: any
+): { problemas: StructuralAuditProblem[]; coverage: number } {
+  const { all, total } = getActSlices(escaleta);
+  const problemas: StructuralAuditProblem[] = [];
+  if (total === 0) return { problemas, coverage: 1 };
+
+  const stripAccents = (s: string) =>
+    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+  // Identificamos los protagonistas (cualquier personaje cuyo rol contenga
+  // "protagonista" o "protagonist"). Sus revelaciones quedan excluidas:
+  // son introspección/descubrimiento propio, no deus ex.
+  // Identidad robusta (anti-falso-negativo): comparamos por nombre normalizado
+  // COMPLETO o por subconjunto estricto de tokens (todos los tokens del
+  // revealer deben ser parte del nombre del protagonista). Así un secundario
+  // que solo comparta apellido con el protagonista (familia, mismo apellido
+  // común) NO queda excluido del auditor.
+  const personajes: any[] =
+    worldBible?.personajes || worldBible?.world_bible?.personajes || [];
+  const protagonistas: { fullNorm: string; tokens: Set<string> }[] = [];
+  for (const p of personajes) {
+    const rol = stripAccents(String(p?.rol || p?.role || ""));
+    if (rol.includes("protagonista") || rol.includes("protagonist")) {
+      const fullNorm = stripAccents(String(p?.nombre || p?.name || ""))
+        .replace(/[^\w\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!fullNorm) continue;
+      const tokens = new Set(
+        fullNorm.split(/\s+/).filter((t) => t.length >= 4)
+      );
+      protagonistas.push({ fullNorm, tokens });
+    }
+  }
+  const isProtagonistRevealer = (
+    revFull: string,
+    revTokens: string[]
+  ): boolean => {
+    for (const prot of protagonistas) {
+      if (revFull && revFull === prot.fullNorm) return true;
+      // Subconjunto estricto: todos los tokens del revealer (>=4 chars) están
+      // en el set del protagonista. Esto cubre "Zubiri" == "Inspector Zubiri"
+      // (revealer 1 token, todos en prota) pero NO "Aitor Zubiri" (hijo del
+      // prota) cuando el prota es "Mikel Zubiri": revealer tiene "aitor" que
+      // no está en el prota.
+      if (revTokens.length > 0 && revTokens.every((t) => prot.tokens.has(t))) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const minRevealCap = Math.ceil(total * 0.75);
+
+  // Precompute corpora + elenco para cada cap.
+  const elencoByCap: Record<number, string[]> = {};
+  const corpusByCap: Record<number, string> = {};
+  for (const c of all) {
+    const n = capNum(c);
+    const elenco: string[] = [];
+    const pushList = (arr: any) => {
+      if (Array.isArray(arr)) for (const x of arr) if (typeof x === "string") elenco.push(stripAccents(x));
+    };
+    pushList(c?.elenco_presente);
+    pushList(c?.personajes_presentes);
+    elencoByCap[n] = elenco;
+    corpusByCap[n] = stripAccents(capCorpus(c));
+  }
+
+  let auditados = 0;
+  let conformes = 0;
+
+  for (const c of all) {
+    const n = capNum(c);
+    if (n < minRevealCap) continue;
+    const revs: any[] = Array.isArray(c.revelaciones_dosificadas)
+      ? c.revelaciones_dosificadas
+      : [];
+    for (const r of revs) {
+      const dif = String(r?.dificultad || "").toLowerCase().trim();
+      if (dif !== "alto") continue;
+      const revealerRaw = String(r?.personaje_revelador || "").trim();
+      if (!revealerRaw) continue;
+      const revealerNorm = stripAccents(revealerRaw)
+        .replace(/[^\w\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const revealerTokens = revealerNorm.split(/\s+/).filter((t) => t.length >= 4);
+      if (revealerTokens.length === 0) continue;
+
+      // Excluir protagonista (auto-revelación). Identidad robusta: nombre
+      // completo normalizado o subconjunto estricto de tokens. Evita falsos
+      // negativos cuando un secundario comparte apellido con el protagonista.
+      if (isProtagonistRevealer(revealerNorm, revealerTokens)) continue;
+
+      auditados += 1;
+
+      // Para detectar apariciones, descartamos tokens que también pertenecen
+      // a algún protagonista. Si revealer es "Aitor Zubiri" y el prota es
+      // "Mikel Zubiri", el token "zubiri" produciría falsos positivos en
+      // cada cap donde aparece el prota; los tokens distintivos del revealer
+      // son los que NO comparte con ningún protagonista (aquí: "aitor").
+      const protaTokenUnion = new Set<string>();
+      for (const prot of protagonistas) for (const t of prot.tokens) protaTokenUnion.add(t);
+      const distinctTokens = revealerTokens.filter((t) => !protaTokenUnion.has(t));
+      // Si no quedan tokens distintivos, el revealer es indistinguible del
+      // prota a efectos textuales: lo tratamos como auto-revelación.
+      if (distinctTokens.length === 0) continue;
+
+      // Contar apariciones en caps regulares con número 1..n-1.
+      // (Prólogo cap 0 / epílogo cap -1 quedan excluidos por getActSlices.)
+      let apariciones = 0;
+      const capsConAparicion: number[] = [];
+      for (const prev of all) {
+        const pn = capNum(prev);
+        if (pn >= n) continue;
+        const elenco = elencoByCap[pn] || [];
+        const corpus = corpusByCap[pn] || "";
+        const inElenco = elenco.some((e) =>
+          distinctTokens.some((t) => e.includes(t))
+        );
+        const tokenRegex = distinctTokens.map(
+          (t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`)
+        );
+        const inCorpus = tokenRegex.some((re) => re.test(corpus));
+        if (inElenco || inCorpus) {
+          apariciones += 1;
+          capsConAparicion.push(pn);
+        }
+      }
+
+      if (apariciones === 0) {
+        problemas.push({
+          area: "deus_ex_machina",
+          tipo: "revelador_sin_siembra",
+          severidad: "alta",
+          capitulos: [n],
+          descripcion: `El personaje "${revealerRaw}" entrega una revelación de dificultad "alto" en el cap ${n} (${Math.round((n / total) * 100)}% de la novela) pero NO aparece en ningún capítulo anterior — ni en elenco_presente, ni mencionado en objetivo_narrativo / informacion_nueva / beats. Para el lector aparece de la nada: deus ex machina puro (queja literal del Beta sobre Rentería en "El eco del asfalto" cap 32).`,
+          sugerencia: `Inserta al menos 2 apariciones previas de "${revealerRaw}" antes del cap ${n}. Las apariciones deben tener PESO: un cap donde el personaje sea introducido como secundario menor (con beat propio o diálogo, no solo nombrado de pasada), y un segundo cap donde se sugiera que sabe algo o tiene acceso a algo. Si la trama no admite sembrarlo, redistribuye la revelación: que la información llegue por una vía YA SEMBRADA (un personaje recurrente, un documento ya conocido) en lugar de un portador nuevo. Alternativamente, baja la dificultad a "medio" si la revelación es menos crítica de lo declarado.`,
+        });
+        continue;
+      }
+
+      if (apariciones === 1) {
+        problemas.push({
+          area: "deus_ex_machina",
+          tipo: "revelador_siembra_minima",
+          severidad: "media",
+          capitulos: [n],
+          descripcion: `El personaje "${revealerRaw}" entrega una revelación "alto" en el cap ${n} pero solo aparece en 1 capítulo anterior (cap ${capsConAparicion.join(", ")}). El lector apenas lo recuerda: la revelación funciona en lo formal pero no se siente "ganada" por la trama.`,
+          sugerencia: `Añade al menos 1 cap más entre los caps ${capsConAparicion[0]} y ${n} donde "${revealerRaw}" tenga presencia real (un beat propio o mención en objetivo_narrativo). Idealmente con una pista de que conoce el material que después aporta, para que su entrega en el cap ${n} sea cosecha y no comodín.`,
+        });
+        continue;
+      }
+
+      conformes += 1;
+    }
+  }
+
+  const coverage = auditados > 0 ? conformes / auditados : 1;
+  return { problemas, coverage };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// [Fix97-C] Trauma activo del protagonista. Si el world_bible declara
+// que el protagonista tiene "trauma_oculto" / "herida_pasada" /
+// "motivacion_oculta" / "secreto_personal" no vacío, exigimos que el
+// primer 60% de la novela contenga ≥3 caps donde el protagonista esté
+// presente y el capítulo sea de naturaleza introspectiva o
+// memorialista: forma_dominante ∈ {introspeccion, recuerdo_flashback}
+// O categoria_info_nueva ∈ {memoria_revelada, revelacion_personal,
+// confesion_emocional, transformacion_personal}.
+// Anti-patrón: prólogo planta trauma, silencio durante toda la novela,
+// epílogo lo recupera (queja convergente de Holístico y Beta sobre
+// Zubiri en "El eco del asfalto").
+// ────────────────────────────────────────────────────────────────────
+function auditTraumaProtagonista(
+  escaleta: any[],
+  worldBible: any
+): { problemas: StructuralAuditProblem[]; coverage: number } {
+  const { all, total } = getActSlices(escaleta);
+  const problemas: StructuralAuditProblem[] = [];
+  if (total === 0) return { problemas, coverage: 1 };
+
+  const stripAccents = (s: string) =>
+    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+  const personajes: any[] =
+    worldBible?.personajes || worldBible?.world_bible?.personajes || [];
+  const protagonistas = personajes.filter((p: any) => {
+    const rol = stripAccents(String(p?.rol || p?.role || ""));
+    return rol.includes("protagonista") || rol.includes("protagonist");
+  });
+  if (protagonistas.length === 0) return { problemas, coverage: 1 };
+
+  const TRAUMA_FIELDS = [
+    "trauma_oculto",
+    "trauma",
+    "herida_pasada",
+    "herida",
+    "motivacion_oculta",
+    "secreto_personal",
+    "secreto",
+    "pasado_oculto",
+  ];
+
+  const isNonEmpty = (v: any): boolean => {
+    if (!v) return false;
+    if (typeof v === "string") return v.trim().length >= 10;
+    if (Array.isArray(v)) return v.some((x) => isNonEmpty(x));
+    if (typeof v === "object") return Object.values(v).some((x) => isNonEmpty(x));
+    return false;
+  };
+
+  const traumaProtas = protagonistas
+    .map((p: any) => {
+      const tieneTrauma = TRAUMA_FIELDS.some((f) => isNonEmpty(p?.[f]));
+      if (!tieneTrauma) return null;
+      const nombre = String(p?.nombre || p?.name || "").trim();
+      if (!nombre) return null;
+      const norm = stripAccents(nombre)
+        .replace(/[^\w\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const tokens = norm.split(/\s+/).filter((t) => t.length >= 4);
+      return { nombre, tokens };
+    })
+    .filter(Boolean) as { nombre: string; tokens: string[] }[];
+
+  if (traumaProtas.length === 0) return { problemas, coverage: 1 };
+
+  const FIRST_60_CUT = Math.ceil(total * 0.6);
+  const FORMA_TRAUMA = new Set(["introspeccion", "recuerdo_flashback"]);
+  const CAT_TRAUMA = new Set([
+    "memoria_revelada",
+    "revelacion_personal",
+    "confesion_emocional",
+    "transformacion_personal",
+  ]);
+  const MIN_TRAUMA_CAPS = 3;
+
+  let auditados = 0;
+  let conformes = 0;
+
+  for (const prota of traumaProtas) {
+    auditados += 1;
+    const capsTrauma: number[] = [];
+    for (const c of all) {
+      const n = capNum(c);
+      if (n < 1 || n > FIRST_60_CUT) continue;
+      const elenco: string[] = [];
+      const pushList = (arr: any) => {
+        if (Array.isArray(arr))
+          for (const x of arr) if (typeof x === "string") elenco.push(stripAccents(x));
+      };
+      pushList(c?.elenco_presente);
+      pushList(c?.personajes_presentes);
+      const corpus = stripAccents(capCorpus(c));
+      const tokenRegex = prota.tokens.map(
+        (t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`)
+      );
+      const inElenco = elenco.some((e) => prota.tokens.some((t) => e.includes(t)));
+      const inCorpus = tokenRegex.some((re) => re.test(corpus));
+      if (!inElenco && !inCorpus) continue;
+      const forma = String(c?.forma_dominante || "").toLowerCase().trim();
+      const cat = String(c?.categoria_info_nueva || "").toLowerCase().trim();
+      if (FORMA_TRAUMA.has(forma) || CAT_TRAUMA.has(cat)) {
+        capsTrauma.push(n);
+      }
+    }
+    if (capsTrauma.length < MIN_TRAUMA_CAPS) {
+      problemas.push({
+        area: "trauma_protagonista",
+        tipo: "trauma_sin_caps_activos",
+        severidad: "media",
+        capitulos: capsTrauma,
+        descripcion: `El protagonista "${prota.nombre}" tiene un trauma / herida / secreto declarado en el world_bible, pero el primer 60% de la novela (caps 1 a ${FIRST_60_CUT} de ${total}) solo contiene ${capsTrauma.length} capítulo(s) donde el protagonista esté presente Y el capítulo sea introspectivo o memorialista. Mínimo exigido: ${MIN_TRAUMA_CAPS}. Anti-patrón: prólogo planta el trauma, cuerpo de la novela lo silencia, epílogo lo recupera. El lector percibe el trauma como apéndice, no como motor.`,
+        sugerencia: `Añade al menos ${MIN_TRAUMA_CAPS - capsTrauma.length} cap(s) en el primer 60% de la novela donde "${prota.nombre}" reactive el trauma de forma activa. Usa una de estas marcas: forma_dominante = "introspeccion" (escena interior, sueño, monólogo donde el trauma se manifiesta) o "recuerdo_flashback" (salto al pasado que lo concretiza); o categoria_info_nueva = "memoria_revelada" / "revelacion_personal" / "confesion_emocional" / "transformacion_personal" (escena donde el trauma cambia una decisión del protagonista, una relación, un patrón de conducta). El trauma debe ser PALANCA, no decorado: cada cap de trauma activo debe alterar lo que el protagonista hace después.`,
+      });
+      continue;
+    }
+    conformes += 1;
+  }
+
+  const coverage = auditados > 0 ? conformes / auditados : 1;
+  return { problemas, coverage };
+}
+
+// ────────────────────────────────────────────────────────────────────
 // Helpers de instrucciones agrupadas (≤700 palabras).
 // ────────────────────────────────────────────────────────────────────
 function buildInstructions(problemas: StructuralAuditProblem[]): string {
@@ -1148,8 +1567,11 @@ function buildInstructions(problemas: StructuralAuditProblem[]): string {
   renderArea("3) DOSIFICACIÓN DE REVELACIONES", byArea["dosificacion_revelacion"]);
   renderArea("4) ARCO COMPLETO DEL SECRETO (siembra textual ≥3 caps)", byArea["arco_secreto"]);
   renderArea("5) FALSO ALIADO (reveal tardío + humanización previa)", byArea["falso_aliado"]);
+  renderArea("6) ESCALADA DE APUESTAS EN EL ACTO 2 (anti bucle de presión)", byArea["escalada_acto2"]);
+  renderArea("7) DEUS EX MACHINA (informante / portador sin siembra)", byArea["deus_ex_machina"]);
+  renderArea("8) TRAUMA ACTIVO DEL PROTAGONISTA (primer 60% de la novela)", byArea["trauma_protagonista"]);
 
-  lines.push("REGLA ANTI-RECURRENCIA: en la próxima generación, declara y respeta ESTOS tres campos por capítulo:");
+  lines.push("REGLA ANTI-RECURRENCIA: en la próxima generación, declara y respeta ESTOS campos por capítulo:");
   lines.push(
     `- "forma_dominante" (1 valor de: ${FORMA_ESCENA_VALORES.join(", ")}). En ventanas de 4 caps consecutivos del acto 2, ningún valor puede repetirse más de 2 veces.`
   );
@@ -1158,6 +1580,15 @@ function buildInstructions(problemas: StructuralAuditProblem[]): string {
   );
   lines.push(
     `- "revelaciones_dosificadas" (array). Toda revelación con dificultad "alto" debe traer modo_extraccion != "sin_resistencia" y al menos 1 cap en setup_capitulos. Ningún cap puede acumular ≥3 revelaciones de dificultad alta. Ningún personaje antagonista/cómplice puede revelar ≥3 hechos en un único capítulo.`
+  );
+  lines.push(
+    `- "apuesta_dramatica" (1 valor de: ${APUESTA_VALORES.join(", ")}). En el acto 2 no puede haber 3+ caps consecutivos con apuesta IGUAL o DECRECIENTE; al menos 1 cap del acto 2 debe ser "alta" o "critica" (punto de no retorno antes del clímax).`
+  );
+  lines.push(
+    `- Para cada revelación "alto" en el último 25% de la novela, su "personaje_revelador" (si no es el protagonista) debe haber aparecido en ≥2 caps anteriores (elenco_presente o mención textual con beat propio). Personajes nuevos en el último cuarto = deus ex machina.`
+  );
+  lines.push(
+    `- Si el world_bible declara trauma/herida/secreto/motivación oculta del protagonista, el primer 60% de la novela debe contener ≥3 caps donde el protagonista esté presente Y el cap tenga forma_dominante "introspeccion" o "recuerdo_flashback", o categoria_info_nueva "memoria_revelada" / "revelacion_personal" / "confesion_emocional" / "transformacion_personal". El trauma debe ser palanca activa, no apéndice.`
   );
   return lines.join("\n");
 }
@@ -1175,6 +1606,9 @@ export function runArchitectStructuralAudits(
   const dos = auditDosificacion(escaleta, worldBible);
   const arco = auditArcoSecreto(escaleta);
   const fa = auditFalsoAliado(escaleta, worldBible);
+  const esc = auditEscaladaActo2(escaleta);
+  const dem = auditDeusExMachina(escaleta, worldBible);
+  const trauma = auditTraumaProtagonista(escaleta, worldBible);
 
   const problemas = [
     ...forma.problemas,
@@ -1182,6 +1616,9 @@ export function runArchitectStructuralAudits(
     ...dos.problemas,
     ...arco.problemas,
     ...fa.problemas,
+    ...esc.problemas,
+    ...dem.problemas,
+    ...trauma.problemas,
   ];
   const altas = problemas.filter((p) => p.severidad === "alta").length;
   const medias = problemas.filter((p) => p.severidad === "media").length;
@@ -1193,7 +1630,7 @@ export function runArchitectStructuralAudits(
   else if (altas <= 1 && medias <= 3) veredicto = "necesita_revision";
   else veredicto = "reescribir";
 
-  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}; Arco secreto: ${arco.problemas.length}; Falso aliado: ${fa.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}% arco=${Math.round(arco.coverage * 100)}% aliado=${Math.round(fa.coverage * 100)}%.`;
+  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}; Arco secreto: ${arco.problemas.length}; Falso aliado: ${fa.problemas.length}; Escalada acto 2: ${esc.problemas.length}; Deus ex machina: ${dem.problemas.length}; Trauma protagonista: ${trauma.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}% arco=${Math.round(arco.coverage * 100)}% aliado=${Math.round(fa.coverage * 100)}% apuesta=${Math.round(esc.coverage * 100)}% deus=${Math.round(dem.coverage * 100)}% trauma=${Math.round(trauma.coverage * 100)}%.`;
 
   return {
     puntuacion_global: Math.round(score * 10) / 10,
@@ -1205,6 +1642,9 @@ export function runArchitectStructuralAudits(
       revelaciones_dosificadas_pct: Math.round(dos.coverage * 100) / 100,
       arco_secreto_pct: Math.round(arco.coverage * 100) / 100,
       falso_aliado_pct: Math.round(fa.coverage * 100) / 100,
+      apuesta_dramatica_pct: Math.round(esc.coverage * 100) / 100,
+      deus_ex_machina_pct: Math.round(dem.coverage * 100) / 100,
+      trauma_protagonista_pct: Math.round(trauma.coverage * 100) / 100,
     },
     resumen,
     instrucciones_revision: problemas.length > 0 ? buildInstructions(problemas) : "",

@@ -598,6 +598,71 @@ world_bible a "antagonista declarado" (sin ocultación) y elimina la
 ambigüedad: el lector sabrá desde el inicio que es enemigo y no esperará un
 giro.
 
+REGLA E [Fix97] (ESCALADA DE APUESTAS EN EL ACTO 2 — anti bucle de presión):
+Cada capítulo regular declara un campo "apuesta_dramatica" con UN valor de:
+"baja" | "media" | "alta" | "critica". Mide el COSTE que pagaría el
+protagonista si fracasa en ESTE capítulo (no la tensión emocional, no el
+ritmo): inconveniencia (baja) → pérdida concreta (media) → pérdida
+irreversible o riesgo vital (alta) → punto sin retorno, jugarse el arco
+entero (critica). Es ortogonal a "forma_dominante" y a "tension_objetivo":
+puedes tener una "introspeccion" con apuesta critica (la decisión interior
+que rompe al protagonista) o una "accion_fisica" con apuesta baja (una
+persecución de la que el prota sale ileso).
+RESTRICCIONES INVIOLABLES en el acto 2 (caps centrales ~25%-75% del total):
+  - NO puede haber 3+ caps consecutivos con apuesta IGUAL o DECRECIENTE.
+    Si caps N, N+1 tienen la misma apuesta, el cap N+2 DEBE subir un
+    escalón. La queja "ya entendí en cap 13 que el prota está aislado; en
+    cap 18 me repiten lo mismo con otra forma" se origina aquí.
+  - Al menos UN cap del acto 2 debe ser "alta" o "critica" (punto de no
+    retorno antes del clímax). Acto 2 entero en niveles "baja"/"media" =
+    acto 2 plano, sin gancho hacia el tercer acto.
+Para subir la apuesta, NO basta con cambiar la forma_dominante: añade un
+coste tangible. Ejemplos: muerte/herida de un aliado, exposición pública
+del protagonista, decisión irreversible (firmar, traicionar, romper),
+pérdida de una habilidad o recurso, orden de detención, ruptura definitiva
+con un personaje clave.
+
+REGLA M [Fix97] (ANTI DEUS EX MACHINA — informante / portador de prueba
+clave debe estar sembrado):
+Simétrico a REGLA T (falso aliado). En lugar de auditar al traidor, audita
+al SALVADOR / INFORMANTE / PORTADOR DE EVIDENCIA. Para cada revelación
+declarada en "revelaciones_dosificadas" con dificultad "alto" cuyo cap
+esté en el último 25% de la novela (cap ≥ 75% del total) y cuyo
+"personaje_revelador" NO sea el protagonista, ese personaje DEBE haber
+aparecido con peso en al menos 2 capítulos anteriores:
+  - En "elenco_presente" / "personajes_presentes" del cap previo, O
+  - Mencionado por nombre en "objetivo_narrativo", "informacion_nueva",
+    "beats" o "sinopsis" del cap previo CON BEAT PROPIO (no solo nombrado
+    de pasada en un diálogo).
+Anti-patrón explícito (queja literal del Beta sobre "El eco del asfalto"):
+un comisario retirado aparece en el cap 32 entregando un disquete que
+cierra la trama, sin haber existido nunca antes en la escaleta. Para el
+lector es "la caballería que llega del cielo".
+Si la trama no admite sembrar al portador, redistribuye la entrega: que la
+información llegue por un personaje YA recurrente, o por un documento ya
+conocido, o baja la dificultad a "medio" (no es revelación, es detalle).
+
+REGLA P [Fix97] (TRAUMA ACTIVO DEL PROTAGONISTA — palanca, no apéndice):
+Si en world_bible.personajes el protagonista tiene declarado algún campo
+de trauma / herida / secreto personal / motivación oculta / pasado oculto
+NO VACÍO (texto ≥10 caracteres), el primer 60% de la novela DEBE contener
+al menos 3 capítulos donde:
+  (a) El protagonista esté presente (en "elenco_presente" o
+      "personajes_presentes" o mencionado por nombre en el corpus del cap), Y
+  (b) El cap sea de naturaleza introspectiva o memorialista:
+      forma_dominante ∈ {"introspeccion", "recuerdo_flashback"}, O
+      categoria_info_nueva ∈ {"memoria_revelada", "revelacion_personal",
+      "confesion_emocional", "transformacion_personal"}.
+Anti-patrón explícito: prólogo planta el trauma con fuerza, el cuerpo de la
+novela lo silencia 30 capítulos, epílogo lo retoma como cierre. El lector
+percibe el trauma como apéndice decorativo, no como motor de las decisiones
+del protagonista. El trauma debe ser PALANCA: cada cap de trauma activo
+debe alterar lo que el protagonista hace después (una decisión, una
+relación, una elección moral, un patrón de conducta).
+Si el world_bible NO declara trauma/herida/secreto del protagonista, esta
+regla no aplica. Si quieres ahorrarte la siembra, vacía esos campos en el
+world_bible (el protagonista no tiene trauma oculto).
+
 ═══════════════════════════════════════════════════════════════════
 ⛔ ANTI-DEUS-EX-MACHINA Y ANTI-SOLUCIONES FÁCILES (REGLA CRÍTICA) ⛔
 ═══════════════════════════════════════════════════════════════════
@@ -667,6 +732,7 @@ FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
       "informacion_nueva": "Revelación concreta que descubre el lector (≥40 caracteres, NUNCA 'ninguna' ni 'sin novedades')",
       "categoria_info_nueva": "testigo | evidencia_fisica | pista_falsa | revelacion_personal | antecedente_historico | conexion_red | amenaza | vinculo_emocional | setup_subtrama | ninguna | confesion_emocional | regla_del_mundo | profecia_o_simbolo | memoria_revelada | declaracion_amorosa | ruptura_relacional | transformacion_personal",
       "forma_dominante": "investigacion_activa | confrontacion_directa | revelacion | introspeccion | accion_fisica | setback | atmosferica | pivote_relacional | escena_romantica | recuerdo_flashback | ceremonia_ritual | dialogo_filosofico | humor_alivio | montaje_temporal",
+      "apuesta_dramatica": "baja | media | alta | critica",
       "revelaciones_dosificadas": [
         {
           "hecho_revelado": "Solo si el cap contiene revelación importante; deja el array vacío si no",
@@ -731,6 +797,9 @@ C. RITMO ACTO 3: distribuye "eventos_pivotales" sin que el acto 3 acumule >50% d
 11. [Fix92-D] Recorre cada "revelaciones_dosificadas" del proyecto: verifica que NINGUNA revelación con dificultad "alto" tiene modo_extraccion "sin_resistencia" y verifica que TODAS tienen al menos 1 cap en "setup_capitulos". Verifica que ningún cap acumula ≥3 revelaciones de dificultad "alto". Verifica que ningún personaje antagonista/cómplice revela ≥3 hechos en un único cap.
 12. [Fix93-S] Para cada revelación de dificultad "alto", abre TÚ MISMO los caps listados en "setup_capitulos" y comprueba que su "informacion_nueva", "objetivo_narrativo" o "eventos_pivotales" MENCIONAN tokens concretos del "hecho_revelado" (no basta con declarar el array — debe haber texto real). Exigencia: ≥3 caps con siembra textual real para dificultad "alto", ≥2 para "medio". Si no se cumple, añade las siembras o baja la dificultad.
 13. [Fix94-T] Para cada personaje del world_bible cuyo "rol" indique identidad/lealtad/secreto oculto (universal, cualquier género: topo, traidor, falso_aliado, infiltrado, doble_agente, antagonista_oculto, complice_oculto, identidad_oculta, doble_identidad, pasado_oculto, secreto_familiar, mascara, amante_secreto, pretendiente_falso, mentor_falso, mentor_traidor, falso_elegido, villano_enmascarado, hijo_secreto, padre_biologico_oculto, hermano_oculto, heredero_oculto, etc.): localiza el cap de revelación del secreto y comprueba (A) que ocurre en el último 40% de la novela (cap ≥ 60% del total) y (B) que existe al menos UN cap anterior con "forma_dominante" ∈ {"introspeccion", "pivote_relacional", "escena_romantica", "recuerdo_flashback"} o "categoria_info_nueva" ∈ {"vinculo_emocional", "confesion_emocional", "memoria_revelada"} donde el personaje aparezca en escena humanizado. La escena de humanización debe adaptarse al género: thriller — foto familiar, llamada cansada, miedo sincero; romance — ternura aparentemente genuina, confesión vulnerable; fantasía — recuerdo de inocencia antes del pacto oscuro, duda visible; literaria/drama — flashback cálido, memoria compartida. Si falla A o B, mueve el reveal o inserta la escena de humanización antes de devolver el JSON.
+14. [Fix97-E] Recorre el acto 2 (caps centrales ~25%-75% del total) verificando la "apuesta_dramatica" declarada en cada cap. Comprueba (A) que NO existen 3+ caps consecutivos con apuesta IGUAL o DECRECIENTE (si caps N, N+1 tienen la misma apuesta, cap N+2 DEBE subir un escalón añadiendo un coste tangible — muerte/herida de aliado, exposición pública, decisión irreversible, ruptura definitiva); y (B) que al menos UN cap del acto 2 alcanza nivel "alta" o "critica" (punto de no retorno antes del clímax). Si todo el acto 2 está en "baja"/"media", el lector llega al acto 3 sin haber sentido un punto de no retorno. Si alguna restricción falla, sube la apuesta en los caps centrales del bucle añadiendo costes irreversibles.
+15. [Fix97-M] Recorre cada "revelaciones_dosificadas" con dificultad "alto" en el último 25% de la novela (cap ≥ 75% del total). Si el "personaje_revelador" NO es el protagonista, verifica que ese personaje haya aparecido con peso (en "elenco_presente"/"personajes_presentes" o mencionado con beat propio en "objetivo_narrativo"/"informacion_nueva"/"beats") en al menos 2 capítulos anteriores. Personajes nuevos en el último cuarto que entregan información crítica = deus ex machina. Si falta siembra, inserta 2 caps previos donde el personaje tenga presencia real, o redistribuye la entrega a un personaje YA recurrente, o baja la dificultad a "medio".
+16. [Fix97-P] Para cada protagonista del world_bible con trauma/herida/secreto/motivación oculta declarados (texto ≥10 caracteres en campos como "trauma_oculto", "herida_pasada", "motivacion_oculta", "secreto_personal", "pasado_oculto"), verifica que el primer 60% de la novela contenga ≥3 caps donde el protagonista esté presente Y el cap tenga forma_dominante ∈ {"introspeccion", "recuerdo_flashback"} O categoria_info_nueva ∈ {"memoria_revelada", "revelacion_personal", "confesion_emocional", "transformacion_personal"}. Cada cap de trauma activo debe alterar lo que el protagonista hace después (una decisión, una relación, un patrón). Si hay <3, inserta los caps faltantes en el primer 60%; si no quieres sembrar, vacía los campos de trauma en el world_bible.
 Si algo falla, REGENERA antes de responder. Esto es lo más importante.
 
 Responde ÚNICAMENTE con el JSON.
