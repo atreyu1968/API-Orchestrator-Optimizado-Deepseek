@@ -1,0 +1,166 @@
+INFORME EDITORIAL HOLÍSTICO
+
+## VEREDICTO GLOBAL
+Tu manuscrito es un thriller atmosférico con una voz narrativa sólida y un planteamiento de serie competente, pero arrastra tres heridas estructurales que le impiden ser publicable sin una reescritura parcial del segundo acto. El arranque funciona, el tercer acto recupera pulso, pero el bloque central (caps 8-16) se atasca en un bucle de presión institucional sin escalada, y el clímax depende de un informante (Rentería) que aparece ex nihilo en cap 32. El arco personal de Zubiri —su trauma— se anuncia en el prólogo y se resuelve en el epílogo, pero el cuerpo de la novela lo ignora, desperdiciando la oportunidad de que esa herida condicione sus decisiones en el tramo decisivo. No es un texto perdido, pero sí uno que exige cirugía mayor en la arquitectura del segundo acto y en la integración del conflicto interno del protagonista.
+
+## PROBLEMAS ESTRUCTURALES (crítico)
+
+1. **Deus ex machina del contable Rentería (caps 31-32)**: El personaje que entrega la prueba definitiva (el disquete) no está sembrado en ningún capítulo anterior. Aparece en el último suspiro narrativo, declama su información y desaparece. El lector siente que la solución le es servida al protagonista sin que él haya trabajado para encontrarla. Para que funcione, Rentería tiene que ser un nombre que Zubiri haya encontrado entre los papeles de Lasheras en cap 4, una línea en la libreta que haya dejado de lado y que recupere en cap 14 al sentir el cerco.
+
+2. **Bucle de tensión sin escalada en el Acto 2 (caps 8-16)**: Repites la misma escena de presión institucional —Leizaola citando a Zubiri, amenaza de suspensión, aislamiento— sin que el conflicto dramático escale. Cap 9 (advertencia en el Náufrago), cap 13 (Leizaola muestra los informes de vigilancia), cap 15 (inhibición del juez) y cap 18 (apartamiento definitivo) podrían condensarse en dos o tres bloques de tensión creciente. La repetición diluye el impacto de la suspensión final en cap 23.
+
+3. **Trauma de Zubiri como apéndice, no como motor (prólogo, caps 1-32, epílogo)**: Planteas en el prólogo que la escena del crimen remueve un eco en Zubiri, un recuerdo que no logra atrapar. Luego abandonas ese hilo durante 32 capítulos y lo recuperas en el epílogo mediante un flashback y la llamada telefónica. La novela de serie exige que ese trauma condicione sus decisiones aquí y ahora. Zubiri debería reaccionar físicamente a ciertos estímulos (la posición del cadáver, la lluvia, un callejón) en caps 1, 7, 14, no solo en el epílogo.
+
+## ARCOS DE PERSONAJE (mayor)
+
+**Zubiri**: Arco de héroe noir clásico y coherente: pierde todo por no callarse. El problema es la pasividad de su conflicto interno. Sufre las consecuencias del sistema, pero no actúa movido por su historia personal hasta la llamada final. Necesitas que su trauma le haga tomar microdecisiones irracionales o dubitativas en caps 1-14 para que la revelación del epílogo tenga peso orgánico.
+
+**Basarte**: Arco de fractura impecable. Su silencio miente más que las palabras. La ruptura en cap 22 es posiblemente el momento más tenso del manuscrito entero. No lo toques.
+
+**Arantza Eskibel**: Arco sacrificado off-screen. Su suspensión se cuenta por teléfono en cap 25. Necesitas mostrar esa escena, aunque sea breve, para que el lector sienta el coste de la amistad rota cuando ella devuelve la llave en el epílogo.
+
+**Leire Gogenola**: Evolución creíble de viuda abatida a aliada activa. Bien dosificada. El paso de la libreta en cap 24 es el mejor momento del personaje secundario en todo el libro.
+
+## CONTINUIDAD Y COHERENCIA INTERNA (mayor)
+
+- Cap 10 vs. cap 27: La sombra de la persecución en el muelle tiene una cicatriz en la mejilla derecha. En cap 27, el administrativo del club describe al mismo hombre al que Recalde visita. Zubiri nunca verbaliza la conexión. Añadir un momento de reconocimiento en cap 27 o cuando revisa el mapa en cap 20.
+- Cap 19: Zubiri recibe el latigazo del cinturón de seguridad. La herida se menciona en caps 23 y 24, luego desaparece sin condicionar la acción final (cap 29, confrontación con Berrocal). Si el lector sabe que Zubiri está herido, la escena de la confesión gana tensión física.
+
+## RITMO Y TENSIÓN (mayor)
+
+**Arranque (prólogo - cap 6)**: Excelente. Planta el caso, el método, el mundo y la atmósfera. Ritmo quirúrgico. No toques.
+
+**Desarrollo medio (caps 7-18)**: Pierde tensión en el bucle de presión burocrática. Las escenas de advertencia se suceden sin que el conflicto escale. Necesitas que en cap 13, cuando Leizaola muestra los informes de vigilancia, añadas el golpe de la inhibición judicial para que la presión sea doble y definitiva.
+
+**Tercer acto (caps 19-30)**: Recupera pulso con la persecución, el atentado y el cerco. El clímax de la confesión de Berrocal (caps 29-30) es efectivo pero anticlimático porque el lector sabe que él no es la cabeza.
+
+**Resolución (caps 31 - epílogo)**: Necesaria para cerrar el volumen, pero cap 31 se alarga en la autocompasión de Zubiri. La derrota debe sentirse en la acción (guardar el disquete, ordenar la pizarra) no en el monólogo interior extendido.
+
+## ESCENAS Y CAPÍTULOS PROBLEMÁTICOS (mayor/menor)
+
+- **Cap 12 — La mecánica de la mentira**: Exposición excesiva de Arantza sobre la investigación. Condensar o integrar en la acción.
+- **Cap 17 — La caja vacía**: La visita a la hermana es puramente expositiva. El diálogo es plano y funcional. Puedes añadir tensión haciendo que Zubiri note que alguien lo ha seguido hasta el pueblo.
+- **Cap 26 — Huir del abogado**: La persecución funciona, pero el administrativo al que Zubiri interroga es un recurso de guion demasiado fácil. Necesita que el miedo del personaje se justifique o que la información tenga un coste.
+- **Cap 31 — El precio de la verdad**: Se alarga innecesariamente en la descripción del piso y la derrota. Podar un 30%. La escena de Zubiri guardando el disquete en el bolsillo es el cierre emocional; llega a ella más rápido.
+
+## REPETICIONES Y CLICHÉS (menor)
+
+- **El pitillo como comodín emocional**: Zubiri enciende un cigarrillo en aproximadamente el 80% de las escenas de tensión. Es un sello de género, pero aquí se usa sin matices. Alterna con otros gestos: el mechero que gira entre los dedos sin encender, que lo aprieta en el puño, que lo deja caer.
+- **La lluvia**: Adjetivación redundante («fina, constante, golpeando el cristal»). En la descripción atmosférica, poda las variaciones del tamborileo.
+- **Arquetipo del abogado corrupto (Recalde)**: Sonrisa fría, traje impecable, manos bien cuidadas. Funciona como antagonista funcional, pero no tiene capas. Dale una contradicción: un tic nervioso, un momento de duda, algo que lo saque del cliché de guion.
+
+## SUGERENCIAS CONCRETAS DE CORRECCIÓN
+
+1. En cap 4, al revisar el historial de Lasheras, añadir una línea sobre el contable Rentería que huyó de GP en agosto. En cap 14, Zubiri debe recordar esa línea al sentir el cerco. Esto hace orgánica su aparición en cap 32.
+2. Distribuir micro-reacciones físicas de Zubiri a su trauma en caps 1 (al ver la foto de Lasheras), 7 (en el puerto, al oír un golpe metálico) y 14 (al encontrar la placa en su piso). El eco debe ser un latido constante, no un apéndice.
+3. Unificar la revelación de la inhibición del juez en cap 13 (que Leizaola se la dé como argumento de presión) y reestructurar cap 15 como la reacción emocional de Zubiri, no como exposición de un nuevo hecho procesal.
+4. En cap 20, en la pizarra de Zubiri, añadir "Hombre alto (tatuaje estrella)" como objetivo de búsqueda activa. Zubiri debe verbalizar que necesita encontrarlo.
+5. En cap 25, Arantza debe comunicar su suspensión con rabia contenida en la conversación del polígono, no contarla por teléfono fuera de escena.
+6. Podar cap 31 en un 30%, eliminando la descripción redundante del piso y acelerando la transición al momento en que Zubiri guarda el disquete.
+
+## LO QUE FUNCIONA
+
+1. Voz narrativa en tercera persona limitada: precisa, atmosférica, mantiene la tensión del thriller policial.
+2. Arquitectura de la trama de corrupción (de un interventor municipal a una cuenta en Islas Caimán) sólida y creíble.
+3. Evolución de Leire Gogenola de viuda abatida a aliada activa.
+4. Cliffhanger del epílogo, funcional para la serie, aunque necesita mejor foreshadowing del trauma.
+5. Arco de fractura entre Zubiri y Basarte, resuelto con gran economía narrativa.
+
+## PUNTUACIÓN EDITORIAL (JSON)
+
+<!-- PUNTUACION_HOLISTICA_INICIO -->
+```json
+{"puntuacion_global": 6, "justificacion": "Acto 2 lastrado por bucle de presion sin escalada (caps 8-16). Climax resuelto con deus ex machina (Renteria). Trauma de Zubiri mal integrado en el cuerpo de la novela."}
+```
+<!-- PUNTUACION_HOLISTICA_FIN -->
+
+<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->
+```json
+{
+  "instrucciones": [
+    {
+      "capitulos_afectados": [4, 14, 32],
+      "categoria": "trama",
+      "descripcion": "Sembrar al contable Renteria como nombre en las libretas de Lasheras desde caps tempranos.",
+      "instrucciones_correccion": "En cap 4 anadir linea sobre contable de GP que huyo. En cap 14 Zubiri debe recordar esa linea. En cap 32 Renteria debe hacer referencia a que Zubiri ya sabia de el.",
+      "tipo": "estructural",
+      "prioridad": "alta",
+      "plan_por_capitulo": {
+        "4": "Al revisar el historial de Lasheras, anadir linea: 'Lasheras habia marcado el nombre de un contable de GP, Renteria, que habia huido en agosto.'",
+        "14": "En la reflexion tras la persecucion, anadir: 'El nombre de Renteria le volvio a la cabeza. Si estaba vivo...'",
+        "32": "Modificar dialogo de Renteria: 'Usted ya sabia de mi por los papeles de Lasheras. Por eso ha venido.'"
+      }
+    },
+    {
+      "capitulos_afectados": [1, 7, 14],
+      "categoria": "personaje",
+      "descripcion": "Reforzar la sensacion de deja vu y el trauma personal de Zubiri en escenas clave del primer y segundo acto.",
+      "instrucciones_correccion": "Anadir microflashbacks y reacciones fisicas de Zubiri que conecten la escena del crimen de Lasheras con un dolor del pasado.",
+      "tipo": "estructural",
+      "prioridad": "alta",
+      "plan_por_capitulo": {
+        "1": "Al ver la foto de Lasheras, anadir: 'La imagen se superpuso un instante con otra, borrosa. Aparto la mirada.'",
+        "7": "En el puerto al oir un golpe metalico, anadir: 'El sonido le trajo un eco lejano. Otro lugar. Otro golpe. Cerro los ojos.'",
+        "14": "Al ver la placa sobre su mesa, anadir: 'Por un momento no fue su placa. Fue la de otro. En otro piso. Hace anos.'"
+      }
+    },
+    {
+      "capitulos_afectados": [13, 15],
+      "categoria": "ritmo",
+      "descripcion": "Unificar las consecuencias de la inhibicion del juez y la presion de Leizaola en una secuencia mas compacta.",
+      "instrucciones_correccion": "Mover la noticia de la inhibicion del juez a cap 13 integrarla en la conversacion con Leizaola. Cap 15 se reestructura como reaccion directa a esa presion combinada.",
+      "tipo": "estructural",
+      "prioridad": "alta",
+      "plan_por_capitulo": {
+        "13": "Leizaola debe informar a Zubiri de la inhibicion como argumento final de presion. Zubiri recibe el doble golpe en la misma escena.",
+        "15": "Reescribir cap 15 como la noche de reflexion y rabia de Zubiri tras la conversacion. Es la consecuencia emocional, no la exposicion de un nuevo hecho procesal."
+      }
+    },
+    {
+      "capitulos_afectados": [20],
+      "categoria": "trama",
+      "descripcion": "Convertir al Hombre Alto en motor de la trama activa para Zubiri.",
+      "instrucciones_correccion": "En la pizarra de Zubiri anadir 'Hombre Alto (tatuaje estrella)' como objetivo de busqueda activa. Zubiri debe verbalizar la necesidad de encontrarlo.",
+      "tipo": "puntual",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [25],
+      "categoria": "personaje",
+      "descripcion": "Hacer explicita la suspension de Arantza en una escena dramatizada.",
+      "instrucciones_correccion": "En la reunion del poligono Arantza debe comunicar su suspension a Zubiri de forma abrupta con rabia como un hecho consumado que ella acepta.",
+      "tipo": "puntual",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [31],
+      "categoria": "ritmo",
+      "descripcion": "Reducir la exposicion emocional estatica del capitulo de la suspension.",
+      "instrucciones_correccion": "Eliminar el 30% de las frases de descripcion del piso y el silencio. Acelerar la transicion al momento en que Zubiri recupera la pizarra. La derrota debe sentirse en la accion (guardar el disquete) no en la introspeccion prolongada.",
+      "tipo": "puntual",
+      "prioridad": "baja"
+    }
+  ]
+}
+```
+<!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->
+
+<!-- VEREDICTO_GATE_INICIO -->
+```json
+{
+  "severidad_global": "reparable_con_reservas",
+  "issues_irreparables": [
+    {
+      "capitulo": 32,
+      "problema": "Personaje de Renteria sin plantar en la trama previa, reduce el impacto de la revelacion.",
+      "motivo": "requiere coordinacion de siembra en caps 4, 14 y 32 que el cirujano puede ejecutar, pero la ausencia de conflicto previo con Zubiri no se resuelve solo con anadir lineas."
+    },
+    {
+      "capitulo": 15,
+      "problema": "Estructura del Acto 2 redundante donde la presion institucional se repite sin escalada.",
+      "motivo": "la decision editorial de comprimir o expandir escenas en un bloque de 8 caps requiere coordinacion humana; el sistema puede mover bloques de informacion pero no redisenar la escalada dramatica."
+    }
+  ]
+}
+```
+<!-- VEREDICTO_GATE_FIN -->
