@@ -166,6 +166,48 @@ export default function ManuscriptPage() {
     },
   });
 
+  // [Fix100] Ejecutar una acción admin pendiente (merge_chapters / delete_chapter).
+  // Borra el cap correspondiente y renumera los siguientes -1.
+  const executeAdminActionMutation = useMutation({
+    mutationFn: async (actionId: number) => {
+      const res = await fetch(
+        `/api/projects/${currentProject!.id}/pending-admin-actions/${actionId}/execute`,
+        { method: "POST" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      return data;
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "pending-admin-actions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id] });
+      const desc = data?.alreadyApplied
+        ? "El capítulo ya no existía; la tarjeta se ha limpiado."
+        : data?.type === "merge_chapters"
+          ? `Cap ${data.chapterDeleted} eliminado y ${data.renumbered} cap(s) renumerado(s).`
+          : `Cap ${data.chapterDeleted} eliminado y ${data.renumbered} cap(s) renumerado(s).`;
+      toast({ title: "Acción ejecutada", description: desc });
+    },
+    onError: (err: Error) => {
+      toast({ title: "No se pudo ejecutar", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const isExecutableAdminAction = (type: string): boolean =>
+    type === "merge_chapters" || type === "delete_chapter";
+
+  const handleExecuteAdminAction = (action: any) => {
+    const isMerge = action.type === "merge_chapters";
+    const chapToDelete = isMerge ? action.secondaryChapter : action.targetChapter;
+    const msg = isMerge
+      ? `Esto eliminará el capítulo ${chapToDelete} (su contenido ya fue absorbido por el capítulo ${action.targetChapter} en el paso de prosa) y renumerará los capítulos posteriores. ¿Continuar?`
+      : `Esto eliminará el capítulo ${chapToDelete} y renumerará los capítulos posteriores. ¿Continuar?`;
+    if (window.confirm(msg)) {
+      executeAdminActionMutation.mutate(action.id);
+    }
+  };
+
   const adminActionLabel = (type: string): string => {
     switch (type) {
       case "delete_chapter": return "Eliminar capítulo";
@@ -580,7 +622,7 @@ export default function ManuscriptPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              Operaciones destructivas que el sistema detectó pero <strong>NO aplicó automáticamente</strong>. Revisa cada una y, si quieres ejecutarla, hazlo manualmente desde la lista de capítulos. Cuando termines (o si decides ignorarla), descártala para limpiar este listado.
+              Operaciones destructivas que el sistema detectó pero <strong>NO aplicó automáticamente</strong>. Para <em>Fusionar</em> y <em>Eliminar</em> capítulos puedes pulsar <strong>Ejecutar</strong> y el sistema borrará el capítulo correspondiente y renumerará los siguientes. El resto de tipos (dividir, intercambiar, mover, etc.) requieren intervención manual desde la lista de capítulos. Usa el botón de papelera para descartar una acción sin aplicarla.
             </p>
             <div className="space-y-1.5">
               {pendingAdminActions.map((action: any) => (
@@ -607,15 +649,33 @@ export default function ManuscriptPage() {
                       {action.reason}
                     </p>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => dismissAdminActionMutation.mutate(action.id)}
-                    disabled={dismissAdminActionMutation.isPending}
-                    data-testid={`button-dismiss-admin-action-${action.id}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {isExecutableAdminAction(action.type) && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => handleExecuteAdminAction(action)}
+                        disabled={executeAdminActionMutation.isPending || dismissAdminActionMutation.isPending}
+                        data-testid={`button-execute-admin-action-${action.id}`}
+                      >
+                        {executeAdminActionMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <Check className="h-4 w-4 mr-1" />
+                        )}
+                        Ejecutar
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => dismissAdminActionMutation.mutate(action.id)}
+                      disabled={dismissAdminActionMutation.isPending || executeAdminActionMutation.isPending}
+                      data-testid={`button-dismiss-admin-action-${action.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

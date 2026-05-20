@@ -8570,6 +8570,143 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  // [Fix100] POST ejecutar una acción administrativa pendiente (merge_chapters
+  // o delete_chapter). Antes de Fix100 la tarjeta solo permitía descartar, lo
+  // que obligaba al usuario a hacer la fusión/eliminación manualmente capítulo
+  // a capítulo desde la lista — error humano garantizado en libros largos.
+  //
+  // merge_chapters: el flujo del structural-translator añade primero la prosa
+  //   del cap origen al cap destino vía feasibleParts (cap 19 absorbe a cap 20),
+  //   y DESPUÉS emite merge_chapters como acción administrativa. Por tanto
+  //   ejecutar la acción = eliminar el cap origen (`secondaryChapter`) y
+  //   renumerar los siguientes hacia abajo. No volvemos a anexar contenido,
+  //   eso duplicaría texto ya integrado.
+  // delete_chapter: elimina `targetChapter` y renumera los siguientes -1.
+  //
+  // Resto de tipos (split_chapter, swap_chapters, reorder_chapters,
+  // move_content, structural_restructure, global_style) NO tienen ejecutor
+  // automático todavía — devuelven 400 con motivo claro.
+  app.post("/api/projects/:id/pending-admin-actions/:actionId/execute", async (req: Request, res: Response) => {
+    try {
+      if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "ID inválido" });
+      if (!/^\d+$/.test(req.params.actionId)) return res.status(400).json({ error: "actionId inválido" });
+      const projectId = parseInt(req.params.id, 10);
+      const actionId = parseInt(req.params.actionId, 10);
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      const existing: any[] = Array.isArray((project as any).pendingAdminActions) ? (project as any).pendingAdminActions : [];
+      const action = existing.find((a: any) => Number(a?.id) === actionId);
+      if (!action) return res.status(404).json({ error: "Acción no encontrada (puede que ya se haya ejecutado o descartado)" });
+
+      const type = String(action.type || "");
+      const SUPPORTED = ["merge_chapters", "delete_chapter"];
+      if (!SUPPORTED.includes(type)) {
+        return res.status(400).json({
+          error: `El tipo "${type}" no se puede ejecutar automáticamente. Aplícalo manualmente desde la lista de capítulos y luego descarta esta tarjeta.`,
+          supported: SUPPORTED,
+        });
+      }
+
+      // El capítulo a ELIMINAR depende del tipo:
+      //   - merge_chapters: secondaryChapter (origen ya absorbido en target)
+      //   - delete_chapter: targetChapter
+      const chapterToDelete = type === "merge_chapters"
+        ? Number(action.secondaryChapter)
+        : Number(action.targetChapter);
+      if (!Number.isFinite(chapterToDelete) || chapterToDelete <= 0) {
+        return res.status(400).json({ error: `Número de capítulo inválido en la acción (${chapterToDelete}).` });
+      }
+
+      // [Fix100 post-review] Para merge_chapters exigimos un par válido y
+      // distinto: si el LLM o el translator emitió la acción con
+      // secondaryChapter ausente o igual al target, no sabemos qué borrar
+      // con seguridad. Mejor mantener la tarjeta y obligar al usuario a
+      // descartar o actuar manualmente.
+      if (type === "merge_chapters") {
+        const tgt = Number(action.targetChapter);
+        const sec = Number(action.secondaryChapter);
+        if (!Number.isFinite(tgt) || tgt <= 0 || !Number.isFinite(sec) || sec <= 0 || tgt === sec) {
+          return res.status(400).json({
+            error: `merge_chapters incompleto (targetChapter=${action.targetChapter}, secondaryChapter=${action.secondaryChapter}). No se puede ejecutar con seguridad; aplica el cambio manualmente y descarta la tarjeta.`,
+          });
+        }
+      }
+
+      const allChapters = await storage.getChaptersByProject(projectId);
+      const target = allChapters.find(c => Number(c.chapterNumber) === chapterToDelete);
+      if (!target) {
+        // El cap ya no existe — la acción se considera cumplida. Limpiamos
+        // el array de acciones releyendo fresh para no pisar acciones nuevas
+        // añadidas por otros procesos (anti-TOCTOU, mismo patrón que la rama
+        // de éxito normal abajo).
+        const freshNotFound = await storage.getProject(projectId);
+        const freshActionsNotFound: any[] = Array.isArray((freshNotFound as any)?.pendingAdminActions)
+          ? (freshNotFound as any).pendingAdminActions
+          : [];
+        const next = freshActionsNotFound.filter((a: any) => Number(a?.id) !== actionId);
+        await storage.updateProject(projectId, { pendingAdminActions: next } as any);
+        await storage.createActivityLog({
+          projectId,
+          level: "warning",
+          message: `[Fix100] Acción admin id=${actionId} (${type} sobre cap ${chapterToDelete}) — el capítulo ya no existe. Tarjeta descartada sin cambios.`,
+          agentRole: "editor",
+        });
+        return res.json({ success: true, deleted: 0, renumbered: 0, alreadyApplied: true });
+      }
+      // Para merge_chapters, comprobamos también que el target sigue
+      // existiendo (no tendría sentido "fusionar 19+20 → 19" si el 19 no
+      // está): si el destino desapareció, la fusión ya no se puede
+      // representar y hay que revisar a mano.
+      if (type === "merge_chapters") {
+        const tgtNum = Number(action.targetChapter);
+        const targetExists = allChapters.some(c => Number(c.chapterNumber) === tgtNum);
+        if (!targetExists) {
+          return res.status(400).json({
+            error: `No se puede ejecutar la fusión: el capítulo destino ${tgtNum} ya no existe en el manuscrito. Revisa el estado y descarta la tarjeta si procede.`,
+          });
+        }
+      }
+
+      // 1) Eliminar el capítulo.
+      await storage.deleteChapter(target.id);
+      // 2) Renumerar los posteriores -1 para mantener secuencia continua.
+      //    Hacemos los updates en orden ascendente porque chapterNumber tiene
+      //    índice y queremos evitar colisión transitoria (cap N+1 → N choca
+      //    si N todavía existía, pero acabamos de borrar N así que cada hueco
+      //    queda libre antes del UPDATE correspondiente).
+      const subsequent = allChapters
+        .filter(c => Number(c.chapterNumber) > chapterToDelete)
+        .sort((a, b) => Number(a.chapterNumber) - Number(b.chapterNumber));
+      let renumbered = 0;
+      for (const c of subsequent) {
+        await storage.updateChapter(c.id, { chapterNumber: Number(c.chapterNumber) - 1 } as any);
+        renumbered++;
+      }
+
+      // 3) Eliminar la acción del listado pendiente (releyendo para evitar
+      //    pisar acciones nuevas añadidas por otros procesos en paralelo).
+      const fresh = await storage.getProject(projectId);
+      const freshActions: any[] = Array.isArray((fresh as any)?.pendingAdminActions) ? (fresh as any).pendingAdminActions : [];
+      const nextActions = freshActions.filter((a: any) => Number(a?.id) !== actionId);
+      await storage.updateProject(projectId, { pendingAdminActions: nextActions } as any);
+
+      const summary = type === "merge_chapters"
+        ? `Fusión ejecutada: cap ${action.targetChapter} absorbe a cap ${chapterToDelete}; cap ${chapterToDelete} eliminado; ${renumbered} cap(s) renumerado(s) -1.`
+        : `Eliminado cap ${chapterToDelete}; ${renumbered} cap(s) renumerado(s) -1.`;
+      await storage.createActivityLog({
+        projectId,
+        level: "info",
+        message: `[Fix100] ${summary}`,
+        agentRole: "editor",
+      });
+
+      res.json({ success: true, deleted: 1, renumbered, type, chapterDeleted: chapterToDelete });
+    } catch (error) {
+      console.error("[Fix100] Error POST pending-admin-actions/:actionId/execute:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to execute admin action" });
+    }
+  });
+
   // [Fix34] DELETE descartar pendingEditorialParse sin aplicar.
   app.delete("/api/reedit-projects/:id/pending-editorial-parse", async (req: Request, res: Response) => {
     try {
