@@ -75,7 +75,12 @@ export const MODO_EXTRACCION_VALORES: ModoExtraccion[] = [
 ];
 
 export interface StructuralAuditProblem {
-  area: "forma_escena" | "ledger_info" | "dosificacion_revelacion";
+  area:
+    | "forma_escena"
+    | "ledger_info"
+    | "dosificacion_revelacion"
+    | "arco_secreto"
+    | "falso_aliado";
   tipo: string;
   severidad: "alta" | "media" | "baja";
   capitulos: number[];
@@ -87,6 +92,8 @@ export interface StructuralAuditCoverage {
   forma_dominante_pct: number;
   categoria_info_pct: number;
   revelaciones_dosificadas_pct: number;
+  arco_secreto_pct: number;
+  falso_aliado_pct: number;
 }
 
 export interface StructuralAuditResult {
@@ -481,6 +488,397 @@ function auditDosificacion(
 }
 
 // ────────────────────────────────────────────────────────────────────
+// (4) [Fix93] Arco completo del secreto — siembra REAL en ≥3 caps previos.
+// El `setup_capitulos` declarado por el Arquitecto no basta: el auditor
+// verifica que los caps anteriores mencionen efectivamente el hecho (por
+// solapamiento de tokens significativos). Si una revelación de dificultad
+// alta no tiene siembra textual previa en al menos 3 caps distintos, es
+// info-dump aunque solo haya 1 revelación en el capítulo.
+// ────────────────────────────────────────────────────────────────────
+const STOPWORDS_ES = new Set([
+  "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "en",
+  "y", "o", "u", "que", "se", "su", "sus", "lo", "le", "les", "a", "al",
+  "por", "con", "para", "es", "son", "fue", "fueron", "era", "eran",
+  "sin", "sobre", "no", "si", "este", "esta", "esos", "esas", "esto",
+  "ya", "mas", "menos", "muy", "ha", "han", "hay", "tras", "entre", "como",
+  "cuando", "donde", "porque", "pero", "ante", "bajo", "hacia", "hasta",
+  "desde", "tambien", "tan", "todo", "toda", "todos", "todas", "algo",
+  "alguien", "alguno", "alguna", "siempre", "nunca", "aun", "aunque",
+  "cap", "capitulo", "capitulos",
+]);
+
+function extractSiembraTokens(text: string): string[] {
+  if (!text || typeof text !== "string") return [];
+  const t = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const tokens = t.split(/\s+/).filter((tok) => {
+    if (tok.length < 5) return false;
+    if (STOPWORDS_ES.has(tok)) return false;
+    if (/^\d+$/.test(tok)) return false;
+    return true;
+  });
+  return Array.from(new Set(tokens));
+}
+
+function capCorpus(c: any): string {
+  const parts: string[] = [];
+  const push = (v: any) => {
+    if (typeof v === "string") parts.push(v);
+    else if (Array.isArray(v)) for (const x of v) push(x);
+    else if (v && typeof v === "object") for (const k of Object.values(v)) push(k);
+  };
+  push(c?.objetivo_narrativo);
+  push(c?.sinopsis);
+  push(c?.informacion_nueva);
+  push(c?.eventos_pivotales);
+  push(c?.beats);
+  push(c?.escena_principal);
+  push(c?.titulo);
+  return parts.join(" ");
+}
+
+function auditArcoSecreto(
+  escaleta: any[]
+): { problemas: StructuralAuditProblem[]; coverage: number } {
+  const { all } = getActSlices(escaleta);
+  const problemas: StructuralAuditProblem[] = [];
+  let totalRevAuditadas = 0;
+  let sembradas = 0;
+
+  const corpusByCap: Record<number, string> = {};
+  for (const c of all) {
+    corpusByCap[capNum(c)] = capCorpus(c)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  }
+
+  for (const cap of all) {
+    const num = capNum(cap);
+    const revs: any[] = Array.isArray(cap.revelaciones_dosificadas)
+      ? cap.revelaciones_dosificadas
+      : [];
+    for (const r of revs) {
+      const dificultad = String(r?.dificultad || "").toLowerCase();
+      if (dificultad !== "alto" && dificultad !== "medio") continue;
+      const hecho = String(r?.hecho_revelado || "");
+      const tokens = extractSiembraTokens(hecho);
+      if (tokens.length < 2) continue;
+      totalRevAuditadas += 1;
+
+      const priorCaps = all.filter((c: any) => capNum(c) < num);
+      let siembraCount = 0;
+      const sembradosEn: number[] = [];
+      for (const prev of priorCaps) {
+        const corpus = corpusByCap[capNum(prev)] || "";
+        if (!corpus) continue;
+        const hits = tokens.filter((t) => corpus.includes(t)).length;
+        if (hits >= 2) {
+          siembraCount += 1;
+          sembradosEn.push(capNum(prev));
+        }
+      }
+      const minSiembra = dificultad === "alto" ? 3 : 2;
+      const hechoCorto = hecho.length > 90 ? hecho.slice(0, 87) + "..." : hecho;
+      const declarados = Array.isArray(r?.setup_capitulos)
+        ? r.setup_capitulos.filter((n: any) => typeof n === "number")
+        : [];
+
+      if (siembraCount >= minSiembra) {
+        sembradas += 1;
+        // [Fix93] Discrepancia: el Arquitecto declaró setup_capitulos pero
+        // los caps declarados NO contienen siembra textual real. La siembra
+        // existe en otros caps, así que el suspense funciona, pero el
+        // contrato del JSON es engañoso y debe corregirse.
+        if (declarados.length > 0) {
+          const noSembrados = declarados.filter(
+            (cap: number) => !sembradosEn.includes(cap)
+          );
+          if (noSembrados.length > 0) {
+            problemas.push({
+              area: "arco_secreto",
+              tipo: "setup_capitulos_decorativo",
+              severidad: "media",
+              capitulos: [num, ...noSembrados],
+              descripcion: `El capítulo ${num} declara "setup_capitulos: [${declarados.join(", ")}]" para "${hechoCorto}", pero los caps ${noSembrados.join(", ")} NO contienen tokens del hecho. La siembra real está en otros caps (${sembradosEn.join(", ") || "ninguno"}). El array es decorativo y debe sincronizarse con la realidad textual.`,
+              sugerencia: `Sustituye el array por los caps con siembra real (${sembradosEn.slice(0, minSiembra).join(", ")}) o añade tokens del hecho a los caps ${noSembrados.join(", ")} para que la declaración sea verdadera.`,
+            });
+          }
+        }
+        continue;
+      }
+
+      problemas.push({
+        area: "arco_secreto",
+        tipo:
+          dificultad === "alto"
+            ? "siembra_textual_insuficiente_alto"
+            : "siembra_textual_insuficiente_medio",
+        severidad: dificultad === "alto" ? "alta" : "media",
+        capitulos: [num],
+        descripcion: `El capítulo ${num} revela "${hechoCorto}" (dificultad: ${dificultad}) pero el auditor solo encuentra siembra textual real en ${siembraCount} cap(s) anterior(es)${sembradosEn.length ? ` (caps ${sembradosEn.join(", ")})` : ""}. Se exigen ≥${minSiembra} para que el lector haya construido el suspense. Declarar "setup_capitulos: [${declarados.join(", ")}]" no basta si esos caps no MENCIONAN el hecho.`,
+        sugerencia: `Antes del cap ${num}, siembra el hecho en al menos ${minSiembra} caps distintos con tokens concretos del hecho ("${tokens.slice(0, 5).join('", "')}"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite ${minSiembra} siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).`,
+      });
+    }
+  }
+
+  const coverage = totalRevAuditadas > 0 ? sembradas / totalRevAuditadas : 1;
+  return { problemas, coverage };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// (5) [Fix94] Falso aliado — patrón "Cifuentes era el topo desde cap 2".
+// Para cada personaje del world_bible con rol topo/traidor/falso_aliado/
+// antagonista_oculto/cómplice_oculto/infiltrado/doble_agente:
+//   (A) la revelación de su traición no puede ocurrir antes del 60% del
+//       total de caps (si ocurre antes, el lector lo ve venir y el giro
+//       pierde fuerza).
+//   (B) debe haber al menos 1 cap previo al reveal donde el personaje
+//       aparezca con "forma_dominante" en {introspeccion, pivote_relacional}
+//       o "categoria_info_nueva" == "vinculo_emocional" — la escena de
+//       duda/humanización que hace doler la traición.
+// ────────────────────────────────────────────────────────────────────
+const TRAITOR_ROLE_PATTERNS = [
+  "topo",
+  "traidor",
+  "traidora",
+  "traicion",
+  "falso aliado",
+  "falsa aliada",
+  "falso_aliado",
+  "antagonista oculto",
+  "antagonista_oculto",
+  "complice oculto",
+  "complice_oculto",
+  "infiltrado",
+  "infiltrada",
+  "doble agente",
+  "doble_agente",
+  "aliado trai",
+  "topo en",
+  "mole",
+];
+
+// Detección de reveal mediante PATRONES COPULARES/ACCIONALES que vinculan
+// EXPLÍCITAMENTE al personaje con la traición. Sustituye la lógica anterior
+// de proximidad + keyword suelta, que producía falsos positivos en frases
+// como "Cifuentes sospecha del topo en aduanas" (el personaje aparece junto
+// a "topo" pero NO se está revelando que él lo sea).
+//
+// Cada patrón asume que el nombre del traidor ya está normalizado (sin
+// tildes, minúsculas) y será sustituido en {NAME}. Marcadores de palabra
+// (\b) garantizan que "ana" no encaje en "anabel".
+const REVEAL_PATTERN_TEMPLATES: string[] = [
+  // "<nombre> es/era/fue/resulta(ba) ser/se revela/se descubre [el] topo/traidor/infiltrad*/complice/doble agente/mole"
+  "\\b{NAME}\\b[^.;]{0,40}\\b(es|era|fue|resulta\\s+ser|resultaba\\s+ser|se\\s+revela|se\\s+descubre|admite\\s+ser|confiesa\\s+ser|result[oó]\\s+ser)\\b[^.;]{0,40}\\b(el|la|un|una)?\\s*(topo|traidor|traidora|infiltrad[oa]|c[oó]mplice|doble\\s+agente|mole|falso\\s+aliado|falsa\\s+aliada)\\b",
+  // "<nombre> traiciona / traicionaba / traicionó / nos traiciona"
+  "\\b{NAME}\\b[^.;]{0,30}\\b(traiciona|traicionaba|traicion[oó]|ha\\s+traicionado|hab[ií]a\\s+traicionado)\\b",
+  // "<nombre> (trabaja|trabajaba|reporta|reportaba|filtra|filtraba|responde) (a|para) <X>"
+  "\\b{NAME}\\b[^.;]{0,30}\\b(trabaja|trabajaba|reporta|reportaba|filtra|filtraba|responde|respond[ií]a|sirve|serv[ií]a)\\b[^.;]{0,15}\\b(a|para|ante)\\b",
+  // "<nombre> está/estaba/lleva vendido/comprado/infiltrado"
+  "\\b{NAME}\\b[^.;]{0,25}\\b(est[aá]|estaba|lleva|llevaba)\\b[^.;]{0,20}\\b(vendid[oa]|comprad[oa]|infiltrad[oa])\\b",
+  // "<nombre> encubre/encubría / cubre/cubría / protege/protegía <X>"
+  "\\b{NAME}\\b[^.;]{0,25}\\b(encubre|encubr[ií]a|cubre|cubr[ií]a|protege|proteg[ií]a)\\b\\s+a\\b",
+  // Forma invertida: "el topo/traidor [...] es/era/resulta ser <nombre>"
+  "\\b(el|la|un|una)\\s+(topo|traidor|traidora|infiltrad[oa]|c[oó]mplice|doble\\s+agente|mole|falso\\s+aliado|falsa\\s+aliada)\\b[^.;]{0,40}\\b(es|era|fue|result[oó]\\s+ser|resulta\\s+ser|se\\s+revela\\s+como|se\\s+descubre\\s+como)\\b[^.;]{0,30}\\b{NAME}\\b",
+  // "confiesa/admite/revela que <nombre> es/era/trabaja/traiciona..."
+  "\\b(confiesa|confes[oó]|admite|admiti[oó]|revela|revel[oó]|descubre|descubri[oó])\\b[^.;]{0,30}\\bque\\b[^.;]{0,30}\\b{NAME}\\b",
+  // "doble juego / doble vida / doble cara / dos caras de <nombre>"
+  "\\b(doble\\s+(juego|vida|cara|moral)|dos\\s+caras)\\b[^.;]{0,30}\\b{NAME}\\b",
+  "\\b{NAME}\\b[^.;]{0,30}\\b(doble\\s+(juego|vida|cara|moral)|dos\\s+caras)\\b",
+];
+
+// Keywords aceptadas dentro de `hecho_revelado` (campo declarativo y corto
+// de revelaciones_dosificadas — el Arquitecto declara una sola idea). Aquí
+// SÍ es seguro usar la lista de palabras clave porque el campo no contiene
+// frases de sospecha sino la revelación misma.
+const HECHO_REVEAL_KEYWORDS = [
+  "traici",
+  "topo",
+  "infiltrad",
+  "doble juego",
+  "doble agente",
+  "doble vida",
+  "doble cara",
+  "trabaja para",
+  "trabajaba para",
+  "reporta a",
+  "reportaba a",
+  "vendid",
+  "comprad",
+  "encubr",
+  "filtra",
+  "es complice",
+  "era complice",
+  "es el topo",
+  "es un topo",
+  "es la topo",
+  "falso aliado",
+  "falsa aliada",
+];
+
+function buildRevealRegexes(nameTokens: string[]): RegExp[] {
+  // Construye un patrón de nombre = alternativa de los tokens del nombre real
+  // (cualquiera de ellos basta — apellido suele ser suficiente). Cada token
+  // queda anclado con \b en la plantilla.
+  if (nameTokens.length === 0) return [];
+  const namePat = "(?:" + nameTokens.map((t) => t.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")).join("|") + ")";
+  return REVEAL_PATTERN_TEMPLATES.map(
+    (tmpl) => new RegExp(tmpl.replace(/\{NAME\}/g, namePat), "i")
+  );
+}
+
+function auditFalsoAliado(
+  escaleta: any[],
+  worldBible: any
+): { problemas: StructuralAuditProblem[]; coverage: number } {
+  const { all, total } = getActSlices(escaleta);
+  const problemas: StructuralAuditProblem[] = [];
+  if (total === 0) return { problemas, coverage: 1 };
+
+  const personajes: any[] =
+    worldBible?.personajes || worldBible?.world_bible?.personajes || [];
+  const stripAccents = (s: string) =>
+    s
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+
+  const traidores = personajes
+    .map((p: any) => {
+      const rol = stripAccents(String(p.rol || p.role || ""));
+      const isTraitor = TRAITOR_ROLE_PATTERNS.some((pat) => rol.includes(pat));
+      if (!isTraitor) return null;
+      const nombre = String(p.nombre || p.name || "").trim();
+      if (!nombre) return null;
+      const normFull = stripAccents(nombre).replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+      const tokens = normFull.split(/\s+/).filter((t) => t.length >= 4);
+      return { nombre, rol, tokens };
+    })
+    .filter(Boolean) as { nombre: string; rol: string; tokens: string[] }[];
+
+  if (traidores.length === 0) return { problemas, coverage: 1 };
+
+  let auditados = 0;
+  let conformes = 0;
+
+  // Precompute normalized corpora per cap.
+  const corpusByCap: Record<number, string> = {};
+  for (const c of all) {
+    corpusByCap[capNum(c)] = stripAccents(capCorpus(c));
+  }
+
+  const minRevealRatio = 0.6;
+  const minRevealCap = Math.ceil(total * minRevealRatio);
+
+  for (const tr of traidores) {
+    auditados += 1;
+    // Detect reveal cap: usamos patrones copulares/accionales que ligan
+    // EXPLÍCITAMENTE al personaje con la traición (ver
+    // REVEAL_PATTERN_TEMPLATES). Reemplaza la heurística previa de
+    // proximidad keyword + nombre, que disparaba en "X sospecha del topo".
+    const revealRegexes = buildRevealRegexes(tr.tokens);
+    const corpusHasExplicitReveal = (corpus: string): boolean => {
+      if (!corpus) return false;
+      return revealRegexes.some((re) => re.test(corpus));
+    };
+    let revealCap: number | null = null;
+    for (const c of all) {
+      const corpus = corpusByCap[capNum(c)] || "";
+      const hasReveal = corpusHasExplicitReveal(corpus);
+      // Refuerzo: también miramos revelaciones_dosificadas explícitas
+      // (donde el "hecho_revelado" ya está acotado a una sola idea).
+      let revDosMatch = false;
+      const revs: any[] = Array.isArray(c.revelaciones_dosificadas)
+        ? c.revelaciones_dosificadas
+        : [];
+      for (const r of revs) {
+        const hecho = stripAccents(String(r?.hecho_revelado || ""));
+        const revealer = stripAccents(String(r?.personaje_revelador || ""));
+        const refersToTraitor =
+          tr.tokens.some((t) => hecho.includes(t) || revealer.includes(t));
+        if (refersToTraitor && HECHO_REVEAL_KEYWORDS.some((k) => hecho.includes(k))) {
+          revDosMatch = true;
+          break;
+        }
+      }
+      if (hasReveal || revDosMatch) {
+        revealCap = capNum(c);
+        break;
+      }
+    }
+
+    if (revealCap === null) {
+      // No detectamos reveal en la escaleta. Es posible que el Arquitecto no
+      // haya etiquetado el giro; pedimos cobertura explícita.
+      problemas.push({
+        area: "falso_aliado",
+        tipo: "reveal_no_declarado",
+        severidad: "media",
+        capitulos: [],
+        descripcion: `El personaje "${tr.nombre}" tiene rol "${tr.rol}" en el world_bible pero el auditor no encuentra ningún capítulo donde se revele su traición de forma explícita (ni en texto libre ni en "revelaciones_dosificadas"). El lector no recibe el giro.`,
+        sugerencia: `Identifica el capítulo donde "${tr.nombre}" se descubre como traidor y añade una entrada en "revelaciones_dosificadas" con hecho_revelado mencionando explícitamente al personaje y palabras clave del giro (traición, topo, infiltrado, doble juego, conspira). Coloca ese cap en el último 40% de la novela (cap ≥ ${minRevealCap} de ${total}) y dosifica la siembra de ambigüedad en caps previos.`,
+      });
+      continue;
+    }
+
+    // Rule A: reveal demasiado pronto.
+    if (revealCap < minRevealCap) {
+      problemas.push({
+        area: "falso_aliado",
+        tipo: "reveal_temprano",
+        severidad: "alta",
+        capitulos: [revealCap],
+        descripcion: `La traición de "${tr.nombre}" se revela en el cap ${revealCap} de ${total} (${Math.round((revealCap / total) * 100)}% de la novela). El umbral es ≥${Math.round(minRevealRatio * 100)}% (cap ${minRevealCap}). Patrón "Cifuentes obvio desde cap 2": el lector lo ve venir y el giro pierde fuerza.`,
+        sugerencia: `Retrasa la revelación de la traición de "${tr.nombre}" al menos al cap ${minRevealCap}. En los caps anteriores mantén la AMBIGÜEDAD: el personaje puede parecer hostil, presionar al protagonista o tomar decisiones cuestionables, pero el lector NO debe poder afirmar "este es el topo". Si quieres que el reveal sea más temprano por razones de trama, cambia su rol en el world_bible (no es "topo" sino "antagonista declarado") y elimina la ambigüedad.`,
+      });
+      continue;
+    }
+
+    // Rule B: humanización previa (al menos 1 cap antes con forma humanizante
+    // donde aparezca el personaje).
+    const priorCaps = all.filter((c: any) => {
+      const n = capNum(c);
+      return n > 0 && n < (revealCap as number);
+    });
+    const tienesHumanizacion = priorCaps.some((c: any) => {
+      const corpus = corpusByCap[capNum(c)] || "";
+      const mentionsName = tr.tokens.some((t) => corpus.includes(t));
+      if (!mentionsName) return false;
+      const forma = String(c.forma_dominante || "").toLowerCase();
+      const categoria = String(c.categoria_info_nueva || "").toLowerCase();
+      return (
+        forma === "introspeccion" ||
+        forma === "pivote_relacional" ||
+        categoria === "vinculo_emocional"
+      );
+    });
+    if (!tienesHumanizacion) {
+      problemas.push({
+        area: "falso_aliado",
+        tipo: "sin_humanizacion_previa",
+        severidad: "media",
+        capitulos: [revealCap],
+        descripcion: `La traición de "${tr.nombre}" se revela en el cap ${revealCap} pero ningún capítulo anterior contiene una escena de humanización del personaje (forma_dominante "introspeccion" o "pivote_relacional", o categoria_info_nueva "vinculo_emocional" con "${tr.nombre}" en escena). El giro funciona pero NO DUELE: el lector no había construido vínculo con el traidor.`,
+        sugerencia: `Antes del cap ${revealCap}, añade al menos 1 capítulo donde "${tr.nombre}" tenga una escena que lo humanice: un momento a solas en su despacho mirando fotos, una llamada con tono cansado a un familiar, una conversación con el protagonista donde muestre algo personal (un miedo, un recuerdo, una preocupación que parezca sincera). Marca ese cap con forma_dominante "pivote_relacional" o "introspeccion" y categoria_info_nueva "vinculo_emocional". Anti patrón Cifuentes: "se derrumba solo al final lo hace menos trágico y previsible".`,
+      });
+      continue;
+    }
+
+    conformes += 1;
+  }
+
+  const coverage = auditados > 0 ? conformes / auditados : 1;
+  return { problemas, coverage };
+}
+
+// ────────────────────────────────────────────────────────────────────
 // Helpers de instrucciones agrupadas (≤700 palabras).
 // ────────────────────────────────────────────────────────────────────
 function buildInstructions(problemas: StructuralAuditProblem[]): string {
@@ -504,6 +902,8 @@ function buildInstructions(problemas: StructuralAuditProblem[]): string {
   renderArea("1) VARIEDAD DE FORMA DE ESCENA", byArea["forma_escena"]);
   renderArea("2) LEDGER DE INFORMACIÓN NUEVA", byArea["ledger_info"]);
   renderArea("3) DOSIFICACIÓN DE REVELACIONES", byArea["dosificacion_revelacion"]);
+  renderArea("4) ARCO COMPLETO DEL SECRETO (siembra textual ≥3 caps)", byArea["arco_secreto"]);
+  renderArea("5) FALSO ALIADO (reveal tardío + humanización previa)", byArea["falso_aliado"]);
 
   lines.push("REGLA ANTI-RECURRENCIA: en la próxima generación, declara y respeta ESTOS tres campos por capítulo:");
   lines.push(
@@ -529,8 +929,16 @@ export function runArchitectStructuralAudits(
   const forma = auditFormaEscena(escaleta);
   const ledger = auditLedgerInfo(escaleta);
   const dos = auditDosificacion(escaleta, worldBible);
+  const arco = auditArcoSecreto(escaleta);
+  const fa = auditFalsoAliado(escaleta, worldBible);
 
-  const problemas = [...forma.problemas, ...ledger.problemas, ...dos.problemas];
+  const problemas = [
+    ...forma.problemas,
+    ...ledger.problemas,
+    ...dos.problemas,
+    ...arco.problemas,
+    ...fa.problemas,
+  ];
   const altas = problemas.filter((p) => p.severidad === "alta").length;
   const medias = problemas.filter((p) => p.severidad === "media").length;
 
@@ -541,7 +949,7 @@ export function runArchitectStructuralAudits(
   else if (altas <= 1 && medias <= 3) veredicto = "necesita_revision";
   else veredicto = "reescribir";
 
-  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}%.`;
+  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}; Arco secreto: ${arco.problemas.length}; Falso aliado: ${fa.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}% arco=${Math.round(arco.coverage * 100)}% aliado=${Math.round(fa.coverage * 100)}%.`;
 
   return {
     puntuacion_global: Math.round(score * 10) / 10,
@@ -551,6 +959,8 @@ export function runArchitectStructuralAudits(
       forma_dominante_pct: Math.round(forma.coverage * 100) / 100,
       categoria_info_pct: Math.round(ledger.coverage * 100) / 100,
       revelaciones_dosificadas_pct: Math.round(dos.coverage * 100) / 100,
+      arco_secreto_pct: Math.round(arco.coverage * 100) / 100,
+      falso_aliado_pct: Math.round(fa.coverage * 100) / 100,
     },
     resumen,
     instrucciones_revision: problemas.length > 0 ? buildInstructions(problemas) : "",

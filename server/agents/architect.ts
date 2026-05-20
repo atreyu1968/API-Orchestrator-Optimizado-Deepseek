@@ -504,6 +504,46 @@ color. RESTRICCIONES INVIOLABLES:
     NO le compromete; segunda escena suelta UN dato comprometedor bajo presión
     específica; tercera escena suelta el resto bajo amenaza nueva o ya derrotado.
 
+REGLA S [Fix93] (ARCO COMPLETO DEL SECRETO — siembra textual real ≥3 caps):
+"setup_capitulos: [n, n]" NO basta como declaración formal. El auditor abre
+los capítulos previos listados y comprueba que efectivamente MENCIONAN el
+hecho con tokens concretos. Toda revelación con dificultad "alto" debe estar
+sembrada con presencia textual en ≥3 capítulos anteriores distintos; las de
+dificultad "medio" en ≥2. Cada siembra puede tomar tres formas:
+  (i)  pista parcial en "informacion_nueva" del cap previo (algo que apunta
+       al hecho sin completarlo — un nombre suelto, un detalle aparentemente
+       trivial, un objeto que cobrará sentido).
+  (ii) detalle del personaje implicado en el "objetivo_narrativo" del cap
+       previo que retroactivamente apunte al secreto.
+  (iii) evento en "eventos_pivotales" del cap previo relacionado con el
+       lugar, fecha u objeto del hecho.
+Anti-patrón prohibido: declarar "setup_capitulos: [7, 12, 18]" cuando los
+caps 7, 12 y 18 no contienen NINGUNA referencia al hecho revelado. Si el
+material no admite ≥3 siembras textuales reales, baja la dificultad a "bajo"
+(es un detalle de color, no un giro) o elimina la revelación.
+
+REGLA T [Fix94] (FALSO ALIADO — reveal tardío + humanización previa):
+Para cada personaje del world_bible cuyo "rol" contenga "topo", "traidor",
+"falso_aliado", "antagonista_oculto", "complice_oculto", "infiltrado" o
+"doble_agente":
+  (A) La revelación de su traición debe ocurrir en el último 40% de la
+      novela (cap ≥ 60% del total). Si el personaje se descubre como topo en
+      el acto 1 o primera mitad del acto 2, el lector lo ve venir y el giro
+      pierde fuerza — patrón explícito "Cifuentes obvio desde cap 2".
+  (B) Antes del capítulo de reveal debe haber AL MENOS UN capítulo con
+      "forma_dominante" = "introspeccion" o "pivote_relacional", o
+      "categoria_info_nueva" = "vinculo_emocional", donde el personaje
+      aparezca en escena y se humanice: un momento a solas mirando fotos
+      viejas, una llamada cansada a su mujer/hijo, una conversación con el
+      protagonista donde muestre un miedo o un recuerdo aparentemente
+      sincero. Sin esto el giro funciona en lo formal pero NO DUELE — el
+      lector no había construido vínculo con el traidor y la traición es
+      solo funcional, no trágica.
+Si no quieres seguir estas restricciones, cambia el rol del personaje en el
+world_bible a "antagonista declarado" (sin ocultación) y elimina la
+ambigüedad: el lector sabrá desde el inicio que es enemigo y no esperará un
+giro.
+
 ═══════════════════════════════════════════════════════════════════
 ⛔ ANTI-DEUS-EX-MACHINA Y ANTI-SOLUCIONES FÁCILES (REGLA CRÍTICA) ⛔
 ═══════════════════════════════════════════════════════════════════
@@ -635,6 +675,8 @@ C. RITMO ACTO 3: distribuye "eventos_pivotales" sin que el acto 3 acumule >50% d
 9. [Fix92-L] Recorre el acto 2/3 buscando pares de caps consecutivos con "informacion_nueva" vacía, < 40 caracteres o con frases de relleno ("ninguna", "sin novedades", "no obtiene nada", "callejón sin salida"). Si encuentras un par, reescribe al menos uno con una pieza concreta que el lector pueda anotar mentalmente.
 10. [Fix92-L] Recorre el acto 2 con ventana de 4 caps: si alguna "categoria_info_nueva" supera 2 apariciones en una ventana, diversifica (alterna testigo / evidencia_fisica / vinculo_emocional / revelacion_personal / pista_falsa). "ninguna" nunca puede aparecer 2 caps seguidos.
 11. [Fix92-D] Recorre cada "revelaciones_dosificadas" del proyecto: verifica que NINGUNA revelación con dificultad "alto" tiene modo_extraccion "sin_resistencia" y verifica que TODAS tienen al menos 1 cap en "setup_capitulos". Verifica que ningún cap acumula ≥3 revelaciones de dificultad "alto". Verifica que ningún personaje antagonista/cómplice revela ≥3 hechos en un único cap.
+12. [Fix93-S] Para cada revelación de dificultad "alto", abre TÚ MISMO los caps listados en "setup_capitulos" y comprueba que su "informacion_nueva", "objetivo_narrativo" o "eventos_pivotales" MENCIONAN tokens concretos del "hecho_revelado" (no basta con declarar el array — debe haber texto real). Exigencia: ≥3 caps con siembra textual real para dificultad "alto", ≥2 para "medio". Si no se cumple, añade las siembras o baja la dificultad.
+13. [Fix94-T] Para cada personaje del world_bible cuyo "rol" contenga topo / traidor / falso_aliado / antagonista_oculto / complice_oculto / infiltrado / doble_agente: localiza el cap de revelación de su traición y comprueba (A) que ocurre en el último 40% de la novela (cap ≥ 60% del total) y (B) que existe al menos UN cap anterior con "forma_dominante" = "introspeccion" o "pivote_relacional" o "categoria_info_nueva" = "vinculo_emocional" donde el personaje aparezca en escena humanizado (foto familiar, llamada cansada, miedo aparentemente sincero, conflicto íntimo). Si no, mueve el reveal o inserta la escena de humanización antes de devolver el JSON.
 Si algo falla, REGENERA antes de responder. Esto es lo más importante.
 
 Responde ÚNICAMENTE con el JSON.
