@@ -234,6 +234,65 @@ A3) BLACKLIST - MULETILLAS FISIOLÓGICAS (PROHIBIDAS — señal inequívoca de e
    Si necesitas mostrar miedo: ACCIÓN (tropieza, deja caer algo, no puede girar la llave, tartamudea).
    Si necesitas mostrar tensión: DIÁLOGO cortante o PENSAMIENTO fragmentado ("No. No puede ser.").
 
+A4) FRASES HECHAS DE ESTATISMO / SILENCIO / TIEMPO SUSPENDIDO (CRÍTICO — el beta lector detecta esto de inmediato):
+   No te doy una blacklist cerrada porque hay infinitas variantes. Lo que te
+   doy son CRITERIOS DE DETECCIÓN para que tú mismo evites cualquier fórmula
+   prefabricada de esta familia antes de escribirla.
+
+   AUTOCHEQUEO mientras escribes — si una frase cumple ≥2 de estos criterios,
+   reescríbela ANTES de incluirla:
+   (a) Si al leer las primeras 3 palabras un lector experto puede completar
+       las siguientes 3 sin haber leído tu novela ("figura de... cera", "el
+       silencio se hizo... denso", "como si el tiempo... se hubiera detenido"),
+       es frase hecha.
+   (b) Si describes un estado abstracto (silencio, tensión, calma, frío metafórico)
+       PERSONIFICÁNDOLO ("creció", "cayó", "se instaló", "se hizo denso", "se podía
+       cortar"), estás usando una fórmula prefabricada — el silencio no actúa, lo
+       que pasa es que se OYE otra cosa o que un personaje deja de moverse.
+   (c) Si describes inmovilidad o inexpresividad con una COMPARACIÓN GENÉRICA
+       ("como una estatua", "como una figura de cera", "como un autómata",
+       "como un robot", "rostro de piedra"), el símil no añade información.
+   (d) Si la imagen no aporta ÁNGULO, COLOR, PESO, SONIDO específico, TEMPERATURA
+       o NÚMERO contables, es etiqueta abstracta y no observación concreta.
+
+   FAMILIAS SEMILLA (ejemplos típicos — la regla cubre cualquier variante de
+   estas familias, no solo las palabras exactas):
+   • Estatismo metafórico: figura/rostro/máscara de cera, estatua de sal/piedra,
+     petrificado como metáfora, "una sombra de sí mismo", como un maniquí,
+     como un autómata/robot/mecánicamente.
+   • Silencio personificado: el silencio "creció/cayó/pesó/se instaló/se hizo
+     denso/espeso/opresivo/sepulcral/ensordecedor/cortante", "silencio de plomo".
+   • Tiempo suspendido: "como si el tiempo se hubiera detenido", "el tiempo se
+     detuvo", "los segundos parecieron eternidades", "una eternidad" como medida.
+   • Atmósfera cortable: "el aire se podía cortar con un cuchillo", "una tensión
+     palpable", "una calma tensa", "la calma que precede a la tormenta".
+   • Rostro inexpresivo: rostro/facciones impasible(s), cara de piedra, mirada/
+     sonrisa/mueca "que no le llegó a los ojos", ojos vidriosos/sin brillo,
+     mirada perdida en el vacío/infinito.
+   • Frío fisiológico metafórico: "se le heló la sangre", "la sangre se le
+     congeló en las venas", "un frío glacial le recorrió" cuando no hay frío real.
+
+   REESCRITURA OPERATIVA (escoge la herramienta según la FUNCIÓN, no según la
+   palabra; los ejemplos son ilustrativos, debes adaptarlos al pasaje concreto):
+   - Inmovilidad → MICRO-ACCIÓN MANTENIDA + el primer micro-gesto que la rompe.
+     Ej: "los dedos doblados sobre la rodilla; tardó dos respiraciones en
+     levantarse del sofá".
+   - Silencio → UN SONIDO RESIDUAL específico de ese espacio. Ej: "solo se oía
+     el zumbido del fluorescente", "el chasquido del ascensor tres plantas más
+     abajo", "el goteo del grifo del piso de arriba".
+   - Tiempo lento → ACCIÓN CONTABLE (tres respiraciones, dos timbres, el ascensor
+     llegando a la planta) o el detalle que el personaje elige observar.
+   - Inexpresividad → UN GESTO MICRO concreto (un músculo de la mandíbula, un
+     parpadeo lento, una ceja que sube y vuelve).
+   - Shock corporal → ACCIÓN INVOLUNTARIA (suelta el vaso, se sienta sin
+     decidirlo, la mano se queda en el aire, no termina la frase).
+   - Tensión atmosférica → un detalle físico que TRAICIONA tensión en alguien
+     (dedos blancos sobre la taza, alguien dobla una servilleta dos veces).
+
+   La alternativa debe ser ESPECÍFICA al pasaje (usar mobiliario, objetos,
+   sonidos que ya están en la escena), no genérica. NUNCA personifiques lo
+   abstracto. NUNCA uses una comparación genérica para describir un estado.
+
 A2) BLACKLIST LÉXICA - CLICHÉS DE IA (EVITAR):
    - "crucial" → usa: "determinante", "vital", "decisivo"
    - "enigmático/a" → usa: "misterioso", "indescifrable", "oscuro"
@@ -274,6 +333,31 @@ D) INFORMACIÓN NO REPETIDA:
    - Si ya estableciste un hecho, NO lo repitas
    - El lector recuerda, no necesita que le repitan
    - Cada oración debe añadir información NUEVA
+
+F) ANTI-NEGACIÓN COMO MOTOR DE ACCIÓN (CRÍTICO — la prosa plana se delata aquí):
+   En escenas de ACCIÓN, PERSECUCIÓN, PELEA, EMERGENCIA o CONFRONTACIÓN FÍSICA,
+   PROHIBIDO construir el motor narrativo con verbos negados. Las negaciones
+   ralentizan el ritmo y abstraen la acción: el lector procesa "no consiguió X"
+   más lento que la afirmación física equivalente, y la imagen mental queda
+   en blanco (la negación no se visualiza).
+   PROHIBIDO en escenas de acción:
+   - "no pudo / no podía / no consiguió / no logró / no alcanzó / no acertó / no llegó a"
+   - "no se movió / no respondió / no reaccionó / no se atrevió"
+   - "no era capaz de / no fue capaz de / fue incapaz de"
+   - "ya no podía más / ya no aguantaba"
+   - "sin poder / sin lograr / sin conseguir"
+   REESCRIBE en afirmaciones físicas concretas:
+   - "no pudo abrir la puerta" → "la puerta resistió", "la cerradura giró en falso", "la madera no cedió a la patada"
+   - "no consiguió alcanzar la pistola" → "los dedos rozaron la culata y se cerraron sobre nada", "la pistola resbaló dos palmos más allá"
+   - "no podía respirar" → "el aire le quemaba al entrar", "la garganta se cerró", "el pecho subió en seco"
+   - "no se atrevió a mirar atrás" → "fijó la vista al frente", "los ojos se mantuvieron en el extremo del pasillo"
+   - "no oía nada salvo su corazón" → "solo oía su corazón"
+   - "no consiguió escapar" → "el segundo brazo lo atrapó por la chaqueta"
+   REGLA OPERATIVA: en cualquier párrafo cuyo verbo principal describa una acción
+   física en curso, el ratio de negaciones por encima del 20% del total de verbos
+   es señal de prosa plana. Reescribe afirmativo. En escenas reflexivas o de
+   diálogo la negación SÍ es válida y útil (especialmente en pensamiento
+   fragmentado: "No. No puede ser.").
 
 E) ANTI-REITERACIÓN ATMOSFÉRICA Y SENSORIAL (CRÍTICO):
    - NO describas el mismo ambiente/atmósfera más de una vez por escena

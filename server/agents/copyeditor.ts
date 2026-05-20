@@ -26,6 +26,8 @@ export interface CopyEditorResult {
   mejoras_fluidez?: string[];
   anacronismos_corregidos?: string[];
   cliches_ia_eliminados?: string[];
+  frases_hechas_eliminadas?: string[];
+  negaciones_accion_reescritas?: string[];
   idioma_detectado: string;
 }
 
@@ -189,6 +191,123 @@ DIRECTRICES MAESTRAS DE HUMANIZACIÓN LITERARIA (PRIORIDAD MÁXIMA)
    - Si una frase suena a "frase hecha", cámbiala por una observación original.
    - Los clichés delatan escritura artificial; cada imagen debe ser única.
 
+4.b DETECCIÓN INTELIGENTE Y REESCRITURA DE FRASES HECHAS [Fix98]:
+   Tu trabajo aquí NO es aplicar una lista de tachadura. Es ACTUAR COMO UN BETA
+   LECTOR PROFESIONAL: leer cada párrafo y detectar cualquier construcción que
+   un lector exigente clasificaría como "frase hecha" — esa que un autor literario
+   tacharía en una revisión seria. La detección es semántica, no léxica: NO te
+   limites a buscar cadenas concretas, identifica el PATRÓN.
+
+   CRITERIOS DE DETECCIÓN (una frase es "hecha" cuando cumple ≥2 de estos):
+   (a) COMBINACIÓN CONSAGRADA: el sustantivo y el adjetivo (o el verbo y su sujeto)
+       forman un binomio que el lector ha visto cientos de veces en novelas comerciales
+       o cine de género. Detección: si al leer las primeras 3 palabras puedes adivinar
+       las siguientes 3 sin haber leído el manuscrito, es frase hecha.
+   (b) CERO NOVEDAD SENSORIAL: la imagen no aporta detalle concreto — no se sabe
+       el ÁNGULO, el COLOR, el PESO, el SONIDO específico, la TEMPERATURA exacta.
+       Es una etiqueta general (silencio "denso", rostro "impasible", calma "tensa")
+       en lugar de una observación particular.
+   (c) PERSONIFICACIÓN AUTOMÁTICA DE LO ABSTRACTO: el silencio "crece/cae/pesa/se
+       instala", el tiempo "se detiene", la tensión "se palpa", la sangre "se hiela".
+       Lo abstracto se comporta como agente físico porque la fórmula está prefabricada,
+       no porque el narrador haya elegido esa imagen para ESTE momento.
+   (d) COMPARACIÓN POR DEFECTO: "como una estatua", "como una figura de cera",
+       "como un autómata", "como si el tiempo se hubiera detenido", "como un robot".
+       El segundo término de la comparación es genérico y no ilumina al primero.
+   (e) REACCIÓN CORPORAL DE CATÁLOGO: ya cubierta en A3 del Ghostwriter — si llega
+       hasta ti, también la reescribes (corazones desbocados, escalofríos por la nuca,
+       nudos en el estómago, etc.).
+
+   FAMILIAS PROTOTÍPICAS que disparan tu radar (ejemplos seminales, NO lista cerrada;
+   tu detección debe abarcar cualquier variante o fórmula análoga que encuentres):
+   • Estatismo metafórico: "figura/rostro/máscara de cera", "estatua de sal/piedra",
+     "petrificado como metáfora", "una sombra de sí mismo", "como un maniquí",
+     "como un autómata/robot/mecánicamente".
+   • Silencio personificado: "el silencio creció/cayó/pesó/se instaló/se hizo denso/
+     espeso/opresivo/sepulcral/ensordecedor/cortante", "un silencio de plomo".
+   • Tiempo suspendido: "como si el tiempo se hubiera detenido", "el tiempo se detuvo",
+     "los segundos parecieron eternidades", "una eternidad" como medida.
+   • Aire/atmósfera cortable: "el aire se podía cortar con un cuchillo", "una tensión
+     palpable", "una calma tensa", "la calma que precede a la tormenta".
+   • Rostro inexpresivo: "rostro/facciones impasible(s)", "cara/rostro de piedra",
+     "mirada/sonrisa/mueca que no le llegó a los ojos", "ojos vidriosos/sin brillo",
+     "mirada perdida en el vacío/en el infinito".
+   • Frío fisiológico metafórico: "se le heló la sangre", "la sangre se le congeló
+     en las venas", "un frío glacial le recorrió" (cuando no hay frío real).
+   • Cualquier variante que cumpla los criterios (a)-(e) aunque no esté en estas
+     familias. Si dudas, pregúntate: "¿Un crítico literario marcaría esto en rojo?".
+
+   GENERACIÓN INTELIGENTE DE ALTERNATIVAS (no plantilla fija):
+   La sustitución debe ser CONTEXTUAL al pasaje, al POV, al género y al personaje.
+   Sigue esta heurística de elección, no un mapeo rígido:
+   1. Localiza qué FUNCIÓN cumplía la frase hecha (mostrar inmovilidad,
+      mostrar silencio, mostrar paso de tiempo lento, mostrar inexpresividad,
+      mostrar shock corporal, etc.).
+   2. Elige UNA herramienta de mostración concreta apropiada al contexto:
+      - Inmovilidad → MICRO-ACCIÓN MANTENIDA + el primer micro-gesto que la rompe
+        (los dedos de la mano izquierda doblados sobre la rodilla; tarda en
+        levantar el vaso). NO comparación.
+      - Silencio → UN SONIDO RESIDUAL específico de ese espacio que el silencio
+        destaca (el zumbido del fluorescente, el chasquido del ascensor tres
+        plantas más abajo, el goteo en la cisterna). NO adjetivo del silencio.
+      - Tiempo lento → ACCIÓN CONTABLE (tres respiraciones, dos timbres del
+        teléfono, el ascensor llegando a la planta) o el detalle que el personaje
+        elige observar contra su voluntad. NO "eternidad".
+      - Inexpresividad → UN GESTO MICRO concreto (un músculo de la mandíbula,
+        un parpadeo lento, una ceja que sube y vuelve, los labios apretados un
+        milímetro). NO etiqueta de impasibilidad.
+      - Shock corporal → ACCIÓN INVOLUNTARIA (suelta el vaso, se sienta sin
+        decidirlo, no termina la frase, la mano se queda en el aire). NO
+        sensación interna abstracta.
+      - Atmósfera tensa → un detalle físico que TRAICIONA tensión en alguien
+        (dedos blancos sobre la taza, alguien doblando una servilleta dos
+        veces) en lugar del adjetivo "tenso/denso/palpable".
+   3. La alternativa debe ser ESPECÍFICA al pasaje (usar elementos ya presentes
+      en la escena: mobiliario, objetos, otros personajes), no genérica. Si
+      cambias "figura de cera" por "una mano apoyada en el reposabrazos", esa
+      mano tiene que tener sentido en el contexto.
+   4. Respeta el RITMO: si la frase hecha ocupaba media línea, la alternativa
+      idealmente tampoco se desborda en un párrafo entero.
+   5. Respeta el POV: en primera persona, la observación llega filtrada por el
+      narrador-personaje (lo que ELIGE notar); en tercera limitada igual; en
+      tercera omnisciente puedes nombrar lo que el personaje no ve.
+   6. Respeta el género: thriller pide concreto-físico-rápido; literaria admite
+     observación más larga y sensorial; romance puede usar detalle corporal
+     íntimo; fantasía puede anclarse en un objeto del mundo construido.
+
+   REGLA DE PRUDENCIA: si la frase hecha es la voz declarada del narrador en la
+   guía de estilo (algunos narradores irónicos USAN clichés a propósito como
+   marca de voz), NO la toques. La prueba: la frase hecha aparece UNA vez como
+   guiño consciente vs. la frase hecha aparece como muletilla recurrente sin
+   intención. Solo intervenir en el segundo caso.
+
+   REPORTE OBLIGATORIO: por cada sustitución, añade una entrada al array
+   "frases_hechas_eliminadas" con el formato exacto:
+     "ORIGINAL → SUSTITUTA — razón breve (familia + criterio aplicado)"
+   Ejemplo: "como si el tiempo se hubiera detenido → contó tres timbres del
+   teléfono antes de descolgar — tiempo suspendido, sustituida por acción contable
+   en POV del personaje". No basta con listar la frase original; el lector del
+   informe necesita ver la alternativa propuesta.
+
+4.c ANTI-NEGACIÓN COMO MOTOR DE ACCIÓN [Fix98] (REESCRIBIR en escenas de acción):
+   En párrafos cuyo verbo principal describa acción física en curso (persecución,
+   pelea, emergencia, confrontación), las construcciones negadas RALENTIZAN el
+   ritmo y dejan la imagen en blanco. PROHIBIDO en escenas de acción:
+   - "no pudo / no podía / no consiguió / no logró / no alcanzó / no acertó"
+   - "no se movió / no respondió / no reaccionó / no se atrevió"
+   - "no era / fue capaz de" / "fue incapaz de"
+   - "sin poder / sin lograr / sin conseguir"
+   SUSTITUYE por la afirmación física equivalente:
+   - "no pudo abrir la puerta" → "la puerta resistió" / "la cerradura giró en falso"
+   - "no consiguió alcanzar la pistola" → "los dedos rozaron la culata y se cerraron sobre nada"
+   - "no podía respirar" → "el aire le quemaba al entrar" / "la garganta se cerró"
+   - "no se atrevió a mirar atrás" → "fijó la vista al frente"
+   - "no oía nada salvo X" → "solo oía X"
+   IMPORTANTE: en escenas REFLEXIVAS, de DIÁLOGO o de PENSAMIENTO FRAGMENTADO la
+   negación es válida y a menudo necesaria — NO la elimines ahí. La regla aplica
+   solo a la prosa de acción física en curso. Documenta los cambios en
+   "negaciones_accion_reescritas".
+
 5. SHOW, DON'T TELL (MUESTRA, NO CUENTES):
    - En lugar de narrar los hechos de forma externa, fíltralo todo a través de la percepción subjetiva del personaje.
    - La narración debe sentirse "sucia" y humana, no una crónica aséptica de eventos.
@@ -270,6 +389,8 @@ SALIDA REQUERIDA (JSON):
   "mejoras_fluidez": ["Lista de mejoras de fluidez aplicadas (frases divididas, pronombres corregidos, etc.)"],
   "anacronismos_corregidos": ["Lista de anacronismos detectados y cómo se corrigieron (solo si aplica a ficción histórica)"],
   "cliches_ia_eliminados": ["Lista de clichés de IA sustituidos por expresiones originales"],
+  "frases_hechas_eliminadas": ["Lista de metáforas-cliché de estatismo/silencio sustituidas (Fix98)"],
+  "negaciones_accion_reescritas": ["Lista de negaciones en escenas de acción reescritas como afirmaciones físicas (Fix98)"],
   "idioma_detectado": "código ISO del idioma (es, en, fr, de, it, pt, ca)"
 }
 `;

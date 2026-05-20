@@ -1,0 +1,29 @@
+Capítulo: Capítulo 18: El cerco se cierra
+
+TEXTO ORIGINAL A SUSTITUIR (LITERAL):
+"El reloj de comisaría marcaba las siete y veinticinco cuando Zubiri cruzó la puerta. La sala estaba llena: mesas ocupadas, teléfonos sonando, el olor a café rancio y papel húmedo flotando en el aire. Nadie levantó la cabeza. Nadie dijo buenos días. Caminó hacia su mesa, la tercera de la fila izquierda, y sintió cómo las conversaciones se reanudaban a su espalda, más bajas, como si esperaran a que pasara para seguir hablando."
+
+TEXTO DE SUSTITUCIÓN (EXCELENCIA):
+"El reloj de la brigada marcaba las siete y veinticinco cuando Zubiri atravesó el umbral. La sala era un fresco costumbrista del desprecio: teléfonos chillando, la pátina de sudor frío y café quemado barnizando el aire. Ni una mirada. Ni un saludo. Avanzó hacia su mesa, la tercera de la izquierda, sintiendo cómo el silencio se abría a su paso y volvía a cerrarse a su espalda, un repinte denso de murmullos y medias voces. Lo habían borrado del lienzo policial; ya solo era un espectro entre el disolvente."
+
+OBJETIVO TÉCNICO: Refuerzo de atmósfera y eliminación de descripciones genéricas. Sustituimos un inventario aburrido por metáforas de restauración ("fresco costumbrista", "barnizando el aire", "repinte denso", "borrado del lienzo"), mostrando el ostracismo de Zubiri no como un simple desplante, sino como una erradicación sistemática de su existencia en la comisaría.
+
+Capítulo: Capítulo 19: Accidente en el cruce
+
+TEXTO ORIGINAL A SUSTITUIR (LITERAL):
+"La rodilla le crujió al sentarse en el bordillo. El hombro, donde el cinturón lo había marcado, le escocía como una quemadura. Pero no sentía nada de eso. Sentía otra cosa: una claridad fría, despiadada, que le recorría cada nervio como un cable eléctrico."
+
+TEXTO DE SUSTITUCIÓN (EXCELENCIA):
+"La rótula astilló el silencio al dejarse caer sobre el bordillo. La fricción del cinturón le había tatuado una franja de carne viva en el hombro, la firma al rojo vivo de una muerte esquivada por milímetros. Pero el dolor era un eco lejano. En su lugar, el impacto acababa de raspar la última capa de barniz ciego que nublaba su mente. Lo que quedó al descubierto fue un mural nítido y descarnado: el engranaje de su propio asesinato, dibujado con trazos perfectos de acero abollado y sangre."
+
+OBJETIVO TÉCNICO: Sensorialidad y Show, Don't Tell. Erradicar el cliché imperdonable de "como un cable eléctrico" y "claridad fría". Transformamos el shock postraumático en una revelación táctil y visual, donde el choque físico actúa como una espátula de restaurador que arranca las dudas para dejar a la vista la verdad de la conspiración.
+
+Capítulo: Capítulo 22: La última advertencia
+
+TEXTO ORIGINAL A SUSTITUIR (LITERAL):
+"Basarte dio media vuelta y caminó hacia la puerta. Sus pasos resonaron en las baldosas hidráulicas, cada vez más lejanos. La mano encontró el picaporte, lo giró. La puerta se abrió, dejando entrar una bocanada de aire frío y el rumor de la calle mojada."
+
+TEXTO DE SUSTITUCIÓN (EXCELENCIA):
+"Basarte le dio la espalda. La fricción de sus suelas contra la baldosa hidráulica sonó a tela rasgándose; el sonido de una lealtad de veinte años desmoronándose bajo el peso del miedo. Su mano aferró el latón del picaporte y lo forzó. La puerta cedió, vomitando sobre Zubiri el aliento gélido del asfalto y el murmullo de un Bilbao que, igual que su viejo compañero, acababa de dejarle completamente solo."
+
+OBJETIVO TÉCNICO: Estructura comercial (Gancho emocional) y eliminación de frases muertas. La despedida de Basarte es el golpe de gracia emocional para Zubiri. El texto original es meramente escénico (camina, gira, abre). La reescritura convierte cada sonido ("tela rasgándose") y el aire que entra en un espejo de su desamparo absoluto, cerrando el capítulo con una sensación de asfixia que obliga al lector a continuar para ver cómo sobrevive en soledad.
