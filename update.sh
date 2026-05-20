@@ -11,7 +11,22 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-echo "=== Actualizando LitAgents ==="
+if ! command -v apt-get &> /dev/null; then
+    echo "[ERROR] apt-get no encontrado. Este updater requiere un sistema basado en Debian/Ubuntu."
+    exit 1
+fi
+
+if [ ! -d "$APP_DIR" ]; then
+    echo "[ERROR] $APP_DIR no existe. Ejecuta primero install.sh."
+    exit 1
+fi
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "[ERROR] $CONFIG_FILE no existe. Configuracion ausente — ejecuta install.sh."
+    exit 1
+fi
+
+echo "=== Actualizando LitAgents v9.1 ==="
 
 cd "$APP_DIR"
 
@@ -149,6 +164,14 @@ ALTER TABLE projects        ADD COLUMN IF NOT EXISTS final_score_at         TIME
 -- [Fix90] Rango opcional min/max de capítulos (NULL = modo exacto clásico)
 ALTER TABLE projects        ADD COLUMN IF NOT EXISTS min_chapter_count INTEGER;
 ALTER TABLE projects        ADD COLUMN IF NOT EXISTS max_chapter_count INTEGER;
+-- [Fix38/Fix91] Notas íntegras del último Lector Beta + timestamp
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS last_beta_notes        TEXT;
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS last_beta_notes_at     TIMESTAMP;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS last_beta_notes        TEXT;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS last_beta_notes_at     TIMESTAMP;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS last_holistic_notes    TEXT;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS last_holistic_notes_at TIMESTAMP;
+ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS final_score_at         TIMESTAMP;
 SQL
 
 echo "   Ejecutando db:push como superusuario postgres..."

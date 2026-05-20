@@ -1,16 +1,18 @@
-# LitAgents v7.8 — Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v9.1 — Sistema de Orquestacion de Agentes Literarios IA
 
-Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando **DeepSeek V4** como unico backend de IA.
+Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando **DeepSeek V4-Flash** como unico backend de IA.
 
 **PWA instalable** — se puede instalar en escritorio y movil directamente desde el navegador.
 
-## Cambios recientes
+**Instalacion soportada**: Ubuntu 22.04 LTS y 24.04 LTS (tambien Debian 12+). Ver seccion [Instalacion Rapida](#instalacion-rapida).
 
-- **v7.8 — Critica humana sobre el manuscrito reeditado ([Fix35])**: Endpoint `POST /api/reedit-projects/:id/parse-editorial-notes` + UI con `Textarea` en la pestana Auditorias del reedit. Tu opinion en texto libre se parsea con el mismo util que el Holistico+Beta y entra al flujo de aplicacion via `SurgicalPatcher`. Fusiona con instrucciones pendientes preservandolas.
-- **v7.7 — Holistico gate + Beta mid-novela ([Fix29+30])**: Holistico se ejecuta UNA vez antes del primer ciclo del Final Reviewer (gate). Beta-Reader se dispara a 2/3 de capitulos y su critica se inyecta en los Ghostwriters restantes como `editorialCritique`.
-- **v7.6 — Holistico+Beta del reedit con human-in-the-loop ([Fix34])**, **logs descargables ([Fix33])**, **auditor de cierre de tramas ([Fix32])**.
+## Cambios recientes (v9.1)
 
-> Historial completo de fixes anteriores en `CHANGELOG.md`.
+- **[Fix92] Auditor estructural del Arquitecto (forma de escena + ledger de informacion + dosificacion de revelaciones)**: nuevo modulo determinista (`server/agents/scene-shape-auditor.ts`) que examina la escaleta antes de generar el primer capitulo en tres dimensiones: (a) **forma de escena** — catalogo de 8 valores con ventana deslizante de 4 caps en el acto 2 (maximo 2 repeticiones por valor) para evitar el segundo acto monotono "va a un sitio, no obtiene nada, vuelve, repite"; (b) **ledger de informacion** — catalogo de 10 categorias, prohibido "ninguna" en 2 caps seguidos del acto 2/3 y maximo 2 repeticiones por categoria en ventana de 4 caps, contra el patron "informacion_nueva" de relleno; (c) **dosificacion de revelaciones** — array `revelaciones_dosificadas` por cap con dificultad/modo_extraccion/setup_capitulos, bloquea info-dumps y antagonistas que se vacian de golpe (matching tolerante de alias y honorificos). Si la auditoria detecta severidad alta o score < 7 el orquestador re-ejecuta al Arquitecto con instrucciones literales (max 2 iteraciones, mismo patron que el PlotIntegrityAuditor).
+- **[Fix91] Refresco automatico de las 3 puntuaciones (Final + Holistico + Beta) tras aplicar revisiones**: tras pulsar "Aplicar revisiones" en la UI, las tres notas se actualizan automaticamente para que veas de inmediato si los cambios mejoran o empeoran. Activity log con delta legible: `Holistico: 7/10 -> 8/10 (mejora) (+1.0); Beta: 9/10 -> 8/10 (empeora) (-1.0)`. Los loops automaticos (Fix47, Fix81) opt-out via `skipReaderReviewRefresh` porque ya re-evaluan H+B al inicio de la siguiente iteracion.
+- **[Fix90] Rango opcional min/max de capitulos + autoauditoria de densidad del Arquitecto**: nueva pareja `minChapterCount` / `maxChapterCount` (NULL = modo exacto clasico). En modo rango el Arquitecto debe justificar el numero elegido y reducir hacia `min` si detecta hilos debiles, evitando la espiral "los lectores piden podar caps porque el Arquitecto rellena con caps puente".
+
+> Historial completo de fixes en `CHANGELOG.md` y entradas recientes en `replit.md`.
 
 ## Caracteristicas Principales
 

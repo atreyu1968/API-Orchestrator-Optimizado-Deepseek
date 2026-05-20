@@ -2,8 +2,8 @@
 set -eo pipefail
 
 # ============================================================
-# Autoinstalador para LitAgents v6.9 (API Orchestrator Optimizado DeepSeek)
-# Compatible con Ubuntu 22.04/24.04
+# Autoinstalador para LitAgents v9.1 (API Orchestrator Optimizado DeepSeek)
+# Compatible con Ubuntu 22.04 LTS y 24.04 LTS (tambien Debian 12+)
 # Repositorio: https://github.com/atreyu1968/API-Orchestrator-Optimizado-Deepseek
 # 
 # Uso desatendido:
@@ -93,6 +93,36 @@ done
 if [ "$EUID" -ne 0 ]; then
     print_error "Este script debe ejecutarse como root"
     echo "Uso: sudo bash install.sh"
+    exit 1
+fi
+
+# Comprobacion de sistema operativo (Ubuntu/Debian)
+if [ -r /etc/os-release ]; then
+    . /etc/os-release
+    OS_ID="${ID:-unknown}"
+    OS_ID_LIKE="${ID_LIKE:-}"
+    case "$OS_ID" in
+        ubuntu|debian) : ;;
+        *)
+            if [[ "$OS_ID_LIKE" != *debian* && "$OS_ID_LIKE" != *ubuntu* ]]; then
+                print_error "Sistema no soportado: $OS_ID. Requiere Ubuntu 22.04/24.04 o Debian 12+."
+                exit 1
+            fi
+            print_warning "Sistema $OS_ID (familia $OS_ID_LIKE). Continuando, pero soportado oficialmente solo en Ubuntu/Debian."
+            ;;
+    esac
+    if [ "$OS_ID" = "ubuntu" ]; then
+        case "${VERSION_ID:-}" in
+            22.04|24.04) print_status "Ubuntu ${VERSION_ID} detectado (soportado oficialmente)" ;;
+            *) print_warning "Ubuntu ${VERSION_ID:-desconocida} detectado. Soporte oficial: 22.04 LTS y 24.04 LTS." ;;
+        esac
+    fi
+else
+    print_warning "No se pudo detectar el sistema operativo (/etc/os-release ausente). Continuando bajo supuesto Ubuntu."
+fi
+
+if ! command -v apt-get &> /dev/null; then
+    print_error "apt-get no encontrado. Este instalador requiere un sistema basado en Debian/Ubuntu."
     exit 1
 fi
 
