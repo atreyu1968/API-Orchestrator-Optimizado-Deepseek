@@ -17,6 +17,7 @@ import {
   OutlineBetaReaderAgent,
   PlotIntegrityAuditorAgent,
   computePlotIntegrityMetrics,
+  runArchitectStructuralAudits,
   HolisticReviewerAgent,
   type HolisticReviewerResult,
   BetaReaderAgent,
@@ -1963,6 +1964,124 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         }
       } catch (piErr) {
         console.error(`[Orchestrator] Auditor de Integridad Narrativa falló (no bloqueante): ${(piErr as Error).message}`);
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      // [Fix92] AUDITOR ESTRUCTURAL DETERMINISTA — examina (1) variedad de
+      // forma de escena en el acto 2, (2) ledger de información nueva por
+      // capítulo (anti "no obtiene nada x4"), (3) dosificación de
+      // revelaciones con resistencia documentada (anti "el villano se vacía
+      // de golpe"). Sin coste de tokens — son cálculos sobre la escaleta.
+      // Si puntúa < 7 o hay severidad alta, re-ejecuta al Arquitecto con
+      // structuralAuditFeedback. Máximo 2 iteraciones. Best-effort.
+      // ═══════════════════════════════════════════════════════════════
+      try {
+        if (!this.aborted) {
+          const MAX_SA_ITERATIONS = 2;
+          const SA_THRESHOLD = 7;
+          let bestSA: { data: ParsedWorldBible; score: number } | null = null;
+          let lastSeenScoreSA = 0;
+
+          for (let saIter = 0; saIter < MAX_SA_ITERATIONS; saIter++) {
+            if (this.aborted) break;
+            this.callbacks.onAgentStatus("architect", "thinking", "El Auditor Estructural está revisando forma de escena, ledger de información y dosificación de revelaciones...");
+
+            const sa = runArchitectStructuralAudits(
+              worldBibleData.escaleta_capitulos as any[],
+              (worldBibleData as any).world_bible
+            );
+
+            const altas = sa.problemas.filter(p => p.severidad === "alta").length;
+            const medias = sa.problemas.filter(p => p.severidad === "media").length;
+            console.log(`[Orchestrator] Auditor Estructural Fix92 — iter ${saIter + 1}/${MAX_SA_ITERATIONS}: score ${sa.puntuacion_global}/10, veredicto "${sa.veredicto}", ${altas} altas + ${medias} medias. ${sa.resumen}`);
+
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: sa.veredicto === "reescribir" ? "warn" : "info",
+              agentRole: "architect",
+              message: `Auditor Estructural (forma/ledger/dosificación) — Score ${sa.puntuacion_global}/10 (${sa.veredicto}). ${altas} altos, ${medias} medios. ${sa.resumen}`,
+              metadata: { structuralAuditScore: sa.puntuacion_global, veredicto: sa.veredicto, problemas: sa.problemas as any, coverage: sa.coverage as any },
+            });
+
+            lastSeenScoreSA = sa.puntuacion_global;
+            if (!bestSA || sa.puntuacion_global > bestSA.score) {
+              bestSA = { data: worldBibleData, score: sa.puntuacion_global };
+            }
+
+            // Retry si score bajo O si hay cualquier severidad alta (incluso con score ≥ 7
+            // — p.ej. 1 alta = score 8.0 pero un info-dump no debería pasar).
+            const hasAlta = altas > 0;
+            const needsRetry = (sa.puntuacion_global < SA_THRESHOLD || hasAlta) && sa.instrucciones_revision.trim().length > 0;
+            const lastIter = saIter === MAX_SA_ITERATIONS - 1;
+            if (!needsRetry || lastIter) break;
+
+            console.log(`[Orchestrator] Auditor Estructural pidió revisión. Re-ejecutando Arquitecto con structuralAuditFeedback...`);
+            this.callbacks.onAgentStatus("architect", "thinking", `Auditoría estructural baja (${sa.puntuacion_global}/10). El Arquitecto está corrigiendo forma de escena, ledger y dosificación...`);
+
+            try {
+              const retryResult = await this.architect.execute({
+                title: project.title,
+                premise: effectivePremise,
+                genre: project.genre,
+                tone: project.tone,
+                chapterCount: project.chapterCount,
+                minChapterCount: (project as any).minChapterCount ?? null,
+                maxChapterCount: (project as any).maxChapterCount ?? null,
+                hasPrologue: project.hasPrologue,
+                hasEpilogue: project.hasEpilogue,
+                hasAuthorNote: project.hasAuthorNote,
+                architectInstructions: project.architectInstructions || undefined,
+                structuralAuditFeedback: sa.instrucciones_revision,
+                seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+                seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
+                kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+                forbiddenNames,
+                projectId: project.id,
+                previousVolumesFullText,
+                pseudonymCatalog,
+                extendedGuideContent: extendedGuideContent || undefined,
+              });
+
+              if (retryResult.tokenUsage) {
+                await this.trackTokenUsage(project.id, retryResult.tokenUsage, "El Arquitecto (revisión estructural Fix92)", "deepseek-v4-flash", undefined, "world_bible");
+              }
+
+              if (!retryResult.error && !retryResult.timedOut && retryResult.content?.trim()) {
+                const reviewedData = this.parseArchitectOutput(retryResult.content);
+                const reviewedLen = reviewedData?.escaleta_capitulos?.length || 0;
+                const acceptCount = this.isAcceptableEscaletaCount(project, reviewedLen);
+                const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
+                if (reviewedData && reviewedData.world_bible?.personajes?.length && acceptCount) {
+                  console.log(`[Orchestrator] Arquitecto revisó tras Auditor Estructural: ${reviewedLen}/${expectedChapters} caps. Sustituyendo y re-auditando.`);
+                  worldBibleData = reviewedData;
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "info",
+                    agentRole: "architect",
+                    message: `El Arquitecto rediseñó el outline aplicando las correcciones del Auditor Estructural (Fix92).`,
+                  });
+                  continue;
+                } else {
+                  console.warn(`[Orchestrator] Revisión por Auditor Estructural produjo outline inválido (${reviewedLen}/${expectedChapters}). Manteniendo mejor visto.`);
+                  break;
+                }
+              } else {
+                console.warn(`[Orchestrator] Revisión por Auditor Estructural falló: ${retryResult.error || "vacío/timeout"}. Manteniendo mejor visto.`);
+                break;
+              }
+            } catch (retryErr) {
+              console.error(`[Orchestrator] Excepción en revisión por Auditor Estructural: ${(retryErr as Error).message}. Manteniendo mejor visto.`);
+              break;
+            }
+          }
+
+          if (bestSA && bestSA.data !== worldBibleData && bestSA.score > lastSeenScoreSA) {
+            console.log(`[Orchestrator] Recuperando mejor escaleta vista por Auditor Estructural (${bestSA.score} > ${lastSeenScoreSA}).`);
+            worldBibleData = bestSA.data;
+          }
+        }
+      } catch (saErr) {
+        console.error(`[Orchestrator] Auditor Estructural Fix92 falló (no bloqueante): ${(saErr as Error).message}`);
       }
 
       // ═══════════════════════════════════════════════════════════════

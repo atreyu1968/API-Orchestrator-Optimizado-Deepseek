@@ -61,6 +61,16 @@ interface ArchitectInput {
   // perder lo aprobado por críticas previas.
   plotIntegrityFeedback?: string;
 
+  // [Fix92] Feedback del Auditor Estructural determinista (forma de escena,
+  // ledger de información nueva, dosificación de revelaciones). Se inyecta
+  // cuando el auditor detecta segundo acto repetitivo, "informacion_nueva"
+  // de relleno en caps consecutivos, o info-dumps de revelaciones (patrón
+  // "Cifuentes confiesa toda su historia en cap 21"). El Arquitecto DEBE
+  // rellenar los 3 campos nuevos por capítulo (forma_dominante,
+  // categoria_info_nueva, revelaciones_dosificadas) y aplicar las
+  // correcciones literales.
+  structuralAuditFeedback?: string;
+
   // [Fix78] World Bible consolidada de la serie (personajes con fichas ricas,
   // lugares, léxico, reglas) extraída de TODOS los volúmenes previos. El
   // Arquitecto DEBE usarla como verdad canónica: prohibido renombrar,
@@ -416,6 +426,85 @@ REGLAS DE CALIDAD GENERAL:
 11. Los conflictos deben escalar progresivamente a lo largo del acto 2, NO mantenerse en meseta.
 
 ═══════════════════════════════════════════════════════════════════
+[Fix92] REGLAS ESTRUCTURALES DEL SEGUNDO ACTO (CRÍTICAS RECURRENTES DEL BETA)
+═══════════════════════════════════════════════════════════════════
+El Lector Beta detecta una y otra vez tres patrones que arruinan el acto medio
+aunque la prosa sea buena. Estas tres reglas son OBLIGATORIAS y se auditan
+deterministamente después de generar la escaleta:
+
+REGLA F (VARIEDAD DE FORMA DE ESCENA — anti segundo acto monótono):
+Cada capítulo lleva un campo "forma_dominante" con UN valor del catálogo:
+  - "investigacion_activa"   (el prota busca pistas, persigue, indaga)
+  - "confrontacion_directa"  (cara a cara con stakes en mesa, sin escapatoria)
+  - "revelacion"             (el lector reordena su modelo de la trama)
+  - "introspeccion"          (escena interior, sueño, monólogo, recuerdo)
+  - "accion_fisica"          (persecución, pelea, evasión, escena cinética)
+  - "setback"                (el prota pierde algo concreto que tenía)
+  - "atmosferica"            (atmósfera, world-building sensorial, sin trama)
+  - "pivote_relacional"      (una relación entre dos personajes cambia de estado)
+Esto NO sustituye a "tipo_capitulo" (A-N, estructural); describe lo que
+EXPERIMENTA EL LECTOR. Un mismo "tipo_capitulo: E (investigacion)" puede tener
+forma_dominante "investigacion_activa", "confrontacion_directa", "setback" o
+"pivote_relacional" según cómo se desarrolle la escena.
+RESTRICCIÓN: en cualquier ventana de 4 capítulos consecutivos del acto 2,
+ningún valor de "forma_dominante" puede aparecer más de 2 veces. Si todos son
+"investigacion_activa", el lector vive el acto 2 como "el prota va, no obtiene
+nada, vuelve, repite" — patrón explícitamente prohibido.
+
+REGLA L (LEDGER DE INFORMACIÓN NUEVA — anti "no obtiene nada x4"):
+Cada capítulo lleva "categoria_info_nueva" con UN valor del catálogo:
+  - "testigo"                (alguien declara o cuenta)
+  - "evidencia_fisica"       (objeto, documento, foto, prueba)
+  - "pista_falsa"            (lead que llevará a callejón sin salida)
+  - "revelacion_personal"    (algo del pasado del prota o un secundario)
+  - "antecedente_historico"  (contexto del mundo, época, lugar)
+  - "conexion_red"           (cómo dos elementos se vinculan)
+  - "amenaza"                (advertencia, atentado, presión nueva)
+  - "vinculo_emocional"      (una relación humana se revela)
+  - "setup_subtrama"         (siembra de subtrama / volumen siguiente)
+  - "ninguna"                (solo en caps atmosféricos/introspectivos puros)
+Y "informacion_nueva" (texto libre) NUNCA puede ser de relleno: prohibido
+"ninguna", "sin novedades", "no obtiene nada", "callejón sin salida", "nada
+nuevo" o texto < 40 caracteres. Aunque el protagonista fracase en su objetivo,
+el LECTOR debe ganar al menos una pieza concreta: un detalle del trauma del
+prota, una pista falsa sembrada por el antagonista, un vínculo emocional con
+un secundario, una amenaza menor que escala el peligro, un antecedente
+histórico del lugar.
+RESTRICCIÓN: en el acto 2/3 no puede haber 2 caps consecutivos con
+"informacion_nueva" de relleno. En ventanas de 4 caps del acto 2, ninguna
+"categoria_info_nueva" puede repetirse más de 2 veces. "ninguna" no puede
+aparecer en 2 caps consecutivos jamás.
+
+REGLA D (DOSIFICACIÓN DE REVELACIONES — anti "el villano se vacía de golpe"):
+En cada capítulo que contenga una revelación importante, declara el array
+"revelaciones_dosificadas": [
+  {
+    "hecho_revelado": "Lo concreto que el lector descubre",
+    "personaje_revelador": "Nombre del personaje que lo suelta",
+    "dificultad": "alto" | "medio" | "bajo",
+    "modo_extraccion": "presion_fisica" | "amenaza_a_tercero" |
+                       "evidencia_irrefutable" | "error_del_personaje" |
+                       "ofrecimiento_voluntario_motivado" | "sin_resistencia",
+    "setup_capitulos": [n, n]
+  }
+]
+"dificultad" mide el peso narrativo: "alto" = revela motivo, identidad oculta,
+traición o trauma central; "medio" = pista o conexión; "bajo" = detalle de
+color. RESTRICCIONES INVIOLABLES:
+  - Toda revelación con dificultad "alto" debe traer modo_extraccion DISTINTO
+    de "sin_resistencia" (el personaje no puede confesarlo gratis).
+  - Toda revelación con dificultad "alto" debe traer al menos 1 capítulo en
+    "setup_capitulos" donde se sembró la resistencia o la amenaza que ahora
+    desbloquea la confesión.
+  - Ningún capítulo puede acumular ≥3 revelaciones de dificultad "alto" (es un
+    info-dump expositivo — repártelas en al menos 2 capítulos).
+  - Ningún personaje antagonista o cómplice puede revelar ≥3 hechos en un
+    único capítulo (rompe la regla "el villano nunca se vacía de golpe"). Si
+    necesitas que confiese mucho, distribúyelo: primera escena suelta lo que
+    NO le compromete; segunda escena suelta UN dato comprometedor bajo presión
+    específica; tercera escena suelta el resto bajo amenaza nueva o ya derrotado.
+
+═══════════════════════════════════════════════════════════════════
 ⛔ ANTI-DEUS-EX-MACHINA Y ANTI-SOLUCIONES FÁCILES (REGLA CRÍTICA) ⛔
 ═══════════════════════════════════════════════════════════════════
 Las prohibiciones globales de la Fase 1 (Deus Ex Machina, soluciones
@@ -481,7 +570,18 @@ FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
       "funcion_estructural": "Rol del capítulo en la trama (etiqueta breve)",
       "objetivo_narrativo": "PÁRRAFO NARRATIVO de 100-200 palabras contando qué pasa en este capítulo: situación inicial, qué hace el protagonista, qué obstáculos encuentra, qué descubre, cómo termina. ESTO ES LO QUE LEERÁ EL NARRADOR para escribir — sin esto, escribe a ciegas. NO es una etiqueta, es prosa narrativa real.",
       "arcos_que_avanza": [{"arco": "nombre", "de": "estado_antes", "a": "estado_después"}],
-      "informacion_nueva": "Revelación que descubre el lector",
+      "informacion_nueva": "Revelación concreta que descubre el lector (≥40 caracteres, NUNCA 'ninguna' ni 'sin novedades')",
+      "categoria_info_nueva": "testigo | evidencia_fisica | pista_falsa | revelacion_personal | antecedente_historico | conexion_red | amenaza | vinculo_emocional | setup_subtrama | ninguna",
+      "forma_dominante": "investigacion_activa | confrontacion_directa | revelacion | introspeccion | accion_fisica | setback | atmosferica | pivote_relacional",
+      "revelaciones_dosificadas": [
+        {
+          "hecho_revelado": "Solo si el cap contiene revelación importante; deja el array vacío si no",
+          "personaje_revelador": "Nombre del personaje que lo revela",
+          "dificultad": "alto | medio | bajo",
+          "modo_extraccion": "presion_fisica | amenaza_a_tercero | evidencia_irrefutable | error_del_personaje | ofrecimiento_voluntario_motivado | sin_resistencia",
+          "setup_capitulos": [3, 7]
+        }
+      ],
       "pregunta_dramatica": "Pregunta al terminar",
       "conflicto_central": "Descripción breve del conflicto y stakes",
       "beats": [
@@ -531,6 +631,10 @@ C. RITMO ACTO 3: distribuye "eventos_pivotales" sin que el acto 3 acumule >50% d
 5. Verifica que toda "cosecha" tiene su "siembra" en capítulos anteriores con el mismo ID.
 6. Verifica que toda decisión perjudicial del antagonista lleva "justificacion_antagonica" rellena.
 7. Verifica que el acto 3 no concentra >50% de "eventos_pivotales".
+8. [Fix92-F] Recorre el acto 2 con una ventana deslizante de 4 caps: en cada ventana, cuenta cuántas veces aparece cada "forma_dominante". Si algún valor supera 2 apariciones, REESCRIBE esos caps cambiando su forma (manteniendo el avance de trama).
+9. [Fix92-L] Recorre el acto 2/3 buscando pares de caps consecutivos con "informacion_nueva" vacía, < 40 caracteres o con frases de relleno ("ninguna", "sin novedades", "no obtiene nada", "callejón sin salida"). Si encuentras un par, reescribe al menos uno con una pieza concreta que el lector pueda anotar mentalmente.
+10. [Fix92-L] Recorre el acto 2 con ventana de 4 caps: si alguna "categoria_info_nueva" supera 2 apariciones en una ventana, diversifica (alterna testigo / evidencia_fisica / vinculo_emocional / revelacion_personal / pista_falsa). "ninguna" nunca puede aparecer 2 caps seguidos.
+11. [Fix92-D] Recorre cada "revelaciones_dosificadas" del proyecto: verifica que NINGUNA revelación con dificultad "alto" tiene modo_extraccion "sin_resistencia" y verifica que TODAS tienen al menos 1 cap en "setup_capitulos". Verifica que ningún cap acumula ≥3 revelaciones de dificultad "alto". Verifica que ningún personaje antagonista/cómplice revela ≥3 hechos en un único cap.
 Si algo falla, REGENERA antes de responder. Esto es lo más importante.
 
 Responde ÚNICAMENTE con el JSON.
@@ -595,7 +699,7 @@ export class ArchitectAgent extends BaseAgent {
     ` : ""}
     ${input.plotIntegrityFeedback ? `
     ═══════════════════════════════════════════════════════════════════
-    🧩 FEEDBACK DEL AUDITOR DE INTEGRIDAD NARRATIVA (PRIORIDAD MÁXIMA) 🧩
+    FEEDBACK DEL AUDITOR DE INTEGRIDAD NARRATIVA (PRIORIDAD MÁXIMA)
     ═══════════════════════════════════════════════════════════════════
     Tu escaleta anterior tiene problemas de integridad detectados por un auditor
     especializado en tres áreas: (1) presagios/foreshadowing, (2) coherencia del
@@ -604,6 +708,22 @@ export class ArchitectAgent extends BaseAgent {
     capítulos aprobados; modifica solo lo que el auditor señala.
 
     ${input.plotIntegrityFeedback}
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.structuralAuditFeedback ? `
+    ═══════════════════════════════════════════════════════════════════
+    FEEDBACK DEL AUDITOR ESTRUCTURAL (FORMA / LEDGER / DOSIFICACIÓN) — PRIORIDAD MÁXIMA
+    ═══════════════════════════════════════════════════════════════════
+    Tu escaleta anterior falla en una o varias de estas tres dimensiones (críticas
+    recurrentes del Lector Beta sobre el segundo acto):
+      (1) VARIEDAD DE FORMA DE ESCENA en el acto 2.
+      (2) LEDGER DE INFORMACIÓN NUEVA por capítulo (anti "el prota va, no obtiene nada, vuelve" x4).
+      (3) DOSIFICACIÓN DE REVELACIONES con resistencia documentada (anti "el villano se vacía de golpe").
+    DEBES rediseñar aplicando LITERALMENTE las correcciones siguientes Y declarar los
+    tres campos obligatorios por capítulo: "forma_dominante", "categoria_info_nueva",
+    "revelaciones_dosificadas" (este último solo en caps con revelación importante).
+
+    ${input.structuralAuditFeedback}
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     ${input.betaReaderFeedback ? `

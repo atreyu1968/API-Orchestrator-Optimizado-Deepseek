@@ -20,3 +20,5 @@ export { HolisticReviewerAgent, type HolisticReviewerResult } from "./holistic-r
 export { BetaReaderAgent, type BetaReaderResult } from "./beta-reader";
 export { OutlineBetaReaderAgent, type OutlineBetaReaderResult, type OutlineBetaProblem, type OutlineBetaProblemType } from "./outline-beta-reader";
 export { PlotIntegrityAuditorAgent, computePlotIntegrityMetrics, type PlotIntegrityResult, type PlotIntegrityIssue, type PlotIntegrityInput, type PlotIntegrityComputedMetrics } from "./plot-integrity-auditor";
+// [Fix92] Auditor estructural determinista (forma/ledger/dosificación).
+export { runArchitectStructuralAudits, FORMA_ESCENA_VALORES, CATEGORIA_INFO_VALORES, MODO_EXTRACCION_VALORES, type StructuralAuditResult, type StructuralAuditProblem, type StructuralAuditCoverage, type FormaEscena, type CategoriaInfoNueva, type ModoExtraccion } from "./scene-shape-auditor";
