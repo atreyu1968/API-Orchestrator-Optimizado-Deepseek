@@ -1847,6 +1847,14 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                   } else {
                     const rangeLabel = this.formatAcceptableEscaletaRange(project);
                     console.warn(`[Orchestrator] Revisión del Arquitecto (originalidad) RECHAZADA: ${reviewedLen} caps fuera del rango aceptable ${rangeLabel} (o sin personajes). Manteniendo outline original.`);
+                    // [Fix104] Visibilidad al usuario.
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "warning",
+                      agentRole: "architect",
+                      message: `[Fix104] Reintento del Arquitecto (originalidad) RECHAZADO: produjo ${reviewedLen} caps fuera del rango aceptable ${rangeLabel}. Se conserva el outline anterior y se continúa el pipeline.`,
+                      metadata: { fix: "Fix104", reviewedLen, rangeLabel, auditor: "originalidad" },
+                    });
                   }
                 } else {
                   console.warn(`[Orchestrator] Revisión del Arquitecto falló: ${retryResult.error || "vacío/timeout"}. Manteniendo outline original.`);
@@ -2028,6 +2036,14 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
                 } else {
                   const rangeLabel = this.formatAcceptableEscaletaRange(project);
                   console.warn(`[Orchestrator] Revisión por Auditor de Integridad RECHAZADA: ${reviewedLen} caps fuera del rango aceptable ${rangeLabel} (o sin personajes). Manteniendo mejor visto.`);
+                  // [Fix104] Visibilidad al usuario.
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warning",
+                    agentRole: "architect",
+                    message: `[Fix104] Reintento del Arquitecto (Integridad Narrativa) RECHAZADO: produjo ${reviewedLen} caps fuera del rango aceptable ${rangeLabel}. Se conserva la mejor escaleta vista y se continúa el pipeline.`,
+                    metadata: { fix: "Fix104", reviewedLen, rangeLabel, auditor: "integridad" },
+                  });
                   break;
                 }
               } else {
@@ -2276,6 +2292,14 @@ OBJETIVO: PROGRESO MONOTÓNICO. No rediseñes desde cero. Para cada dimensión O
                 } else {
                   const rangeLabel = this.formatAcceptableEscaletaRange(project);
                   console.warn(`[Orchestrator] Revisión por Auditor Estructural RECHAZADA: ${reviewedLen} caps fuera del rango aceptable ${rangeLabel} (o sin personajes). Manteniendo mejor visto.`);
+                  // [Fix104] Visibilidad al usuario.
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warning",
+                    agentRole: "architect",
+                    message: `[Fix104] Reintento del Arquitecto (Auditor Estructural) RECHAZADO: produjo ${reviewedLen} caps fuera del rango aceptable ${rangeLabel}. Se conserva la mejor escaleta vista y se continúa el pipeline.`,
+                    metadata: { fix: "Fix104", reviewedLen, rangeLabel, auditor: "estructural" },
+                  });
                   break;
                 }
               } else {
@@ -2525,6 +2549,14 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
                         ? `${reviewedLen} caps en rango, pero falta matriz_arcos o estructura_tres_actos`
                         : "sin personajes";
                     console.warn(`[Orchestrator] Revisión del Arquitecto (beta-reader) RECHAZADA: ${motivo}. Manteniendo mejor versión vista.`);
+                    // [Fix104] Visibilidad al usuario.
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "warning",
+                      agentRole: "architect",
+                      message: `[Fix104] Reintento del Arquitecto (Lector Beta, iter ${betaIter}) RECHAZADO: ${motivo}. Se conserva la mejor escaleta vista y se continúa el pipeline.`,
+                      metadata: { fix: "Fix104", reviewedLen, rangeLabel, auditor: "beta", betaIter, motivo },
+                    });
                     break;
                   }
                 } else {
@@ -3468,6 +3500,38 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
         } catch (e) {
           console.warn(`[Fix80][resume] buildSeriesMilestonesAndThreadsBlock falló: ${(e as Error).message}`);
+        }
+      }
+
+      // [Fix103] Guard anti-reanudación-destructiva: si llegamos aquí pero la
+      // generación está en curso (el Arquitecto persiste el World Bible solo
+      // al final de Fase 2, así que durante 20-30 min puede no haber ni World
+      // Bible ni capítulos en BD aunque el orquestador esté vivo y trabajando
+      // sobre `worldBibleData` en memoria), reiniciar borra todo el progreso
+      // y entra en bucle. Detectamos otra instancia activa mirando si hay
+      // actividad reciente (< 120 s) en el activity log: el orquestador
+      // emite logs constantes desde los agentes/auditores. Si la hay, NO
+      // tocamos nada y dejamos que la otra corra.
+      // [Fix103 post-review] getActivityLogsByProject incluye también logs
+      // globales (projectId IS NULL), por lo que un log de sistema reciente
+      // podría falso-positivear el guard en proyectos sin actividad propia.
+      // Filtramos en memoria al projectId concreto. Además ActivityLog solo
+      // tiene `createdAt` (no `timestamp`).
+      const recentLogsRaw = await storage.getActivityLogsByProject(project.id, 20);
+      const recentLogs = recentLogsRaw.filter((l) => l.projectId === project.id);
+      if (recentLogs.length > 0) {
+        const newest = recentLogs[0];
+        const ageMs = Date.now() - new Date(newest.createdAt).getTime();
+        if (ageMs < 120_000) {
+          console.warn(`[Orchestrator] [Fix103] resumeNovel invocado pero hay actividad muy reciente del proyecto (${Math.round(ageMs/1000)}s). Probablemente hay otro orquestador vivo para este proyecto. Aborto la reanudación para no destruir su progreso.`);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            agentRole: "orchestrator",
+            message: `[Fix103] Reanudación ignorada: hay actividad muy reciente del proyecto (hace ${Math.round(ageMs/1000)}s). Se conserva el progreso en curso.`,
+            metadata: { fix: "Fix103", ageMs, lastLogLevel: newest.level },
+          });
+          return;
         }
       }
 
