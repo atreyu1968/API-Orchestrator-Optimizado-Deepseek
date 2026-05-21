@@ -2091,7 +2091,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
       // ═══════════════════════════════════════════════════════════════
       try {
         if (!this.aborted) {
-          const MAX_SA_ITERATIONS = 3; // [Fix101] subido de 2 a 3
+          const MAX_SA_ITERATIONS = 6; // [Fix107] subido de 3 a 6 — con Fix106 los retries no regeneran Fase 1, así que cada iter extra cuesta ~5 min (solo Fase 2 + audit) en lugar de ~8 min. Damos margen real para converger en estructuras complejas.
           const SA_THRESHOLD = 7;
           let bestSA: { data: ParsedWorldBible; score: number; problemsSummary: string } | null = null;
           let lastSeenScoreSA = 0;
