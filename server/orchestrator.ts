@@ -2166,7 +2166,9 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             prevProblemsSummarySA = problemsSummary;
 
             console.log(`[Orchestrator] Auditor Estructural pidió revisión. Re-ejecutando Arquitecto con structuralAuditFeedback (+ histórico Fix101/Fix102)...`);
-            this.callbacks.onAgentStatus("architect", "thinking", `Auditoría estructural baja (${sa.puntuacion_global}/10). El Arquitecto está corrigiendo forma de escena, ledger y dosificación...`);
+            // [Fix105] El mensaje de status se construye DESPUÉS de calcular
+            // koDimensions (más abajo) para que nombre las dimensiones reales
+            // que están KO, no un texto fijo "forma/ledger/dosificación".
 
             // [Fix102] Mapa de salud por dimensión: contar problemas por `area`.
             // Una dimensión es ACEPTABLE si tiene ≤1 problema (en zona verde);
@@ -2225,6 +2227,40 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             const koBlock = koDimensions.length > 0
               ? `DIMENSIONES QUE DEBES CORREGIR — CONCENTRA TU REDISEÑO AQUÍ:\n${koLines}\n\n`
               : `(Todas las dimensiones están técnicamente en zona aceptable por conteo, pero el score global sigue bajo. Aplica MICROAJUSTES QUIRÚRGICOS en los problemas listados abajo, sin redibujar la arquitectura ni mover capítulos clave.)\n\n`;
+
+            // [Fix105] Visibilidad al usuario: activity log + status message que
+            // nombran las dimensiones KO reales (no texto fijo). El usuario veía
+            // siempre "corrigiendo forma de escena, ledger y dosificación" aunque
+            // esas tres estuvieran en 0 y las KO fueran otras (p.ej. arco_secreto
+            // y escalada_acto2). El log muestra qué se preserva y qué se ataca.
+            const koShortLabels = koDimensions.map(d => `${d.label} (${d.count})`);
+            const okCount = okDimensions.length;
+            const totalDims = Object.keys(dimensionLabels).length;
+            // [Fix105 post-review] Frasing condicional para evitar "CORREGIR
+            // ninguna dimensión..." en el edge case all-OK donde el score
+            // sigue bajo pero ninguna dimensión cruza el umbral KO.
+            const planMessage = koShortLabels.length > 0
+              ? `[Fix105] Plan de retry estructural (iter ${saIter + 1}/${MAX_SA_ITERATIONS}): PRESERVAR ${okCount}/${totalDims} dimensiones (${okCount > 0 ? "OK por conteo" : "ninguna en zona aceptable todavía"}); CORREGIR ${koShortLabels.join("; ")}.`
+              : `[Fix105] Plan de retry estructural (iter ${saIter + 1}/${MAX_SA_ITERATIONS}): ${okCount}/${totalDims} dimensiones en zona aceptable por conteo, pero el score global sigue bajo. Se piden MICROAJUSTES QUIRÚRGICOS sobre los problemas residuales sin redibujar la arquitectura.`;
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "architect",
+              message: planMessage,
+              metadata: {
+                fix: "Fix105",
+                iteration: saIter + 1,
+                previousScore: prevScoreSA,
+                okDimensions: okDimensions.map(s => s.replace(/^\s*-\s*/, "").split(":")[0]),
+                koDimensions: koDimensions.map(d => ({ label: d.label, count: d.count, hasAlta: d.hasAlta, target: d.target })),
+              },
+            });
+
+            // [Fix105] Status message dinámico — nombra las dimensiones KO reales.
+            const koLabelForStatus = koDimensions.length > 0
+              ? koDimensions.slice(0, 3).map(d => d.label.toLowerCase().split(" ")[0]).join(", ")
+              : "microajustes quirúrgicos en problemas residuales";
+            this.callbacks.onAgentStatus("architect", "thinking", `Auditoría estructural baja (${sa.puntuacion_global}/10). El Arquitecto está corrigiendo: ${koLabelForStatus}...`);
 
             // [Fix101 + Fix102] Bloque de histórico anti-regresión con mapa
             // de salud por dimensión. El mapa es la clave de Fix102: separa
