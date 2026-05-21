@@ -71,6 +71,20 @@ interface ArchitectInput {
   // correcciones literales.
   structuralAuditFeedback?: string;
 
+  // [Fix106] World Bible reutilizable (Fase 1 ya generada en un intento previo).
+  // Cuando el orquestador re-ejecuta al Arquitecto tras un auditor (Estructural/
+  // Integridad/Beta), pasa aquí el outline anterior PARSEADO (objeto con
+  // world_bible, matriz_arcos, momentum_plan, estructura_tres_actos, premisa,
+  // etc.). Si está presente, el Arquitecto SALTA Fase 1 y ejecuta solo Fase 2
+  // (escaleta) usando ese World Bible como base. Razón: en los retries
+  // estructurales el Arquitecto regeneraba Fase 1 desde cero (7 personajes/2
+  // arcos → 9/3 entre iteraciones), de modo que el feedback de Fix101/Fix102
+  // referenciaba revelaciones y personajes del outline anterior que ya no
+  // existían en el nuevo World Bible, y el progreso era marginal. Con este
+  // parámetro la base narrativa queda fija y el Arquitecto solo edita la
+  // escaleta — feedback semánticamente coherente con las entidades reales.
+  reusePhase1Json?: any;
+
   // [Fix78] World Bible consolidada de la serie (personajes con fichas ricas,
   // lugares, léxico, reglas) extraída de TODOS los volúmenes previos. El
   // Arquitecto DEBE usarla como verdad canónica: prohibido renombrar,
@@ -1057,6 +1071,34 @@ ${input.writtenChaptersFullText}
     ` : ""}
     `;
 
+    // [Fix106] Si el orquestador pasó un World Bible previo para reutilizar
+    // (retry tras auditor), saltamos toda la Fase 1: nada de prompt, nada de
+    // LLM call, nada de regenerar personajes/arcos. La base narrativa queda
+    // fija y el Arquitecto solo trabajará la escaleta (Fase 2). Esto evita
+    // que el feedback de Fix101/Fix102 quede semánticamente incoherente con
+    // entidades nuevas.
+    let phase1Json: any;
+    let phase1Response: AgentResponse | null = null;
+    if (input.reusePhase1Json) {
+      phase1Json = input.reusePhase1Json;
+      const reusedPersonajes = phase1Json.world_bible?.personajes?.length || 0;
+      const reusedArcos = phase1Json.matriz_arcos?.subtramas?.length || 0;
+      console.log(`[El Arquitecto] [Fix106] Fase 1 OMITIDA — reutilizando World Bible previo (${reusedPersonajes} personajes, ${reusedArcos} arcos).`);
+      if (input.projectId) {
+        try {
+          await storage.createActivityLog({
+            projectId: input.projectId,
+            level: "info",
+            agentRole: "architect",
+            message: `[Fix106] El Arquitecto reutiliza el World Bible previo (${reusedPersonajes} personajes, ${reusedArcos} arcos). Salta Fase 1 y va directo a Fase 2 (escaleta).`,
+            metadata: { fix: "Fix106", reusedPersonajes, reusedArcos },
+          });
+        } catch (e) {
+          console.warn(`[El Arquitecto] No se pudo escribir activity log Fix106: ${(e as Error).message}`);
+        }
+      }
+    } else {
+
     console.log(`[El Arquitecto] === FASE 1: Generando World Bible y estructura global ===`);
 
     if (input.projectId) {
@@ -1110,14 +1152,13 @@ ${input.writtenChaptersFullText}
     `;
 
     this.config.systemPrompt = PHASE1_SYSTEM_PROMPT;
-    const phase1Response = await this.generateContent(phase1Prompt, input.projectId);
+    phase1Response = await this.generateContent(phase1Prompt, input.projectId);
 
     if (phase1Response.error || phase1Response.timedOut || !phase1Response.content?.trim()) {
       console.error(`[El Arquitecto] Fase 1 falló: ${phase1Response.error || "timeout/vacío"}`);
       return phase1Response;
     }
 
-    let phase1Json: any;
     try {
       phase1Json = repairJson(phase1Response.content);
       console.log(`[El Arquitecto] Fase 1: JSON parseado correctamente`);
@@ -1149,6 +1190,8 @@ ${input.writtenChaptersFullText}
         console.warn(`[El Arquitecto] No se pudo escribir activity log Fase 1 fin: ${(e as Error).message}`);
       }
     }
+
+    } // [Fix106] fin del else (Fase 1 sí ejecutada).
 
     console.log(`[El Arquitecto] === FASE 2: Generando escaleta de ${input.chapterCount} capítulos ===`);
 
@@ -1359,13 +1402,13 @@ ${input.writtenChaptersFullText}
     };
 
     const mergedTokenUsage = {
-      inputTokens: (phase1Response.tokenUsage?.inputTokens || 0) + (phase2Response.tokenUsage?.inputTokens || 0),
-      outputTokens: (phase1Response.tokenUsage?.outputTokens || 0) + (phase2Response.tokenUsage?.outputTokens || 0),
-      thinkingTokens: (phase1Response.tokenUsage?.thinkingTokens || 0) + (phase2Response.tokenUsage?.thinkingTokens || 0),
+      inputTokens: (phase1Response?.tokenUsage?.inputTokens || 0) + (phase2Response.tokenUsage?.inputTokens || 0),
+      outputTokens: (phase1Response?.tokenUsage?.outputTokens || 0) + (phase2Response.tokenUsage?.outputTokens || 0),
+      thinkingTokens: (phase1Response?.tokenUsage?.thinkingTokens || 0) + (phase2Response.tokenUsage?.thinkingTokens || 0),
     };
 
     const mergedThoughts = [
-      phase1Response.thoughtSignature || "",
+      phase1Response?.thoughtSignature || "",
       phase2Response.thoughtSignature || "",
     ].filter(Boolean).join("\n\n--- FASE 2 ---\n\n");
 

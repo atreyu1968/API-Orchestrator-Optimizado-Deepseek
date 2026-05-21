@@ -2296,6 +2296,13 @@ OBJETIVO: PROGRESO MONOTÓNICO. No rediseñes desde cero. Para cada dimensión O
                 hasAuthorNote: project.hasAuthorNote,
                 architectInstructions: project.architectInstructions || undefined,
                 structuralAuditFeedback: feedbackWithHistorySA,
+                // [Fix106] Reusar el World Bible del intento anterior para no
+                // regenerar Fase 1 desde cero (en logs reales: 7 personajes/2
+                // arcos → 9/3 → 9/2 entre iteraciones, lo que rompía la
+                // coherencia semántica del feedback Fix101/Fix102). Pasamos
+                // bestSA?.data si lo hay (el mejor outline visto), si no el
+                // worldBibleData actual.
+                reusePhase1Json: (bestSA?.data || worldBibleData) || undefined,
                 seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
                 seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
                 kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
