@@ -1867,16 +1867,20 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       // [Fix18] AUDITOR DE INTEGRIDAD NARRATIVA — examina foreshadowing,
       // coherencia del antagonista y ritmo del tercer acto. Si encuentra
       // problemas de severidad "alta" o puntuación < 7, re-ejecuta al
-      // Arquitecto inyectando plotIntegrityFeedback. Máximo 2 iteraciones
-      // (1 análisis inicial + 1 reintento). Best-effort: conserva la
-      // mejor escaleta vista. Solo en generación nueva.
+      // Arquitecto inyectando plotIntegrityFeedback. [Fix101] Máximo 3
+      // iteraciones (1 análisis + 2 reintentos) e inyección de histórico
+      // para evitar regresiones. Best-effort: conserva la mejor escaleta
+      // vista. Solo en generación nueva.
       // ═══════════════════════════════════════════════════════════════
       try {
         if (!this.aborted) {
-          const MAX_PI_ITERATIONS = 2;
+          const MAX_PI_ITERATIONS = 3; // [Fix101] subido de 2 a 3
           const PI_THRESHOLD = 7;
-          let bestPlotIntegrity: { data: ParsedWorldBible; score: number } | null = null;
+          let bestPlotIntegrity: { data: ParsedWorldBible; score: number; problemsSummary: string } | null = null;
           let lastSeenScore = 0;
+          // [Fix101] Histórico anti-regresión para inyectar al Arquitecto.
+          let prevScorePI: number | null = null;
+          let prevProblemsSummaryPI = "";
 
           for (let piIter = 0; piIter < MAX_PI_ITERATIONS; piIter++) {
             if (this.aborted) break;
@@ -1906,31 +1910,75 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
             const altas = audit.problemas.filter(p => p.severidad === "alta").length;
             const medias = audit.problemas.filter(p => p.severidad === "media").length;
+            const problemsSummaryPI = audit.problemas.slice(0, 10)
+              .map((p, i) => `${i + 1}. [${p.severidad}] ${p.descripcion}`)
+              .join("\n");
             console.log(`[Orchestrator] Auditor de Integridad — iter ${piIter + 1}/${MAX_PI_ITERATIONS}: score ${audit.puntuacion_global}/10, veredicto "${audit.veredicto}", ${altas} altas + ${medias} medias. ${audit.resumen}`);
 
             await storage.createActivityLog({
               projectId: project.id,
               level: audit.veredicto === "reescribir" ? "warn" : "info",
               agentRole: "architect",
-              message: `🧩 Auditor de Integridad Narrativa — Score ${audit.puntuacion_global}/10 (${audit.veredicto}). ${altas} problemas altos, ${medias} medios. ${audit.resumen}`,
-              metadata: { plotIntegrityScore: audit.puntuacion_global, veredicto: audit.veredicto, problemas: audit.problemas as any },
+              message: `🧩 Auditor de Integridad Narrativa — iter ${piIter + 1}/${MAX_PI_ITERATIONS} — Score ${audit.puntuacion_global}/10 (${audit.veredicto}). ${altas} problemas altos, ${medias} medios. ${audit.resumen}`,
+              metadata: { plotIntegrityScore: audit.puntuacion_global, veredicto: audit.veredicto, problemas: audit.problemas as any, iteration: piIter + 1 },
             });
+
+            // [Fix101] Aviso explícito al usuario si esta iter empeoró respecto
+            // al mejor visto (oscilación del Arquitecto al aplicar correcciones).
+            if (bestPlotIntegrity && audit.puntuacion_global < bestPlotIntegrity.score) {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                agentRole: "architect",
+                message: `[Fix101] El reintento del Arquitecto empeoró la integridad narrativa: ${audit.puntuacion_global}/10 (esta) < ${bestPlotIntegrity.score}/10 (mejor anterior). Si el bucle termina aquí, se restaurará la mejor escaleta vista.`,
+                metadata: { thisScore: audit.puntuacion_global, bestScore: bestPlotIntegrity.score, iteration: piIter + 1 },
+              });
+            }
 
             // Best-effort buffer: guarda la mejor escaleta vista. Trackeamos
             // también el último score para evitar una re-auditoría al cierre.
             lastSeenScore = audit.puntuacion_global;
             if (!bestPlotIntegrity || audit.puntuacion_global > bestPlotIntegrity.score) {
-              bestPlotIntegrity = { data: worldBibleData, score: audit.puntuacion_global };
+              bestPlotIntegrity = { data: worldBibleData, score: audit.puntuacion_global, problemsSummary: problemsSummaryPI };
             }
 
             const needsRetry = audit.puntuacion_global < PI_THRESHOLD && audit.instrucciones_revision?.trim();
             const lastIter = piIter === MAX_PI_ITERATIONS - 1;
             if (!needsRetry || lastIter) {
+              // [Fix101] Si salimos sin alcanzar umbral en última iter, lo decimos.
+              if (lastIter && needsRetry) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  agentRole: "architect",
+                  message: `[Fix101] Auditor de Integridad Narrativa agotó ${MAX_PI_ITERATIONS} iteraciones sin alcanzar el umbral ${PI_THRESHOLD}/10. Mejor score logrado: ${bestPlotIntegrity?.score}/10. Se continúa con la mejor escaleta vista.`,
+                  metadata: { bestScore: bestPlotIntegrity?.score, threshold: PI_THRESHOLD },
+                });
+              }
               break;
             }
 
-            console.log(`[Orchestrator] Auditor de Integridad pidió revisión. Re-ejecutando Arquitecto con plotIntegrityFeedback...`);
+            // [Fix101] Guardamos el estado de ESTA iter como histórico
+            // para inyectarlo al Arquitecto en el próximo intento.
+            prevScorePI = audit.puntuacion_global;
+            prevProblemsSummaryPI = problemsSummaryPI;
+
+            console.log(`[Orchestrator] Auditor de Integridad pidió revisión. Re-ejecutando Arquitecto con plotIntegrityFeedback (+ histórico Fix101)...`);
             this.callbacks.onAgentStatus("architect", "thinking", `Integridad narrativa baja (${audit.puntuacion_global}/10). El Arquitecto está corrigiendo presagios, antagonista y pacing...`);
+
+            // [Fix101] Bloque de histórico anti-regresión.
+            const historyBlockPI = `═══════════════════════════════════════════════════════════════════
+CONTEXTO DE TU INTENTO ANTERIOR (Fix101) — ANTI-REGRESIÓN
+═══════════════════════════════════════════════════════════════════
+Tu pasada anterior fue evaluada por el Auditor de Integridad Narrativa y obtuvo ${prevScorePI}/10. Estos fueron los problemas detectados entonces (NO los reintroduzcas y NO rompas las decisiones que ya funcionaban):
+
+${prevProblemsSummaryPI || "(sin detalle textual; ve a las instrucciones de revisión abajo)"}
+
+REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuvieran marcadas como problemáticas. Modifica solo lo que el feedback siguiente te indica corregir. El objetivo es PROGRESO MONOTÓNICO, no rediseñar desde cero.
+═══════════════════════════════════════════════════════════════════
+
+`;
+            const feedbackWithHistoryPI = historyBlockPI + audit.instrucciones_revision;
 
             try {
               const retryResult = await this.architect.execute({
@@ -1946,7 +1994,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 hasEpilogue: project.hasEpilogue,
                 hasAuthorNote: project.hasAuthorNote,
                 architectInstructions: project.architectInstructions || undefined,
-                plotIntegrityFeedback: audit.instrucciones_revision,
+                plotIntegrityFeedback: feedbackWithHistoryPI,
                 seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
             seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
                 kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
@@ -1999,6 +2047,14 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           // `lastSeenScore` corresponde siempre al `worldBibleData` actual.
           if (bestPlotIntegrity && bestPlotIntegrity.data !== worldBibleData && bestPlotIntegrity.score > lastSeenScore) {
             console.log(`[Orchestrator] Recuperando mejor escaleta vista por Auditor (${bestPlotIntegrity.score} > ${lastSeenScore}).`);
+            // [Fix101] Restauración visible para el usuario.
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "architect",
+              message: `[Fix101] Se restaura la mejor escaleta vista por el Auditor de Integridad Narrativa (${bestPlotIntegrity.score}/10) sobre la última (${lastSeenScore}/10) para no perder calidad.`,
+              metadata: { bestScore: bestPlotIntegrity.score, lastScore: lastSeenScore },
+            });
             worldBibleData = bestPlotIntegrity.data;
           }
         }
@@ -2013,14 +2069,19 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       // revelaciones con resistencia documentada (anti "el villano se vacía
       // de golpe"). Sin coste de tokens — son cálculos sobre la escaleta.
       // Si puntúa < 7 o hay severidad alta, re-ejecuta al Arquitecto con
-      // structuralAuditFeedback. Máximo 2 iteraciones. Best-effort.
+      // structuralAuditFeedback. [Fix101] Máximo 3 iteraciones (1 audit + 2
+      // reintentos) e inyección de histórico para evitar regresiones.
+      // Best-effort.
       // ═══════════════════════════════════════════════════════════════
       try {
         if (!this.aborted) {
-          const MAX_SA_ITERATIONS = 2;
+          const MAX_SA_ITERATIONS = 3; // [Fix101] subido de 2 a 3
           const SA_THRESHOLD = 7;
-          let bestSA: { data: ParsedWorldBible; score: number } | null = null;
+          let bestSA: { data: ParsedWorldBible; score: number; problemsSummary: string } | null = null;
           let lastSeenScoreSA = 0;
+          // [Fix101] Histórico para inyectar al Arquitecto en cada retry.
+          let prevScoreSA: number | null = null;
+          let prevProblemsSummarySA = "";
 
           for (let saIter = 0; saIter < MAX_SA_ITERATIONS; saIter++) {
             if (this.aborted) break;
@@ -2033,19 +2094,35 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
             const altas = sa.problemas.filter(p => p.severidad === "alta").length;
             const medias = sa.problemas.filter(p => p.severidad === "media").length;
+            const problemsSummary = sa.problemas.slice(0, 10)
+              .map((p, i) => `${i + 1}. [${p.severidad}] ${p.descripcion}`)
+              .join("\n");
             console.log(`[Orchestrator] Auditor Estructural Fix92 — iter ${saIter + 1}/${MAX_SA_ITERATIONS}: score ${sa.puntuacion_global}/10, veredicto "${sa.veredicto}", ${altas} altas + ${medias} medias. ${sa.resumen}`);
 
             await storage.createActivityLog({
               projectId: project.id,
               level: sa.veredicto === "reescribir" ? "warn" : "info",
               agentRole: "architect",
-              message: `Auditor Estructural (forma/ledger/dosificación) — Score ${sa.puntuacion_global}/10 (${sa.veredicto}). ${altas} altos, ${medias} medios. ${sa.resumen}`,
-              metadata: { structuralAuditScore: sa.puntuacion_global, veredicto: sa.veredicto, problemas: sa.problemas as any, coverage: sa.coverage as any },
+              message: `Auditor Estructural (forma/ledger/dosificación) — iter ${saIter + 1}/${MAX_SA_ITERATIONS} — Score ${sa.puntuacion_global}/10 (${sa.veredicto}). ${altas} altos, ${medias} medios. ${sa.resumen}`,
+              metadata: { structuralAuditScore: sa.puntuacion_global, veredicto: sa.veredicto, problemas: sa.problemas as any, coverage: sa.coverage as any, iteration: saIter + 1 },
             });
+
+            // [Fix101] Si esta iter empeoró respecto al mejor visto, avisamos
+            // explícitamente al usuario. El Arquitecto puede oscilar al
+            // aplicar correcciones; el sistema mantendrá la mejor versión.
+            if (bestSA && sa.puntuacion_global < bestSA.score) {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                agentRole: "architect",
+                message: `[Fix101] El reintento del Arquitecto empeoró la puntuación estructural: ${sa.puntuacion_global}/10 (esta) < ${bestSA.score}/10 (mejor anterior). Si el bucle termina aquí, se restaurará la mejor escaleta vista.`,
+                metadata: { thisScore: sa.puntuacion_global, bestScore: bestSA.score, iteration: saIter + 1 },
+              });
+            }
 
             lastSeenScoreSA = sa.puntuacion_global;
             if (!bestSA || sa.puntuacion_global > bestSA.score) {
-              bestSA = { data: worldBibleData, score: sa.puntuacion_global };
+              bestSA = { data: worldBibleData, score: sa.puntuacion_global, problemsSummary };
             }
 
             // Retry si score bajo O si hay cualquier severidad alta (incluso con score ≥ 7
@@ -2053,10 +2130,43 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             const hasAlta = altas > 0;
             const needsRetry = (sa.puntuacion_global < SA_THRESHOLD || hasAlta) && sa.instrucciones_revision.trim().length > 0;
             const lastIter = saIter === MAX_SA_ITERATIONS - 1;
-            if (!needsRetry || lastIter) break;
+            if (!needsRetry || lastIter) {
+              // [Fix101] Si salimos sin alcanzar umbral en última iter, lo decimos.
+              if (lastIter && needsRetry) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  agentRole: "architect",
+                  message: `[Fix101] Auditor Estructural agotó ${MAX_SA_ITERATIONS} iteraciones sin alcanzar el umbral ${SA_THRESHOLD}/10. Mejor score logrado: ${bestSA?.score}/10. Se continúa con la mejor escaleta vista (problemas residuales documentados arriba).`,
+                  metadata: { bestScore: bestSA?.score, threshold: SA_THRESHOLD },
+                });
+              }
+              break;
+            }
 
-            console.log(`[Orchestrator] Auditor Estructural pidió revisión. Re-ejecutando Arquitecto con structuralAuditFeedback...`);
+            // [Fix101] Guardamos el estado de ESTA iteración como histórico
+            // para inyectárselo al Arquitecto en el próximo intento.
+            prevScoreSA = sa.puntuacion_global;
+            prevProblemsSummarySA = problemsSummary;
+
+            console.log(`[Orchestrator] Auditor Estructural pidió revisión. Re-ejecutando Arquitecto con structuralAuditFeedback (+ histórico Fix101)...`);
             this.callbacks.onAgentStatus("architect", "thinking", `Auditoría estructural baja (${sa.puntuacion_global}/10). El Arquitecto está corrigiendo forma de escena, ledger y dosificación...`);
+
+            // [Fix101] Bloque de histórico anti-regresión: le contamos al
+            // Arquitecto qué score sacó antes y qué problemas tenía, para
+            // que NO los reintroduzca al corregir los nuevos.
+            const historyBlockSA = `═══════════════════════════════════════════════════════════════════
+CONTEXTO DE TU INTENTO ANTERIOR (Fix101) — ANTI-REGRESIÓN
+═══════════════════════════════════════════════════════════════════
+Tu pasada anterior fue evaluada por el Auditor Estructural y obtuvo ${prevScoreSA}/10. Estos fueron los problemas detectados entonces (NO los reintroduzcas y NO rompas las decisiones que ya funcionaban):
+
+${prevProblemsSummarySA || "(sin detalle textual; ve a las instrucciones de revisión abajo)"}
+
+REGLA CRÍTICA: conserva todas las decisiones narrativas del intento anterior que NO estuvieran marcadas como problemáticas. Modifica únicamente lo que el feedback siguiente te indica corregir. El objetivo es PROGRESO MONOTÓNICO en la calidad, no rediseñar desde cero.
+═══════════════════════════════════════════════════════════════════
+
+`;
+            const feedbackWithHistorySA = historyBlockSA + sa.instrucciones_revision;
 
             try {
               const retryResult = await this.architect.execute({
@@ -2071,7 +2181,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 hasEpilogue: project.hasEpilogue,
                 hasAuthorNote: project.hasAuthorNote,
                 architectInstructions: project.architectInstructions || undefined,
-                structuralAuditFeedback: sa.instrucciones_revision,
+                structuralAuditFeedback: feedbackWithHistorySA,
                 seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
                 seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
                 kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
@@ -2098,7 +2208,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                     projectId: project.id,
                     level: "info",
                     agentRole: "architect",
-                    message: `El Arquitecto rediseñó el outline aplicando las correcciones del Auditor Estructural (Fix92).`,
+                    message: `El Arquitecto rediseñó el outline aplicando las correcciones del Auditor Estructural (Fix92) con histórico anti-regresión (Fix101).`,
                   });
                   continue;
                 } else {
@@ -2118,6 +2228,14 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
           if (bestSA && bestSA.data !== worldBibleData && bestSA.score > lastSeenScoreSA) {
             console.log(`[Orchestrator] Recuperando mejor escaleta vista por Auditor Estructural (${bestSA.score} > ${lastSeenScoreSA}).`);
+            // [Fix101] Hacemos la restauración visible al usuario.
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "architect",
+              message: `[Fix101] Se restaura la mejor escaleta vista por el Auditor Estructural (${bestSA.score}/10) sobre la última versión (${lastSeenScoreSA}/10) para no perder calidad.`,
+              metadata: { bestScore: bestSA.score, lastScore: lastSeenScoreSA },
+            });
             worldBibleData = bestSA.data;
           }
         }
@@ -2130,16 +2248,26 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       // Examina la escaleta desde la perspectiva del lector objetivo (pacing,
       // arcos, hooks, promesa de género). Si puntúa < 8/10, re-ejecuta al
       // Arquitecto inyectándole las instrucciones de revisión + el perfil
-      // del lector objetivo. Máximo 2 iteraciones (1 análisis inicial +
-      // 1 reintento). Best-effort: conserva la mejor escaleta vista.
+      // del lector objetivo. [Fix101] Máximo 3 iteraciones (1 análisis + 2
+      // reintentos) e inyección de histórico anti-regresión. Best-effort:
+      // conserva la mejor escaleta vista.
       // ═══════════════════════════════════════════════════════════════
       try {
         if (!this.aborted) {
-          const MAX_BETA_ITERATIONS = 2;
+          const MAX_BETA_ITERATIONS = 3; // [Fix101] subido de 2 a 3
           const BETA_THRESHOLD = 8;
           let bestBetaScore = -1;
           let bestBetaWorldBibleData = worldBibleData;
           let bestBetaResult: any = null;
+          // [Fix101] Histórico anti-regresión para inyectar al Arquitecto.
+          let prevScoreBeta: number | null = null;
+          let prevProblemsSummaryBeta = "";
+          // [Fix101] Score de la última iter evaluada (NO el mejor) — necesario
+          // para comparar best vs último al restaurar al final del bucle. Antes
+          // se usaba bestBetaResult.puntuacion_global, que SIEMPRE iguala a
+          // bestBetaScore (porque bestBetaResult solo se actualiza al mejorar),
+          // dejando la restauración inactiva tras una regresión.
+          let lastBetaScore = -1;
 
           for (let betaIter = 1; betaIter <= MAX_BETA_ITERATIONS; betaIter++) {
             if (this.aborted) break;
@@ -2180,7 +2308,21 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
             const mayores = beta.problemas.filter(p => p.severidad === "mayor").length;
             const menores = beta.problemas.filter(p => p.severidad === "menor").length;
+            const problemsSummaryBeta = beta.problemas.slice(0, 10)
+              .map((p, i) => `${i + 1}. [${p.severidad}] ${p.descripcion}`)
+              .join("\n");
             console.log(`[Orchestrator] Lector Beta (iter ${betaIter}): score ${beta.puntuacion_global}/10, veredicto "${beta.veredicto}", ${mayores} mayores + ${menores} menores. ${beta.resumen}`);
+
+            // [Fix101] Aviso explícito si esta iter empeoró vs el mejor visto.
+            if (bestBetaScore > -1 && beta.puntuacion_global < bestBetaScore) {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                agentRole: "architect",
+                message: `[Fix101] El reintento del Arquitecto empeoró la valoración del Lector Beta: ${beta.puntuacion_global}/10 (esta) < ${bestBetaScore}/10 (mejor anterior). Si el bucle termina aquí, se restaurará la mejor escaleta vista.`,
+                metadata: { thisScore: beta.puntuacion_global, bestScore: bestBetaScore, iteration: betaIter },
+              });
+            }
 
             await storage.createActivityLog({
               projectId: project.id,
@@ -2198,6 +2340,9 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             });
 
             // Best-effort: conserva la mejor escaleta vista.
+            // [Fix101] Trackeamos el score de la última iter (independiente del best)
+            // para que la restauración al final del bucle compare best vs último real.
+            lastBetaScore = beta.puntuacion_global;
             if (beta.puntuacion_global > bestBetaScore) {
               bestBetaScore = beta.puntuacion_global;
               bestBetaWorldBibleData = worldBibleData;
@@ -2230,8 +2375,25 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 `Escaleta con score ${beta.puntuacion_global}/10 según lector objetivo. El Arquitecto está rediseñando...`
               );
 
-              // Componer feedback completo: perfil de lector + instrucciones.
-              const betaFeedback = `PERFIL DEL LECTOR OBJETIVO (diseña pensando explícitamente en este lector):
+              // [Fix101] Guardamos histórico de ESTA iter para el próximo retry.
+              prevScoreBeta = beta.puntuacion_global;
+              prevProblemsSummaryBeta = problemsSummaryBeta;
+
+              // [Fix101] Bloque de histórico anti-regresión.
+              const historyBlockBeta = `═══════════════════════════════════════════════════════════════════
+CONTEXTO DE TU INTENTO ANTERIOR (Fix101) — ANTI-REGRESIÓN
+═══════════════════════════════════════════════════════════════════
+Tu pasada anterior fue evaluada por el Lector Beta y obtuvo ${prevScoreBeta}/10. Estos fueron los problemas detectados entonces (NO los reintroduzcas y NO rompas las decisiones que ya funcionaban):
+
+${prevProblemsSummaryBeta || "(sin detalle textual; ve a las instrucciones de revisión abajo)"}
+
+REGLA CRÍTICA: conserva las decisiones narrativas anteriores que NO estuvieran marcadas como problemáticas. Modifica solo lo que el feedback siguiente te indica corregir. El objetivo es PROGRESO MONOTÓNICO, no rediseñar desde cero.
+═══════════════════════════════════════════════════════════════════
+
+`;
+
+              // Componer feedback completo: histórico + perfil de lector + instrucciones.
+              const betaFeedback = `${historyBlockBeta}PERFIL DEL LECTOR OBJETIVO (diseña pensando explícitamente en este lector):
 ${beta.perfil_lector_objetivo}
 
 INSTRUCCIONES DE REVISIÓN DEL LECTOR BETA:
@@ -2325,12 +2487,18 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
           }
 
           // Best-effort fallback: si la mejor escaleta no es la actual, restaurar.
-          if (bestBetaWorldBibleData !== worldBibleData && bestBetaScore > -1) {
-            const currentBetaScore = bestBetaResult?.puntuacion_global ?? -1;
-            if (bestBetaScore > currentBetaScore) {
-              console.log(`[Orchestrator] Restaurando mejor escaleta vista (score ${bestBetaScore}/10) sobre la actual.`);
-              worldBibleData = bestBetaWorldBibleData;
-            }
+          // [Fix101] Comparamos best vs last (no best vs best). Antes este bloque
+          // era inalcanzable porque bestBetaResult.puntuacion_global == bestBetaScore.
+          if (bestBetaWorldBibleData !== worldBibleData && bestBetaScore > -1 && bestBetaScore > lastBetaScore) {
+            console.log(`[Orchestrator] Restaurando mejor escaleta vista (score ${bestBetaScore}/10 > último ${lastBetaScore}/10).`);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "architect",
+              message: `[Fix101] Se restaura la mejor escaleta vista por el Lector Beta (${bestBetaScore}/10) sobre la última (${lastBetaScore}/10) para no perder calidad.`,
+              metadata: { bestScore: bestBetaScore, lastScore: lastBetaScore },
+            });
+            worldBibleData = bestBetaWorldBibleData;
           }
         }
       } catch (betaErr) {
