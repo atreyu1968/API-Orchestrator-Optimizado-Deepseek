@@ -2149,20 +2149,82 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             prevScoreSA = sa.puntuacion_global;
             prevProblemsSummarySA = problemsSummary;
 
-            console.log(`[Orchestrator] Auditor Estructural pidió revisión. Re-ejecutando Arquitecto con structuralAuditFeedback (+ histórico Fix101)...`);
+            console.log(`[Orchestrator] Auditor Estructural pidió revisión. Re-ejecutando Arquitecto con structuralAuditFeedback (+ histórico Fix101/Fix102)...`);
             this.callbacks.onAgentStatus("architect", "thinking", `Auditoría estructural baja (${sa.puntuacion_global}/10). El Arquitecto está corrigiendo forma de escena, ledger y dosificación...`);
 
-            // [Fix101] Bloque de histórico anti-regresión: le contamos al
-            // Arquitecto qué score sacó antes y qué problemas tenía, para
-            // que NO los reintroduzca al corregir los nuevos.
-            const historyBlockSA = `═══════════════════════════════════════════════════════════════════
-CONTEXTO DE TU INTENTO ANTERIOR (Fix101) — ANTI-REGRESIÓN
-═══════════════════════════════════════════════════════════════════
-Tu pasada anterior fue evaluada por el Auditor Estructural y obtuvo ${prevScoreSA}/10. Estos fueron los problemas detectados entonces (NO los reintroduzcas y NO rompas las decisiones que ya funcionaban):
+            // [Fix102] Mapa de salud por dimensión: contar problemas por `area`.
+            // Una dimensión es ACEPTABLE si tiene ≤1 problema (en zona verde);
+            // es KO si tiene ≥2 (necesita rediseño). Sin alta = nunca KO duro.
+            // Razón: en logs reales el Arquitecto corregía las KO pero rompía
+            // las OK que ni siquiera estaban en prioridad — había que decirle
+            // explícitamente "no toques estas, concéntrate solo en aquéllas".
+            const dimensionLabels: Record<string, string> = {
+              forma_escena: "Forma de escena (variedad acto 2)",
+              ledger_info: "Ledger de información nueva por capítulo",
+              dosificacion_revelacion: "Dosificación de revelaciones con resistencia",
+              arco_secreto: "Arco secreto / reveal interno protagonista",
+              falso_aliado: "Falso aliado / traición humanizada",
+              escalada_acto2: "Escalada dramática acto 2",
+              deus_ex_machina: "Anti deus ex machina / setup de ayudas",
+              trauma_protagonista: "Trauma del protagonista como palanca activa",
+            };
+            const dimensionCountsSA: Record<string, number> = {
+              forma_escena: 0, ledger_info: 0, dosificacion_revelacion: 0,
+              arco_secreto: 0, falso_aliado: 0, escalada_acto2: 0,
+              deus_ex_machina: 0, trauma_protagonista: 0,
+            };
+            // [Fix102 post-review] Marcador de severidad alta por dimensión.
+            // Una "alta" obliga a KO aunque haya un único problema, evitando
+            // que el mapa diga "no la toques" y las instrucciones del auditor
+            // a continuación contradigan eso pidiendo corregirla.
+            const dimensionHasAltaSA: Record<string, boolean> = {
+              forma_escena: false, ledger_info: false, dosificacion_revelacion: false,
+              arco_secreto: false, falso_aliado: false, escalada_acto2: false,
+              deus_ex_machina: false, trauma_protagonista: false,
+            };
+            for (const p of sa.problemas) {
+              if (p.area in dimensionCountsSA) {
+                dimensionCountsSA[p.area]++;
+                if (p.severidad === "alta") dimensionHasAltaSA[p.area] = true;
+              }
+            }
+            const okDimensions: string[] = [];
+            const koDimensions: { label: string; count: number; target: string; hasAlta: boolean }[] = [];
+            for (const [area, count] of Object.entries(dimensionCountsSA)) {
+              const label = dimensionLabels[area];
+              const hasAlta = dimensionHasAltaSA[area];
+              // [Fix102 post-review] OK solo si count ≤ 1 Y no hay severidad alta.
+              if (count <= 1 && !hasAlta) {
+                okDimensions.push(`  - ${label}: ${count} problema(s) → ACEPTABLE, NO LA TOQUES`);
+              } else {
+                koDimensions.push({ label, count, target: count >= 4 ? "≤1" : "0", hasAlta });
+              }
+            }
+            const koLines = koDimensions
+              .map(d => `  - ${d.label}: ${d.count} problema(s)${d.hasAlta ? " [incluye severidad ALTA]" : ""} → REDUCIR A ${d.target}`)
+              .join("\n");
+            const okBlock = okDimensions.length > 0
+              ? `DIMENSIONES YA ACEPTABLES — NO LAS MODIFIQUES:\n${okDimensions.join("\n")}\n\n`
+              : "";
+            const koBlock = koDimensions.length > 0
+              ? `DIMENSIONES QUE DEBES CORREGIR — CONCENTRA TU REDISEÑO AQUÍ:\n${koLines}\n\n`
+              : `(Todas las dimensiones están técnicamente en zona aceptable por conteo, pero el score global sigue bajo. Aplica MICROAJUSTES QUIRÚRGICOS en los problemas listados abajo, sin redibujar la arquitectura ni mover capítulos clave.)\n\n`;
 
+            // [Fix101 + Fix102] Bloque de histórico anti-regresión con mapa
+            // de salud por dimensión. El mapa es la clave de Fix102: separa
+            // explícitamente qué preservar de qué atacar.
+            const historyBlockSA = `═══════════════════════════════════════════════════════════════════
+CONTEXTO DE TU INTENTO ANTERIOR (Fix101/Fix102) — ANTI-REGRESIÓN
+═══════════════════════════════════════════════════════════════════
+Tu pasada anterior fue evaluada por el Auditor Estructural y obtuvo ${prevScoreSA}/10.
+
+MAPA DE SALUD POR DIMENSIÓN (8 dimensiones independientes del auditor):
+${okBlock}${koBlock}REGLA CRÍTICA (Fix102): si una dimensión está marcada ACEPTABLE y la rompes en este rediseño, FALLARÁS la auditoría aunque corrijas las demás. El auditor cuenta problemas por dimensión de forma independiente — empeorar una dimensión OK borra el progreso en las KO. Por eso DEBES preservar la lógica narrativa de las dimensiones OK y concentrar todo tu esfuerzo de rediseño solo en las dimensiones KO.
+
+DETALLE DE PROBLEMAS ESPECÍFICOS DEL INTENTO ANTERIOR (top-10):
 ${prevProblemsSummarySA || "(sin detalle textual; ve a las instrucciones de revisión abajo)"}
 
-REGLA CRÍTICA: conserva todas las decisiones narrativas del intento anterior que NO estuvieran marcadas como problemáticas. Modifica únicamente lo que el feedback siguiente te indica corregir. El objetivo es PROGRESO MONOTÓNICO en la calidad, no rediseñar desde cero.
+OBJETIVO: PROGRESO MONOTÓNICO. No rediseñes desde cero. Para cada dimensión OK, conserva las decisiones del intento anterior (capítulos donde ya había variedad de forma, capítulos donde ya había info nueva real, revelaciones ya dosificadas, etc.). Solo modifica las dimensiones KO.
 ═══════════════════════════════════════════════════════════════════
 
 `;
