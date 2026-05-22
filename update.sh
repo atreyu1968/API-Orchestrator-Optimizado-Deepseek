@@ -121,7 +121,7 @@ echo "3. Sincronizando schema de base de datos..."
 CLEAN_DB_URL_PUSH=$(echo "$DATABASE_URL" | sed 's|^postgres://|postgresql://|')
 DB_USER_PUSH=$(echo "$CLEAN_DB_URL_PUSH" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
 DB_NAME_PUSH=$(echo "$CLEAN_DB_URL_PUSH" | sed -n 's|postgresql://[^/]*/\([^?]*\).*|\1|p')
-SUPERUSER_DB_URL="postgresql://postgres@localhost:5432/$DB_NAME_PUSH"
+SUPERUSER_DB_URL="postgresql://postgres@/$DB_NAME_PUSH?host=/var/run/postgresql"
 
 # Pre-crear tablas/columnas que drizzle-kit detectaría como ambiguas
 # (rename vs create) para evitar el prompt interactivo que cuelga el push
@@ -182,7 +182,7 @@ sudo -u postgres \
     env "HOME=/var/lib/postgresql" "PATH=$PATH" \
     "DATABASE_URL=$SUPERUSER_DB_URL" "NODE_ENV=production" \
     npx drizzle-kit push --force 2>&1 | tail -20
-PUSH_EXIT=$?
+PUSH_EXIT=${PIPESTATUS[0]}
 set -e
 if [ "$PUSH_EXIT" -eq 0 ]; then
     echo "[OK] Schema sincronizado"
