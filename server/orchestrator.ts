@@ -17,6 +17,8 @@ import {
   OutlineBetaReaderAgent,
   PlotIntegrityAuditorAgent,
   computePlotIntegrityMetrics,
+  WorldBibleAuditorAgent,
+  type WorldBibleAuditResult,
   runArchitectStructuralAudits,
   HolisticReviewerAgent,
   type HolisticReviewerResult,
@@ -152,6 +154,8 @@ export type FinalReviewOutcome =
 
 export class Orchestrator {
   private architect = new ArchitectAgent();
+  // [Fix110] Auditor de World Bible (entre Fase 1 y Fase 2 del Arquitecto).
+  private worldBibleAuditor = new WorldBibleAuditorAgent();
   // [Fix78] Consolidador de Biblia de Serie — extrae fichas canónicas de
   // personajes y mundo de TODOS los volúmenes previos para que el Architect
   // y el Ghostwriter del nuevo volumen NO renombren ni reinventen rasgos.
@@ -1355,6 +1359,210 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         }
       }
 
+      // [Fix110] Auditor de World Bible (entre Fase 1 y Fase 2 del Arquitecto).
+      // Fortifica la base narrativa (antagonismo, escalada potencial del acto 2,
+      // reservas de secretos, stakes, densidad de arcos) ANTES de comprometer la
+      // escaleta. Causa raíz que ataca: en runs reales el Auditor Estructural
+      // topaba en 6.5/10 con problemas concentrados en escalada_acto2 porque la
+      // Fase 1 no tenía munición dramática suficiente; reescribir la escaleta
+      // sobre una base débil tiene techo natural. Skip en volúmenes de serie
+      // (la World Bible canónica viene del consolidador y no se debe alterar).
+      const MAX_WBA_ITERATIONS = 3;
+      const WBA_THRESHOLD = 7;
+      // [Fix110-rev1] Umbral mínimo para REUSAR la Fase 1 fortificada. Si tras
+      // agotar las iteraciones el mejor score sigue siendo <5, la base es
+      // demasiado débil y preferimos caer al flujo clásico del Arquitecto
+      // (Phase 1 + Phase 2 frescos) en lugar de congelar una base subóptima.
+      const WBA_MIN_REUSE_SCORE = 5;
+      let prefortifiedPhase1Json: any = null;
+      const isSeriesVolume = !!(seriesUnifiedWorldBibleStr && seriesUnifiedWorldBibleStr.trim().length > 0);
+      if (!isSeriesVolume) {
+        let bestWBA: { score: number; phase1Json: any; result: WorldBibleAuditResult } | null = null;
+        let wbaFeedback: string | undefined = undefined;
+        for (let wbaIter = 0; wbaIter < MAX_WBA_ITERATIONS; wbaIter++) {
+          if (this.aborted) {
+            console.log(`[Orchestrator] WBA loop aborted before iter ${wbaIter + 1} (project ${project.id})`);
+            return;
+          }
+          try {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "architect",
+              message: wbaIter === 0
+                ? `[Fix110] El Arquitecto está generando la World Bible (Fase 1) — el Auditor de World Bible la revisará antes de la escaleta.`
+                : `[Fix110] El Arquitecto regenera la Fase 1 aplicando el feedback del Auditor de World Bible (iter ${wbaIter + 1}/${MAX_WBA_ITERATIONS}).`,
+              metadata: { fix: "Fix110", iteration: wbaIter + 1 },
+            });
+          } catch {}
+
+          const phase1OnlyResult = await this.architect.execute({
+            title: project.title,
+            premise: effectivePremise,
+            genre: project.genre,
+            tone: project.tone,
+            chapterCount: project.chapterCount,
+            minChapterCount: (project as any).minChapterCount ?? null,
+            maxChapterCount: (project as any).maxChapterCount ?? null,
+            hasPrologue: project.hasPrologue,
+            hasEpilogue: project.hasEpilogue,
+            hasAuthorNote: project.hasAuthorNote,
+            architectInstructions: project.architectInstructions || undefined,
+            kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+            forbiddenNames,
+            projectId: project.id,
+            previousVolumesFullText,
+            pseudonymCatalog,
+            seriesUnifiedWorldBible: undefined,
+            seriesMilestonesAndThreads: undefined,
+            extendedGuideContent: extendedGuideContent || undefined,
+            onlyPhase1: true,
+            worldBibleFeedback: wbaFeedback,
+          });
+
+          if (this.aborted) return;
+
+          await this.trackTokenUsage(project.id, phase1OnlyResult.tokenUsage, "El Arquitecto", "deepseek-v4-flash", undefined, "world_bible");
+
+          if (phase1OnlyResult.error || phase1OnlyResult.timedOut || !phase1OnlyResult.content?.trim()) {
+            console.warn(`[Orchestrator] [Fix110] Fase 1 fallida en iter ${wbaIter + 1}: ${phase1OnlyResult.error || "vacío/timeout"}. Saltamos WBA y caemos al flujo clásico.`);
+            try {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                agentRole: "architect",
+                message: `[Fix110] La Fase 1 falló durante el bucle WBA (iter ${wbaIter + 1}). Se continúa con el flujo clásico del Arquitecto.`,
+                metadata: { fix: "Fix110", iteration: wbaIter + 1, error: phase1OnlyResult.error || "vacío/timeout" },
+              });
+            } catch {}
+            break;
+          }
+
+          let phase1Json: any;
+          try {
+            phase1Json = JSON.parse(phase1OnlyResult.content);
+          } catch (e) {
+            console.warn(`[Orchestrator] [Fix110] Fase 1 JSON inválido en iter ${wbaIter + 1}: ${(e as Error).message}. Saltamos WBA.`);
+            break;
+          }
+
+          try {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "world-bible-auditor",
+              message: `[Fix110] El Auditor de World Bible está revisando la Fase 1 (iter ${wbaIter + 1}/${MAX_WBA_ITERATIONS}).`,
+            });
+          } catch {}
+
+          const wbaResp = await this.worldBibleAuditor.audit({
+            title: project.title,
+            genre: project.genre,
+            tone: project.tone,
+            premise: effectivePremise,
+            chapterCount: project.chapterCount,
+            phase1Json,
+            projectId: project.id,
+          });
+
+          if (this.aborted) return;
+
+          await this.trackTokenUsage(project.id, wbaResp.raw.tokenUsage, "El Auditor de World Bible", "deepseek-v4-flash", undefined, "world_bible_audit");
+
+          const wba = wbaResp.result;
+          if (!wba) {
+            console.warn(`[Orchestrator] [Fix110] Auditor de World Bible no devolvió resultado válido en iter ${wbaIter + 1}. Saltamos WBA.`);
+            try {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                agentRole: "world-bible-auditor",
+                message: `[Fix110] El Auditor de World Bible no devolvió resultado válido en iter ${wbaIter + 1}. Se usa la mejor Fase 1 vista (si la hay) o se cae al flujo clásico.`,
+                metadata: { fix: "Fix110", iteration: wbaIter + 1 },
+              });
+            } catch {}
+            break;
+          }
+
+          const altasW = wba.problemas.filter(p => p.severidad === "alta").length;
+          const mediasW = wba.problemas.filter(p => p.severidad === "media").length;
+
+          try {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: wba.veredicto === "apto" ? "info" : "warn",
+              agentRole: "world-bible-auditor",
+              message: `[Fix110] Auditor de World Bible — iter ${wbaIter + 1}/${MAX_WBA_ITERATIONS} — Score ${wba.puntuacion_global}/10 (${wba.veredicto}). ${altasW} altos, ${mediasW} medios. ${wba.resumen}`,
+              metadata: { fix: "Fix110", iteration: wbaIter + 1, score: wba.puntuacion_global, veredicto: wba.veredicto, altas: altasW, medias: mediasW },
+            });
+          } catch {}
+
+          if (bestWBA == null || wba.puntuacion_global > bestWBA.score) {
+            bestWBA = { score: wba.puntuacion_global, phase1Json, result: wba };
+          }
+
+          if (wba.puntuacion_global >= WBA_THRESHOLD && wba.veredicto === "apto") {
+            try {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "info",
+                agentRole: "world-bible-auditor",
+                message: `[Fix110] World Bible APTA (${wba.puntuacion_global}/10) en iter ${wbaIter + 1}. El Arquitecto procede a la escaleta sobre una base fortificada.`,
+                metadata: { fix: "Fix110", iteration: wbaIter + 1, score: wba.puntuacion_global },
+              });
+            } catch {}
+            break;
+          }
+
+          wbaFeedback = wba.feedback_para_arquitecto || undefined;
+          if (!wbaFeedback || wbaFeedback.trim().length === 0) {
+            console.warn(`[Orchestrator] [Fix110] Auditor sin feedback accionable en iter ${wbaIter + 1}, paramos bucle.`);
+            break;
+          }
+        }
+
+        // [Fix110-rev1] Decisión final explícita: reusar Fase 1 fortificada
+        // solo si supera el umbral mínimo. Si bestWBA es null (fallo técnico
+        // en todas las iters) o el score es muy bajo, caemos al flujo clásico
+        // y el Arquitecto regenerará Fase 1 desde cero en el architectAttempt
+        // loop (comportamiento idéntico al pre-Fix110).
+        if (bestWBA && bestWBA.score >= WBA_MIN_REUSE_SCORE) {
+          prefortifiedPhase1Json = bestWBA.phase1Json;
+          const passedThreshold = bestWBA.score >= WBA_THRESHOLD && bestWBA.result.veredicto === "apto";
+          try {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "architect",
+              message: passedThreshold
+                ? `[Fix110] Decisión final: REUSAR Fase 1 fortificada (${bestWBA.score}/10, APTA). El Arquitecto salta a Fase 2 sobre base sólida.`
+                : `[Fix110] Decisión final: REUSAR la mejor Fase 1 vista (${bestWBA.score}/10) aunque no alcance umbral apto (${WBA_THRESHOLD}/10). El Arquitecto saltará a Fase 2 con problemas residuales documentados — el bucle del Auditor Estructural posterior podrá compensar.`,
+              metadata: { fix: "Fix110", decision: "reuse", bestScore: bestWBA.score, passedThreshold, minReuseScore: WBA_MIN_REUSE_SCORE },
+            });
+          } catch {}
+        } else if (bestWBA) {
+          try {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              agentRole: "architect",
+              message: `[Fix110] Decisión final: DESCARTAR la Fase 1 fortificada (mejor score ${bestWBA.score}/10 < umbral mínimo ${WBA_MIN_REUSE_SCORE}/10). El Arquitecto regenerará Fase 1 desde cero en el flujo clásico para no congelar una base subóptima.`,
+              metadata: { fix: "Fix110", decision: "fallback_classic", bestScore: bestWBA.score, minReuseScore: WBA_MIN_REUSE_SCORE },
+            });
+          } catch {}
+        } else {
+          try {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              agentRole: "architect",
+              message: `[Fix110] Decisión final: CAER AL FLUJO CLÁSICO. El bucle WBA no produjo ninguna Fase 1 válida (fallos técnicos en Fase 1 o auditor). El Arquitecto regenerará Fase 1 desde cero.`,
+              metadata: { fix: "Fix110", decision: "fallback_classic_no_audit" },
+            });
+          } catch {}
+        }
+      }
+
       const MAX_ARCHITECT_RETRIES = 3;
       let architectAttempt = 0;
       // v7.2 best-effort buffer: si el Arquitecto reintenta y la calidad EMPEORA
@@ -1401,6 +1609,10 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
             seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
             extendedGuideContent: extendedGuideContent || undefined,
+            // [Fix110] Si el bucle WBA produjo una Fase 1 fortificada, la
+            // reutilizamos vía Fix106 — el Arquitecto salta Fase 1 y va
+            // directo a generar la escaleta sobre esa base.
+            reusePhase1Json: prefortifiedPhase1Json || undefined,
           });
 
           // Architect call may take up to 5 minutes; if a heartbeat watchdog

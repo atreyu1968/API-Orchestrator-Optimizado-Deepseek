@@ -85,6 +85,18 @@ interface ArchitectInput {
   // escaleta — feedback semánticamente coherente con las entidades reales.
   reusePhase1Json?: any;
 
+  // [Fix110] Si true, el Arquitecto SOLO ejecuta Fase 1 (World Bible) y
+  // devuelve. Se usa en el bucle del Auditor de World Bible (orquestador)
+  // para fortificar la base narrativa ANTES de comprometer la escaleta.
+  // El content devuelto es JSON.stringify(phase1Json).
+  onlyPhase1?: boolean;
+
+  // [Fix110] Feedback del Auditor de World Bible. Si está presente, se
+  // inyecta al inicio del phase1Prompt como bloque de correcciones que el
+  // Arquitecto debe aplicar al regenerar la Fase 1. Se combina con
+  // onlyPhase1=true en el bucle WBA del orquestador.
+  worldBibleFeedback?: string;
+
   // [Fix78] World Bible consolidada de la serie (personajes con fichas ricas,
   // lugares, léxico, reglas) extraída de TODOS los volúmenes previos. El
   // Arquitecto DEBE usarla como verdad canónica: prohibido renombrar,
@@ -1115,9 +1127,25 @@ ${input.writtenChaptersFullText}
     }
     const phase1StartedAt = Date.now();
 
+    // [Fix110] Bloque de feedback del Auditor de World Bible (si el
+    // orquestador está en un retry tras WBA). Se prepone para que el
+    // Arquitecto lo aplique literalmente a la nueva Fase 1.
+    const wbaFeedbackBlock = input.worldBibleFeedback
+      ? `
+    ⚠️ CORRECCIONES OBLIGATORIAS DEL AUDITOR DE WORLD BIBLE (aplica AL PIE DE LA LETRA):
+    El intento anterior de Fase 1 fue auditado y se detectaron debilidades en la base
+    narrativa que harían imposible sostener un acto 2 con escalada. Reescribe la Fase 1
+    integrando ESTAS correcciones concretas (no las menciones en abstracto: añade
+    realmente los personajes, palancas, secretos, stakes o arcos pedidos):
+
+    ${input.worldBibleFeedback}
+
+    `
+      : "";
+
     const phase1Prompt = `
     ${commonContext}
-    
+    ${wbaFeedbackBlock}
     FASE 1 DE 2: Genera la World Bible completa, matriz de arcos, plan de momentum, estructura de 3 actos, línea temporal y premisa.
     
     La novela tendrá ${input.chapterCount} capítulos${input.hasPrologue ? " + prólogo" : ""}${input.hasEpilogue ? " + epílogo" : ""}${input.hasAuthorNote ? " + nota del autor" : ""}.
@@ -1192,6 +1220,20 @@ ${input.writtenChaptersFullText}
     }
 
     } // [Fix106] fin del else (Fase 1 sí ejecutada).
+
+    // [Fix110] Short-circuit del bucle WBA: si el orquestador solo quiere la
+    // Fase 1 (para pasarla por el Auditor de World Bible antes de comprometer
+    // la escaleta), devolvemos aquí con el phase1Json serializado.
+    if (input.onlyPhase1) {
+      const tokenUsageOut = phase1Response?.tokenUsage;
+      const thoughtSignatureOut = phase1Response?.thoughtSignature;
+      return {
+        content: JSON.stringify(phase1Json),
+        timedOut: false,
+        tokenUsage: tokenUsageOut,
+        thoughtSignature: thoughtSignatureOut,
+      };
+    }
 
     console.log(`[El Arquitecto] === FASE 2: Generando escaleta de ${input.chapterCount} capítulos ===`);
 
