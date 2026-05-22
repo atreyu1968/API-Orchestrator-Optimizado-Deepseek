@@ -2154,6 +2154,14 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
           // [Fix101] Histórico para inyectar al Arquitecto en cada retry.
           let prevScoreSA: number | null = null;
           let prevProblemsSummarySA = "";
+          // [Fix109d] Contador de regresiones consecutivas para early-stop.
+          // Si el Arquitecto baja del best 2 iters seguidas, parar el bucle
+          // y restaurar el best. Razón: en el run real de "El eco del
+          // asfalto" iter 1 dio 4.4/10, iter 2 dio 3.1, iter 3-6 dieron
+          // 1/10 — 15-20 min de tokens quemados en una causa perdida. El
+          // bucle ya restauraba el best al final, pero gastaba todas las
+          // iteraciones. Con este corte salimos en iter 3 en vez de iter 6.
+          let consecutiveRegressionsSA = 0;
 
           for (let saIter = 0; saIter < MAX_SA_ITERATIONS; saIter++) {
             if (this.aborted) break;
@@ -2166,9 +2174,22 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
 
             const altas = sa.problemas.filter(p => p.severidad === "alta").length;
             const medias = sa.problemas.filter(p => p.severidad === "media").length;
+            // [Fix109c] Inyectar el campo `sugerencia` (quirúrgico, ya
+            // generado por el auditor con instrucciones cap-por-cap
+            // concretas) además de `descripcion`, `area` y `capitulos`.
+            // Antes solo se pasaba `[severidad] descripcion`: el Arquitecto
+            // recibía el diagnóstico pero NO la receta. Con el feedback
+            // completo el Arquitecto sabe qué cap tocar y cómo. En el run
+            // real esto explica que el auditor pidiera "humaniza al
+            // traidor antes del reveal" y el Arquitecto produjera 11
+            // problemas de arco_secreto en iter 3 — estaba operando a
+            // ciegas sobre conteos sin ver las sugerencias quirúrgicas.
             const problemsSummary = sa.problemas.slice(0, 10)
-              .map((p, i) => `${i + 1}. [${p.severidad}] ${p.descripcion}`)
-              .join("\n");
+              .map((p, i) => {
+                const caps = p.capitulos.length > 0 ? `caps ${p.capitulos.join(", ")}` : "sin caps concretos";
+                return `${i + 1}. [${p.severidad}/${p.area}] ${caps}\n   Problema: ${p.descripcion}\n   Sugerencia: ${p.sugerencia}`;
+              })
+              .join("\n\n");
             console.log(`[Orchestrator] Auditor Estructural Fix92 — iter ${saIter + 1}/${MAX_SA_ITERATIONS}: score ${sa.puntuacion_global}/10, veredicto "${sa.veredicto}", ${altas} altas + ${medias} medias. ${sa.resumen}`);
 
             await storage.createActivityLog({
@@ -2182,14 +2203,21 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             // [Fix101] Si esta iter empeoró respecto al mejor visto, avisamos
             // explícitamente al usuario. El Arquitecto puede oscilar al
             // aplicar correcciones; el sistema mantendrá la mejor versión.
+            // [Fix109d] Además contamos regresiones consecutivas para
+            // disparar early-stop más abajo.
             if (bestSA && sa.puntuacion_global < bestSA.score) {
+              consecutiveRegressionsSA++;
               await storage.createActivityLog({
                 projectId: project.id,
                 level: "warn",
                 agentRole: "architect",
                 message: `[Fix101] El reintento del Arquitecto empeoró la puntuación estructural: ${sa.puntuacion_global}/10 (esta) < ${bestSA.score}/10 (mejor anterior). Si el bucle termina aquí, se restaurará la mejor escaleta vista.`,
-                metadata: { thisScore: sa.puntuacion_global, bestScore: bestSA.score, iteration: saIter + 1 },
+                metadata: { thisScore: sa.puntuacion_global, bestScore: bestSA.score, iteration: saIter + 1, consecutiveRegressions: consecutiveRegressionsSA },
               });
+            } else {
+              // Score ≥ best (mejoró o igualó). Reseteamos el contador:
+              // solo cortamos por regresiones SEGUIDAS, no acumuladas.
+              consecutiveRegressionsSA = 0;
             }
 
             lastSeenScoreSA = sa.puntuacion_global;
@@ -2202,7 +2230,14 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             const hasAlta = altas > 0;
             const needsRetry = (sa.puntuacion_global < SA_THRESHOLD || hasAlta) && sa.instrucciones_revision.trim().length > 0;
             const lastIter = saIter === MAX_SA_ITERATIONS - 1;
-            if (!needsRetry || lastIter) {
+            // [Fix109d] Early-stop por regresión consecutiva: si llevamos
+            // ≥2 iters seguidas por debajo del best, el Arquitecto está
+            // oscilando o regresando y no hay señal de que vaya a converger.
+            // Cortamos en seco y restauramos el best (más abajo). Requiere
+            // saIter ≥ 1 para que tenga sentido ("best" implica que ya hubo
+            // alguna iter previa).
+            const earlyStopByRegression = consecutiveRegressionsSA >= 2 && bestSA != null && saIter >= 1;
+            if (!needsRetry || lastIter || earlyStopByRegression) {
               // [Fix101] Si salimos sin alcanzar umbral en última iter, lo decimos.
               if (lastIter && needsRetry) {
                 await storage.createActivityLog({
@@ -2211,6 +2246,16 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
                   agentRole: "architect",
                   message: `[Fix101] Auditor Estructural agotó ${MAX_SA_ITERATIONS} iteraciones sin alcanzar el umbral ${SA_THRESHOLD}/10. Mejor score logrado: ${bestSA?.score}/10. Se continúa con la mejor escaleta vista (problemas residuales documentados arriba).`,
                   metadata: { bestScore: bestSA?.score, threshold: SA_THRESHOLD },
+                });
+              }
+              // [Fix109d] Si salimos por early-stop, lo decimos también.
+              if (earlyStopByRegression && needsRetry && !lastIter) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  agentRole: "architect",
+                  message: `[Fix109d] Early-stop del Auditor Estructural: el Arquitecto bajó del mejor visto (${bestSA?.score}/10) en ${consecutiveRegressionsSA} iteraciones consecutivas. Cortamos en iter ${saIter + 1}/${MAX_SA_ITERATIONS} para no seguir gastando tokens en una causa perdida. Se restaurará la mejor escaleta vista (${bestSA?.score}/10).`,
+                  metadata: { fix: "Fix109d", bestScore: bestSA?.score, lastScore: sa.puntuacion_global, consecutiveRegressions: consecutiveRegressionsSA, iteration: saIter + 1, maxIterations: MAX_SA_ITERATIONS },
                 });
               }
               break;
