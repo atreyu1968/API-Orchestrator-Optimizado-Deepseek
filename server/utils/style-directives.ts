@@ -123,6 +123,53 @@ export function extractStyleDirectives(rawGuide: string | undefined | null): Sty
   };
 }
 
+/**
+ * [Fix108] Configuración estructurada de la voz narrativa (proviene del
+ * campo `projects.narrativeVoice`). Se sintetiza en un bloque de texto que
+ * se prepende a `guiaEstilo` para que el extractor regex existente lo
+ * detecte SIN tocar las interfaces de los agentes.
+ */
+export interface NarrativeVoiceConfig {
+  pov: "first" | "third" | "dual_first" | "dual_third" | "second";
+  tense: "present" | "past";
+  narratorType?: "omnisciente" | "limitado" | "testigo";
+}
+
+/**
+ * [Fix108] Sintetiza el bloque canónico de voz que se inyecta al inicio de
+ * `guiaEstilo`. Si `voice` es null/undefined devuelve cadena vacía (caemos al
+ * comportamiento clásico: inferencia regex sobre la guía libre). Si está
+ * presente, emite las dos líneas-llave que el extractor regex de este módulo
+ * reconoce con certeza ("tercera persona" / "Tiempo verbal: presente"), de
+ * modo que TODOS los agentes que llaman a `extractStyleDirectives(guiaEstilo)`
+ * heredan la voz sin necesidad de plumbing adicional.
+ */
+export function synthesizeVoiceBlock(voice: NarrativeVoiceConfig | null | undefined): string {
+  if (!voice) return "";
+  const povMap: Record<NarrativeVoiceConfig["pov"], string> = {
+    first: "primera persona",
+    third: "tercera persona",
+    dual_first: "primera persona con narración dual (alternando POVs)",
+    dual_third: "tercera persona con narración dual (alternando POVs)",
+    second: "segunda persona",
+  };
+  const tenseMap: Record<NarrativeVoiceConfig["tense"], string> = {
+    present: "presente",
+    past: "pasado",
+  };
+  const narratorPart = voice.narratorType ? `, narrador ${voice.narratorType}` : "";
+  return `## VOZ NARRATIVA CANÓNICA DEL PROYECTO (fijada por el usuario, Fix108)
+
+Esta novela está narrada en ${povMap[voice.pov]}${narratorPart}.
+Tiempo verbal: ${tenseMap[voice.tense]}.
+
+Esta directiva es CANON del proyecto y no se negocia bajo ninguna circunstancia. Todos los capítulos (incluidos prólogo y epílogo) deben respetarla.
+
+---
+
+`;
+}
+
 /** Bloque listo para prepender al prompt del Architect. */
 export function buildArchitectDirectiveBlock(d: StyleDirectives): string {
   if (!d.detected || !d.humanText) return "";

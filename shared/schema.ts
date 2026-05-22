@@ -188,8 +188,30 @@ export const projects = pgTable("projects", {
   // poder revertir si una iteración degrada la prosa.
   autoBetaLoop: boolean("auto_beta_loop").notNull().default(false),
   autoBetaLoopMaxIterations: integer("auto_beta_loop_max_iterations").notNull().default(3),
+  // [Fix108] Voz narrativa canónica del proyecto (POV + tiempo verbal + tipo
+  // de narrador opcional). Antes de Fix108 la voz se inferia con regex de
+  // `guiaEstilo` (texto libre); si la guía no contenía frases-llave concretas
+  // ("tiempo verbal: presente", "narrada en tercera persona") el extractor
+  // devolvía `detected:false` y el Arquitecto/Narrador escribian en lo que
+  // por defecto eligiera el LLM (pretérito + 3a en español noir). Resultado:
+  // 100% de un manuscrito en pasado cuando el canon exigía presente. Con
+  // este campo el usuario fija la voz al crear el proyecto y el orquestador
+  // sintetiza un bloque canónico que se inyecta a guiaEstilo para que TODOS
+  // los agentes la hereden. Si está null, se mantiene la inferencia por
+  // regex de la guía (backwards-compat con proyectos existentes).
+  // Shape validado por narrativeVoiceConfigSchema (más abajo).
+  narrativeVoice: jsonb("narrative_voice"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
+
+// [Fix108] Forma estructurada de la voz narrativa canónica del proyecto.
+// Se persiste en projects.narrativeVoice como JSON.
+export const narrativeVoiceConfigSchema = z.object({
+  pov: z.enum(["first", "third", "dual_first", "dual_third", "second"]),
+  tense: z.enum(["present", "past"]),
+  narratorType: z.enum(["omnisciente", "limitado", "testigo"]).optional(),
+});
+export type NarrativeVoiceConfig = z.infer<typeof narrativeVoiceConfigSchema>;
 
 // [Fix51 — EPUB] Editoriales del usuario. Cada publisher tiene un nombre,
 // logo opcional (almacenado como data URL base64 — caben tranquilamente en

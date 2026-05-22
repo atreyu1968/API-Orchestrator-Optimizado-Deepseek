@@ -38,7 +38,7 @@ import type { TokenUsage } from "./agents/base-agent";
 import type { FinalReviewIssue } from "./agents/final-reviewer";
 import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, TimelineEvent } from "@shared/schema";
 import { ensureChapterNumbers } from "./utils/extract-chapters";
-import { extractStyleDirectives } from "./utils/style-directives";
+import { extractStyleDirectives, synthesizeVoiceBlock, type NarrativeVoiceConfig } from "./utils/style-directives";
 import { repairJson } from "./utils/json-repair";
 import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper } from "./utils/series-context-builder";
 import { calculateRealCost } from "./cost-calculator";
@@ -1040,6 +1040,22 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
           styleGuideContent = styleGuide.content;
         }
       }
+
+      // [Fix108] Prepende el bloque canónico de voz narrativa al guiaEstilo.
+      // Si el proyecto tiene `narrativeVoice` estructurado (POV+tense fijado
+      // por el usuario en el formulario de creación), sintetiza las líneas
+      // canónicas "narrada en X persona" / "Tiempo verbal: Y" que el extractor
+      // regex de style-directives.ts reconoce con certeza. Esto garantiza que
+      // TODOS los agentes (Architect, Ghostwriter, FinalReviewer, Holistic,
+      // Beta) hereden la directiva sin tocar sus interfaces. Si el campo está
+      // null, devuelve "" y se cae al comportamiento clásico (inferencia regex
+      // sobre la guía libre del usuario).
+      const projectVoice = ((project as any).narrativeVoice ?? null) as NarrativeVoiceConfig | null;
+      const voiceBlock = synthesizeVoiceBlock(projectVoice);
+      if (voiceBlock) {
+        styleGuideContent = voiceBlock + styleGuideContent;
+        console.log(`[Fix108] Voz canónica inyectada al guiaEstilo: pov=${projectVoice?.pov} tense=${projectVoice?.tense}${projectVoice?.narratorType ? ` narratorType=${projectVoice.narratorType}` : ""}`);
+      }
       
       if (project.pseudonymId) {
         const pseudonym = await storage.getPseudonym(project.pseudonymId);
@@ -1055,6 +1071,46 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
           console.log(`[Orchestrator] Using extended guide: "${extendedGuide.title}" (${extendedGuide.wordCount} words)`);
         }
       }
+
+      // [Fix108] PRE-FLIGHT GUARD de voz canónica.
+      // Antes de Fix108 era posible iniciar una generación sin que el extractor
+      // regex pudiera deducir POV o tiempo verbal de la guía. Resultado real:
+      // 60.000 palabras escritas en pretérito cuando el canon exigía presente,
+      // detectado solo post-hoc por el Revisor Final con un único issue
+      // crítico no-resoluble por cirugía. Aquí cortamos en seco: si ni el
+      // campo estructurado `narrativeVoice` (que ya quedó prependido a
+      // styleGuideContent vía synthesizeVoiceBlock) ni la guía libre
+      // contienen señales claras de pov+tense, abortamos la generación con
+      // status="idle" para que el usuario corrija antes de gastar 30 min de
+      // run sobre la voz equivocada.
+      const preflightCombined = `${styleGuideContent || ""}\n${extendedGuideContent || ""}`;
+      const preflightDirectives = extractStyleDirectives(preflightCombined);
+      const missingPov = !preflightDirectives.pov;
+      const missingTense = !preflightDirectives.tense;
+      if (missingPov || missingTense) {
+        const missingParts: string[] = [];
+        if (missingPov) missingParts.push("POV (persona narrativa)");
+        if (missingTense) missingParts.push("tiempo verbal");
+        const msg = `[Fix108] Generación abortada: no se ha podido determinar la voz narrativa canónica. Falta: ${missingParts.join(" + ")}. Soluciones: (1) edita el proyecto y fija la voz en el bloque "Voz narrativa canónica" del formulario, o (2) añade a la guía de estilo las líneas "POV: tercera persona" y "Tiempo verbal: presente". Sin esto el manuscrito saldría en la voz por defecto del modelo y el Revisor Final lo marcaría como issue crítico no-resoluble.`;
+        await storage.createActivityLog({
+          projectId: project.id,
+          agentRole: "orchestrator",
+          message: msg,
+          level: "error",
+          metadata: {
+            fix: "Fix108",
+            missingPov,
+            missingTense,
+            hasStructuredVoice: !!projectVoice,
+            styleGuideLen: (styleGuideContent || "").length,
+            extendedGuideLen: (extendedGuideContent || "").length,
+          },
+        });
+        await storage.updateProject(project.id, { status: "idle" });
+        console.warn(`[Fix108] Preflight failed for project ${project.id}: missingPov=${missingPov} missingTense=${missingTense}. Aborting.`);
+        return;
+      }
+      console.log(`[Fix108] Preflight OK: pov=${preflightDirectives.pov} tense=${preflightDirectives.tense} structured=${!!projectVoice}`);
 
       let seriesContextContent = "";
       if (project.seriesId) {
@@ -3627,6 +3683,23 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           extendedGuideContent = extendedGuide.content;
           console.log(`[Orchestrator:Resume] Using extended guide: "${extendedGuide.title}"`);
         }
+      }
+
+      // [Fix108] Paridad con _generateNovel: prepende el bloque canónico de
+      // voz narrativa al guiaEstilo en reanudaciones, para que los capítulos
+      // que se escriban tras el resume hereden la misma directiva inviolable
+      // que los anteriores. Sin esto, si el usuario corrigió la voz tras un
+      // crash, los caps reanudados podrían volver a la voz por defecto del
+      // modelo. NOTA: no aplicamos el pre-flight guard aquí porque resume
+      // implica que ya hay World Bible + capítulos persistidos (la
+      // generación arrancó con voz válida en su día); si la voz estaba mal
+      // desde el principio el problema vive en los caps ya escritos y se
+      // resuelve con un re-run, no con un abort de la reanudación.
+      const projectVoiceResume = ((project as any).narrativeVoice ?? null) as NarrativeVoiceConfig | null;
+      const voiceBlockResume = synthesizeVoiceBlock(projectVoiceResume);
+      if (voiceBlockResume) {
+        styleGuideContent = voiceBlockResume + styleGuideContent;
+        console.log(`[Fix108][resume] Voz canónica inyectada al guiaEstilo: pov=${projectVoiceResume?.pov} tense=${projectVoiceResume?.tense}`);
       }
 
       // [Fix64] Capítulos con status="polishing" tienen contenido aprobado por

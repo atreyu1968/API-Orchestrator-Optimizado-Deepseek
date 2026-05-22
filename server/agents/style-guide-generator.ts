@@ -232,6 +232,17 @@ La guía debe cubrir TODOS estos apartados:
     - Una escena breve original que ejemplifique el tono y estilo ideales
     - Anotaciones sobre las técnicas empleadas
 
+12. **VOZ NARRATIVA CANÓNICA** (OBLIGATORIO — al FINAL del documento, formato literal)
+    Cierra la guía con un bloque EXACTAMENTE en este formato (sin emojis, sin variaciones):
+
+    ## VOZ NARRATIVA CANÓNICA
+
+    POV: <primera persona | tercera persona | segunda persona | dual primera | dual tercera>
+    Tiempo verbal: <presente | pasado>
+    Tipo de narrador: <omnisciente | limitado | testigo>  (opcional, solo si aplica)
+
+    Esta sección es OBLIGATORIA. El orquestador la usa como contrato inviolable para todos los agentes (Arquitecto, Narrador, Revisor Final). Si la omites, el sistema rechazará la guía en el pre-flight y no podrá generarse el manuscrito.
+
 ${langInstructions}
 Sé específico y práctico. Esta guía será usada por un sistema de IA para generar una novela.`;
 

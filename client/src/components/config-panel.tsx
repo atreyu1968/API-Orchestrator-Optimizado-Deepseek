@@ -96,6 +96,13 @@ const configSchema = z.object({
   maxWordsPerChapter: z.number().min(500).max(15000).default(3500),
   kindleUnlimitedOptimized: z.boolean().default(false),
   bookboxStructure: bookboxStructureSchema,
+  // [Fix108] Voz narrativa canónica fijada explícitamente por el usuario.
+  // Si se deja en null se cae al comportamiento anterior (regex sobre guía).
+  narrativeVoice: z.object({
+    pov: z.enum(["first", "third", "dual_first", "dual_third", "second"]),
+    tense: z.enum(["present", "past"]),
+    narratorType: z.enum(["omnisciente", "limitado", "testigo"]).optional(),
+  }).nullable().optional(),
 });
 
 type ConfigFormData = z.infer<typeof configSchema>;
@@ -135,6 +142,7 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
       maxWordsPerChapter: (defaultValues as any)?.maxWordsPerChapter || 3500,
       kindleUnlimitedOptimized: (defaultValues as any)?.kindleUnlimitedOptimized || false,
       bookboxStructure: (defaultValues as any)?.bookboxStructure || null,
+      narrativeVoice: (defaultValues as any)?.narrativeVoice || null,
     },
   });
 
@@ -846,6 +854,105 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
             </FormItem>
           )}
         />
+
+        <div className="space-y-4 pt-2">
+          <FormLabel className="text-base">Voz narrativa canónica</FormLabel>
+          <FormDescription className="text-xs">
+            Fija explícitamente POV y tiempo verbal del proyecto. Es la fuente de verdad para el Arquitecto, el Narrador y el Revisor Final. Si lo dejas sin definir, el sistema intentará inferirlo de tu guía de estilo y abortará la generación si no encuentra ambas señales.
+          </FormDescription>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <FormField
+              control={form.control}
+              name="narrativeVoice.pov"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-sm">Persona narrativa</FormLabel>
+                  <Select
+                    value={field.value ?? ""}
+                    onValueChange={(v) => {
+                      const current = (form.getValues("narrativeVoice") as any) || {};
+                      form.setValue("narrativeVoice", { ...current, pov: v as any });
+                    }}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-narrative-pov">
+                        <SelectValue placeholder="Elegir POV..." />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="first">Primera persona</SelectItem>
+                      <SelectItem value="third">Tercera persona</SelectItem>
+                      <SelectItem value="dual_first">Dual (primera, alternando)</SelectItem>
+                      <SelectItem value="dual_third">Dual (tercera, alternando)</SelectItem>
+                      <SelectItem value="second">Segunda persona</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="narrativeVoice.tense"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-sm">Tiempo verbal</FormLabel>
+                  <Select
+                    value={field.value ?? ""}
+                    onValueChange={(v) => {
+                      const current = (form.getValues("narrativeVoice") as any) || {};
+                      form.setValue("narrativeVoice", { ...current, tense: v as any });
+                    }}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-narrative-tense">
+                        <SelectValue placeholder="Elegir tiempo..." />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="present">Presente</SelectItem>
+                      <SelectItem value="past">Pasado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="narrativeVoice.narratorType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-sm">Tipo de narrador (opcional)</FormLabel>
+                  <Select
+                    value={field.value ?? "__none__"}
+                    onValueChange={(v) => {
+                      const current = (form.getValues("narrativeVoice") as any) || {};
+                      const next = v === "__none__" ? { ...current, narratorType: undefined } : { ...current, narratorType: v as any };
+                      form.setValue("narrativeVoice", next);
+                    }}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-narrator-type">
+                        <SelectValue placeholder="No especificar" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="__none__">No especificar</SelectItem>
+                      <SelectItem value="omnisciente">Omnisciente</SelectItem>
+                      <SelectItem value="limitado">Limitado</SelectItem>
+                      <SelectItem value="testigo">Testigo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+        </div>
 
         <div className="space-y-4 pt-2">
           <FormLabel className="text-base">Secciones Adicionales</FormLabel>
