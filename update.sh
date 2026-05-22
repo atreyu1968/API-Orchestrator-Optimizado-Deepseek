@@ -172,6 +172,8 @@ ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS last_beta_notes_at     TIME
 ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS last_holistic_notes    TEXT;
 ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS last_holistic_notes_at TIMESTAMP;
 ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS final_score_at         TIMESTAMP;
+-- [Fix108] Voz narrativa canónica estructurada (pov/tense/narratorType)
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS narrative_voice        JSONB;
 SQL
 
 echo "   Ejecutando db:push como superusuario postgres..."
