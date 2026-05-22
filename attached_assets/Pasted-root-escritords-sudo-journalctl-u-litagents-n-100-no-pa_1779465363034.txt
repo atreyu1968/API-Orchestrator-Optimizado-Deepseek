@@ -1,0 +1,102 @@
+root@escritords:~# sudo journalctl -u litagents -n 100 --no-pager
+May 18 11:41:47 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 18 11:41:47 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 18 11:41:47 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 18 11:41:47 escritords systemd[1]: litagents.service: Consumed 3min 25.857s CPU time, 870.5M memory peak.
+May 18 11:41:47 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 18 16:18:05 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 18 16:18:05 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 18 16:18:05 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 18 16:18:05 escritords systemd[1]: litagents.service: Consumed 2min 4.279s CPU time, 1G memory peak.
+May 18 16:18:05 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 18 17:00:31 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 18 17:00:31 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 18 17:00:31 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 18 17:00:31 escritords systemd[1]: litagents.service: Consumed 4.308s CPU time, 89.8M memory peak.
+May 18 17:00:31 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 18 17:07:43 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 18 17:07:43 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 18 17:07:43 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 18 17:07:43 escritords systemd[1]: litagents.service: Consumed 2.629s CPU time, 86.7M memory peak.
+May 18 17:07:43 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 19 09:14:09 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 19 09:14:09 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 19 09:14:09 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 19 09:14:09 escritords systemd[1]: litagents.service: Consumed 2min 55.170s CPU time, 1.1G memory peak.
+May 19 09:14:09 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 19 09:50:53 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 19 09:50:53 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 19 09:50:53 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 19 09:50:53 escritords systemd[1]: litagents.service: Consumed 10.790s CPU time, 202.7M memory peak.
+May 19 09:50:53 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 19 10:45:16 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 19 10:45:16 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 19 10:45:16 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 19 10:45:16 escritords systemd[1]: litagents.service: Consumed 18.118s CPU time, 324.6M memory peak.
+May 19 10:45:16 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 19 20:59:10 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 19 20:59:10 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 19 20:59:10 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 19 20:59:10 escritords systemd[1]: litagents.service: Consumed 1min 52.686s CPU time, 590.9M memory peak.
+May 19 20:59:10 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 19 21:59:49 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 19 21:59:49 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 19 21:59:49 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 19 21:59:49 escritords systemd[1]: litagents.service: Consumed 48.068s CPU time, 516.1M memory peak.
+May 19 21:59:49 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 20 09:32:11 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 20 09:32:11 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 20 09:32:11 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 20 09:32:11 escritords systemd[1]: litagents.service: Consumed 3min 42.103s CPU time, 1.5G memory peak.
+May 20 09:32:11 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 20 09:59:10 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 20 09:59:10 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 20 09:59:10 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 20 09:59:10 escritords systemd[1]: litagents.service: Consumed 28.976s CPU time, 263.1M memory peak.
+May 20 09:59:10 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 20 22:41:33 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 20 22:41:33 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 20 22:41:33 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 20 22:41:33 escritords systemd[1]: litagents.service: Consumed 3min 54.576s CPU time, 2G memory peak.
+May 20 22:41:33 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 20 23:11:51 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 20 23:11:51 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 20 23:11:51 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 20 23:11:51 escritords systemd[1]: litagents.service: Consumed 20.587s CPU time, 242.1M memory peak.
+May 20 23:11:51 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 21 15:58:02 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 21 15:58:02 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 21 15:58:02 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 21 15:58:02 escritords systemd[1]: litagents.service: Consumed 2min 58.785s CPU time, 1.4G memory peak.
+May 21 15:58:02 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 21 17:21:11 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 21 17:21:11 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 21 17:21:11 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 21 17:21:11 escritords systemd[1]: litagents.service: Consumed 14.293s CPU time, 138.5M memory peak.
+May 21 17:21:11 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 21 20:15:48 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 21 20:15:48 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 21 20:15:48 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 21 20:15:48 escritords systemd[1]: litagents.service: Consumed 34.927s CPU time, 278.9M memory peak.
+May 21 20:15:48 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 21 22:45:57 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 21 22:45:57 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 21 22:45:57 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 21 22:45:57 escritords systemd[1]: litagents.service: Consumed 43.955s CPU time, 348.3M memory peak.
+May 21 22:45:57 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 21 23:17:17 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 21 23:17:17 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 21 23:17:17 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 21 23:17:17 escritords systemd[1]: litagents.service: Consumed 21.572s CPU time, 208.3M memory peak.
+May 21 23:17:17 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 22 15:49:30 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 22 15:49:30 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 22 15:49:30 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 22 15:49:30 escritords systemd[1]: litagents.service: Consumed 1min 13.736s CPU time, 189.5M memory peak.
+May 22 15:49:30 escritords systemd[1]: Started litagents.service - LitAgents Application.
+May 22 15:52:37 escritords systemd[1]: Stopping litagents.service - LitAgents Application...
+May 22 15:52:37 escritords systemd[1]: litagents.service: Deactivated successfully.
+May 22 15:52:37 escritords systemd[1]: Stopped litagents.service - LitAgents Application.
+May 22 15:52:37 escritords systemd[1]: litagents.service: Consumed 1.835s CPU time, 68.3M memory peak.
+May 22 15:52:37 escritords systemd[1]: Started litagents.service - LitAgents Application.
+root@escritords:~# 
