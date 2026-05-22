@@ -127,7 +127,11 @@ SUPERUSER_DB_URL="postgresql://postgres@/$DB_NAME_PUSH?host=/var/run/postgresql"
 # (rename vs create) para evitar el prompt interactivo que cuelga el push
 # en SSH no-TTY. Si ya existen, los IF NOT EXISTS no hacen nada.
 echo "   Pre-creando tablas/columnas para evitar prompts de drizzle..."
-sudo -u postgres psql -d "$DB_NAME_PUSH" <<'SQL' > /dev/null 2>&1 || true
+# -v ON_ERROR_STOP=0: si una sentencia falla seguimos con las demás (cada ALTER es idempotente).
+# Quitamos > /dev/null 2>&1 para que cualquier error real (permisos, sintaxis, conexión)
+# se vea en la salida del update — antes esto enmascaraba fallos completos del bloque.
+PRECREATE_LOG=$(mktemp)
+sudo -u postgres psql -v ON_ERROR_STOP=0 -d "$DB_NAME_PUSH" <<'SQL' > "$PRECREATE_LOG" 2>&1 || true
 CREATE TABLE IF NOT EXISTS publishers (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -175,6 +179,25 @@ ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS final_score_at         TIME
 -- [Fix108] Voz narrativa canónica estructurada (pov/tense/narratorType)
 ALTER TABLE projects        ADD COLUMN IF NOT EXISTS narrative_voice        JSONB;
 SQL
+
+# Surface real errors del bloque pre-create (antes se silenciaban completamente).
+# Filtramos "NOTICE" para no inundar el log con "relation already exists, skipping".
+if grep -qiE "^ERROR|FATAL|could not connect|password authentication failed" "$PRECREATE_LOG"; then
+    echo "[AVISO] Errores en el bloque pre-create (la app puede quedar con schema parcial):"
+    grep -iE "^(ERROR|FATAL)|could not connect|password authentication failed" "$PRECREATE_LOG" | head -20
+fi
+rm -f "$PRECREATE_LOG"
+
+# Sanity check duro: si narrative_voice (Fix108) no quedó aplicada, la API peta con 500.
+# Reintentamos directamente y fallamos ruidosamente si tampoco así funciona.
+NARRATIVE_OK=$(sudo -u postgres psql -d "$DB_NAME_PUSH" -tAc "SELECT 1 FROM information_schema.columns WHERE table_name='projects' AND column_name='narrative_voice';" 2>/dev/null)
+if [ "$NARRATIVE_OK" != "1" ]; then
+    echo "[AVISO] La columna projects.narrative_voice no se aplicó en el pre-create. Forzándola..."
+    sudo -u postgres psql -d "$DB_NAME_PUSH" -c "ALTER TABLE projects ADD COLUMN IF NOT EXISTS narrative_voice JSONB;" || {
+        echo "[ERROR] No se pudo crear projects.narrative_voice. /api/projects devolverá 500."
+        echo "         Aplícala manualmente: sudo -u postgres psql -d $DB_NAME_PUSH -c 'ALTER TABLE projects ADD COLUMN IF NOT EXISTS narrative_voice JSONB;'"
+    }
+fi
 
 echo "   Ejecutando db:push como superusuario postgres..."
 set +e
