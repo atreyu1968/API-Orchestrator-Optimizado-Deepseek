@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { extractNarrativeVoiceFromGuide } from "@shared/narrative-voice-extractor";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -228,7 +229,72 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
   });
 
   const selectedExtendedGuideId = form.watch("extendedGuideId");
+  const selectedStyleGuideId = form.watch("styleGuideId");
   const isSerialized = selectedWorkType === "series" || selectedWorkType === "trilogy";
+
+  // [Fix114] Auto-extracción de voz narrativa desde la guía seleccionada.
+  // Cuando el usuario elige una guía de estilo / guía extendida que contenga
+  // POV + tiempo verbal, los selectores se rellenan solos (la guía es la
+  // fuente de verdad). Si la guía no lo dice, los campos quedan vacíos para
+  // que el usuario los fije a mano. Prioridad: guía extendida > guía de
+  // estilo (la extendida es más prescriptiva).
+  //
+  // Defensa anti-overwrite (post-review): en el primer montaje del form
+  // NO autorellenamos si `defaultValues.narrativeVoice` ya venía seteado
+  // (proyecto en edición). Solo se autorellena en cambios explícitos del
+  // usuario tras el mount, o cuando el campo está vacío.
+  //
+  // Defensa anti-dedup-prematuro (post-review): solo marcamos el sourceKey
+  // como "procesado" cuando hemos tenido contenido real que evaluar. Si las
+  // queries de styleGuides/extendedGuides aún no han devuelto, esperamos a
+  // que carguen sin perder el evento.
+  const lastAutoFilledFromRef = useRef<string>("");
+  const skipInitialAutofillRef = useRef<boolean>(
+    !!(defaultValues as any)?.narrativeVoice,
+  );
+  useEffect(() => {
+    const styleGuide = styleGuides.find((g) => g.id === selectedStyleGuideId);
+    const extendedGuide = extendedGuides.find((g) => g.id === selectedExtendedGuideId);
+    const sourceKey = `e:${selectedExtendedGuideId ?? "_"}|s:${selectedStyleGuideId ?? "_"}`;
+    if (sourceKey === lastAutoFilledFromRef.current) return;
+
+    // Si el usuario tiene una guía seleccionada pero la query aún no ha
+    // devuelto su contenido, NO marcamos el sourceKey como procesado: el
+    // effect se re-ejecutará cuando los datos lleguen.
+    const styleGuidePending =
+      !!selectedStyleGuideId && selectedStyleGuideId > 0 && !styleGuide;
+    const extendedGuidePending =
+      !!selectedExtendedGuideId && selectedExtendedGuideId > 0 && !extendedGuide;
+    if (styleGuidePending || extendedGuidePending) return;
+
+    // Si en el mount inicial ya había una voz canónica fijada (proyecto en
+    // edición), respetamos la elección previa y nos saltamos UN solo ciclo
+    // de autorelleno. A partir del siguiente cambio explícito de guía, sí
+    // autorellenamos como en un proyecto nuevo.
+    if (skipInitialAutofillRef.current) {
+      skipInitialAutofillRef.current = false;
+      lastAutoFilledFromRef.current = sourceKey;
+      return;
+    }
+
+    // La guía extendida es más prescriptiva: si ambas están presentes, gana.
+    const candidate = extendedGuide?.content || styleGuide?.content || "";
+    lastAutoFilledFromRef.current = sourceKey;
+    if (!candidate.trim()) return;
+
+    const extracted = extractNarrativeVoiceFromGuide(candidate);
+    if (!extracted.detected || !extracted.pov || !extracted.tense) return;
+
+    form.setValue(
+      "narrativeVoice",
+      {
+        pov: extracted.pov as any,
+        tense: extracted.tense,
+        narratorType: extracted.narratorType,
+      },
+      { shouldDirty: true, shouldValidate: false },
+    );
+  }, [selectedStyleGuideId, selectedExtendedGuideId, styleGuides, extendedGuides, form, defaultValues]);
 
   return (
     <Form {...form}>
@@ -858,7 +924,7 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
         <div className="space-y-4 pt-2">
           <FormLabel className="text-base">Voz narrativa canónica</FormLabel>
           <FormDescription className="text-xs">
-            Fija explícitamente POV y tiempo verbal del proyecto. Es la fuente de verdad para el Arquitecto, el Narrador y el Revisor Final. Si lo dejas sin definir, el sistema intentará inferirlo de tu guía de estilo y abortará la generación si no encuentra ambas señales.
+            Fija POV y tiempo verbal del proyecto. Es la fuente de verdad para el Arquitecto, el Narrador y el Revisor Final. Si tu guía de estilo o guía extendida ya menciona la voz (p.ej. "tercera persona" + "tiempo verbal: presente"), estos campos se rellenarán solos al seleccionarla; en caso contrario, fíjalos a mano. Si los dejas vacíos y la guía tampoco lo indica, el sistema abortará la generación.
           </FormDescription>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
