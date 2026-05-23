@@ -1,0 +1,117 @@
+La estructura necesita tu guidance (1/10 < 7/10)
+Tras 8 iteraciones del Auditor Estructural + un audit adicional del Auditor de World Bible, el mejor intento se queda en 1/10, por debajo del mínimo publicable de 7/10. El sistema no va a escribir la novela sobre una escaleta defectuosa. Revisa los problemas residuales y dale al Arquitecto instrucciones concretas (por ejemplo: "mueve el reveal del traidor al capítulo 18", "elimina el subplot de Marta", "el antagonista debe aparecer ya en el capítulo 3").
+Resumen del Auditor
+Auditoría estructural: 1 problemas altos, 21 medios. Forma: 0; Ledger: 0; Dosificación: 0; Arco secreto: 18; Falso aliado: 1; Escalada acto 2: 3; Deus ex machina: 0; Trauma protagonista: 0. Cobertura forma=100% ledger=100% dosif=117% arco=84% aliado=50% apuesta=100% deus=100% trauma=100%.
+22 problemas residuales:
+1 altas
+21 medias
+media
+arco_secreto
+caps 1
+Problema: El capítulo 1 revela "Aimar menciona que ha revisado el caso Luna y que el nombre de Garmendia (testigo del 8..." (dificultad: medio) pero el auditor solo encuentra siembra textual real en 0 cap(s) anterior(es). Se exigen ≥2 para que el lector haya construido el suspense. Declarar "setup_capitulos: [0]" no basta si esos caps no MENCIONAN el hecho.
+Sugerencia del auditor: Antes del cap 1, siembra el hecho en al menos 2 caps distintos con tokens concretos del hecho ("aimar", "menciona", "revisado", "caso", "luna"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite 2 siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).
+media
+arco_secreto
+caps 2
+Problema: El capítulo 2 revela "Bernal confirma que Machuca guardaba copias de seguridad de la contabilidad en un sobre." (dificultad: medio) pero el auditor solo encuentra siembra textual real en 0 cap(s) anterior(es). Se exigen ≥2 para que el lector haya construido el suspense. Declarar "setup_capitulos: [0]" no basta si esos caps no MENCIONAN el hecho.
+Sugerencia del auditor: Antes del cap 2, siembra el hecho en al menos 2 caps distintos con tokens concretos del hecho ("bernal", "confirma", "machuca", "guardaba", "copias"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite 2 siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).
+media
+arco_secreto
+caps 3
+Problema: El capítulo 3 revela "Aimar sugiere que Valladares podría ser el topo de Asuntos Internos que filtra informac..." (dificultad: medio) pero el auditor solo encuentra siembra textual real en 1 cap(s) anterior(es) (caps 1). Se exigen ≥2 para que el lector haya construido el suspense. Declarar "setup_capitulos: [1]" no basta si esos caps no MENCIONAN el hecho.
+Sugerencia del auditor: Antes del cap 3, siembra el hecho en al menos 2 caps distintos con tokens concretos del hecho ("aimar", "sugiere", "valladares", "podria", "topo"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite 2 siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).
+media
+arco_secreto
+caps 4, 0
+Problema: El capítulo 4 declara "setup_capitulos: [0]" para "Zubiri recuerda detalles del caso Bravo (1989): Garmendia declaró y desapareció, el cas...", pero los caps 0 NO contienen tokens del hecho. La siembra real está en otros caps (1, 2, 3). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (1, 2) o añade tokens del hecho a los caps 0 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 5
+Problema: El capítulo 5 revela "La carta de Garmendia detalla el entramado de la red corrupta en el puerto, incluyendo ..." (dificultad: alto) pero el auditor solo encuentra siembra textual real en 1 cap(s) anterior(es) (caps 2). Se exigen ≥3 para que el lector haya construido el suspense. Declarar "setup_capitulos: [1, 2, 4]" no basta si esos caps no MENCIONAN el hecho.
+Sugerencia del auditor: Antes del cap 5, siembra el hecho en al menos 3 caps distintos con tokens concretos del hecho ("carta", "garmendia", "detalla", "entramado", "corrupta"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite 3 siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).
+media
+arco_secreto
+caps 6
+Problema: El capítulo 6 revela "Isidro Bernal se reúne habitualmente con Jerónimo Barreda, el empresario detrás de Segu..." (dificultad: alto) pero el auditor solo encuentra siembra textual real en 2 cap(s) anterior(es) (caps 2, 5). Se exigen ≥3 para que el lector haya construido el suspense. Declarar "setup_capitulos: [2, 3, 5]" no basta si esos caps no MENCIONAN el hecho.
+Sugerencia del auditor: Antes del cap 6, siembra el hecho en al menos 3 caps distintos con tokens concretos del hecho ("isidro", "bernal", "reune", "habitualmente", "jeronimo"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite 3 siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).
+media
+arco_secreto
+caps 7, 3
+Problema: El capítulo 7 declara "setup_capitulos: [3, 5, 6]" para "Seguridad Portuaria S.L. es una tapadera: sin activos, sin empleados, solo una cuenta p...", pero los caps 3 NO contienen tokens del hecho. La siembra real está en otros caps (2, 4, 5, 6). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (2, 4, 5) o añade tokens del hecho a los caps 3 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 8, 6
+Problema: El capítulo 8 declara "setup_capitulos: [1, 4, 6]" para "Azcárate recibe presiones de sus superiores (Soldevilla) para archivar el caso Machuca....", pero los caps 6 NO contienen tokens del hecho. La siembra real está en otros caps (1, 2, 3, 4, 5). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (1, 2, 3) o añade tokens del hecho a los caps 6 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 9, 3
+Problema: El capítulo 9 declara "setup_capitulos: [3, 7]" para "El juez Valverde deniega la orden de registro contra Barreda, demostrando que la red co...", pero los caps 3 NO contienen tokens del hecho. La siembra real está en otros caps (4, 7). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (4, 7) o añade tokens del hecho a los caps 3 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 14, 10
+Problema: El capítulo 14 declara "setup_capitulos: [2, 6, 10, 12]" para "Isidro Bernal es el intermediario de Barreda en el puerto, encargado de pasar informaci...", pero los caps 10 NO contienen tokens del hecho. La siembra real está en otros caps (2, 3, 4, 5, 6, 7, 9, 12, 13). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (2, 3, 4) o añade tokens del hecho a los caps 10 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 15, 11
+Problema: El capítulo 15 declara "setup_capitulos: [10, 11, 12]" para "Alguien (probablemente Balduque) ha mordido el anzuelo de la carta falsa. Zubiri le per...", pero los caps 11 NO contienen tokens del hecho. La siembra real está en otros caps (1, 3, 5, 6, 7, 8, 10, 12, 13, 14). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (1, 3, 5) o añade tokens del hecho a los caps 11 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 16, 6, 10, 11
+Problema: El capítulo 16 declara "setup_capitulos: [6, 10, 11]" para "Antón Zarapuz confirma que fue Balduque quien le citó para tenderle una trampa y silenc...", pero los caps 6, 10, 11 NO contienen tokens del hecho. La siembra real está en otros caps (5, 9, 12, 13, 15). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (5, 9, 12) o añade tokens del hecho a los caps 6, 10, 11 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 19, 6, 13
+Problema: El capítulo 19 declara "setup_capitulos: [1, 6, 13, 17]" para "Azcárate firma la suspensión de Zubiri para salvarse a sí mismo y a su familia de la re...", pero los caps 6, 13 NO contienen tokens del hecho. La siembra real está en otros caps (1, 2, 4, 8, 11, 14, 17). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (1, 2, 4) o añade tokens del hecho a los caps 6, 13 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 21, 15
+Problema: El capítulo 21 declara "setup_capitulos: [15, 18, 20]" para "Balduque confiesa haber filtrado información y ordenado los asesinatos, pero se niega a...", pero los caps 15 NO contienen tokens del hecho. La siembra real está en otros caps (2, 3, 6, 8, 12, 13, 14, 16, 17, 18, 19, 20). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (2, 3, 6) o añade tokens del hecho a los caps 15 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 22, 20
+Problema: El capítulo 22 declara "setup_capitulos: [19, 20]" para "Azcárate sufre un infarto en su despacho. Zubiri intuye que la red le ha neutralizado p...", pero los caps 20 NO contienen tokens del hecho. La siembra real está en otros caps (1, 4, 6, 8, 15, 19). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (1, 4) o añade tokens del hecho a los caps 20 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 23, 1, 6, 13, 17
+Problema: El capítulo 23 declara "setup_capitulos: [1, 6, 13, 17, 19]" para "Azcárate confiesa que sabía que Balduque era el topo y que Barreda está conectado con e...", pero los caps 1, 6, 13, 17 NO contienen tokens del hecho. La siembra real está en otros caps (3, 7, 8, 9, 11, 12, 14, 15, 16, 18, 19, 20, 21, 22). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (3, 7, 8) o añade tokens del hecho a los caps 1, 6, 13, 17 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 25, 20, 21
+Problema: El capítulo 25 declara "setup_capitulos: [17, 20, 21]" para "Aimar se ofrece a ser la fuente oficial para la periodista, arriesgando su carrera.", pero los caps 20, 21 NO contienen tokens del hecho. La siembra real está en otros caps (2, 6, 7, 10, 14, 17, 19, 24). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (2, 6) o añade tokens del hecho a los caps 20, 21 para que la declaración sea verdadera.
+media
+arco_secreto
+caps 28, 25, 26, 27
+Problema: El capítulo 28 declara "setup_capitulos: [25, 26, 27]" para "El País publica la portada con el escándalo de Barreda y Peláez. La verdad se hace públ...", pero los caps 25, 26, 27 NO contienen tokens del hecho. La siembra real está en otros caps (12, 20, 21, 23, 24). El array es decorativo y debe sincronizarse con la realidad textual.
+Sugerencia del auditor: Sustituye el array por los caps con siembra real (12, 20, 21) o añade tokens del hecho a los caps 25, 26, 27 para que la declaración sea verdadera.
+alta
+falso_aliado
+caps 14
+Problema: La traición de "Isidro Bernal" se revela en el cap 14 de 31 (45% de la novela). El umbral es ≥60% (cap 19). Patrón "Cifuentes obvio desde cap 2": el lector lo ve venir y el giro pierde fuerza.
+Sugerencia del auditor: Retrasa la revelación de la traición de "Isidro Bernal" al menos al cap 19. En los caps anteriores mantén la AMBIGÜEDAD: el personaje puede parecer hostil, presionar al protagonista o tomar decisiones cuestionables, pero el lector NO debe poder afirmar "este es el topo". Si quieres que el reveal sea más temprano por razones de trama, cambia su rol en el world_bible (no es "topo" sino "antagonista declarado") y elimina la ambigüedad.
+media
+escalada_acto2
+caps 13, 14, 15
+Problema: Caps 13, 14, 15 del acto 2 tienen "apuesta_dramatica" IGUAL o DECRECIENTE (3 caps consecutivos). El lector percibe un bucle de presión sin escalada: "ya entendí en el cap anterior que el protagonista está aislado / acorralado / sin pistas; no necesito leerlo otra vez".
+Sugerencia del auditor: Sube la apuesta de al menos uno de los caps del medio del bucle: convierte una "media" en "alta" añadiendo una pérdida irreversible (un aliado herido, una identidad expuesta, una orden de detención), o una "alta" en "critica" añadiendo un punto sin retorno (el protagonista se la juega solo, queda inhabilitado, traiciona una norma propia). La regla universal: si dos caps consecutivos tienen la misma apuesta, el tercero DEBE subir un escalón. No basta con cambiar la forma_dominante; tiene que doler MÁS.
+media
+escalada_acto2
+caps 16, 17, 18
+Problema: Caps 16, 17, 18 del acto 2 tienen "apuesta_dramatica" IGUAL o DECRECIENTE (3 caps consecutivos). El lector percibe un bucle de presión sin escalada: "ya entendí en el cap anterior que el protagonista está aislado / acorralado / sin pistas; no necesito leerlo otra vez".
+Sugerencia del auditor: Sube la apuesta de al menos uno de los caps del medio del bucle: convierte una "media" en "alta" añadiendo una pérdida irreversible (un aliado herido, una identidad expuesta, una orden de detención), o una "alta" en "critica" añadiendo un punto sin retorno (el protagonista se la juega solo, queda inhabilitado, traiciona una norma propia). La regla universal: si dos caps consecutivos tienen la misma apuesta, el tercero DEBE subir un escalón. No basta con cambiar la forma_dominante; tiene que doler MÁS.
+media
+escalada_acto2
+caps 19, 20, 21, 22
+Problema: Caps 19, 20, 21, 22 del acto 2 tienen "apuesta_dramatica" IGUAL o DECRECIENTE (4 caps consecutivos). El lector percibe un bucle de presión sin escalada: "ya entendí en el cap anterior que el protagonista está aislado / acorralado / sin pistas; no necesito leerlo otra vez".
+Sugerencia del auditor: Sube la apuesta de al menos uno de los caps del medio del bucle: convierte una "media" en "alta" añadiendo una pérdida irreversible (un aliado herido, una identidad expuesta, una orden de detención), o una "alta" en "critica" añadiendo un punto sin retorno (el protagonista se la juega solo, queda inhabilitado, traiciona una norma propia). La regla universal: si dos caps consecutivos tienen la misma apuesta, el tercero DEBE subir un escalón. No basta con cambiar la forma_dominante; tiene que doler MÁS.
