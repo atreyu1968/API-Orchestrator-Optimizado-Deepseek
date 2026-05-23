@@ -1,0 +1,45 @@
+media
+ledger_info
+caps 11, 12, 14
+Problema: La categoría de información "amenaza" se repite más de 2 veces en una ventana de 4 capítulos del acto 2 (caps 11, 12, 14). El lector recibe siempre el mismo TIPO de descubrimiento.
+Sugerencia del auditor: Diversifica las categorías de información en esa ventana. Si dominan "testigo" o "evidencia_fisica", introduce un "vinculo_emocional" (una relación humana se revela), una "revelacion_personal" del propio protagonista (algo de su pasado), una "pista_falsa" sembrada por el antagonista para despistar, o una "amenaza" nueva que escale el peligro.
+alta
+dosificacion_revelacion
+caps 22
+Problema: El capítulo 22 contiene 1 revelación(es) de "dificultad: alto" con "modo_extraccion: sin_resistencia" ("Zubiri revive su trauma del 89: la muerte de un testigo clave al que no pudo sal"). Es el patrón "el personaje habla demasiado fácil" / "el villano se vacía de golpe".
+Sugerencia del auditor: Para cada revelación importante declara un "modo_extraccion" justificado: presion_fisica (el prota le tiene contra las cuerdas), amenaza_a_tercero (la familia/un aliado del personaje está en riesgo), evidencia_irrefutable (el prota le pone delante una prueba que ya no puede negar), error_del_personaje (un desliz por exceso de confianza, prisa o ira) u ofrecimiento_voluntario_motivado (el personaje confiesa porque ha perdido a alguien o se sabe acorralado — con MOTIVO concreto sembrado en capítulos previos). Si la revelación no merece esfuerzo de extracción, baja su dificultad a medio/bajo o repártela en varias escenas.
+media
+arco_secreto
+caps 2
+Problema: El capítulo 2 revela "Carballo había estado investigando a la red durante meses, recopilando pruebas en un di..." (dificultad: medio) pero el auditor solo encuentra siembra textual real en 1 cap(s) anterior(es) (caps 1). Se exigen ≥2 para que el lector haya construido el suspense. Declarar "setup_capitulos: []" no basta si esos caps no MENCIONAN el hecho.
+Sugerencia del auditor: Antes del cap 2, siembra el hecho en al menos 2 caps distintos con tokens concretos del hecho ("carballo", "habia", "estado", "investigando", "durante"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite 2 siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).
+media
+arco_secreto
+caps 3
+Problema: El capítulo 3 revela "El disquete contiene la contabilidad oculta de la red de corrupción del puerto, con pag..." (dificultad: alto) pero el auditor solo encuentra siembra textual real en 2 cap(s) anterior(es) (caps 1, 2). Se exigen ≥3 para que el lector haya construido el suspense. Declarar "setup_capitulos: [1, 2]" no basta si esos caps no MENCIONAN el hecho.
+Sugerencia del auditor: Antes del cap 3, siembra el hecho en al menos 3 caps distintos con tokens concretos del hecho ("disquete", "contiene", "contabilidad", "oculta", "corrupcion"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite 3 siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).
+media
+arco_secreto
+caps 3
+Problema: El capítulo 3 revela "Anguiano posee una contabilidad física adicional que completa la digital." (dificultad: medio) pero el auditor solo encuentra siembra textual real en 0 cap(s) anterior(es). Se exigen ≥2 para que el lector haya construido el suspense. Declarar "setup_capitulos: [0, 2]" no basta si esos caps no MENCIONAN el hecho.
+Sugerencia del auditor: Antes del cap 3, siembra el hecho en al menos 2 caps distintos con tokens concretos del hecho ("anguiano", "posee", "contabilidad", "fisica", "adicional"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite 2 siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).
+media
+arco_secreto
+caps 8
+Problema: El capítulo 8 revela "Julián Villanueva confiesa ser el intermediario que pagaba a los sicarios por orden de ..." (dificultad: medio) pero el auditor solo encuentra siembra textual real en 1 cap(s) anterior(es) (caps 3). Se exigen ≥2 para que el lector haya construido el suspense. Declarar "setup_capitulos: [3]" no basta si esos caps no MENCIONAN el hecho.
+Sugerencia del auditor: Antes del cap 8, siembra el hecho en al menos 2 caps distintos con tokens concretos del hecho ("julian", "villanueva", "confiesa", "intermediario", "pagaba"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite 2 siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).
+media
+arco_secreto
+caps 25
+Problema: El capítulo 25 revela "El Ingeniero es Ireneo Miner, un ex-inspector jefe corrupto. Fue el responsable del hom..." (dificultad: alto) pero el auditor solo encuentra siembra textual real en 2 cap(s) anterior(es) (caps 21, 24). Se exigen ≥3 para que el lector haya construido el suspense. Declarar "setup_capitulos: [21, 24]" no basta si esos caps no MENCIONAN el hecho.
+Sugerencia del auditor: Antes del cap 25, siembra el hecho en al menos 3 caps distintos con tokens concretos del hecho ("ingeniero", "ireneo", "miner", "inspector", "jefe"). Cada siembra puede ser: (i) una pista parcial en "informacion_nueva" (algo que no completa el hecho pero apunta), (ii) un detalle del personaje implicado en "objetivo_narrativo" que retroactivamente cobre sentido, (iii) un evento atmosférico en "eventos_pivotales" relacionado con el lugar/objeto del hecho. Si el material no admite 3 siembras, reduce la dificultad a "bajo" (es un detalle de color, no un giro).
+media
+escalada_acto2
+caps 12, 13, 14, 15, 16
+Problema: Caps 12, 13, 14, 15, 16 del acto 2 tienen "apuesta_dramatica" IGUAL o DECRECIENTE (5 caps consecutivos). El lector percibe un bucle de presión sin escalada: "ya entendí en el cap anterior que el protagonista está aislado / acorralado / sin pistas; no necesito leerlo otra vez".
+Sugerencia del auditor: Sube la apuesta de al menos uno de los caps del medio del bucle: convierte una "media" en "alta" añadiendo una pérdida irreversible (un aliado herido, una identidad expuesta, una orden de detención), o una "alta" en "critica" añadiendo un punto sin retorno (el protagonista se la juega solo, queda inhabilitado, traiciona una norma propia). La regla universal: si dos caps consecutivos tienen la misma apuesta, el tercero DEBE subir un escalón. No basta con cambiar la forma_dominante; tiene que doler MÁS.
+media
+escalada_acto2
+caps 19, 20, 21, 22, 23
+Problema: Caps 19, 20, 21, 22, 23 del acto 2 tienen "apuesta_dramatica" IGUAL o DECRECIENTE (5 caps consecutivos). El lector percibe un bucle de presión sin escalada: "ya entendí en el cap anterior que el protagonista está aislado / acorralado / sin pistas; no necesito leerlo otra vez".
+Sugerencia del auditor: Sube la apuesta de al menos uno de los caps del medio del bucle: convierte una "media" en "alta" añadiendo una pérdida irreversible (un aliado herido, una identidad expuesta, una orden de detención), o una "alta" en "critica" añadiendo un punto sin retorno (el protagonista se la juega solo, queda inhabilitado, traiciona una norma propia). La regla universal: si dos caps consecutivos tienen la misma apuesta, el tercero DEBE subir un escalón. No basta con cambiar la forma_dominante; tiene que doler MÁS.
