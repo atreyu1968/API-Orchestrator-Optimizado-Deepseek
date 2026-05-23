@@ -177,7 +177,10 @@ ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS last_holistic_notes    TEXT
 ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS last_holistic_notes_at TIMESTAMP;
 ALTER TABLE reedit_projects ADD COLUMN IF NOT EXISTS final_score_at         TIMESTAMP;
 -- [Fix108] Voz narrativa canónica estructurada (pov/tense/narratorType)
-ALTER TABLE projects        ADD COLUMN IF NOT EXISTS narrative_voice        JSONB;
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS narrative_voice           JSONB;
+-- [Fix115] Snapshot + problemas residuales cuando el Auditor Estructural
+-- no llega a 7/10 y el proyecto entra en awaiting_structural_guidance.
+ALTER TABLE projects        ADD COLUMN IF NOT EXISTS pending_structural_guidance JSONB;
 SQL
 
 # Surface real errors del bloque pre-create (antes se silenciaban completamente).
@@ -196,6 +199,18 @@ if [ "$NARRATIVE_OK" != "1" ]; then
     sudo -u postgres psql -d "$DB_NAME_PUSH" -c "ALTER TABLE projects ADD COLUMN IF NOT EXISTS narrative_voice JSONB;" || {
         echo "[ERROR] No se pudo crear projects.narrative_voice. /api/projects devolverá 500."
         echo "         Aplícala manualmente: sudo -u postgres psql -d $DB_NAME_PUSH -c 'ALTER TABLE projects ADD COLUMN IF NOT EXISTS narrative_voice JSONB;'"
+    }
+fi
+
+# [Fix115] Sanity check duro: si pending_structural_guidance no quedó aplicada,
+# el gate human-in-the-loop falla en cuanto el SA no llega a 7/10 (NOT NULL viola
+# constraint del UPDATE). Forzamos como con narrative_voice.
+PSG_OK=$(sudo -u postgres psql -d "$DB_NAME_PUSH" -tAc "SELECT 1 FROM information_schema.columns WHERE table_name='projects' AND column_name='pending_structural_guidance';" 2>/dev/null)
+if [ "$PSG_OK" != "1" ]; then
+    echo "[AVISO] La columna projects.pending_structural_guidance (Fix115) no se aplicó. Forzándola..."
+    sudo -u postgres psql -d "$DB_NAME_PUSH" -c "ALTER TABLE projects ADD COLUMN IF NOT EXISTS pending_structural_guidance JSONB;" || {
+        echo "[ERROR] No se pudo crear projects.pending_structural_guidance. El gate Fix115 fallará."
+        echo "         Aplícala manualmente: sudo -u postgres psql -d $DB_NAME_PUSH -c 'ALTER TABLE projects ADD COLUMN IF NOT EXISTS pending_structural_guidance JSONB;'"
     }
 fi
 
