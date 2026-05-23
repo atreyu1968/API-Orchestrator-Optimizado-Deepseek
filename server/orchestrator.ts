@@ -1471,16 +1471,39 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
           const wba = wbaResp.result;
           if (!wba) {
-            console.warn(`[Orchestrator] [Fix110] Auditor de World Bible no devolvió resultado válido en iter ${wbaIter + 1}. Saltamos WBA.`);
+            const failureReason = wbaResp.failureReason || "razón desconocida";
+            console.warn(`[Orchestrator] [Fix110] Auditor de World Bible no devolvió resultado válido en iter ${wbaIter + 1}: ${failureReason}. Saltamos WBA.`);
+            // [Fix110-rev2] Recuperación de coste: si el auditor falla
+            // técnicamente pero la Fase 1 sí se parseó OK (`phase1Json` es
+            // válido), la guardamos como "salvavidas" para reutilizarla
+            // igual en el architectAttempt loop — la base no está auditada
+            // pero al menos no tiramos los ~2-3 min de Fase 1.
+            const phase1LookValid = phase1Json && phase1Json.world_bible && Array.isArray(phase1Json.world_bible.personajes) && phase1Json.world_bible.personajes.length > 0;
             try {
               await storage.createActivityLog({
                 projectId: project.id,
                 level: "warn",
                 agentRole: "world-bible-auditor",
-                message: `[Fix110] El Auditor de World Bible no devolvió resultado válido en iter ${wbaIter + 1}. Se usa la mejor Fase 1 vista (si la hay) o se cae al flujo clásico.`,
-                metadata: { fix: "Fix110", iteration: wbaIter + 1 },
+                message: `[Fix110] El Auditor de World Bible falló en iter ${wbaIter + 1}: ${failureReason}.${phase1LookValid ? " La Fase 1 generada SÍ es estructuralmente válida — se reutilizará sin auditar (no se tira el coste de generarla)." : " La Fase 1 tampoco es válida — se cae al flujo clásico."}`,
+                metadata: { fix: "Fix110", iteration: wbaIter + 1, failureReason, phase1Salvaged: phase1LookValid },
               });
             } catch {}
+            if (phase1LookValid && !bestWBA) {
+              // Marcamos como bestWBA con score neutro (5) para que la
+              // política de fallback la acepte y se reuse. No es óptimo
+              // (no está fortificada) pero ahorra ~150s de regenerar Fase 1.
+              bestWBA = {
+                score: WBA_MIN_REUSE_SCORE,
+                phase1Json,
+                result: {
+                  puntuacion_global: WBA_MIN_REUSE_SCORE,
+                  veredicto: "necesita_revision",
+                  resumen: `Salvavidas Fix110-rev2: la auditoría falló (${failureReason}) pero la Fase 1 es estructuralmente válida y se reutiliza.`,
+                  problemas: [],
+                  feedback_para_arquitecto: "",
+                },
+              };
+            }
             break;
           }
 

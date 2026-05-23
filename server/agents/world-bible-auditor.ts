@@ -149,13 +149,17 @@ export class WorldBibleAuditorAgent extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 8192,
-      maxOutputTokens: 6144,
+      // [Fix110-rev2] Subido de 6144 a 10240. En el run "Serie Íñigo Zubiri
+      // Vol. 2" el auditor devolvió null silenciosamente, causa más probable:
+      // la respuesta JSON (con feedback_para_arquitecto hasta 600 palabras)
+      // se truncaba antes del cierre.
+      maxOutputTokens: 10240,
       includeThoughts: false,
     });
     this.timeoutMs = 6 * 60 * 1000;
   }
 
-  async audit(input: WorldBibleAuditInput): Promise<{ result: WorldBibleAuditResult | null; raw: AgentResponse }> {
+  async audit(input: WorldBibleAuditInput): Promise<{ result: WorldBibleAuditResult | null; raw: AgentResponse; failureReason?: string }> {
     const condensed = this.condensePhase1(input.phase1Json);
 
     const userPrompt = `
@@ -175,16 +179,22 @@ Audita las 5 áreas (antagonismo / escalada_actos / reservas_secretos / stakes_p
 
     const response = await this.generateContent(userPrompt, input.projectId);
     if (response.error || response.timedOut || !response.content?.trim()) {
-      console.error(`[WorldBibleAuditor] Error o vacío: ${response.error || "timeout"}`);
-      return { result: null, raw: response };
+      const reason = response.timedOut
+        ? `timeout tras ${Math.round(this.timeoutMs / 1000)}s`
+        : response.error
+          ? `error LLM: ${response.error}`
+          : "respuesta vacía del LLM";
+      console.error(`[WorldBibleAuditor] ${reason}`);
+      return { result: null, raw: response, failureReason: reason };
     }
 
     try {
       const repaired = repairJson(response.content);
       const parsed = JSON.parse(repaired) as WorldBibleAuditResult;
       if (typeof parsed.puntuacion_global !== "number" || !parsed.veredicto || !Array.isArray(parsed.problemas)) {
-        console.error(`[WorldBibleAuditor] JSON inválido: faltan campos requeridos.`);
-        return { result: null, raw: response };
+        const reason = `JSON parseado pero faltan campos requeridos (puntuacion_global=${typeof parsed.puntuacion_global}, veredicto=${parsed.veredicto}, problemas=${Array.isArray(parsed.problemas) ? "array" : typeof parsed.problemas})`;
+        console.error(`[WorldBibleAuditor] ${reason}`);
+        return { result: null, raw: response, failureReason: reason };
       }
       parsed.puntuacion_global = Math.max(1, Math.min(10, parsed.puntuacion_global));
       parsed.problemas = parsed.problemas.filter(p => p && p.area && p.descripcion && p.sugerencia);
@@ -192,8 +202,11 @@ Audita las 5 áreas (antagonismo / escalada_actos / reservas_secretos / stakes_p
       parsed.resumen = parsed.resumen || "";
       return { result: parsed, raw: response };
     } catch (error) {
-      console.error(`[WorldBibleAuditor] Parse error: ${(error as Error).message}`);
-      return { result: null, raw: response };
+      const len = response.content?.length || 0;
+      const tail = response.content ? response.content.slice(-80).replace(/\s+/g, " ") : "";
+      const reason = `parse error tras repair: ${(error as Error).message} (respuesta ${len} chars, cola: "${tail}") — probable truncamiento o JSON malformado`;
+      console.error(`[WorldBibleAuditor] ${reason}`);
+      return { result: null, raw: response, failureReason: reason };
     }
   }
 
