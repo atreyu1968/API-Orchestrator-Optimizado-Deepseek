@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { SeriesWorldBibleConsolidatorAgent, type SeriesWorldBibleConsolidated } from "./agents/series-world-bible-consolidator";
+import { generateMechanicalGuidanceFromProblems } from "./utils/auto-mechanical-guidance";
 import { 
   ArchitectAgent, 
   GhostwriterAgent, 
@@ -21,6 +22,7 @@ import {
   type WorldBibleAuditResult,
   runArchitectStructuralAudits,
   autopatchDecorativeSetupCapitulos,
+  type StructuralAuditProblem,
   HolisticReviewerAgent,
   type HolisticReviewerResult,
   BetaReaderAgent,
@@ -2454,15 +2456,39 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
       // ═══════════════════════════════════════════════════════════════
       try {
         if (!this.aborted) {
-          const MAX_SA_ITERATIONS = 8; // [Fix115] subido de 6 a 8 — con audit on-demand de WB (Fix115) damos margen para que el extra de retries tras la fortificación exterior pueda converger. Coste extra worst-case: ~10 min adicionales en escenarios donde sin el WB-external no converge nunca, pero antes el sistema o escribía basura o abortaba.
+          // ═══════════════════════════════════════════════════════════════
+          // [Fix118] OUTER LOOP — auto-guidance mecánica antes del gate
+          // ═══════════════════════════════════════════════════════════════
+          // Si el bucle SA agota sus iteraciones con bestSA<7, en vez de
+          // pasar directo al gate human-in-the-loop generamos UNA guidance
+          // mecánica determinista desde los problemas residuales y
+          // reintentamos el bucle SA completo UNA segunda vez con esa
+          // guidance appendeada a architectInstructions. Si la segunda
+          // pasada tampoco llega, ahora SÍ activamos el gate, pero con la
+          // auto-guidance ya pre-rellenada en el panel para que el usuario
+          // la edite en vez de escribirla desde cero. Coste worst-case:
+          // +8 iters SA adicionales (~10-15 min) que antes el usuario
+          // tenía que esperar bloqueado en el gate manual.
+          let bestSAOverall: { data: ParsedWorldBible; score: number; problemsSummary: string } | null = null;
+          let lastSeenScoreSAOverall = 0;
+          let autoMechanicalGuidanceApplied = false;
+          let effectiveArchitectInstructionsForSA: string = project.architectInstructions || "";
+          let lastWbaExternalCount = 0;
+          let lastWbaExternalAreas: string[] = [];
+          // [Fix118] Constantes movidas FUERA del outer for porque el gate
+          // Fix115 las usa después de cerrar el outer loop.
+          const MAX_SA_ITERATIONS = 8; // [Fix115] subido de 6 a 8 — con audit on-demand de WB (Fix115) damos margen para que el extra de retries tras la fortificación exterior pueda converger.
           const SA_THRESHOLD = 7;
+          const MIN_PUBLISHABLE_SA_SCORE = 7;
+          const lastMaxSAIterations = MAX_SA_ITERATIONS;
+          outerSALoop: for (let outerSAAttempt = 0; outerSAAttempt < 2; outerSAAttempt++) {
           // [Fix115] Gate de publicabilidad: si tras todos los reintentos
           // (incluyendo audit on-demand de WB) el mejor score sigue por
           // debajo de esto, NO se escribe la novela. El proyecto pasa a
           // status="awaiting_structural_guidance" y el usuario decide.
           // Igual al threshold actual para coherencia: si pidieron 7/10
           // para reintentar, exigimos 7/10 para escribir.
-          const MIN_PUBLISHABLE_SA_SCORE = 7;
+          // [Fix118] MIN_PUBLISHABLE_SA_SCORE declarado fuera del outer for.
           let bestSA: { data: ParsedWorldBible; score: number; problemsSummary: string } | null = null;
           let lastSeenScoreSA = 0;
           // [Fix101] Histórico para inyectar al Arquitecto en cada retry.
@@ -2999,7 +3025,7 @@ INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (F
                 hasPrologue: project.hasPrologue,
                 hasEpilogue: project.hasEpilogue,
                 hasAuthorNote: project.hasAuthorNote,
-                architectInstructions: project.architectInstructions || undefined,
+                architectInstructions: effectiveArchitectInstructionsForSA || undefined,
                 structuralAuditFeedback: feedbackWithHistorySA,
                 // [Fix106] Reusar el World Bible del intento anterior para no
                 // regenerar Fase 1 desde cero (en logs reales: 7 personajes/2
@@ -3073,6 +3099,57 @@ INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (F
             worldBibleData = bestSA.data;
           }
 
+          // [Fix118] Captura del mejor entre pasadas + decisión auto-guidance
+          if (bestSA && (!bestSAOverall || bestSA.score > bestSAOverall.score)) {
+            bestSAOverall = bestSA;
+            lastSeenScoreSAOverall = lastSeenScoreSA;
+          } else if (!bestSAOverall) {
+            lastSeenScoreSAOverall = lastSeenScoreSA;
+          }
+          lastWbaExternalCount = wbaExternalCount;
+          lastWbaExternalAreas = Array.from(wbaExternalAreasAudited);
+
+          if (this.aborted) break outerSALoop;
+          const currentBestScore = bestSAOverall?.score ?? 0;
+          if (currentBestScore >= MIN_PUBLISHABLE_SA_SCORE) break outerSALoop;
+          if (autoMechanicalGuidanceApplied) break outerSALoop;
+          if (!bestSAOverall) break outerSALoop;
+
+          try {
+            const finalAuditForGuidance = runArchitectStructuralAudits(
+              bestSAOverall.data.escaleta_capitulos as any[],
+              (bestSAOverall.data as any).world_bible
+            );
+            if (!finalAuditForGuidance.problemas.length) break outerSALoop;
+            const autoGuidance = generateMechanicalGuidanceFromProblems(
+              finalAuditForGuidance.problemas,
+              bestSAOverall.score,
+              MIN_PUBLISHABLE_SA_SCORE,
+            );
+            if (!autoGuidance) break outerSALoop;
+            effectiveArchitectInstructionsForSA = (effectiveArchitectInstructionsForSA || "") + "\n\n" + autoGuidance;
+            autoMechanicalGuidanceApplied = true;
+            worldBibleData = bestSAOverall.data;
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "architect",
+              message: `[Fix118] Auto-guidance mecánica generada desde los ${finalAuditForGuidance.problemas.length} problemas residuales (best ${bestSAOverall.score}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10). Reintentando el bucle SA UNA vez más con las correcciones mecánicas inyectadas en architectInstructions antes de activar el gate human-in-the-loop.`,
+              metadata: {
+                fix: "Fix118",
+                bestScore: bestSAOverall.score,
+                threshold: MIN_PUBLISHABLE_SA_SCORE,
+                problemasCount: finalAuditForGuidance.problemas.length,
+                autoGuidanceLength: autoGuidance.length,
+              },
+            });
+            continue outerSALoop;
+          } catch (e) {
+            console.warn(`[Orchestrator] [Fix118] No se pudo generar auto-guidance: ${(e as Error).message}`);
+            break outerSALoop;
+          }
+          } // ← cierre del outer for [Fix118]
+
           // ═══════════════════════════════════════════════════════════════
           // [Fix115] GATE DE PUBLICABILIDAD ESTRUCTURAL — human-in-the-loop
           // ═══════════════════════════════════════════════════════════════
@@ -3088,23 +3165,32 @@ INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (F
           // de X"). El endpoint POST /api/projects/:id/structural-guidance
           // reanuda la generación reusando el snapshot vía Fix106 y pasando
           // la guidance del usuario al Arquitecto.
-          const finalSAScore = bestSA?.score ?? lastSeenScoreSA;
-          if (bestSA && finalSAScore < MIN_PUBLISHABLE_SA_SCORE) {
+          const finalSAScore = bestSAOverall?.score ?? lastSeenScoreSAOverall;
+          if (bestSAOverall && finalSAScore < MIN_PUBLISHABLE_SA_SCORE) {
             const finalAudit = runArchitectStructuralAudits(
-              bestSA.data.escaleta_capitulos as any[],
-              (bestSA.data as any).world_bible
+              bestSAOverall.data.escaleta_capitulos as any[],
+              (bestSAOverall.data as any).world_bible
             );
+            // [Fix118] Si ya generamos auto-guidance en la pasada previa y
+            // los problemas siguen, refrescamos la auto-guidance contra los
+            // problemas RESIDUALES de esta última pasada (no los originales).
+            const autoGuidanceForPanel = autoMechanicalGuidanceApplied
+              ? generateMechanicalGuidanceFromProblems(finalAudit.problemas, finalSAScore, MIN_PUBLISHABLE_SA_SCORE)
+              : "";
             const pendingPayload = {
               bestScore: finalSAScore,
               threshold: MIN_PUBLISHABLE_SA_SCORE,
               problemas: finalAudit.problemas,
               resumenAuditor: finalAudit.resumen,
-              worldBibleSnapshot: bestSA.data,
+              worldBibleSnapshot: bestSAOverall.data,
               savedAt: new Date().toISOString(),
-              iterations: MAX_SA_ITERATIONS,
-              wbaExternalRan: wbaExternalCount > 0,
-              wbaExternalCount,
-              wbaExternalAreas: Array.from(wbaExternalAreasAudited),
+              iterations: lastMaxSAIterations,
+              wbaExternalRan: lastWbaExternalCount > 0,
+              wbaExternalCount: lastWbaExternalCount,
+              wbaExternalAreas: lastWbaExternalAreas,
+              // [Fix118] auto-guidance pre-rellenada en el panel
+              autoMechanicalGuidance: autoGuidanceForPanel,
+              autoMechanicalGuidanceApplied,
             };
             await storage.updateProject(project.id, {
               status: "awaiting_structural_guidance" as any,
@@ -3114,15 +3200,17 @@ INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (F
               projectId: project.id,
               level: "warning",
               agentRole: "architect",
-              message: `[Fix115] La estructura no alcanzó el mínimo publicable (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10) tras ${MAX_SA_ITERATIONS} iteraciones${wbaExternalCount > 0 ? ` + ${wbaExternalCount} audit(s) on-demand del Auditor de World Bible (Fix115/Fix116)` : ""}. NO se escribe la novela sobre una escaleta defectuosa. El proyecto queda pausado en "awaiting_structural_guidance" — abre el panel desde el dashboard para revisar los problemas residuales y dar guidance manual al Arquitecto.`,
+              message: `[Fix115] La estructura no alcanzó el mínimo publicable (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10) tras ${lastMaxSAIterations} iteraciones${lastWbaExternalCount > 0 ? ` + ${lastWbaExternalCount} audit(s) on-demand del Auditor de World Bible (Fix115/Fix116)` : ""}${autoMechanicalGuidanceApplied ? " + 1 pasada extra con auto-guidance mecánica (Fix118)" : ""}. NO se escribe la novela sobre una escaleta defectuosa. El proyecto queda pausado en "awaiting_structural_guidance" — abre el panel desde el dashboard para revisar los problemas residuales y dar guidance manual al Arquitecto${autoMechanicalGuidanceApplied ? " (ya hay una propuesta auto-generada pre-rellenada que puedes editar o enviar tal cual)" : ""}.`,
               metadata: {
                 fix: "Fix115",
                 finalScore: finalSAScore,
                 threshold: MIN_PUBLISHABLE_SA_SCORE,
-                wbaExternalRan: wbaExternalCount > 0,
-                wbaExternalCount,
-                wbaExternalAreas: Array.from(wbaExternalAreasAudited),
+                wbaExternalRan: lastWbaExternalCount > 0,
+                wbaExternalCount: lastWbaExternalCount,
+                wbaExternalAreas: lastWbaExternalAreas,
                 problemasCount: finalAudit.problemas.length,
+                autoMechanicalGuidanceApplied,
+                autoMechanicalGuidanceLength: autoGuidanceForPanel.length,
               },
             });
             try {
