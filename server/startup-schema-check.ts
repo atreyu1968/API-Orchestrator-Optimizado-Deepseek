@@ -22,6 +22,7 @@ const REQUIRED_COLUMNS: RequiredColumn[] = [
   { table: "projects", column: "min_chapter_count", addedIn: "Fix90" },
   { table: "projects", column: "max_chapter_count", addedIn: "Fix90" },
   { table: "projects", column: "narrative_voice", addedIn: "Fix108" },
+  { table: "projects", column: "pending_structural_guidance", addedIn: "Fix115" },
 ];
 
 const REQUIRED_TABLES: RequiredTable[] = [

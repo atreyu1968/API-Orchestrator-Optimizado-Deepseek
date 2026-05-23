@@ -1382,7 +1382,60 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       const WBA_MIN_REUSE_SCORE = 5;
       let prefortifiedPhase1Json: any = null;
       const isSeriesVolume = !!(seriesUnifiedWorldBibleStr && seriesUnifiedWorldBibleStr.trim().length > 0);
-      if (!isSeriesVolume) {
+
+      // [Fix115] Si el proyecto viene de "awaiting_structural_guidance" (el
+      // usuario ha dado guidance manual desde la UI tras un gate fallido),
+      // reusamos el snapshot del bestSA como Fase 1 fortificada y saltamos
+      // el bucle WBA. La guidance del usuario ya está en
+      // `project.architectInstructions` (appendeada por el endpoint), así
+      // que el Arquitecto la verá. Limpiamos el pending para no reusarlo en
+      // una hipotética siguiente vuelta.
+      const pendingGuidance = (project as any).pendingStructuralGuidance as
+        | { worldBibleSnapshot?: any; bestScore?: number; savedAt?: string }
+        | null
+        | undefined;
+      // [Fix115 post-review] Validación estricta de forma del snapshot antes
+      // de reusarlo como Fase 1 pre-fortificada. Si la estructura mínima de
+      // ParsedWorldBible no está presente, caemos al flujo clásico (regenera
+      // Fase 1 desde cero) en vez de propagar datos corruptos al Arquitecto.
+      // Además NO limpiamos pendingStructuralGuidance aquí: si el Arquitecto
+      // falla después, el usuario perdería el snapshot y la guidance. Lo
+      // limpiamos solo tras éxito del Arquitecto (más abajo, post-break L1990).
+      let consumedPendingGuidance = false;
+      const snapshot = pendingGuidance?.worldBibleSnapshot;
+      const snapshotValid = !!(
+        snapshot &&
+        snapshot.world_bible &&
+        Array.isArray(snapshot.world_bible.personajes) &&
+        snapshot.world_bible.personajes.length > 0 &&
+        Array.isArray(snapshot.escaleta_capitulos) &&
+        snapshot.escaleta_capitulos.length > 0
+      );
+      if (pendingGuidance && snapshotValid) {
+        prefortifiedPhase1Json = snapshot;
+        consumedPendingGuidance = true;
+        try {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "info",
+            agentRole: "architect",
+            message: `[Fix115] Reanudación con guidance estructural manual del usuario. Reusamos el mejor snapshot visto (${pendingGuidance.bestScore ?? "?"}/10) como base y la guidance ya está en architectInstructions. Saltamos el bucle WBA pre-flight (el snapshot ya viene auditado).`,
+            metadata: { fix: "Fix115", reusedBestScore: pendingGuidance.bestScore, savedAt: pendingGuidance.savedAt },
+          });
+        } catch {}
+      } else if (pendingGuidance && !snapshotValid) {
+        try {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warn",
+            agentRole: "architect",
+            message: `[Fix115] Snapshot de pendingStructuralGuidance inválido o incompleto (faltan personajes o escaleta). Ignorando snapshot y regenerando Fase 1 desde cero. La guidance del usuario sigue activa en architectInstructions.`,
+            metadata: { fix: "Fix115", snapshotKeys: Object.keys(snapshot || {}) },
+          });
+        } catch {}
+      }
+
+      if (!isSeriesVolume && !prefortifiedPhase1Json) {
         let bestWBA: { score: number; phase1Json: any; result: WorldBibleAuditResult } | null = null;
         let wbaFeedback: string | undefined = undefined;
         for (let wbaIter = 0; wbaIter < MAX_WBA_ITERATIONS; wbaIter++) {
@@ -1957,6 +2010,18 @@ ${chapterSummaries || "Sin capítulos disponibles"}
               }
 
               console.log(`[Orchestrator] World Bible parsed successfully on attempt ${architectAttempt}: ${worldBibleData.world_bible?.personajes?.length || 0} characters, ${escaletaLength}/${expectedChapters} chapters, ${regularCaps.length - failingCaps.length}/${regularCaps.length} caps con escaleta completa`);
+              // [Fix115 post-review] El Arquitecto produjo una WB nueva válida
+              // sobre el snapshot heredado + guidance del usuario. Recién
+              // ahora limpiamos pendingStructuralGuidance: hasta este punto
+              // un fallo previo dejaría al usuario sin snapshot para reintentar.
+              if (consumedPendingGuidance) {
+                try {
+                  await storage.updateProject(project.id, { pendingStructuralGuidance: null as any } as any);
+                  consumedPendingGuidance = false;
+                } catch (e) {
+                  console.warn(`[Fix115] No se pudo limpiar pendingStructuralGuidance tras éxito del Arquitecto: ${(e as Error).message}`);
+                }
+              }
               break;
             }
           }
@@ -2388,8 +2453,15 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
       // ═══════════════════════════════════════════════════════════════
       try {
         if (!this.aborted) {
-          const MAX_SA_ITERATIONS = 6; // [Fix107] subido de 3 a 6 — con Fix106 los retries no regeneran Fase 1, así que cada iter extra cuesta ~5 min (solo Fase 2 + audit) en lugar de ~8 min. Damos margen real para converger en estructuras complejas.
+          const MAX_SA_ITERATIONS = 8; // [Fix115] subido de 6 a 8 — con audit on-demand de WB (Fix115) damos margen para que el extra de retries tras la fortificación exterior pueda converger. Coste extra worst-case: ~10 min adicionales en escenarios donde sin el WB-external no converge nunca, pero antes el sistema o escribía basura o abortaba.
           const SA_THRESHOLD = 7;
+          // [Fix115] Gate de publicabilidad: si tras todos los reintentos
+          // (incluyendo audit on-demand de WB) el mejor score sigue por
+          // debajo de esto, NO se escribe la novela. El proyecto pasa a
+          // status="awaiting_structural_guidance" y el usuario decide.
+          // Igual al threshold actual para coherencia: si pidieron 7/10
+          // para reintentar, exigimos 7/10 para escribir.
+          const MIN_PUBLISHABLE_SA_SCORE = 7;
           let bestSA: { data: ParsedWorldBible; score: number; problemsSummary: string } | null = null;
           let lastSeenScoreSA = 0;
           // [Fix101] Histórico para inyectar al Arquitecto en cada retry.
@@ -2403,6 +2475,19 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
           // bucle ya restauraba el best al final, pero gastaba todas las
           // iteraciones. Con este corte salimos en iter 3 en vez de iter 6.
           let consecutiveRegressionsSA = 0;
+          // [Fix115] Estado para el audit on-demand del Auditor de World Bible.
+          // Si en ≥2 iters consecutivas la MISMA dimensión KO acumula count≥3,
+          // el problema NO es de la escaleta — es la World Bible la que no
+          // tiene munición dramática para que se pueda resolver con un simple
+          // rediseño. En ese caso disparamos el Auditor de WB sobre el snapshot
+          // del bestSA, capturamos su `feedback_para_arquitecto` y lo inyectamos
+          // al siguiente retry como prefijo del bloque de feedback. Esto cubre
+          // tanto vol 1 (cuando Fix110 pre-flight ya falló) como vol N de serie
+          // (donde Fix110 está skipeado por preservar continuidad). Máx 1 vez
+          // por bucle SA para acotar coste (~3-5 min adicionales worst-case).
+          let wbaExternalDone = false;
+          let wbaExternalFeedback: string | null = null;
+          let prevTopAreaSA: { area: string; count: number } | null = null;
 
           for (let saIter = 0; saIter < MAX_SA_ITERATIONS; saIter++) {
             if (this.aborted) break;
@@ -2563,6 +2648,32 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             const koLines = koDimensions
               .map(d => `  - ${d.label}: ${d.count} problema(s)${d.hasAlta ? " [incluye severidad ALTA]" : ""} → REDUCIR A ${d.target}`)
               .join("\n");
+            // [Fix115] Detección de bottleneck estructural concentrado.
+            // Si el top problema KO (la dimensión con más count) tiene count≥3
+            // y la iter anterior ya identificó la MISMA dimensión con count≥3,
+            // el bucle se ha estancado en un techo natural por falta de
+            // munición en la World Bible. Disparamos audit on-demand del
+            // Auditor de WB (max 1 vez por bucle) para fortificar la base
+            // antes del próximo retry.
+            const topKO = koDimensions.length > 0
+              ? koDimensions.reduce((a, b) => (a.count >= b.count ? a : b))
+              : null;
+            const topArea = topKO
+              ? (Object.entries(dimensionLabels).find(([_k, v]) => v === topKO.label)?.[0] || null)
+              : null;
+            const concentratedBottleneck = !!(
+              topKO && topArea && topKO.count >= 3
+              && prevTopAreaSA && prevTopAreaSA.area === topArea && prevTopAreaSA.count >= 3
+              && !wbaExternalDone
+            );
+            // Actualizamos prev para la próxima iter (antes de cualquier
+            // posible regen) — necesitamos saber qué fue el top de ESTA iter.
+            if (topArea && topKO) {
+              prevTopAreaSA = { area: topArea, count: topKO.count };
+            } else {
+              prevTopAreaSA = null;
+            }
+
             const okBlock = okDimensions.length > 0
               ? `DIMENSIONES YA ACEPTABLES — NO LAS MODIFIQUES:\n${okDimensions.join("\n")}\n\n`
               : "";
@@ -2613,7 +2724,7 @@ CONTEXTO DE TU INTENTO ANTERIOR (Fix101/Fix102) — ANTI-REGRESIÓN
 Tu pasada anterior fue evaluada por el Auditor Estructural y obtuvo ${prevScoreSA}/10.
 
 MAPA DE SALUD POR DIMENSIÓN (8 dimensiones independientes del auditor):
-${okBlock}${koBlock}REGLA CRÍTICA (Fix102): si una dimensión está marcada ACEPTABLE y la rompes en este rediseño, FALLARÁS la auditoría aunque corrijas las demás. El auditor cuenta problemas por dimensión de forma independiente — empeorar una dimensión OK borra el progreso en las KO. Por eso DEBES preservar la lógica narrativa de las dimensiones OK y concentrar todo tu esfuerzo de rediseño solo en las dimensiones KO.
+${okBlock}${koBlock}REGLA CRÍTICA (Fix102 + Fix115): si una dimensión está marcada ACEPTABLE y la rompes en este rediseño, FALLARÁS la auditoría aunque corrijas las demás. El auditor cuenta problemas por dimensión de forma independiente — empeorar una dimensión OK borra el progreso en las KO. Por eso DEBES preservar la lógica narrativa de las dimensiones OK y concentrar todo tu esfuerzo de rediseño solo en las dimensiones KO. Si introduces UN solo problema nuevo en una dimensión OK (especialmente severidad alta), el sistema activará el early-stop por regresión consecutiva (Fix109d) y restaurará la versión anterior, perdiendo este intento. NO HAY MEDIO TONO: o respetas la lista OK al pie de la letra o tu intento se descarta y avanza al siguiente con menos margen.
 
 DETALLE DE PROBLEMAS ESPECÍFICOS DEL INTENTO ANTERIOR (top-10):
 ${prevProblemsSummarySA || "(sin detalle textual; ve a las instrucciones de revisión abajo)"}
@@ -2622,7 +2733,72 @@ OBJETIVO: PROGRESO MONOTÓNICO. No rediseñes desde cero. Para cada dimensión O
 ═══════════════════════════════════════════════════════════════════
 
 `;
-            const feedbackWithHistorySA = historyBlockSA + sa.instrucciones_revision;
+            // [Fix115] Si detectamos bottleneck concentrado, llamamos al
+            // Auditor de WB sobre el snapshot del bestSA para enriquecer la
+            // base. El feedback se anteponen al bloque histórico — es la
+            // pieza más importante: dice al Arquitecto QUÉ añadir a la WB
+            // (palancas, secretos, antagonismo) para que la dimensión KO se
+            // pueda resolver, no solo cómo redibujar la escaleta.
+            if (concentratedBottleneck && bestSA) {
+              try {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  agentRole: "architect",
+                  message: `[Fix115] Bottleneck estructural concentrado detectado: la dimensión "${topKO!.label}" lleva 2 iters consecutivas con ≥3 problemas. Disparo audit on-demand del Auditor de World Bible para enriquecer la base narrativa antes del siguiente retry.`,
+                  metadata: { fix: "Fix115", area: topArea, count: topKO!.count, iteration: saIter + 1 },
+                });
+              } catch {}
+              try {
+                const wbaResp = await this.worldBibleAuditor.audit({
+                  title: project.title,
+                  genre: project.genre,
+                  tone: project.tone,
+                  premise: effectivePremise,
+                  chapterCount: project.chapterCount,
+                  phase1Json: bestSA.data,
+                  projectId: project.id,
+                });
+                if (wbaResp.raw?.tokenUsage) {
+                  await this.trackTokenUsage(project.id, wbaResp.raw.tokenUsage, "El Auditor de World Bible (audit on-demand Fix115)", "deepseek-v4-flash", undefined, "world_bible_audit");
+                }
+                const wbaR = wbaResp.result;
+                if (wbaR && wbaR.feedback_para_arquitecto && wbaR.feedback_para_arquitecto.trim().length > 0) {
+                  wbaExternalFeedback = `═══════════════════════════════════════════════════════════════════
+[Fix115] FEEDBACK DEL AUDITOR DE WORLD BIBLE — audit on-demand
+═══════════════════════════════════════════════════════════════════
+El Auditor Estructural ha detectado que "${topKO!.label}" es un problema PERSISTENTE y CONCENTRADO (≥3 problemas en 2 iteraciones consecutivas). Esto NO se puede resolver solo redibujando la escaleta — la World Bible no tiene suficiente munición dramática. El Auditor de World Bible ha revisado la Fase 1 y emite el siguiente diagnóstico:
+
+Score actual de la WB: ${wbaR.puntuacion_global}/10 (${wbaR.veredicto})
+${wbaR.resumen}
+
+${wbaR.feedback_para_arquitecto}
+
+INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (Fase 1) con los elementos que el Auditor pide (palancas dramáticas, secretos dosificables, métodos del antagonista, etc.) y SOLO ENTONCES rediseña la escaleta usando esa base fortificada. Si la WB sigue débil, la escaleta volverá a fallar en "${topKO!.label}" por mucho que la reescribas.
+═══════════════════════════════════════════════════════════════════
+
+`;
+                  wbaExternalDone = true;
+                  try {
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "info",
+                      agentRole: "world-bible-auditor",
+                      message: `[Fix115] Auditor de World Bible (audit on-demand) — Score ${wbaR.puntuacion_global}/10. Feedback inyectado al Arquitecto para el siguiente retry.`,
+                      metadata: { fix: "Fix115", wbaScore: wbaR.puntuacion_global, veredicto: wbaR.veredicto, area: topArea },
+                    });
+                  } catch {}
+                } else {
+                  console.warn(`[Orchestrator] [Fix115] Auditor de WB (on-demand) no devolvió feedback accionable. wbaR=${!!wbaR}, feedback="${wbaR?.feedback_para_arquitecto?.slice(0,80)||""}".`);
+                  wbaExternalDone = true; // marcamos para no reintentar el audit en bucle
+                }
+              } catch (wbaErr) {
+                console.warn(`[Orchestrator] [Fix115] WB audit on-demand falló: ${(wbaErr as Error).message}. Continuamos sin él.`);
+                wbaExternalDone = true; // tampoco reintentamos si falla
+              }
+            }
+
+            const feedbackWithHistorySA = (wbaExternalFeedback || "") + historyBlockSA + sa.instrucciones_revision;
 
             try {
               const retryResult = await this.architect.execute({
@@ -2708,6 +2884,60 @@ OBJETIVO: PROGRESO MONOTÓNICO. No rediseñes desde cero. Para cada dimensión O
               metadata: { bestScore: bestSA.score, lastScore: lastSeenScoreSA },
             });
             worldBibleData = bestSA.data;
+          }
+
+          // ═══════════════════════════════════════════════════════════════
+          // [Fix115] GATE DE PUBLICABILIDAD ESTRUCTURAL — human-in-the-loop
+          // ═══════════════════════════════════════════════════════════════
+          // Si tras todo el bucle SA (incluyendo audit on-demand de WB) el
+          // mejor score sigue por debajo del mínimo publicable, NO escribimos
+          // la novela sobre una escaleta defectuosa. En vez de abortar
+          // (status="error" deja al usuario sin novela y sin recurso), el
+          // proyecto pasa a "awaiting_structural_guidance": persistimos el
+          // snapshot del bestSA + los problemas residuales en
+          // `pendingStructuralGuidance` y la UI muestra un panel con
+          // textarea donde el usuario da guidance manual al Arquitecto
+          // ("mueve el reveal del traidor al cap 18", "elimina el subplot
+          // de X"). El endpoint POST /api/projects/:id/structural-guidance
+          // reanuda la generación reusando el snapshot vía Fix106 y pasando
+          // la guidance del usuario al Arquitecto.
+          const finalSAScore = bestSA?.score ?? lastSeenScoreSA;
+          if (bestSA && finalSAScore < MIN_PUBLISHABLE_SA_SCORE) {
+            const finalAudit = runArchitectStructuralAudits(
+              bestSA.data.escaleta_capitulos as any[],
+              (bestSA.data as any).world_bible
+            );
+            const pendingPayload = {
+              bestScore: finalSAScore,
+              threshold: MIN_PUBLISHABLE_SA_SCORE,
+              problemas: finalAudit.problemas,
+              resumenAuditor: finalAudit.resumen,
+              worldBibleSnapshot: bestSA.data,
+              savedAt: new Date().toISOString(),
+              iterations: MAX_SA_ITERATIONS,
+              wbaExternalRan: wbaExternalDone,
+            };
+            await storage.updateProject(project.id, {
+              status: "awaiting_structural_guidance" as any,
+              pendingStructuralGuidance: pendingPayload as any,
+            } as any);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              agentRole: "architect",
+              message: `[Fix115] La estructura no alcanzó el mínimo publicable (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10) tras ${MAX_SA_ITERATIONS} iteraciones${wbaExternalDone ? " + audit on-demand del Auditor de World Bible" : ""}. NO se escribe la novela sobre una escaleta defectuosa. El proyecto queda pausado en "awaiting_structural_guidance" — abre el panel desde el dashboard para revisar los problemas residuales y dar guidance manual al Arquitecto.`,
+              metadata: {
+                fix: "Fix115",
+                finalScore: finalSAScore,
+                threshold: MIN_PUBLISHABLE_SA_SCORE,
+                wbaExternalRan: wbaExternalDone,
+                problemasCount: finalAudit.problemas.length,
+              },
+            });
+            try {
+              this.callbacks.onAgentStatus("architect", "idle", `Pausado: la estructura necesita tu guidance manual (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10).`);
+            } catch {}
+            return; // NO continuamos al Narrador.
           }
         }
       } catch (saErr) {

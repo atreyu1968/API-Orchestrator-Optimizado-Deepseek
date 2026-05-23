@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { AgentCard } from "@/components/agent-card";
 import { ProcessFlow } from "@/components/process-flow";
 import { ConsoleOutput, type LogEntry } from "@/components/console-output";
+import { StructuralGuidancePanel } from "@/components/structural-guidance-panel";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DuplicateManager } from "@/components/duplicate-manager";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -1083,6 +1084,18 @@ export default function Dashboard() {
             />
           </CardContent>
         </Card>
+      )}
+
+      {currentProject && (currentProject.status as string) === "awaiting_structural_guidance" && (currentProject as any).pendingStructuralGuidance && (
+        <StructuralGuidancePanel
+          project={currentProject as any}
+          onSubmitted={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/agent-statuses"] });
+            setCompletedStages([]);
+            addLog("success", "Guidance estructural enviada. Reanudando con el Arquitecto...");
+          }}
+        />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

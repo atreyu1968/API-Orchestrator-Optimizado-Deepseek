@@ -170,6 +170,23 @@ export const projects = pgTable("projects", {
   // o las ejecute manualmente desde la herramienta de gestión de capítulos.
   // Cada item: { id, type, targetChapter, secondaryChapter?, reason, source, createdAt }.
   pendingAdminActions: jsonb("pending_admin_actions").default([]),
+  // [Fix115] Guidance estructural pendiente: cuando el bucle del Auditor
+  // Estructural agota todos sus reintentos (incluyendo audit on-demand de
+  // World Bible) y el mejor score sigue < MIN_PUBLISHABLE_SA_SCORE (7/10), el
+  // orquestador NO escribe la novela sobre una escaleta defectuosa. En vez
+  // de abortar (que dejaría al usuario sin nada), persiste aquí un snapshot
+  // del mejor estado visto + los problemas residuales concretos y pone el
+  // proyecto en status="awaiting_structural_guidance". La UI muestra un
+  // panel con los problemas y un textarea para que el usuario dé guidance
+  // manual (ej. "mueve el reveal del traidor al cap 18", "elimina el
+  // subplot de X"). Al recibir guidance, el orquestador reanuda saltando el
+  // bucle WBA (reusa el snapshot fortificado vía Fix106) y pasando la
+  // guidance del usuario al Arquitecto. Forma: {
+  //   bestScore: number, threshold: number, problemas: StructuralAuditProblem[],
+  //   worldBibleSnapshot: ParsedWorldBible, savedAt: string, iterations: number,
+  //   wbaExternalRan: boolean }. Se borra cuando el endpoint
+  // /api/projects/:id/structural-guidance la consume.
+  pendingStructuralGuidance: jsonb("pending_structural_guidance"),
   // [Fix49] Veredicto de reparabilidad emitido por el Lector Holístico en el
   // gate pre-Final-Reviewer (Fix29). Estructura: { severidadGlobal: "reparable"
   // | "reparable_con_reservas" | "irreparable_automaticamente", issuesIrreparables:

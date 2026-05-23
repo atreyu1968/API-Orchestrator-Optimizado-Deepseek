@@ -8,7 +8,9 @@ import { queueManager } from "./queue-manager";
 import { insertProjectSchema, insertPseudonymSchema, insertPublisherSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema } from "@shared/schema";
 import multer from "multer";
 import mammoth from "mammoth";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { db } from "./db";
+import { projects } from "@shared/schema";
 import { generateManuscriptDocx } from "./services/docx-exporter";
 import { generateManuscriptEpub, generateGenericManuscriptEpub } from "./services/epub-exporter";
 import { generateBackMatterMarkdown } from "./services/back-matter-generator";
@@ -1101,6 +1103,107 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error resuming generation:", error);
       res.status(500).json({ error: "Failed to resume generation" });
+    }
+  });
+
+  // [Fix115] Reanudación con guidance estructural manual. Cuando el bucle del
+  // Auditor Estructural agota sus reintentos y el mejor score sigue < 7/10,
+  // el orquestador deja el proyecto en status="awaiting_structural_guidance"
+  // con un snapshot del bestSA + problemas residuales en
+  // `pendingStructuralGuidance`. Este endpoint recibe la guidance del
+  // usuario, la appendea a `architectInstructions` (sin perder lo previo) y
+  // reinicia la generación. El orquestador detecta el snapshot al arrancar
+  // y lo reusa como Fase 1 pre-fortificada (Fix106) saltando el bucle WBA.
+  app.post("/api/projects/:id/structural-guidance", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const guidance = (req.body?.guidance as string | undefined)?.trim();
+      if (!guidance || guidance.length < 10) {
+        return res.status(400).json({ error: "La guidance debe tener al menos 10 caracteres con instrucciones concretas para el Arquitecto." });
+      }
+      const project = await storage.getProject(id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if ((project.status as string) !== "awaiting_structural_guidance") {
+        return res.status(400).json({ error: `El proyecto no está esperando guidance estructural (status actual: ${project.status}).` });
+      }
+      const pending = (project as any).pendingStructuralGuidance;
+      if (!pending || !pending.worldBibleSnapshot) {
+        return res.status(400).json({ error: "No hay snapshot estructural pendiente — el proyecto puede haber sido reiniciado." });
+      }
+
+      const newInstructions = `${project.architectInstructions || ""}\n\n═══════════════════════════════════════════════════════════════════\n[GUIDANCE ESTRUCTURAL DEL USUARIO — Fix115] (${new Date().toISOString()})\nEl Auditor Estructural no alcanzó ${pending.threshold}/10 en el intento previo (mejor: ${pending.bestScore}/10). El usuario ha revisado los problemas residuales y aporta esta guidance manual para el rediseño. APLÍCALA ANTES QUE NADA, integrando los cambios en la World Bible y la escaleta:\n\n${guidance}\n═══════════════════════════════════════════════════════════════════\n`;
+
+      // [Fix115 post-review] Transición atómica awaiting_structural_guidance → generating.
+      // Sin CAS, dos requests concurrentes podrían leer "awaiting" y disparar
+      // generateNovel dos veces en paralelo. Con `where(status=awaiting...)`
+      // la 2ª petición no actualiza nada y devolvemos 409.
+      const casResult = await db
+        .update(projects)
+        .set({ architectInstructions: newInstructions, status: "generating" } as any)
+        .where(and(eq(projects.id, id), eq(projects.status, "awaiting_structural_guidance" as any)))
+        .returning({ id: projects.id });
+      if (casResult.length === 0) {
+        return res.status(409).json({ error: "El proyecto ya no está en awaiting_structural_guidance (otra petición pudo haberse adelantado)." });
+      }
+
+      await persistActivityLog(id, "info", `[Fix115] Guidance estructural recibida del usuario (${guidance.length} chars). Reanudando generación: se reusará el snapshot del bestSA como Fase 1 fortificada y la guidance va al Arquitecto.`, "orchestrator");
+
+      for (const agentName of ["architect", "ghostwriter", "editor", "copyeditor", "final-reviewer"]) {
+        await storage.updateAgentStatus(id, agentName, { status: "idle", currentTask: "Preparando reanudación con guidance estructural..." });
+      }
+
+      res.json({ message: "Structural guidance applied, generation restarted", projectId: id });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => { try { stream.write(message); } catch (e) { console.error("Error writing to stream:", e); } });
+        }
+      };
+
+      const orchestrator = new Orchestrator({
+        onAgentStatus: async (role, status, message) => {
+          await storage.updateAgentStatus(id, role, { status, currentTask: message });
+          sendToStreams({ type: "agent_status", role, status, message });
+          if (message) await persistActivityLog(id, "info", message, role);
+        },
+        onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
+          const label = getSectionLabel(chapterNumber, chapterTitle);
+          await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter");
+        },
+        onChapterRewrite: async (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
+          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
+          const label = getSectionLabel(chapterNumber, chapterTitle);
+          await persistActivityLog(id, "warning", `Reescritura ${currentIndex}/${totalToRewrite}: ${label} - ${reason}`, "editor");
+        },
+        onChapterStatusChange: (chapterNumber, status) => {
+          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
+        },
+        onProjectComplete: async () => {
+          sendToStreams({ type: "project_complete" });
+          await persistActivityLog(id, "success", "Novela completada exitosamente", "orchestrator");
+        },
+        onError: async (error) => {
+          sendToStreams({ type: "error", message: error });
+          await persistActivityLog(id, "error", error, "orchestrator");
+        },
+      });
+
+      const refreshed = await storage.getProject(id);
+      if (!refreshed) {
+        await persistActivityLog(id, "error", "[Fix115] El proyecto desapareció entre updateProject y getProject", "orchestrator");
+        return;
+      }
+      orchestrator.generateNovel(refreshed).catch(async (err) => {
+        console.error("[Fix115] Background generation after guidance failed:", err);
+        await storage.updateProject(id, { status: "error" });
+        await persistActivityLog(id, "error", `[Fix115] Error fatal tras guidance: ${err instanceof Error ? err.message : String(err)}`, "orchestrator");
+      });
+    } catch (error) {
+      console.error("[Fix115] Error applying structural guidance:", error);
+      res.status(500).json({ error: "Failed to apply structural guidance" });
     }
   });
 

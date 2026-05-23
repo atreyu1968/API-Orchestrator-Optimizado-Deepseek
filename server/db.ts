@@ -35,6 +35,12 @@ const SCHEMA_PATCHES: string[] = [
   // POST/PATCH /api/projects falla cuando el usuario selecciona la voz
   // narrativa en el form de config.
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "narrative_voice" jsonb`,
+  // [Fix115] Snapshot + problemas residuales cuando el bucle del Auditor
+  // Estructural no alcanza 7/10 incluso con audit on-demand de WB. La UI
+  // muestra un panel de guidance manual; sin esta columna el sistema no
+  // puede pausar para guidance y caería en el comportamiento pre-Fix115
+  // de escribir sobre escaleta defectuosa.
+  `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "pending_structural_guidance" jsonb`,
 ];
 
 let schemaEnsured = false;
