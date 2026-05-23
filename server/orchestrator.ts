@@ -2954,10 +2954,34 @@ INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (F
                     });
                   } catch {}
                 } else {
-                  console.warn(`[Orchestrator] [${isChronic ? "Fix116" : "Fix115"}] Auditor de WB (on-demand) no devolvió feedback accionable para "${triggerLabel}". wbaR=${!!wbaR}.`);
+                  const noFbMsg = `[Orchestrator] [${isChronic ? "Fix116" : "Fix115"}] Auditor de WB (on-demand) no devolvió feedback accionable para "${triggerLabel}". wbaR=${!!wbaR}.`;
+                  console.warn(noFbMsg);
+                  // [Fix117 post-review] Visibilidad en Ubuntu: persistir
+                  // también este caso en activity log para que el usuario
+                  // entienda por qué el audit on-demand no mejoró nada.
+                  try {
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "warning",
+                      agentRole: "world-bible-auditor",
+                      message: `[${isChronic ? "Fix116" : "Fix115"}] Audit on-demand ${wbaExternalCount}/${MAX_WBA_EXTERNAL} para "${triggerLabel}" corrió pero NO devolvió feedback_para_arquitecto accionable. Score WB=${wbaR?.puntuacion_global ?? "n/a"}/10. El Arquitecto NO recibirá guidance del WBA para esta dimensión; el bucle SA seguirá con la misma base. Si el bottleneck persiste, considera enriquecer la WB manualmente al final del bucle (gate awaiting_structural_guidance).`,
+                      metadata: { fix: isChronic ? "Fix116" : "Fix115", area: triggerArea, auditIndex: wbaExternalCount, auditMax: MAX_WBA_EXTERNAL, wbaScore: wbaR?.puntuacion_global ?? null, reason: "no_actionable_feedback" },
+                    });
+                  } catch {}
                 }
               } catch (wbaErr) {
-                console.warn(`[Orchestrator] [${isChronic ? "Fix116" : "Fix115"}] WB audit on-demand para "${triggerLabel}" falló: ${(wbaErr as Error).message}. Continuamos sin él.`);
+                const errMsg = (wbaErr as Error).message;
+                console.warn(`[Orchestrator] [${isChronic ? "Fix116" : "Fix115"}] WB audit on-demand para "${triggerLabel}" falló: ${errMsg}. Continuamos sin él.`);
+                // [Fix117 post-review] Visibilidad en Ubuntu.
+                try {
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warning",
+                    agentRole: "world-bible-auditor",
+                    message: `[${isChronic ? "Fix116" : "Fix115"}] Audit on-demand ${wbaExternalCount}/${MAX_WBA_EXTERNAL} para "${triggerLabel}" FALLÓ técnicamente: ${errMsg}. El bucle SA continúa sin guidance del WBA para esta dimensión.`,
+                    metadata: { fix: isChronic ? "Fix116" : "Fix115", area: triggerArea, auditIndex: wbaExternalCount, auditMax: MAX_WBA_EXTERNAL, reason: "audit_threw", error: errMsg },
+                  });
+                } catch {}
               }
             }
 
