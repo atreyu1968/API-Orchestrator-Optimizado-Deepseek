@@ -217,6 +217,12 @@ export class Orchestrator {
     thinkingTokens: 0,
   };
 
+  // [Fix111] Flag set por _applyEditorialNotes (try/finally) e inspeccionado
+  // por rewriteChapterForQA al persistir tarjetas pendingAdminActions del
+  // structural-translator. Cuando true, no se crean tarjetas que requieran
+  // confirmación humana — el loop automático es desatendido por diseño.
+  private _fromAutoLoop: boolean = false;
+
   // Cancellation flag set by the queue manager when this orchestrator instance is
   // being abandoned (e.g. heartbeat auto-recovery is starting a fresh one).
   // Long-running loops (architect retries, section iteration) check this flag at
@@ -6419,8 +6425,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
    */
   async parseEditorialNotesOnly(
     project: Project,
-    notesText: string
+    notesText: string,
+    options: { fromAutoLoop?: boolean } = {}
   ): Promise<EditorialNotesParseResult & { instructions: EditorialInstruction[] }> {
+    const fromAutoLoop = options.fromAutoLoop === true;
     if (!notesText || !notesText.trim()) {
       throw new Error("Las notas editoriales están vacías.");
     }
@@ -6486,43 +6494,66 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               : "DIRECTIVA TRANSVERSAL DE ESTILO";
           return `  • [${tipoLabel}] ${p.descripcion}\n      → Detalle: ${p.motivo.slice(0, 240)}${p.motivo.length > 240 ? "…" : ""}`;
         }).join("\n");
-        await storage.createActivityLog({
-          projectId: project.id,
-          level: "warning",
-          message: `Operaciones que requieren confirmación humana (NO se aplicarán automáticamente con las demás):\n${lines}\n\nFusiones: usa el chat editorial pidiendo "fusiona el cap X con el Y" o aplica el borrado y reescritura por separado. Directivas transversales: regístralas para el siguiente pase de Pulido. Reestructuraciones estructurales (Fix87): se han persistido en "Acciones administrativas pendientes" — revísalas y decide si las aplicas con la herramienta de gestión de capítulos o las descartas.`,
-          agentRole: "editor",
-        });
 
-        // [Fix87] Persistir las reestructuraciones estructurales en
-        // projects.pendingAdminActions con type "structural_restructure". El
-        // resto (fusionar / global_style) sigue solo en activity log porque
-        // pendingAdminActions está pensado para acciones cap-level con
-        // targetChapter; aquí persistimos solo lo "structural_restructure"
-        // que el usuario sí necesita ver como tarjeta pendiente. Sin
-        // targetChapter (= 0) porque puede afectar a varios o ser global,
-        // y el `descripcion` ya incluye los caps en su prefijo.
-        const structuralReshapes = autoInstructions.pendingAdministrative.filter(p => p.tipo === "structural_restructure");
-        if (structuralReshapes.length > 0) {
-          try {
-            const fresh = await storage.getProject(project.id);
-            const existing = Array.isArray((fresh as any)?.pendingAdminActions) ? (fresh as any).pendingAdminActions : [];
-            const nextId = existing.reduce((max: number, a: any) => Math.max(max, Number(a?.id) || 0), 0) + 1;
-            const merged = [
-              ...existing,
-              ...structuralReshapes.map((p, idx) => ({
-                id: nextId + idx,
-                type: "structural_restructure",
-                targetChapter: 0,
-                targetLabel: p.descripcion.slice(0, 160),
-                secondaryChapter: null,
-                reason: p.motivo,
-                source: "holistic-beta-auto-loop",
-                createdAt: new Date().toISOString(),
-              })),
-            ];
-            await storage.updateProject(project.id, { pendingAdminActions: merged } as any);
-          } catch (persistErr: any) {
-            console.error("[Fix87] Failed to persist structural_restructure admin actions:", persistErr?.message || persistErr);
+        if (fromAutoLoop) {
+          // [Fix111] Dentro del loop automático (Holístico/Beta SA),
+          // NO creamos tarjetas "Acción administrativa pendiente" que
+          // requieran confirmación manual: el usuario tiene razón en
+          // que es inconsistente — el loop está corriendo desatendido
+          // y crear una tarjeta que pide intervención humana rompe la
+          // promesa de "automático". El loop sigue su curso; estas
+          // operaciones estructurales/transversales solo se loguean
+          // como diagnóstico para que el usuario sepa lo que el lector
+          // detectó pero el sistema no puede ejecutar dentro del SA.
+          // Si quiere aplicarlas, puede relanzar el flujo manual de
+          // notas editoriales tras el loop.
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `[Fix111] El loop automático detectó ${autoInstructions.pendingAdministrative.length} operación(es) que requerirían intervención manual (no se crean tarjetas para no bloquear el flujo desatendido):\n${lines}\n\nEl loop continúa con el resto de instrucciones cap-a-cap. Si quieres aplicar estas operaciones, relanza el flujo de notas editoriales manualmente tras el loop.`,
+            agentRole: "editor",
+          });
+        } else {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `Operaciones que requieren confirmación humana (NO se aplicarán automáticamente con las demás):\n${lines}\n\nFusiones: usa el chat editorial pidiendo "fusiona el cap X con el Y" o aplica el borrado y reescritura por separado. Directivas transversales: regístralas para el siguiente pase de Pulido. Reestructuraciones estructurales (Fix87): se han persistido en "Acciones administrativas pendientes" — revísalas y decide si las aplicas con la herramienta de gestión de capítulos o las descartas.`,
+            agentRole: "editor",
+          });
+
+          // [Fix87] Persistir las reestructuraciones estructurales en
+          // projects.pendingAdminActions con type "structural_restructure". El
+          // resto (fusionar / global_style) sigue solo en activity log porque
+          // pendingAdminActions está pensado para acciones cap-level con
+          // targetChapter; aquí persistimos solo lo "structural_restructure"
+          // que el usuario sí necesita ver como tarjeta pendiente. Sin
+          // targetChapter (= 0) porque puede afectar a varios o ser global,
+          // y el `descripcion` ya incluye los caps en su prefijo.
+          // [Fix111] Solo en flujo MANUAL — el auto loop (fromAutoLoop=true)
+          // ya salió por la rama de arriba sin persistir nada.
+          const structuralReshapes = autoInstructions.pendingAdministrative.filter(p => p.tipo === "structural_restructure");
+          if (structuralReshapes.length > 0) {
+            try {
+              const fresh = await storage.getProject(project.id);
+              const existing = Array.isArray((fresh as any)?.pendingAdminActions) ? (fresh as any).pendingAdminActions : [];
+              const nextId = existing.reduce((max: number, a: any) => Math.max(max, Number(a?.id) || 0), 0) + 1;
+              const merged = [
+                ...existing,
+                ...structuralReshapes.map((p, idx) => ({
+                  id: nextId + idx,
+                  type: "structural_restructure",
+                  targetChapter: 0,
+                  targetLabel: p.descripcion.slice(0, 160),
+                  secondaryChapter: null,
+                  reason: p.motivo,
+                  source: "manual-editorial-notes",
+                  createdAt: new Date().toISOString(),
+                })),
+              ];
+              await storage.updateProject(project.id, { pendingAdminActions: merged } as any);
+            } catch (persistErr: any) {
+              console.error("[Fix87] Failed to persist structural_restructure admin actions:", persistErr?.message || persistErr);
+            }
           }
         }
       }
@@ -8711,7 +8742,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           && betaScore >= TARGET_BETA_SCORE
           && holisticScore >= TARGET_HOLISTIC_SCORE;
         if (targetMet) {
-          const parsed = await this.parseEditorialNotesOnly(currentProject, notes).catch(() => ({ resumen_general: null, instrucciones: [] as any[] }));
+          const parsed = await this.parseEditorialNotesOnly(currentProject, notes, { fromAutoLoop: true }).catch(() => ({ resumen_general: null, instrucciones: [] as any[] }));
           await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_target_reached");
           await storage.createActivityLog({
             projectId: project.id, level: "success",
@@ -8729,7 +8760,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         // perder material accionable.
         let parsed: { resumen_general?: string | null; instrucciones: any[] };
         try {
-          parsed = await this.parseEditorialNotesOnly(currentProject, notes);
+          parsed = await this.parseEditorialNotesOnly(currentProject, notes, { fromAutoLoop: true });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           await storage.createActivityLog({
@@ -8828,7 +8859,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           // [Fix91] El loop ya re-ejecuta Holístico+Beta al inicio de la siguiente
           // iteración, así que evitamos el refresco automático interno para no
           // duplicar dos pasadas seguidas de los mismos lectores.
-          await this.applyEditorialNotes(currentProject, "", instructions, { skipReaderReviewRefresh: true });
+          await this.applyEditorialNotes(currentProject, "", instructions, { skipReaderReviewRefresh: true, fromAutoLoop: true });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           await storage.createActivityLog({
@@ -9365,7 +9396,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     project: Project,
     notesText: string,
     preParsedInstructions?: EditorialInstruction[],
-    options?: { skipReaderReviewRefresh?: boolean }
+    options?: { skipReaderReviewRefresh?: boolean; fromAutoLoop?: boolean }
   ): Promise<void> {
     return runWithProjectContext(project.id, () => this._applyEditorialNotes(project, notesText, preParsedInstructions, options));
   }
@@ -9374,8 +9405,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     project: Project,
     notesText: string,
     preParsedInstructions?: EditorialInstruction[],
-    options?: { skipReaderReviewRefresh?: boolean }
+    options?: { skipReaderReviewRefresh?: boolean; fromAutoLoop?: boolean }
   ): Promise<void> {
+    // [Fix111] Flag de instancia leído por rewriteChapterForQA al persistir
+    // pendingAdministrativeActions del structural-translator. Lo ponemos en
+    // un try/finally para garantizar que se resetea aunque applyEditorialNotes
+    // falle. Usamos instance field en vez de propagar el param por 12 call
+    // sites de rewriteChapterForQA (mucho menos invasivo).
+    const prevFromAutoLoop = this._fromAutoLoop;
+    this._fromAutoLoop = options?.fromAutoLoop === true;
     // Register cancellation controller so the user can abort mid-process.
     registerProjectAbortController(project.id);
 
@@ -10143,6 +10181,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       this.callbacks.onError(`Error aplicando notas editoriales: ${error instanceof Error ? error.message : "Error desconocido"}`);
     } finally {
       clearProjectAbortController(project.id);
+      // [Fix111] Restaurar el flag al valor previo (defensa anti re-entrada
+      // si applyEditorialNotes se llamara anidado o vuelve a llamarse después).
+      this._fromAutoLoop = prevFromAutoLoop;
     }
   }
 
@@ -12478,7 +12519,7 @@ Responde SOLO con un JSON válido con la estructura:
 
         let parsed;
         try {
-          parsed = await this.parseEditorialNotesOnly(currentProject, notesText);
+          parsed = await this.parseEditorialNotesOnly(currentProject, notesText, { fromAutoLoop: true });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           await storage.createActivityLog({
@@ -12553,7 +12594,7 @@ Responde SOLO con un JSON válido con la estructura:
           // [Fix91] El auto-loop legacy de Beta ya re-evalúa al Lector Beta al
           // inicio de la siguiente iter; saltamos el refresco interno para no
           // duplicarlo.
-          await this.applyEditorialNotes(currentProject, "", instructions, { skipReaderReviewRefresh: true });
+          await this.applyEditorialNotes(currentProject, "", instructions, { skipReaderReviewRefresh: true, fromAutoLoop: true });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           await storage.createActivityLog({
@@ -14493,13 +14534,25 @@ Responde SOLO con un JSON válido con la estructura:
             // projects.pendingAdminActions para que la UI las muestre y el
             // usuario pueda revisarlas/descartarlas explícitamente sin tener
             // que rebuscar en el activity log.
+            // [Fix111] Si venimos de un loop automático, NO persistimos
+            // tarjetas (rompería la promesa de "desatendido"). Solo log.
             const adminToPersist: any[] = [];
-            for (const admin of (translatorResult.pendingAdministrativeActions || [])) {
+            const pendingAdminCandidates = (translatorResult.pendingAdministrativeActions || []);
+            for (const admin of pendingAdminCandidates) {
               const targetSec = refreshedSectionsForExec.find((s: any) => s.numero === admin.targetChapterNumber);
               const targetLabel = targetSec ? this.getSectionLabel(targetSec) : `chapter ${admin.targetChapterNumber}`;
               const secondaryStr = typeof admin.secondaryChapterNumber === "number"
                 ? ` (afecta también a chapter ${admin.secondaryChapterNumber})`
                 : "";
+              if (this._fromAutoLoop === true) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warning",
+                  message: `[Fix111] Loop automático: el Traductor estructural propuso una operación administrativa "${admin.type}" sobre ${targetLabel}${secondaryStr}. Motivo: ${admin.reason}. NO se crea tarjeta de confirmación para no bloquear el flujo desatendido; el loop continúa con el resto. Si quieres aplicarla, relanza el flujo manual de notas editoriales tras el loop.`,
+                  agentRole: "editor",
+                });
+                continue;
+              }
               await storage.createActivityLog({
                 projectId: project.id,
                 level: "warning",
