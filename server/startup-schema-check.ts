@@ -18,11 +18,33 @@ const REQUIRED_COLUMNS: RequiredColumn[] = [
   { table: "translations", column: "beta_review_notes", addedIn: "Fix55" },
   { table: "translations", column: "beta_review_iterations_run", addedIn: "Fix55" },
   { table: "series", column: "protagonist_name", addedIn: "Fix79" },
+  { table: "projects", column: "last_holistic_notes", addedIn: "Fix82" },
+  { table: "projects", column: "min_chapter_count", addedIn: "Fix90" },
+  { table: "projects", column: "max_chapter_count", addedIn: "Fix90" },
+  { table: "projects", column: "narrative_voice", addedIn: "Fix108" },
 ];
 
 const REQUIRED_TABLES: RequiredTable[] = [
   { table: "guide_generation_jobs", addedIn: "Fix43" },
   { table: "publishers", addedIn: "Fix51" },
+  // Tablas añadidas en updates posteriores. Si alguna falta en Ubuntu, el
+  // servidor aborta con instrucciones claras de `drizzle-kit push --force`
+  // en vez de fallar silenciosamente en runtime cuando se intenta usar la
+  // funcionalidad correspondiente.
+  { table: "audiobook_projects", addedIn: "audiobook-pipeline" },
+  { table: "audiobook_chapters", addedIn: "audiobook-pipeline" },
+  { table: "kdp_metadata", addedIn: "kdp-pipeline" },
+  { table: "book_catalog", addedIn: "kdp-pipeline" },
+  { table: "project_back_matter", addedIn: "back-matter-system" },
+  { table: "name_blacklist", addedIn: "name-blacklist" },
+  { table: "proofreading_projects", addedIn: "proofreading-pipeline" },
+  { table: "proofreading_chapters", addedIn: "proofreading-pipeline" },
+  { table: "reedit_audit_reports", addedIn: "reedit-pipeline" },
+  { table: "reedit_world_bibles", addedIn: "reedit-pipeline" },
+  { table: "series_arc_milestones", addedIn: "series-arc-system" },
+  { table: "series_plot_threads", addedIn: "series-arc-system" },
+  { table: "series_arc_verifications", addedIn: "series-arc-system" },
+  { table: "generated_guides", addedIn: "guide-workshop" },
 ];
 
 export async function assertSchemaUpToDate(): Promise<void> {

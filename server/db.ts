@@ -29,6 +29,12 @@ const SCHEMA_PATCHES: string[] = [
   // comportamiento clásico exacto vía `chapterCount`.
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "min_chapter_count" integer`,
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "max_chapter_count" integer`,
+  // [Fix108] Voz narrativa canónica estructurada (POV + tiempo verbal + tipo
+  // de narrador). NULL por defecto = comportamiento pre-Fix108 (inferencia
+  // por regex de la guía de estilo). Crítico para Ubuntu: sin esta columna,
+  // POST/PATCH /api/projects falla cuando el usuario selecciona la voz
+  // narrativa en el form de config.
+  `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "narrative_voice" jsonb`,
 ];
 
 let schemaEnsured = false;
