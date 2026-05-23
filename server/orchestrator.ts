@@ -2485,9 +2485,47 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
           // tanto vol 1 (cuando Fix110 pre-flight ya falló) como vol N de serie
           // (donde Fix110 está skipeado por preservar continuidad). Máx 1 vez
           // por bucle SA para acotar coste (~3-5 min adicionales worst-case).
-          let wbaExternalDone = false;
+          // [Fix116] Sube de 1 a MAX_WBA_EXTERNAL audits on-demand por bucle
+          // (uno por dimensión distinta). El log real de Vol.2 mostró que el
+          // bottleneck no siempre es "una sola" dimensión: tras enriquecer la
+          // WB para "Arco secreto", "Falso aliado" siguió en cobertura 0%
+          // crónica y el bucle se estancó en 2.4/10 sin recuperación. Permitir
+          // 3 audits cubre los casos de WB con 2-3 carencias estructurales
+          // simultáneas. Coste worst-case +6-10 min adicionales.
+          const MAX_WBA_EXTERNAL = 3;
+          // [Fix116 post-review] Reservamos ≥1 slot del presupuesto total para
+          // chronic_zero, así una cascada de bottlenecks concentrados no agota
+          // todo el budget antes de poder atender una dim con cobertura crónica
+          // 0% (estructuralmente más grave). 2 concentrated máx + 1 reservado.
+          const MAX_CONCENTRATED_AUDITS = Math.max(1, MAX_WBA_EXTERNAL - 1);
+          let wbaExternalCount = 0;
+          let wbaConcentratedCount = 0;
+          const wbaExternalAreasAudited = new Set<string>();
           let wbaExternalFeedback: string | null = null;
           let prevTopAreaSA: { area: string; count: number } | null = null;
+          // [Fix116] Historial de cobertura por dimensión a lo largo de iters.
+          // Una dimensión con cobertura 0% sostenida (≥3 iters) indica una
+          // CARENCIA ESTRUCTURAL en la World Bible (p.ej. "no existe un
+          // personaje con rol de falso aliado"), no un problema cuantitativo.
+          // El trigger por count (Fix115) no la detecta porque su count puede
+          // ser 1 (un único problema "no hay falso aliado"). Disparo de audit
+          // on-demand específico para esa dimensión aunque su count sea bajo.
+          const coverageHistorySA: Record<string, number[]> = {
+            forma_escena: [], ledger_info: [], dosificacion_revelacion: [],
+            arco_secreto: [], falso_aliado: [], escalada_acto2: [],
+            deus_ex_machina: [], trauma_protagonista: [],
+          };
+          const AREA_TO_COVERAGE_FIELD: Record<string, string> = {
+            forma_escena: "forma_dominante_pct",
+            ledger_info: "categoria_info_pct",
+            dosificacion_revelacion: "revelaciones_dosificadas_pct",
+            arco_secreto: "arco_secreto_pct",
+            falso_aliado: "falso_aliado_pct",
+            escalada_acto2: "apuesta_dramatica_pct",
+            deus_ex_machina: "deus_ex_machina_pct",
+            trauma_protagonista: "trauma_protagonista_pct",
+          };
+          const CHRONIC_ZERO_COVERAGE_ITERS = 3;
 
           for (let saIter = 0; saIter < MAX_SA_ITERATIONS; saIter++) {
             if (this.aborted) break;
@@ -2661,10 +2699,15 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             const topArea = topKO
               ? (Object.entries(dimensionLabels).find(([_k, v]) => v === topKO.label)?.[0] || null)
               : null;
+            // [Fix116 post-review] Fairness: el sub-cap MAX_CONCENTRATED_AUDITS
+            // garantiza que ≥1 slot quede libre para chronic_zero, evitando que
+            // una cascada de bottlenecks concentrados consuma todo el budget.
             const concentratedBottleneck = !!(
               topKO && topArea && topKO.count >= 3
               && prevTopAreaSA && prevTopAreaSA.area === topArea && prevTopAreaSA.count >= 3
-              && !wbaExternalDone
+              && wbaExternalCount < MAX_WBA_EXTERNAL
+              && wbaConcentratedCount < MAX_CONCENTRATED_AUDITS
+              && !wbaExternalAreasAudited.has(topArea)
             );
             // Actualizamos prev para la próxima iter (antes de cualquier
             // posible regen) — necesitamos saber qué fue el top de ESTA iter.
@@ -2673,6 +2716,37 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             } else {
               prevTopAreaSA = null;
             }
+
+            // [Fix116] Trigger por COBERTURA CRÓNICA 0%. Registramos la
+            // cobertura de cada dimensión en su historial y comprobamos si
+            // alguna dim lleva ≥3 iters consecutivas con cobertura 0%
+            // (≤1%, redondeo). Esto detecta carencias estructurales del WB
+            // que el trigger por count NO ve (p.ej. "no hay personaje con
+            // rol de falso aliado" → count=1 pero cobertura=0% sostenida).
+            // Si ya se auditó esa dim antes o se alcanzó el tope de audits,
+            // se ignora — el siguiente paso ya es el gate Fix115 con guidance
+            // manual del usuario.
+            const cov = (sa as any).coverage || {};
+            for (const area of Object.keys(coverageHistorySA)) {
+              const field = AREA_TO_COVERAGE_FIELD[area];
+              const v = typeof cov[field] === "number" ? cov[field] : null;
+              if (v !== null) coverageHistorySA[area].push(v);
+            }
+            let chronicZeroArea: string | null = null;
+            if (!concentratedBottleneck
+                && wbaExternalCount < MAX_WBA_EXTERNAL) {
+              for (const area of Object.keys(coverageHistorySA)) {
+                if (wbaExternalAreasAudited.has(area)) continue;
+                const hist = coverageHistorySA[area];
+                if (hist.length < CHRONIC_ZERO_COVERAGE_ITERS) continue;
+                const lastN = hist.slice(-CHRONIC_ZERO_COVERAGE_ITERS);
+                if (lastN.every(v => v <= 0.01)) {
+                  chronicZeroArea = area;
+                  break;
+                }
+              }
+            }
+            const chronicZeroTrigger = !!(chronicZeroArea && bestSA);
 
             const okBlock = okDimensions.length > 0
               ? `DIMENSIONES YA ACEPTABLES — NO LAS MODIFIQUES:\n${okDimensions.join("\n")}\n\n`
@@ -2739,16 +2813,51 @@ OBJETIVO: PROGRESO MONOTÓNICO. No rediseñes desde cero. Para cada dimensión O
             // pieza más importante: dice al Arquitecto QUÉ añadir a la WB
             // (palancas, secretos, antagonismo) para que la dimensión KO se
             // pueda resolver, no solo cómo redibujar la escaleta.
-            if (concentratedBottleneck && bestSA) {
+            // [Fix116] Determinamos el disparador del audit on-demand:
+            // (a) bottleneck concentrado por count (Fix115 original), o
+            // (b) cobertura crónica 0% en una dimensión (Fix116). El primero
+            // tiene prioridad porque indica saturación cuantitativa; el
+            // segundo detecta carencias estructurales del WB. Solo uno de
+            // los dos se dispara por iter — el siguiente iter podrá disparar
+            // el otro si persiste.
+            let auditTrigger:
+              | { kind: "concentrated"; area: string; areaLabel: string; count: number }
+              | { kind: "chronic_zero"; area: string; areaLabel: string }
+              | null = null;
+            if (concentratedBottleneck && bestSA && topArea && topKO) {
+              auditTrigger = { kind: "concentrated", area: topArea, areaLabel: topKO.label, count: topKO.count };
+            } else if (chronicZeroTrigger && bestSA && chronicZeroArea) {
+              auditTrigger = { kind: "chronic_zero", area: chronicZeroArea, areaLabel: dimensionLabels[chronicZeroArea] || chronicZeroArea };
+            }
+
+            if (auditTrigger && bestSA) {
+              const triggerArea = auditTrigger.area;
+              const triggerLabel = auditTrigger.areaLabel;
+              const isChronic = auditTrigger.kind === "chronic_zero";
               try {
                 await storage.createActivityLog({
                   projectId: project.id,
                   level: "warn",
                   agentRole: "architect",
-                  message: `[Fix115] Bottleneck estructural concentrado detectado: la dimensión "${topKO!.label}" lleva 2 iters consecutivas con ≥3 problemas. Disparo audit on-demand del Auditor de World Bible para enriquecer la base narrativa antes del siguiente retry.`,
-                  metadata: { fix: "Fix115", area: topArea, count: topKO!.count, iteration: saIter + 1 },
+                  message: isChronic
+                    ? `[Fix116] Cobertura crónica 0% detectada en "${triggerLabel}" (≥${CHRONIC_ZERO_COVERAGE_ITERS} iters consecutivas). Indica una CARENCIA ESTRUCTURAL del World Bible (no un problema cuantitativo). Disparo audit on-demand #${wbaExternalCount + 1}/${MAX_WBA_EXTERNAL} del Auditor de World Bible para esta dimensión.`
+                    : `[Fix115] Bottleneck estructural concentrado detectado: la dimensión "${triggerLabel}" lleva 2 iters consecutivas con ≥3 problemas. Disparo audit on-demand #${wbaExternalCount + 1}/${MAX_WBA_EXTERNAL} del Auditor de World Bible para enriquecer la base narrativa antes del siguiente retry.`,
+                  metadata: {
+                    fix: isChronic ? "Fix116" : "Fix115",
+                    trigger: auditTrigger.kind,
+                    area: triggerArea,
+                    count: auditTrigger.kind === "concentrated" ? (auditTrigger as any).count : undefined,
+                    iteration: saIter + 1,
+                    auditIndex: wbaExternalCount + 1,
+                    auditMax: MAX_WBA_EXTERNAL,
+                  },
                 });
               } catch {}
+              // Marcamos la dim como ya auditada ANTES de la llamada, para
+              // no reintentar el mismo audit si la respuesta falla.
+              wbaExternalAreasAudited.add(triggerArea);
+              wbaExternalCount++;
+              if (!isChronic) wbaConcentratedCount++;
               try {
                 const wbaResp = await this.worldBibleAuditor.audit({
                   title: project.title,
@@ -2760,41 +2869,51 @@ OBJETIVO: PROGRESO MONOTÓNICO. No rediseñes desde cero. Para cada dimensión O
                   projectId: project.id,
                 });
                 if (wbaResp.raw?.tokenUsage) {
-                  await this.trackTokenUsage(project.id, wbaResp.raw.tokenUsage, "El Auditor de World Bible (audit on-demand Fix115)", "deepseek-v4-flash", undefined, "world_bible_audit");
+                  await this.trackTokenUsage(project.id, wbaResp.raw.tokenUsage, `El Auditor de World Bible (audit on-demand ${isChronic ? "Fix116" : "Fix115"})`, "deepseek-v4-flash", undefined, "world_bible_audit");
                 }
                 const wbaR = wbaResp.result;
                 if (wbaR && wbaR.feedback_para_arquitecto && wbaR.feedback_para_arquitecto.trim().length > 0) {
-                  wbaExternalFeedback = `═══════════════════════════════════════════════════════════════════
-[Fix115] FEEDBACK DEL AUDITOR DE WORLD BIBLE — audit on-demand
+                  // [Fix116] Acumulamos feedback en lugar de sobrescribir, si
+                  // ya había un feedback previo de otra dimensión auditada
+                  // en una iter anterior. El Arquitecto recibe las dos cosas.
+                  const headerKind = isChronic
+                    ? `[Fix116] FEEDBACK DEL AUDITOR DE WORLD BIBLE — audit on-demand (cobertura crónica 0%)`
+                    : `[Fix115] FEEDBACK DEL AUDITOR DE WORLD BIBLE — audit on-demand (bottleneck concentrado)`;
+                  const motivo = isChronic
+                    ? `El Auditor Estructural ha detectado que "${triggerLabel}" tiene COBERTURA 0% sostenida en ${CHRONIC_ZERO_COVERAGE_ITERS} iteraciones consecutivas. Esto significa que la World Bible CARECE del elemento estructural requerido (p.ej. un personaje con ese rol, un secreto distribuible, una palanca dramática) — el Arquitecto no puede insertar lo que la WB no contiene. Solo redibujar la escaleta NO resuelve esto.`
+                    : `El Auditor Estructural ha detectado que "${triggerLabel}" es un problema PERSISTENTE y CONCENTRADO (≥3 problemas en 2 iteraciones consecutivas). Esto NO se puede resolver solo redibujando la escaleta — la World Bible no tiene suficiente munición dramática.`;
+                  const newFeedback = `═══════════════════════════════════════════════════════════════════
+${headerKind}
 ═══════════════════════════════════════════════════════════════════
-El Auditor Estructural ha detectado que "${topKO!.label}" es un problema PERSISTENTE y CONCENTRADO (≥3 problemas en 2 iteraciones consecutivas). Esto NO se puede resolver solo redibujando la escaleta — la World Bible no tiene suficiente munición dramática. El Auditor de World Bible ha revisado la Fase 1 y emite el siguiente diagnóstico:
+${motivo} El Auditor de World Bible ha revisado la Fase 1 y emite el siguiente diagnóstico:
 
 Score actual de la WB: ${wbaR.puntuacion_global}/10 (${wbaR.veredicto})
 ${wbaR.resumen}
 
 ${wbaR.feedback_para_arquitecto}
 
-INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (Fase 1) con los elementos que el Auditor pide (palancas dramáticas, secretos dosificables, métodos del antagonista, etc.) y SOLO ENTONCES rediseña la escaleta usando esa base fortificada. Si la WB sigue débil, la escaleta volverá a fallar en "${topKO!.label}" por mucho que la reescribas.
+INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (Fase 1) con los elementos que el Auditor pide (palancas dramáticas, secretos dosificables, métodos del antagonista, personajes faltantes, etc.) y SOLO ENTONCES rediseña la escaleta usando esa base fortificada. Si la WB sigue débil, la escaleta volverá a fallar en "${triggerLabel}" por mucho que la reescribas.
 ═══════════════════════════════════════════════════════════════════
 
 `;
-                  wbaExternalDone = true;
+                  // Si ya había feedback de audits anteriores, lo conservamos
+                  // (acumulación) — el Arquitecto recibe el contexto de TODAS
+                  // las carencias detectadas hasta ahora.
+                  wbaExternalFeedback = (wbaExternalFeedback || "") + newFeedback;
                   try {
                     await storage.createActivityLog({
                       projectId: project.id,
                       level: "info",
                       agentRole: "world-bible-auditor",
-                      message: `[Fix115] Auditor de World Bible (audit on-demand) — Score ${wbaR.puntuacion_global}/10. Feedback inyectado al Arquitecto para el siguiente retry.`,
-                      metadata: { fix: "Fix115", wbaScore: wbaR.puntuacion_global, veredicto: wbaR.veredicto, area: topArea },
+                      message: `[${isChronic ? "Fix116" : "Fix115"}] Auditor de World Bible (audit on-demand ${wbaExternalCount}/${MAX_WBA_EXTERNAL}) — Score ${wbaR.puntuacion_global}/10. Feedback para "${triggerLabel}" inyectado al Arquitecto para el siguiente retry.`,
+                      metadata: { fix: isChronic ? "Fix116" : "Fix115", wbaScore: wbaR.puntuacion_global, veredicto: wbaR.veredicto, area: triggerArea, auditIndex: wbaExternalCount, auditMax: MAX_WBA_EXTERNAL },
                     });
                   } catch {}
                 } else {
-                  console.warn(`[Orchestrator] [Fix115] Auditor de WB (on-demand) no devolvió feedback accionable. wbaR=${!!wbaR}, feedback="${wbaR?.feedback_para_arquitecto?.slice(0,80)||""}".`);
-                  wbaExternalDone = true; // marcamos para no reintentar el audit en bucle
+                  console.warn(`[Orchestrator] [${isChronic ? "Fix116" : "Fix115"}] Auditor de WB (on-demand) no devolvió feedback accionable para "${triggerLabel}". wbaR=${!!wbaR}.`);
                 }
               } catch (wbaErr) {
-                console.warn(`[Orchestrator] [Fix115] WB audit on-demand falló: ${(wbaErr as Error).message}. Continuamos sin él.`);
-                wbaExternalDone = true; // tampoco reintentamos si falla
+                console.warn(`[Orchestrator] [${isChronic ? "Fix116" : "Fix115"}] WB audit on-demand para "${triggerLabel}" falló: ${(wbaErr as Error).message}. Continuamos sin él.`);
               }
             }
 
@@ -2915,7 +3034,9 @@ INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (F
               worldBibleSnapshot: bestSA.data,
               savedAt: new Date().toISOString(),
               iterations: MAX_SA_ITERATIONS,
-              wbaExternalRan: wbaExternalDone,
+              wbaExternalRan: wbaExternalCount > 0,
+              wbaExternalCount,
+              wbaExternalAreas: Array.from(wbaExternalAreasAudited),
             };
             await storage.updateProject(project.id, {
               status: "awaiting_structural_guidance" as any,
@@ -2925,12 +3046,14 @@ INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (F
               projectId: project.id,
               level: "warning",
               agentRole: "architect",
-              message: `[Fix115] La estructura no alcanzó el mínimo publicable (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10) tras ${MAX_SA_ITERATIONS} iteraciones${wbaExternalDone ? " + audit on-demand del Auditor de World Bible" : ""}. NO se escribe la novela sobre una escaleta defectuosa. El proyecto queda pausado en "awaiting_structural_guidance" — abre el panel desde el dashboard para revisar los problemas residuales y dar guidance manual al Arquitecto.`,
+              message: `[Fix115] La estructura no alcanzó el mínimo publicable (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10) tras ${MAX_SA_ITERATIONS} iteraciones${wbaExternalCount > 0 ? ` + ${wbaExternalCount} audit(s) on-demand del Auditor de World Bible (Fix115/Fix116)` : ""}. NO se escribe la novela sobre una escaleta defectuosa. El proyecto queda pausado en "awaiting_structural_guidance" — abre el panel desde el dashboard para revisar los problemas residuales y dar guidance manual al Arquitecto.`,
               metadata: {
                 fix: "Fix115",
                 finalScore: finalSAScore,
                 threshold: MIN_PUBLISHABLE_SA_SCORE,
-                wbaExternalRan: wbaExternalDone,
+                wbaExternalRan: wbaExternalCount > 0,
+                wbaExternalCount,
+                wbaExternalAreas: Array.from(wbaExternalAreasAudited),
                 problemasCount: finalAudit.problemas.length,
               },
             });
