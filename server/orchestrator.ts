@@ -12479,11 +12479,53 @@ Responde SOLO con un JSON válido con la estructura:
     const maxIterations = Math.max(1, Math.min(10, (project as any).autoBetaLoopMaxIterations || 3));
     let iter = 0;
     let currentProject: Project = project;
+    // [Fix112] Best-tracking + revert por regresión consecutiva, portado del
+    // patrón Fix81/Fix89 del runAutoHolisticReviewLoop. Antes este loop podía
+    // empeorar la novela paso a paso (cada applyEditorialNotes podía bajar el
+    // score del Beta) sin revertir al mejor estado: el usuario veía cómo el
+    // manuscrito se degradaba sin recuperación posible. Ahora snapshoteamos
+    // el mejor estado visto y si el score cae ≥0.5 vs el best en 2 iters
+    // consecutivas, restauramos y salimos sobre la mejor versión.
+    const TARGET_BETA_SCORE = 9;
+    const REGRESSION_THRESHOLD = 0.5; // Más estricto que el dual (1.0) porque aquí solo hay un score.
+    let bestSnapshot: { score: number; chapters: { id: number; chapterNumber: number; content: string }[]; iter: number } | null = null;
+    let prevBetaScore: number | null = null;
+    let initialBetaScore: number | null = null;
+    let consecutiveRegressions = 0;
+
+    type SnapshotEntry = { id: number; chapterNumber: number; content: string };
+    const snapshotManuscript = async (): Promise<SnapshotEntry[]> => {
+      const all = await storage.getChaptersByProject(project.id);
+      return all
+        .filter(c => c.content)
+        .map(c => ({ id: c.id, chapterNumber: c.chapterNumber, content: c.content! }));
+    };
+    const restoreSnapshot = async (snap: SnapshotEntry[]): Promise<{ restored: number; missing: number; structuralDrift: boolean }> => {
+      const current = await storage.getChaptersByProject(project.id);
+      const currentById = new Map(current.map(c => [c.id, c]));
+      const snapshotIds = new Set(snap.map(e => e.id));
+      const currentIds = new Set(current.map(c => c.id));
+      const structuralDrift =
+        snapshotIds.size !== currentIds.size ||
+        Array.from(snapshotIds).some(id => !currentIds.has(id));
+      let restored = 0;
+      let missing = 0;
+      for (const entry of snap) {
+        const cur = currentById.get(entry.id);
+        if (!cur) { missing++; continue; }
+        if (cur.content !== entry.content) {
+          const wordCount = entry.content.split(/\s+/).filter(w => w.length > 0).length;
+          await storage.updateChapter(entry.id, { content: entry.content, wordCount });
+          restored++;
+        }
+      }
+      return { restored, missing, structuralDrift };
+    };
 
     try {
       await storage.createActivityLog({
         projectId: project.id, level: "info",
-        message: `[Fix47] Auto-loop con Lector Beta iniciado (máx ${maxIterations} iteraciones).`,
+        message: `[Fix47] Auto-loop con Lector Beta iniciado (máx ${maxIterations} iteraciones). [Fix112] Best-tracking + revert por regresión consecutiva activos (threshold=${REGRESSION_THRESHOLD}, max 2 caídas consecutivas).`,
         agentRole: "editor",
       });
 
@@ -12506,14 +12548,89 @@ Responde SOLO con un JSON válido con la estructura:
 
         const beta = await this.runBetaReview(currentProject);
         const notesText = (beta?.notesText || "").trim();
+        // [Fix112] Score actual del Beta (puede ser null si el agente no lo emitió).
+        const betaScore: number | null = typeof beta?.score === "number" ? beta.score : null;
+        const deltaB = (betaScore !== null && prevBetaScore !== null) ? betaScore - prevBetaScore : null;
+        const fmtDelta = (d: number | null) => d === null ? "" : d > 0 ? ` (+${d})` : d < 0 ? ` (${d})` : " (=)";
+        const scoreLabel = `Beta=${betaScore ?? "?"}${fmtDelta(deltaB)}`;
+        if (betaScore !== null && initialBetaScore === null) initialBetaScore = betaScore;
+
+        // [Fix112] Detección de regresión consecutiva: si tenemos un best
+        // snapshot y el score actual cae ≥REGRESSION_THRESHOLD vs el best,
+        // contamos como regresión. Si llega a 2 caídas consecutivas, revertimos
+        // al best y salimos (con ortotipográfica si el best cumple TARGET).
+        if (bestSnapshot && betaScore !== null) {
+          if (bestSnapshot.score - betaScore >= REGRESSION_THRESHOLD) {
+            consecutiveRegressions++;
+            await storage.createActivityLog({
+              projectId: project.id, level: "warning",
+              message: `[Fix112] Iter ${iter}: regresión detectada (${scoreLabel}) vs mejor snapshot (Beta=${bestSnapshot.score} en iter ${bestSnapshot.iter}). Caídas consecutivas: ${consecutiveRegressions}/2.`,
+              agentRole: "editor",
+            });
+            if (consecutiveRegressions >= 2) {
+              const r = await restoreSnapshot(bestSnapshot.chapters);
+              const driftNote = r.structuralDrift
+                ? ` ⚠️ DRIFT ESTRUCTURAL: ${r.missing} capítulo(s) del snapshot ya no existen — solo se restauró el contenido de los que aún existen.`
+                : "";
+              await storage.createActivityLog({
+                projectId: project.id, level: "warning",
+                message: `[Fix112] Iter ${iter}: 2 regresiones consecutivas vs best (Beta=${bestSnapshot.score}). Restaurados ${r.restored} capítulo(s) al estado del mejor snapshot.${driftNote} Loop abortado para preservar la mejor versión vista.`,
+                agentRole: "editor",
+              });
+              const refreshedForBest = (await storage.getProject(project.id)) || currentProject;
+              if (bestSnapshot.score >= TARGET_BETA_SCORE) {
+                await storage.createActivityLog({
+                  projectId: project.id, level: "success",
+                  message: `[Fix112] El snapshot restaurado YA cumple TARGET (Beta=${bestSnapshot.score} ≥ ${TARGET_BETA_SCORE}). Ejecutando corrección ortotipográfica final sobre la mejor versión.`,
+                  agentRole: "editor",
+                });
+                await this.runOrthotypographicPassAndUpdate(refreshedForBest);
+              } else {
+                try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
+              }
+              return;
+            }
+          } else {
+            // Score igualó o superó al best (con margen de tolerancia) → reset.
+            consecutiveRegressions = 0;
+          }
+        }
+
+        // [Fix112] Actualizar mejor snapshot si el score actual lo supera.
+        if (betaScore !== null && (bestSnapshot === null || betaScore > bestSnapshot.score)) {
+          const snap = await snapshotManuscript();
+          bestSnapshot = { score: betaScore, chapters: snap, iter };
+          await storage.createActivityLog({
+            projectId: project.id, level: "info",
+            message: `[Fix112] Iter ${iter}: nuevo mejor snapshot guardado (${scoreLabel}, ${snap.length} capítulos).`,
+            agentRole: "editor",
+          });
+        }
+        prevBetaScore = betaScore;
+
         if (!notesText) {
+          // [Fix112] Mismo guard que en approved/maxIterations: si el current
+          // está por debajo del best, restaurar antes de la ortotipográfica.
+          // Esto cubre el caso donde el Beta devuelve "limpio" por varianza
+          // del modelo pero su score numérico es inferior al mejor visto.
+          let finalProject = currentProject;
+          if (bestSnapshot && betaScore !== null && bestSnapshot.score - betaScore >= REGRESSION_THRESHOLD) {
+            const r = await restoreSnapshot(bestSnapshot.chapters);
+            const driftNote = r.structuralDrift ? ` ⚠️ Drift: ${r.missing} cap(s) del snapshot ya no existen.` : "";
+            await storage.createActivityLog({
+              projectId: project.id, level: "info",
+              message: `[Fix112] Iter ${iter}: Beta no devolvió notas (${scoreLabel}) pero score está por debajo del best (Beta=${bestSnapshot.score} en iter ${bestSnapshot.iter}). Restaurados ${r.restored} capítulo(s) al mejor snapshot antes de ortotipográfica.${driftNote}`,
+              agentRole: "editor",
+            });
+            finalProject = (await storage.getProject(project.id)) || currentProject;
+          }
           await storage.createActivityLog({
             projectId: project.id, level: "success",
-            message: `[Fix47] Iteración ${iter}: el Lector Beta no devolvió observaciones. Auto-loop finalizado (manuscrito aprobado). Ejecutando corrección ortotipográfica final (Fix81).`,
+            message: `[Fix47] Iteración ${iter}: el Lector Beta no devolvió observaciones (${scoreLabel}). Auto-loop finalizado (manuscrito aprobado). Ejecutando corrección ortotipográfica final (Fix81).`,
             agentRole: "editor",
           });
           // [Fix81] Aprobación → ortotipográfica final sobre la mejor versión.
-          await this.runOrthotypographicPassAndUpdate(currentProject);
+          await this.runOrthotypographicPassAndUpdate(finalProject);
           return;
         }
 
@@ -12553,16 +12670,48 @@ Responde SOLO con un JSON válido con la estructura:
         const approved = total === 0 || (altas === 0 && total <= 3);
         await storage.createActivityLog({
           projectId: project.id, level: approved ? "success" : "info",
-          message: `[Fix47] Iteración ${iter}/${maxIterations}: ${total} instrucción(es), ${altas} de prioridad alta. ${approved ? "APROBADO por el Beta — auto-loop finalizado." : "Aplicando correcciones automáticamente y volviendo a leer..."}`,
+          message: `[Fix47] Iteración ${iter}/${maxIterations}: ${total} instrucción(es), ${altas} de prioridad alta (${scoreLabel}). ${approved ? "APROBADO por el Beta — auto-loop finalizado." : "Aplicando correcciones automáticamente y volviendo a leer..."}`,
           agentRole: "editor",
         });
         if (approved) {
-          // [Fix81] Aprobación → ortotipográfica final sobre la mejor versión.
-          await this.runOrthotypographicPassAndUpdate(currentProject);
+          // [Fix112] Si el current score es peor que el best snapshot (con
+          // tolerancia 0.5), restauramos al best antes de la ortotipográfica
+          // para no aplicar la pulida sobre una versión inferior.
+          if (bestSnapshot && betaScore !== null && bestSnapshot.score - betaScore >= REGRESSION_THRESHOLD) {
+            const r = await restoreSnapshot(bestSnapshot.chapters);
+            const driftNote = r.structuralDrift ? ` ⚠️ Drift: ${r.missing} cap(s) del snapshot ya no existen.` : "";
+            await storage.createActivityLog({
+              projectId: project.id, level: "info",
+              message: `[Fix112] Iter ${iter}: aprobación con score actual (${scoreLabel}) por debajo del best (Beta=${bestSnapshot.score} en iter ${bestSnapshot.iter}). Restaurados ${r.restored} capítulo(s) al mejor snapshot antes de ortotipográfica.${driftNote}`,
+              agentRole: "editor",
+            });
+            const refreshedForBest = (await storage.getProject(project.id)) || currentProject;
+            await this.runOrthotypographicPassAndUpdate(refreshedForBest);
+          } else {
+            // [Fix81] Aprobación → ortotipográfica final sobre la versión actual (que es la mejor).
+            await this.runOrthotypographicPassAndUpdate(currentProject);
+          }
           return;
         }
 
         if (iter >= maxIterations) {
+          // [Fix112] Última iteración: si el best es mejor que current, restaurar al best.
+          // Nota: las instrucciones persistidas como pendingEditorialParse fueron
+          // generadas por el Beta sobre el current PRE-restore — si restauramos,
+          // esas instrucciones están desalineadas con el manuscrito actual.
+          // El source `..._restored_to_best` lo señala explícitamente para que
+          // el dashboard avise al usuario antes de aplicar manualmente.
+          let restoredToBest = false;
+          if (bestSnapshot && betaScore !== null && bestSnapshot.score - betaScore >= REGRESSION_THRESHOLD) {
+            const r = await restoreSnapshot(bestSnapshot.chapters);
+            const driftNote = r.structuralDrift ? ` ⚠️ Drift: ${r.missing} cap(s) del snapshot ya no existen.` : "";
+            await storage.createActivityLog({
+              projectId: project.id, level: "warning",
+              message: `[Fix112] Máx iter alcanzado: current (${scoreLabel}) por debajo del best (Beta=${bestSnapshot.score} en iter ${bestSnapshot.iter}). Restaurados ${r.restored} capítulo(s) al mejor snapshot.${driftNote} ATENCIÓN: las ${total} instrucción(es) persistidas en pendingEditorialParse fueron generadas sobre la versión PRE-restore — pueden estar desalineadas con el manuscrito actual; revísalas manualmente antes de aplicar.`,
+              agentRole: "editor",
+            });
+            restoredToBest = true;
+          }
           // Última iteración alcanzada con observaciones todavía: dejamos el
           // resultado en pendingEditorialParse para que el usuario decida.
           await storage.createActivityLog({
@@ -12577,7 +12726,7 @@ Responde SOLO con un JSON válido con la estructura:
                 instrucciones: instructions,
                 count: total,
                 completedAt: new Date().toISOString(),
-                source: "auto_beta_loop_max_iter",
+                source: restoredToBest ? "auto_beta_loop_max_iter_restored_to_best" : "auto_beta_loop_max_iter",
               } as any,
             });
             this.callbacks.onAutoReviewReady?.({ count: total, resumen: parsed.resumen_general || null });
