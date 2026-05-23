@@ -1594,6 +1594,145 @@ function buildInstructions(problemas: StructuralAuditProblem[]): string {
 }
 
 // ────────────────────────────────────────────────────────────────────
+// [Fix117] Autopatch determinista de `setup_capitulos` decorativos.
+// Reutiliza exactamente la misma lógica de detección de siembra textual
+// que `auditArcoSecreto` (extractSiembraTokens + capCorpus + reglas de
+// nombre propio) para reescribir los arrays `setup_capitulos` que el
+// Arquitecto declara apuntando a caps que NO mencionan el hecho. La
+// siembra real existe en otros caps — solo hay que sincronizar la
+// metadata con la realidad textual. 0 coste de tokens, una pasada.
+//
+// Returns: { patched: número de revelaciones cuyo array fue corregido,
+//            details: [{cap, hecho, antes, despues}] para activity log }
+// ────────────────────────────────────────────────────────────────────
+export function autopatchDecorativeSetupCapitulos(escaleta: any[]): {
+  patched: number;
+  details: Array<{ cap: number; hecho: string; antes: number[]; despues: number[] }>;
+} {
+  const { all } = getActSlices(escaleta);
+  const tokensByCap: Record<number, Set<string>> = {};
+  for (const c of all) {
+    const norm = capCorpus(c)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^\w\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    tokensByCap[capNum(c)] = new Set(norm.split(/\s+/).filter(Boolean));
+  }
+
+  let patched = 0;
+  const details: Array<{ cap: number; hecho: string; antes: number[]; despues: number[] }> = [];
+
+  for (const cap of all) {
+    const num = capNum(cap);
+    const revs: any[] = Array.isArray(cap.revelaciones_dosificadas)
+      ? cap.revelaciones_dosificadas
+      : [];
+    for (const r of revs) {
+      const dificultad = String(r?.dificultad || "").toLowerCase();
+      if (dificultad !== "alto" && dificultad !== "medio") continue;
+      const hecho = String(r?.hecho_revelado || "");
+      const tokens = extractSiembraTokens(hecho);
+      if (tokens.length < 2) continue;
+
+      const declarados = Array.isArray(r?.setup_capitulos)
+        ? r.setup_capitulos.filter(
+            (n: any) => typeof n === "number" && n < num
+          )
+        : [];
+      if (declarados.length === 0) continue;
+
+      // Misma lógica de nombre propio que auditArcoSecreto
+      const nombrePropioTokens = new Set<string>();
+      const personajeRevelador = String(r?.personaje_revelador || "").trim();
+      if (personajeRevelador) {
+        for (const piece of personajeRevelador.split(/\s+/)) {
+          const norm = piece
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase();
+          if (norm.length >= 4) nombrePropioTokens.add(norm);
+        }
+      }
+      for (const m of hecho.matchAll(/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{3,}/g)) {
+        const norm = m[0]
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+        nombrePropioTokens.add(norm);
+      }
+
+      const priorCaps = all.filter((c: any) => capNum(c) < num);
+      const sembradosEn: number[] = [];
+      for (const prev of priorCaps) {
+        const capTokens = tokensByCap[capNum(prev)];
+        if (!capTokens || capTokens.size === 0) continue;
+        const hitTokens = tokens.filter((t) => capTokens.has(t));
+        if (hitTokens.length === 0) continue;
+        const fuertes = hitTokens.filter((t) => !nombrePropioTokens.has(t));
+        if (fuertes.length >= 1 || hitTokens.length >= 2) {
+          sembradosEn.push(capNum(prev));
+        }
+      }
+
+      // Filtramos los declarados sin siembra real
+      const declaradosConHit = declarados.filter((cap: number) =>
+        sembradosEn.includes(cap)
+      );
+      const noSembrados = declarados.filter(
+        (cap: number) => !sembradosEn.includes(cap)
+      );
+
+      // Solo patcheamos si: (a) hay decorativos que sustituir Y
+      // (b) hay siembra real alternativa para escribir en el array.
+      // Si sembradosEn está vacío, el problema es real (siembra
+      // insuficiente) y NO es un mismatch de metadata — lo dejamos
+      // intacto para que el auditor lo reporte y el Arquitecto lo
+      // arregle de verdad.
+      if (noSembrados.length === 0 || sembradosEn.length === 0) continue;
+
+      // Construimos el nuevo array: priorizamos los que el Arquitecto
+      // declaró bien (declaradosConHit, preserva su intención) +
+      // completamos con el resto de sembradosEn hasta cubrir minSiembra.
+      const minSiembra = dificultad === "alto" ? 3 : 2;
+      const nuevoSet = new Set<number>(declaradosConHit);
+      for (const cap of sembradosEn) {
+        if (nuevoSet.size >= minSiembra && nuevoSet.size >= declaradosConHit.length) {
+          // Si ya tenemos suficiente y los declarados-con-hit están todos,
+          // no añadimos más para no inflar el array.
+          break;
+        }
+        nuevoSet.add(cap);
+      }
+      const nuevoArray = Array.from(nuevoSet).sort((a, b) => a - b);
+
+      // Sanity: el array nuevo debe diferir del original
+      const antesOrdenado = [...declarados].sort((a: number, b: number) => a - b);
+      if (
+        nuevoArray.length === antesOrdenado.length &&
+        nuevoArray.every((v, i) => v === antesOrdenado[i])
+      ) {
+        continue;
+      }
+
+      r.setup_capitulos = nuevoArray;
+      patched += 1;
+      const hechoCorto = hecho.length > 60 ? hecho.slice(0, 57) + "..." : hecho;
+      details.push({
+        cap: num,
+        hecho: hechoCorto,
+        antes: antesOrdenado,
+        despues: nuevoArray,
+      });
+    }
+  }
+
+  return { patched, details };
+}
+
+// ────────────────────────────────────────────────────────────────────
 // Entry point principal — llamado por el orquestador después del
 // PlotIntegrityAuditor. Determinista (sin coste de tokens).
 // ────────────────────────────────────────────────────────────────────

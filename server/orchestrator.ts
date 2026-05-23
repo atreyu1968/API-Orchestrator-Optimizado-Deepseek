@@ -20,6 +20,7 @@ import {
   WorldBibleAuditorAgent,
   type WorldBibleAuditResult,
   runArchitectStructuralAudits,
+  autopatchDecorativeSetupCapitulos,
   HolisticReviewerAgent,
   type HolisticReviewerResult,
   BetaReaderAgent,
@@ -2527,9 +2528,52 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
           };
           const CHRONIC_ZERO_COVERAGE_ITERS = 3;
 
+          // [Fix117 post-review] Captura del último autopatch para avisar al
+          // Arquitecto en el siguiente retry (evita que reintroduzca arrays
+          // decorativos en la próxima escaleta).
+          let lastAutopatchNotice: string = "";
+
           for (let saIter = 0; saIter < MAX_SA_ITERATIONS; saIter++) {
             if (this.aborted) break;
             this.callbacks.onAgentStatus("architect", "thinking", "El Auditor Estructural está revisando forma de escena, ledger de información y dosificación de revelaciones...");
+
+            // [Fix117] Autopatch determinista de setup_capitulos
+            // decorativos ANTES de auditar. Si el Arquitecto declaró
+            // arrays apuntando a caps sin tokens del hecho pero la
+            // siembra real existe en otros caps, sincronizamos la
+            // metadata con la realidad textual. 0 coste LLM. Solo
+            // mismatch de metadata; los casos sin siembra real alguna
+            // se dejan intactos para que el auditor los reporte.
+            try {
+              const patch = autopatchDecorativeSetupCapitulos(
+                worldBibleData.escaleta_capitulos as any[]
+              );
+              if (patch.patched > 0) {
+                const sample = patch.details.slice(0, 5).map(d =>
+                  `cap ${d.cap}: [${d.antes.join(", ")}] → [${d.despues.join(", ")}] ("${d.hecho}")`
+                ).join("; ");
+                console.log(`[Orchestrator] [Fix117] Autopatch setup_capitulos (iter ${saIter + 1}): ${patch.patched} revelación(es) corregida(s). ${sample}${patch.details.length > 5 ? `; (+${patch.details.length - 5} más)` : ""}`);
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "info",
+                  agentRole: "architect",
+                  message: `[Fix117] Auto-sincronizado setup_capitulos con la siembra textual real: ${patch.patched} revelación(es) corregida(s) antes de auditar (iter ${saIter + 1}/${MAX_SA_ITERATIONS}). El Arquitecto había declarado arrays apuntando a caps sin tokens del hecho; el sistema reescribió la metadata para que coincida con los caps que sí mencionan el hecho.`,
+                  metadata: { fix: "Fix117", patched: patch.patched, details: patch.details as any, iteration: saIter + 1 },
+                });
+                // [Fix117 post-review] Aviso breve para el SIGUIENTE retry
+                // del Arquitecto, para que no reintroduzca arrays decorativos.
+                // 1-2 líneas + 1 ejemplo, no diluir el bloque principal.
+                const ejemplo = patch.details[0];
+                lastAutopatchNotice =
+                  `\n\n[AVISO AUTOPATCH (Fix117) — NO REPETIR EL ERROR]\n` +
+                  `En tu intento anterior, ${patch.patched} revelación(es) tenían "setup_capitulos" apuntando a caps que NO mencionaban el hecho. El sistema sincronizó automáticamente esos arrays con los caps que SÍ contienen la siembra textual. Ejemplo: cap ${ejemplo.cap} declaraba [${ejemplo.antes.join(", ")}] pero la siembra real está en [${ejemplo.despues.join(", ")}].\n` +
+                  `REGLA: cuando declares "setup_capitulos: [N, M]" para una revelación, asegúrate de que esos caps mencionan tokens concretos del hecho (nombres propios, lugar, objeto, acción). NO inventes arrays decorativos.\n`;
+              } else {
+                lastAutopatchNotice = "";
+              }
+            } catch (e) {
+              console.warn(`[Orchestrator] [Fix117] Autopatch falló (no bloqueante):`, e);
+            }
 
             const sa = runArchitectStructuralAudits(
               worldBibleData.escaleta_capitulos as any[],
@@ -2917,7 +2961,7 @@ INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (F
               }
             }
 
-            const feedbackWithHistorySA = (wbaExternalFeedback || "") + historyBlockSA + sa.instrucciones_revision;
+            const feedbackWithHistorySA = (wbaExternalFeedback || "") + lastAutopatchNotice + historyBlockSA + sa.instrucciones_revision;
 
             try {
               const retryResult = await this.architect.execute({
