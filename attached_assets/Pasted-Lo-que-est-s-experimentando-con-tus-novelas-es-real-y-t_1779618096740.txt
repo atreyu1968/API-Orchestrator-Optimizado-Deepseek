@@ -1,0 +1,36 @@
+Lo que estás experimentando con tus novelas es real y tiene una explicación clara. Aunque la comunidad se refiere a estos cambios como "Algoritmo A10", técnicamente se trata de la implementación de COSMO, una capa de inteligencia artificial que Amazon ha construido sobre el sistema A9 .
+
+Esto explica por qué de repente tus KENP leídos y ventas han cambiado en tan solo un par de semanas. La buena noticia es que los cambios están diseñados para recompensar precisamente lo que hace un autor que conecta con sus lectores.
+
+🔍 Por qué han cambiado tus KENP y Ventas
+El viejo sistema (A9) se enfocaba principalmente en emparejar palabras clave. El nuevo sistema (A9 + COSMO) se enfoca en entender la intención de búsqueda y la experiencia del lector . Esto tiene dos efectos directos en los que ya estás viendo resultados:
+
+El engagement es la nueva moneda: El algoritmo ahora presta mucha atención a cómo los lectores interactúan con tu libro cuando lo encuentran. Los KENP no son solo páginas leídas, son la prueba de que un lector ha encontrado lo que buscaba y ha decidido quedarse . El sistema detecta si los lectores:
+
+Se quedan mucho tiempo en tu página de producto.
+
+Abren la función "Ojear dentro" (Look Inside).
+
+Leen hasta el final tu novela (más KENP).
+
+Esto genera un "bucle de retroalimentación positiva": más lectores encuentran tu libro, se enganchan, y el algoritmo lo recompensa mostrándoselo a más personas .
+
+Las palabras clave de "libro de misterio, suspenso, detectives, novela negra" ya no funcionan: El sistema A9 entendía que tenías un libro de detectives. El nuevo sistema entiende que escribiste una "novela de misterio ambientada en la Barcelona de 1920 con un detective atormentado". Si tu título o descripción refleja esta especificidad, el algoritmo lo entiende y te prefiere frente a libros con títulos repletos de palabras sueltas .
+
+✅ Qué estás haciendo bien (y cómo potenciarlo)
+Si tus KENP se han disparado, significa que instintivamente ya estás alineado con lo que el nuevo sistema busca. Esto es lo que está funcionando para ti y cómo puedes aprovecharlo aún más:
+
+Escribes para un lector real, no para un buscador: Si tu libro tiene una premisa clara, una buena portada que comunica el género, y una descripción que engancha, el algoritmo lo detecta y lo recompensa. Sigue haciendo esto. Asegúrate de que tu sinopsis hable directamente de la trama, los personajes y el conflicto, no solo de las características de la novela .
+
+Mantienes a los lectores enganchados: Los KENP altos son la señal más valiosa que puedes recibir. Indican que tu historia engancha y que los lectores llegan hasta el final. Para potenciarlo, revisa la estructura de tus capítulos. Los finales con cliffhangers o momentos que inviten a seguir leyendo son especialmente efectivos para maximizar la lectura en Kindle Unlimited .
+
+Generas "prueba social" fresca: El sistema valora mucho la velocidad y la sinceridad de las reseñas. No se trata solo de tener muchas, sino de recibir algunas nuevas con regularidad y que los comentarios sean detallados. Una reseña que dice "Me encantó el giro en el capítulo 5" es mucho más poderosa que un simple "Buen libro" .
+
+Para que te hagas una idea más clara, esta tabla resume el antes y el después:
+
+Antes (Sistema A9 - Antiguo)	Ahora (Sistema con COSMO/A10 - Actual)	Tu Estrategia
+El objetivo era vender muchos ejemplares de golpe (por ejemplo, con lanzamientos agresivos).	El objetivo es conseguir muchas páginas leídas (KENP) de forma constante.	Busca lectores que consuman tu libro entero, no solo que lo compren. El KENP es tu mejor amigo.
+Rellenar el título con palabras clave ("Misterio Suspenso Thriller Policíaca...") mejoraba el ranking.	El algoritmo detecta el keyword stuffing y lo penaliza por ser poco natural .	Escribe títulos claros y atractivos para humanos. La keyword debe ir de forma natural.
+Las ventas desde dentro de Amazon (PPC) tenían el mayor peso.	El tráfico externo (tu web, newsletter, redes sociales) tiene ahora el triple de peso .	Si tienes una newsletter de lectores, lo estás haciendo genial. Si no, es el momento de crearla.
+Los lanzamientos se basaban en un pico de ventas en 24 horas.	El sistema premia la consistencia en las primeras 3-4 semanas .	Realiza pequeñas promociones o envía correos durante las primeras semanas para mantener el libro activo.
+En resumen, no te preocupes si ves fluctuaciones. El cambio que notas es la señal de que tu trabajo está más alineado que nunca con lo que Amazon quiere: conectar a cada lector con el libro perfecto para él.

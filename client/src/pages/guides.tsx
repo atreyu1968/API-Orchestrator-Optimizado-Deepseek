@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   Loader2, Sparkles, Trash2, Eye, UserPlus, BookOpen,
-  Pen, Lightbulb, Users, Library, Plus, Download
+  Pen, Lightbulb, Users, Library, Plus, Download, Pencil
 } from "lucide-react";
 import type { GeneratedGuide, Pseudonym, Series, StyleGuide } from "@shared/schema";
 
@@ -970,11 +970,109 @@ function GuideViewDialog({ guide, open, onClose }: { guide: GeneratedGuide | nul
   );
 }
 
+// [Fix123] Diálogo para editar título y contenido de una guía generada.
+// Útil cuando el usuario necesita añadir el bloque "## VOZ NARRATIVA CANÓNICA"
+// (POV + tiempo verbal + tipo de narrador) que el extractor Fix114 lee para
+// rellenar la voz canónica del proyecto en solo-lectura (Fix122).
+function GuideEditDialog({
+  guide,
+  open,
+  onClose,
+}: {
+  guide: GeneratedGuide | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+
+  useEffect(() => {
+    if (guide) {
+      setTitle(guide.title);
+      setContent(guide.content);
+    }
+  }, [guide]);
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!guide) throw new Error("Sin guía");
+      return apiRequest("PATCH", `/api/guides/${guide.id}`, { title, content });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/guides"] });
+      toast({ title: "Guía actualizada" });
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ title: "No se pudo guardar", description: err?.message || "Error", variant: "destructive" });
+    },
+  });
+
+  if (!guide) return null;
+  const dirty = title !== guide.title || content !== guide.content;
+  const valid = title.trim().length > 0 && content.trim().length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-4xl max-h-[90vh]">
+        <DialogHeader>
+          <DialogTitle>Editar guía</DialogTitle>
+          <DialogDescription>
+            Modifica título o contenido. Si esta guía ya está aplicada a un pseudónimo, vuelve a aplicarla
+            con el botón correspondiente para propagar los cambios.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="edit-guide-title">Título</Label>
+            <Input
+              id="edit-guide-title"
+              data-testid="input-edit-guide-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={200}
+            />
+          </div>
+          <div>
+            <Label htmlFor="edit-guide-content">Contenido (Markdown)</Label>
+            <Textarea
+              id="edit-guide-content"
+              data-testid="textarea-edit-guide-content"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="min-h-[55vh] font-mono text-xs"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Para fijar la voz canónica añade un bloque <code>## VOZ NARRATIVA CANÓNICA</code> con
+              líneas <code>POV:</code>, <code>Tiempo verbal:</code> y <code>Tipo de narrador:</code>.
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose} data-testid="button-cancel-edit-guide">
+            Cancelar
+          </Button>
+          <Button
+            data-testid="button-save-edit-guide"
+            disabled={!dirty || !valid || updateMutation.isPending}
+            onClick={() => updateMutation.mutate()}
+          >
+            {updateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+            Guardar cambios
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function GuideLibrary() {
   const { toast } = useToast();
   const { data: guides = [], isLoading } = useQuery<GeneratedGuide[]>({ queryKey: ["/api/guides"] });
   const { data: pseudonyms = [] } = useQuery<Pseudonym[]>({ queryKey: ["/api/pseudonyms"] });
   const [viewGuide, setViewGuide] = useState<GeneratedGuide | null>(null);
+  const [editGuide, setEditGuide] = useState<GeneratedGuide | null>(null);
   const [applyGuideId, setApplyGuideId] = useState<number | null>(null);
   const [applyPseudonymId, setApplyPseudonymId] = useState<string>("");
 
@@ -1052,6 +1150,15 @@ function GuideLibrary() {
                   <Button
                     variant="outline"
                     size="sm"
+                    data-testid={`button-edit-guide-${guide.id}`}
+                    onClick={() => setEditGuide(guide)}
+                    title="Editar guía"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     data-testid={`button-download-guide-${guide.id}`}
                     onClick={() => downloadGuideAsMd(guide)}
                   >
@@ -1093,6 +1200,7 @@ function GuideLibrary() {
       </div>
 
       <GuideViewDialog guide={viewGuide} open={!!viewGuide} onClose={() => setViewGuide(null)} />
+      <GuideEditDialog guide={editGuide} open={!!editGuide} onClose={() => setEditGuide(null)} />
 
       <Dialog open={applyGuideId !== null} onOpenChange={() => setApplyGuideId(null)}>
         <DialogContent>

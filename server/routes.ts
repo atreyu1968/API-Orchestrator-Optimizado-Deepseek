@@ -11028,6 +11028,42 @@ CRITERIOS:
     }
   });
 
+  // [Fix123] PATCH /api/guides/:id — permite editar título y contenido de guías
+  // generadas desde el Taller. Solo acepta `title` y `content` (strings no
+  // vacíos); el resto de campos (guideType, sourceAuthor, tokens, createdAt) no
+  // son editables porque son metadatos de la generación original. Si la guía
+  // ya está aplicada como style_guide de un pseudónimo, esos cambios NO se
+  // propagan automáticamente: el usuario debe reaplicar la guía desde el
+  // botón "Aplicar a pseudónimo" para que el nuevo contenido sustituya la
+  // copia que vive en pseudonyms.styleGuide. Esto evita machacar guías que
+  // el usuario haya editado manualmente en la sección de pseudónimos.
+  app.patch("/api/guides/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+      const { title, content } = req.body || {};
+      const updates: { title?: string; content?: string } = {};
+      if (typeof title === "string") {
+        const t = title.trim();
+        if (!t) return res.status(400).json({ error: "title no puede estar vacío" });
+        if (t.length > 200) return res.status(400).json({ error: "title demasiado largo (máx 200)" });
+        updates.title = t;
+      }
+      if (typeof content === "string") {
+        if (!content.trim()) return res.status(400).json({ error: "content no puede estar vacío" });
+        updates.content = content;
+      }
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "Nada que actualizar" });
+      }
+      const updated = await storage.updateGeneratedGuide(id, updates);
+      if (!updated) return res.status(404).json({ error: "Guide not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // [Fix43] Helper que ejecuta la generación de guía en background. Antes el
   // POST corría síncrono y tardaba 1-3+ min, lo que excedía el timeout de 100s
   // de Cloudflare → 524. Ahora el handler responde 202 con jobId y este helper
