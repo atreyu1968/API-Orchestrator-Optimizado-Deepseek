@@ -190,6 +190,10 @@ REGLAS DE ORO INVIOLABLES
 
 5. LONGITUD: Respeta ESTRICTAMENTE el rango de palabras indicado en las instrucciones específicas del capítulo
 
+6. [Fix124] MICRO-HOOK DE ENGAGEMENT (KENP — algoritmo COSMO/A10): Amazon mide cuánto del libro lee el usuario y eso impacta directamente el ranking. Para maximizar la lectura hasta el final SIN abusar de cliffhangers (el orquestador ya capa cliffhangers al 70% y rota tipo_cierre):
+   - APERTURA: la primera frase del capítulo debe reenganchar al lector. Tras una pausa de lectura (KENP page-break), si la apertura es plana el lector abandona. Empieza con una imagen concreta, una acción en curso, un fragmento de diálogo cargado o una observación inquietante del POV. PROHIBIDO abrir con: resumen de lo anterior, descripción de paisaje neutro, reflexión filosófica.
+   - CIERRE: el tipo de cierre lo marca la escaleta (cliffhanger, pregunta_abierta, escena_reposada, revelacion_silenciosa, cambio_pov, ambiguo) y debes RESPETARLO. PERO toda escena, incluso una "escena_reposada" o un cierre "ambiguo", debe terminar plantando una semilla de avance: una imagen sin resolver, una pregunta interna del POV, un gesto cuya intención no se aclara, un objeto que llama la atención sin explicar por qué. Nunca cierres con resumen, moraleja, o frase concluyente tipo "y así terminó aquel día". El lector debe sentir un mínimo tirón para pasar al siguiente capítulo, aunque sea sutil. ESTO NO ES UN CLIFFHANGER — es un micro-hook de continuidad emocional.
+
 ═══════════════════════════════════════════════════════════════════
 PROTOCOLO ANTI-REPETICIÓN (CRÍTICO)
 ═══════════════════════════════════════════════════════════════════

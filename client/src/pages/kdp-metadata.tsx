@@ -18,6 +18,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { KdpPromoChecklist } from "@/components/kdp-promo-checklist";
 import {
   Tag, Loader2, Sparkles, Copy, Trash2, Edit3, BookOpen,
   Check, Eye, AlertTriangle, Search, Globe, FileText, Rocket,
@@ -607,6 +608,7 @@ function ViewerContent({ meta, onCopy }: { meta: FullMeta; onCopy: (t: string, l
     else t.push("legacy");
     if (kit) t.push("marketing");
     if (landing) t.push("landing");
+    t.push("promo");
     return t;
   }, [analysis, entries.length, !!kit, !!landing]);
 
@@ -634,6 +636,7 @@ function ViewerContent({ meta, onCopy }: { meta: FullMeta; onCopy: (t: string, l
           {tabs.includes("legacy")   && <TabsTrigger value="legacy"><Tag className="h-3 w-3 mr-1" /> Metadata</TabsTrigger>}
           {tabs.includes("marketing")&& <TabsTrigger value="marketing"><Megaphone className="h-3 w-3 mr-1" /> Marketing</TabsTrigger>}
           {tabs.includes("landing")  && <TabsTrigger value="landing"><LayoutTemplate className="h-3 w-3 mr-1" /> Landing</TabsTrigger>}
+          <TabsTrigger value="promo" data-testid="tab-promo"><Rocket className="h-3 w-3 mr-1" /> Promoción</TabsTrigger>
         </TabsList>
 
         {analysis && (
@@ -690,6 +693,10 @@ function ViewerContent({ meta, onCopy }: { meta: FullMeta; onCopy: (t: string, l
             <LandingView landing={landing} onCopy={onCopy} />
           </TabsContent>
         )}
+
+        <TabsContent value="promo" className="mt-4">
+          <KdpPromoChecklist projectId={meta.id} />
+        </TabsContent>
       </Tabs>
     </div>
   );

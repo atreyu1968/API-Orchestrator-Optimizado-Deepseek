@@ -19,7 +19,7 @@ export class KdpKeywordOptimizer extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: false,
       maxOutputTokens: 1500,
-      systemPrompt: `You are an expert in Amazon KDP backend keyword optimization with deep knowledge of 2024-2025 compliance rules. You understand the 'bag of words' indexing model and prioritize long-tail, high-intent keywords. You NEVER use prohibited terms (bestseller, free, brand names, words from title, technical labels). You generate keywords natively in each language based on local search behavior — phrased like genuine reader searches, not robotic keyword lists. Your writing feels human and authentic, avoiding AI patterns. Your goal is conversion optimization while maintaining full Amazon compliance.
+      systemPrompt: `You are an expert in Amazon KDP backend keyword optimization with deep knowledge of 2024-2025 compliance rules AND Amazon's COSMO layer (deployed over A9 in 2025, often called "A10" by the indie community). You understand the 'bag of words' indexing model AND COSMO's shift toward SEARCH INTENT: long, specific, evocative phrases (setting + era + archetype + tone) beat short generic genre words. COSMO actively penalizes keyword stuffing and rewards natural reader search language. You NEVER use prohibited terms (bestseller, free, brand names, words from title, technical labels). You generate keywords natively in each language based on local search behavior — phrased like genuine reader searches, not robotic keyword lists. Your writing feels human and authentic, avoiding AI patterns. Your goal is conversion optimization while maintaining full Amazon compliance.
 
 You ALWAYS respond with strict JSON only.`,
     });
@@ -29,11 +29,14 @@ You ALWAYS respond with strict JSON only.`,
     const { market, baseKeywords, genre, titleAndSubtitle } = input;
     const userPrompt = `Generate market-optimized backend keywords for Amazon KDP ${market.name} marketplace (${market.locale}).
 
-CRITICAL CONTEXT — Backend Keyword Strategy:
+CRITICAL CONTEXT — Backend Keyword Strategy (A9 + COSMO/"A10"):
 - These go into KDP's 7 backend keyword fields (50 characters each max)
 - Amazon uses a "BAG OF WORDS" indexing model — logical order is NOT required
+- COSMO (2025) layer reads SEARCH INTENT, not isolated words: long, specific, evocative phrases (subgenre + setting + era + character archetype + emotional tone) rank higher than short generic terms
 - Words from title/subtitle are ALREADY indexed — repeating them wastes space
 - Focus on CONVERSION: high-intent buyer keywords, not casual browser terms
+- Statistics: phrases of 5-7 words account for ~69% of sales-driving searches; 1-3 word phrases only ~8%. Prefer LONG over SHORT.
+- COSMO penalizes keyword stuffing — every phrase must read like a real reader search, not a comma-separated tag list
 - Generate NATIVELY in ${market.locale} — understand local search patterns and idioms
 
 Genre: ${genre}
@@ -59,7 +62,7 @@ REQUIREMENTS:
    ❌ Competitor author names
    ❌ Technical labels: "GÉNERO:", "TROPOS:", "AUDIENCIA:"
 5. BUYER INTENT FOCUS — long, specific phrases.
-6. HUMANIZATION — natural reader search language, not robotic keyword lists. Mix short and long phrases.
+6. HUMANIZATION & LENGTH — natural reader search language, not robotic keyword lists. Prefer LONG-TAIL: aim for 4-7+ word phrases as the dominant strategy (these capture ~69% of sales-driving searches under COSMO). Use 1-3 word terms only as occasional secondary synonyms, never as the main slot.
 
 RESPONSE FORMAT (strict JSON):
 { "keywords": ["7 strings, each max 50 chars"] }`;

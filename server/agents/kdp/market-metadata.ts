@@ -57,9 +57,11 @@ ${analysis.entities.slice(0, 30).map(e => `• ${e}`).join("\n")}
 
     const userPrompt = `Generate conversion-optimized Amazon KDP metadata for a ${genre} book targeting ${market.name} (${market.locale}).
 
-CRITICAL CONTEXT - Amazon's A9 Algorithm:
-- Prioritizes CONVERSION and SALES VELOCITY over traditional SEO
-- First impressions drive click-through rate (CTR), which impacts ranking
+CRITICAL CONTEXT - Amazon's A9 + COSMO Algorithm ("A10", 2025):
+- A9 layer prioritizes CONVERSION and SALES VELOCITY; COSMO layer (2025) reads SEARCH INTENT and ENGAGEMENT (time on page, Look Inside opens, KENP read-through)
+- First impressions drive CTR; specificity (setting + era + archetype + tone) beats generic genre tags
+- COSMO actively penalizes keyword stuffing in title/subtitle/description — every line must read naturally to a human reader, never as a comma-separated tag list
+- The description is not just for indexing: it must create CONCRETE expectations the book delivers, so the reader stays engaged (high KENP = higher ranking under COSMO)
 - Write ALL content NATIVELY in ${market.locale} — DO NOT translate from another language
 
 BOOK TYPE: ${fictionLabel}
