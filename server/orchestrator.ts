@@ -2469,7 +2469,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
           // la edite en vez de escribirla desde cero. Coste worst-case:
           // +8 iters SA adicionales (~10-15 min) que antes el usuario
           // tenía que esperar bloqueado en el gate manual.
-          let bestSAOverall: { data: ParsedWorldBible; score: number; problemsSummary: string } | null = null;
+          let bestSAOverall: { data: ParsedWorldBible; score: number; problemsSummary: string; problemas: any[] } | null = null;
           let lastSeenScoreSAOverall = 0;
           let autoMechanicalGuidanceApplied = false;
           let effectiveArchitectInstructionsForSA: string = project.architectInstructions || "";
@@ -2489,7 +2489,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
           // Igual al threshold actual para coherencia: si pidieron 7/10
           // para reintentar, exigimos 7/10 para escribir.
           // [Fix118] MIN_PUBLISHABLE_SA_SCORE declarado fuera del outer for.
-          let bestSA: { data: ParsedWorldBible; score: number; problemsSummary: string } | null = null;
+          let bestSA: { data: ParsedWorldBible; score: number; problemsSummary: string; problemas: any[] } | null = null;
           let lastSeenScoreSA = 0;
           // [Fix101] Histórico para inyectar al Arquitecto en cada retry.
           let prevScoreSA: number | null = null;
@@ -2656,7 +2656,9 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
 
             lastSeenScoreSA = sa.puntuacion_global;
             if (!bestSA || sa.puntuacion_global > bestSA.score) {
-              bestSA = { data: worldBibleData, score: sa.puntuacion_global, problemsSummary };
+              // [Fix119] Persistimos también los problemas crudos del SA para
+              // poder filtrarlos por área en el audit on-demand del WBA.
+              bestSA = { data: worldBibleData, score: sa.puntuacion_global, problemsSummary, problemas: Array.isArray(sa.problemas) ? sa.problemas : [] };
             }
 
             // Retry si score bajo O si hay cualquier severidad alta (incluso con score ≥ 7
@@ -2929,6 +2931,18 @@ OBJETIVO: PROGRESO MONOTÓNICO. No rediseñes desde cero. Para cada dimensión O
               wbaExternalCount++;
               if (!isChronic) wbaConcentratedCount++;
               try {
+                // [Fix119] Construir contexto on-demand: dimensión SA + problemas
+                // residuales de esa dimensión + score. Sin esto, el WBA podía
+                // devolver "apto" sin feedback porque la WB le parecía coherente
+                // pese a que el SA seguía atascado en 4-5/10.
+                const problemasOfArea = (bestSA.problemas || [])
+                  .filter((p: any) => p.area === triggerArea)
+                  .map((p: any) => ({
+                    descripcion: String(p.descripcion || ""),
+                    sugerencia: p.sugerencia ? String(p.sugerencia) : undefined,
+                    severidad: p.severidad ? String(p.severidad) : undefined,
+                    capitulos: Array.isArray(p.capitulos_afectados) ? p.capitulos_afectados : (Array.isArray(p.capitulos) ? p.capitulos : undefined),
+                  }));
                 const wbaResp = await this.worldBibleAuditor.audit({
                   title: project.title,
                   genre: project.genre,
@@ -2937,6 +2951,13 @@ OBJETIVO: PROGRESO MONOTÓNICO. No rediseñes desde cero. Para cada dimensión O
                   chapterCount: project.chapterCount,
                   phase1Json: bestSA.data,
                   projectId: project.id,
+                  onDemandFocus: {
+                    area: triggerArea,
+                    areaLabel: triggerLabel,
+                    triggerKind: isChronic ? "chronic_zero" : "concentrated",
+                    problemasResiduales: problemasOfArea,
+                    bestSAScore: typeof bestSA.score === "number" ? bestSA.score : undefined,
+                  },
                 });
                 if (wbaResp.raw?.tokenUsage) {
                   await this.trackTokenUsage(project.id, wbaResp.raw.tokenUsage, `El Auditor de World Bible (audit on-demand ${isChronic ? "Fix116" : "Fix115"})`, "deepseek-v4-flash", undefined, "world_bible_audit");
@@ -2946,23 +2967,37 @@ OBJETIVO: PROGRESO MONOTÓNICO. No rediseñes desde cero. Para cada dimensión O
                   // [Fix116] Acumulamos feedback en lugar de sobrescribir, si
                   // ya había un feedback previo de otra dimensión auditada
                   // en una iter anterior. El Arquitecto recibe las dos cosas.
-                  const headerKind = isChronic
-                    ? `[Fix116] FEEDBACK DEL AUDITOR DE WORLD BIBLE — audit on-demand (cobertura crónica 0%)`
-                    : `[Fix115] FEEDBACK DEL AUDITOR DE WORLD BIBLE — audit on-demand (bottleneck concentrado)`;
-                  const motivo = isChronic
-                    ? `El Auditor Estructural ha detectado que "${triggerLabel}" tiene COBERTURA 0% sostenida en ${CHRONIC_ZERO_COVERAGE_ITERS} iteraciones consecutivas. Esto significa que la World Bible CARECE del elemento estructural requerido (p.ej. un personaje con ese rol, un secreto distribuible, una palanca dramática) — el Arquitecto no puede insertar lo que la WB no contiene. Solo redibujar la escaleta NO resuelve esto.`
-                    : `El Auditor Estructural ha detectado que "${triggerLabel}" es un problema PERSISTENTE y CONCENTRADO (≥3 problemas en 2 iteraciones consecutivas). Esto NO se puede resolver solo redibujando la escaleta — la World Bible no tiene suficiente munición dramática.`;
+                  // [Fix119] Ramificación del header según veredicto. Si el WBA
+                  // emite "apto" pero adjunta feedback, suele ser el caso
+                  // "WB SUFICIENTE — el problema reside en la escaleta": no
+                  // tiene sentido decirle al Arquitecto "ENRIQUECE primero la
+                  // WB"; debe usar lo que ya hay.
+                  const wbaApto = wbaR.veredicto === "apto";
+                  const fixTag = isChronic ? "Fix116" : "Fix115";
+                  const headerKind = wbaApto
+                    ? `[${fixTag}+Fix119] FEEDBACK DEL AUDITOR DE WORLD BIBLE — WB SUFICIENTE para "${triggerLabel}"`
+                    : isChronic
+                      ? `[Fix116] FEEDBACK DEL AUDITOR DE WORLD BIBLE — audit on-demand (cobertura crónica 0%)`
+                      : `[Fix115] FEEDBACK DEL AUDITOR DE WORLD BIBLE — audit on-demand (bottleneck concentrado)`;
+                  const motivo = wbaApto
+                    ? `El Auditor de World Bible ha revisado la Fase 1 con foco en "${triggerLabel}" y la considera SUFICIENTE para sostener esta dimensión. El bottleneck del Auditor Estructural NO es por carencia de WB, sino por implementación de escaleta: los elementos necesarios están en la base pero la escaleta no los aprovecha.`
+                    : isChronic
+                      ? `El Auditor Estructural ha detectado que "${triggerLabel}" tiene COBERTURA 0% sostenida en ${CHRONIC_ZERO_COVERAGE_ITERS} iteraciones consecutivas. Esto significa que la World Bible CARECE del elemento estructural requerido (p.ej. un personaje con ese rol, un secreto distribuible, una palanca dramática) — el Arquitecto no puede insertar lo que la WB no contiene. Solo redibujar la escaleta NO resuelve esto.`
+                      : `El Auditor Estructural ha detectado que "${triggerLabel}" es un problema PERSISTENTE y CONCENTRADO (≥3 problemas en 2 iteraciones consecutivas). Esto NO se puede resolver solo redibujando la escaleta — la World Bible no tiene suficiente munición dramática.`;
+                  const instruccionFinal = wbaApto
+                    ? `INSTRUCCIÓN: NO enriquezcas la WB en este rediseño — está bien. RELEE las pistas de arriba (elementos ya disponibles en la Fase 1 que debes usar en la escaleta) y aplícalas LITERALMENTE en los capítulos correspondientes para resolver los problemas residuales de "${triggerLabel}". Si vuelves a ignorar esos elementos, el bottleneck no se moverá.`
+                    : `INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (Fase 1) con los elementos que el Auditor pide (palancas dramáticas, secretos dosificables, métodos del antagonista, personajes faltantes, etc.) y SOLO ENTONCES rediseña la escaleta usando esa base fortificada. Si la WB sigue débil, la escaleta volverá a fallar en "${triggerLabel}" por mucho que la reescribas.`;
                   const newFeedback = `═══════════════════════════════════════════════════════════════════
 ${headerKind}
 ═══════════════════════════════════════════════════════════════════
-${motivo} El Auditor de World Bible ha revisado la Fase 1 y emite el siguiente diagnóstico:
+${motivo} Diagnóstico del WBA:
 
 Score actual de la WB: ${wbaR.puntuacion_global}/10 (${wbaR.veredicto})
 ${wbaR.resumen}
 
 ${wbaR.feedback_para_arquitecto}
 
-INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (Fase 1) con los elementos que el Auditor pide (palancas dramáticas, secretos dosificables, métodos del antagonista, personajes faltantes, etc.) y SOLO ENTONCES rediseña la escaleta usando esa base fortificada. Si la WB sigue débil, la escaleta volverá a fallar en "${triggerLabel}" por mucho que la reescribas.
+${instruccionFinal}
 ═══════════════════════════════════════════════════════════════════
 
 `;
@@ -2975,8 +3010,10 @@ INSTRUCCIÓN OBLIGATORIA: En este rediseño, ENRIQUECE primero la World Bible (F
                       projectId: project.id,
                       level: "info",
                       agentRole: "world-bible-auditor",
-                      message: `[${isChronic ? "Fix116" : "Fix115"}] Auditor de World Bible (audit on-demand ${wbaExternalCount}/${MAX_WBA_EXTERNAL}) — Score ${wbaR.puntuacion_global}/10. Feedback para "${triggerLabel}" inyectado al Arquitecto para el siguiente retry.`,
-                      metadata: { fix: isChronic ? "Fix116" : "Fix115", wbaScore: wbaR.puntuacion_global, veredicto: wbaR.veredicto, area: triggerArea, auditIndex: wbaExternalCount, auditMax: MAX_WBA_EXTERNAL },
+                      // [Fix119] Log enriquecido: veredicto explícito + len(feedback)
+                      // para diagnóstico (antes solo veíamos score).
+                      message: `[${fixTag}${wbaApto ? "+Fix119" : ""}] Auditor de World Bible (audit on-demand ${wbaExternalCount}/${MAX_WBA_EXTERNAL}) — Score ${wbaR.puntuacion_global}/10, veredicto="${wbaR.veredicto}", feedback ${wbaR.feedback_para_arquitecto.length} chars. ${wbaApto ? `Diagnóstico: WB suficiente para "${triggerLabel}", problema es de implementación de escaleta.` : `Feedback para "${triggerLabel}" inyectado al Arquitecto para el siguiente retry.`}`,
+                      metadata: { fix: fixTag, wbaScore: wbaR.puntuacion_global, veredicto: wbaR.veredicto, area: triggerArea, auditIndex: wbaExternalCount, auditMax: MAX_WBA_EXTERNAL, feedbackChars: wbaR.feedback_para_arquitecto.length, diagnosis: wbaApto ? "wb_sufficient_escaleta_problem" : "wb_needs_enrichment" },
                     });
                   } catch {}
                 } else {
@@ -7441,7 +7478,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     return result;
   }
 
-  async runBetaReview(project: Project): Promise<BetaReaderResult> {
+  async runBetaReview(project: Project, options?: { appliedNotesHistory?: string }): Promise<BetaReaderResult> {
     const ctx = await this.loadFullNovelContext(project);
     const seriesContext = await this.buildSeriesContextForReviewers(project);
 
@@ -7481,6 +7518,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       previousBetaNotes,
       seriesContext,
       pendingAdminActions: pendingAdminActionsBeta,
+      // [Fix120] Reenviar el historial de notas aplicadas si lo pasa el
+      // auto-loop (runAutoBetaLoop). Llamadas one-shot manuales no lo pasan
+      // y el Beta funciona como antes.
+      appliedNotesHistory: options?.appliedNotesHistory,
     }, project.id);
 
     await this.trackTokenUsage(
@@ -13002,6 +13043,129 @@ Responde SOLO con un JSON válido con la estructura:
     let initialBetaScore: number | null = null;
     let consecutiveRegressions = 0;
 
+    // [Fix120] Memoria de notas aplicadas por iteración + detección de
+    // oscilación. Sin esto, el Beta en iter N+1 leía desde cero y podía
+    // pedir DESHACER lo que el cirujano acababa de aplicar en iter N
+    // ("alargar cap 5" → siguiente lectura → "acortar cap 5"). El
+    // ping-pong tiraba el score abajo y Fix112 acababa revirtiendo al best
+    // sin que el loop convergiera. Ahora el Beta recibe el historial como
+    // contexto y detectamos contradicciones para abortar el loop temprano.
+    type AppliedNote = { cap: number | string; accion: string; categoria?: string; tipo?: string; prioridad?: string };
+    const appliedNotesHistory: Array<{ iter: number; instrucciones: AppliedNote[] }> = [];
+    const OSCILLATION_THRESHOLD = 0.5;
+    // [Fix120 post-review] Mínimo absoluto para abortar el loop. Con sets
+    // pequeños (1-2 instrucciones) un solo falso positivo daría ratio 0.5-1.0
+    // y abortaría sin razón. Exigimos al menos 2 contradicciones reales
+    // para considerar el patrón sistémico (oscilación), no anecdótico.
+    const OSCILLATION_MIN_MATCHES = 2;
+
+    // [Fix120 post-review] Tokens de "objeto" (qué se está cambiando). Para
+    // contar una contradicción NO basta con raíz verbal opuesta + mismo cap:
+    // hay que verificar que prev y cur hablan del MISMO sub-objetivo
+    // (p.ej. "añadir diálogo" vs "eliminar línea del diálogo" → mismo objeto
+    // dialogo, oscilación real). En cambio "añadir diálogo" + "eliminar
+    // escena descriptiva" → mismo cap pero objetos distintos → NO oscilación.
+    const OBJECT_TOKENS = [
+      "diálog", "dialog", "escena", "descripc", "narrac", "ritmo", "pacing",
+      "pasaje", "párraf", "parraf", "frase", "líne", "lin", "monólog", "monolog",
+      "subtram", "subtrama", "arco", "subtex", "tens", "conflict", "acción",
+      "accion", "personaj", "ambient", "atmósf", "atmosf", "introspec",
+      "flashback", "voz", "pov", "tiempo verbal",
+    ];
+
+    // Pares de palabras de acción opuestas (raíces lematizadas básicas).
+    // Si en el mismo capítulo una nota previa tiene una raíz y la nueva
+    // tiene la opuesta Y comparten al menos un OBJECT_TOKEN, lo contamos
+    // como contradicción.
+    const OPPOSITE_ROOTS: Array<[string, string]> = [
+      ["alarg", "acort"], ["expand", "recort"], ["ampli", "condens"],
+      ["añad", "quit"], ["añad", "elimin"], ["suma", "rest"], ["agreg", "elimin"],
+      ["incluir", "eliminar"], ["incorpor", "suprim"],
+      ["profund", "superf"], ["detall", "sintetiz"], ["desarroll", "recort"],
+      ["acelera", "ralent"], ["acelera", "frena"],
+      ["aumenta", "redu"], ["aument", "disminu"], ["intensific", "atenu"],
+      ["refuerza", "suaviz"], ["refuerza", "rebaja"], ["enfatiz", "diluy"],
+      ["fortalec", "debilit"],
+      ["enriquec", "simplific"],
+      ["explicar más", "explicar menos"],
+    ];
+
+    const formatAppliedNotesHistory = (history: typeof appliedNotesHistory): string => {
+      if (history.length === 0) return "";
+      return history.map(h => {
+        const head = `### Iteración ${h.iter} — ${h.instrucciones.length} nota(s) aplicada(s)`;
+        const items = h.instrucciones.slice(0, 25).map((n, i) => {
+          const prio = n.prioridad ? ` [${n.prioridad}]` : "";
+          const cat = n.categoria ? ` (${n.categoria})` : "";
+          return `  ${i + 1}. cap ${n.cap}${prio}${cat}: ${(n.accion || "").slice(0, 220)}`;
+        }).join("\n");
+        const truncNote = h.instrucciones.length > 25
+          ? `\n  …y ${h.instrucciones.length - 25} más (truncado).`
+          : "";
+        return `${head}\n${items}${truncNote}`;
+      }).join("\n\n");
+    };
+
+    const detectOscillation = (history: typeof appliedNotesHistory, currentInstructions: any[]): { ratio: number; matches: number; total: number; samples: string[] } => {
+      const samples: string[] = [];
+      if (currentInstructions.length === 0 || history.length === 0) {
+        return { ratio: 0, matches: 0, total: currentInstructions.length, samples };
+      }
+      let contradictions = 0;
+      const flatPrev: AppliedNote[] = history.flatMap(h => h.instrucciones);
+      for (const cur of currentInstructions) {
+        const curCap = (cur?.capituloAfectado ?? cur?.cap ?? cur?.capitulo);
+        if (curCap === undefined || curCap === null) continue;
+        const curAccion = String(cur?.descripcion || cur?.accion || "").toLowerCase();
+        if (!curAccion) continue;
+        const prevSameCap = flatPrev.filter(p => String(p.cap) === String(curCap));
+        if (prevSameCap.length === 0) continue;
+        // [Fix120 post-review] Pre-calcular objetos mencionados en la nota
+        // actual una vez por iteración del bucle interno.
+        const curObjects = new Set(OBJECT_TOKENS.filter(t => curAccion.includes(t)));
+        for (const prev of prevSameCap) {
+          const prevAccion = String(prev.accion || "").toLowerCase();
+          if (!prevAccion) continue;
+          let contradicted = false;
+          for (const [a, b] of OPPOSITE_ROOTS) {
+            const aInCur = curAccion.includes(a);
+            const bInCur = curAccion.includes(b);
+            const aInPrev = prevAccion.includes(a);
+            const bInPrev = prevAccion.includes(b);
+            if ((aInPrev && bInCur) || (bInPrev && aInCur)) {
+              // [Fix120 post-review] Sin objeto compartido NO contamos:
+              // "añadir diálogo" + "eliminar línea descriptiva" en mismo
+              // cap NO es oscilación. Si ninguna de las dos menciona un
+              // objeto temático conocido, somos conservadores y NO contamos
+              // (mejor falso negativo que abortar el loop sin razón).
+              const prevObjects = OBJECT_TOKENS.filter(t => prevAccion.includes(t));
+              const sharedObject = prevObjects.find(t => curObjects.has(t));
+              if (!sharedObject) {
+                continue; // par opuesto pero objetos distintos → no oscilación
+              }
+              contradicted = true;
+              if (samples.length < 5) {
+                samples.push(`cap ${curCap} [${sharedObject}]: antes "${prevAccion.slice(0, 80)}…" | ahora "${curAccion.slice(0, 80)}…"`);
+              }
+              break;
+            }
+          }
+          if (contradicted) { contradictions++; break; }
+        }
+      }
+      return { ratio: currentInstructions.length > 0 ? contradictions / currentInstructions.length : 0, matches: contradictions, total: currentInstructions.length, samples };
+    };
+
+    const extractAppliedNotes = (instructions: any[]): AppliedNote[] => {
+      return instructions.map((i: any) => ({
+        cap: i?.capituloAfectado ?? i?.cap ?? i?.capitulo ?? "?",
+        accion: String(i?.descripcion || i?.accion || ""),
+        categoria: i?.categoria,
+        tipo: i?.tipo,
+        prioridad: i?.prioridad,
+      })).filter(n => n.accion);
+    };
+
     type SnapshotEntry = { id: number; chapterNumber: number; content: string };
     const snapshotManuscript = async (): Promise<SnapshotEntry[]> => {
       const all = await storage.getChaptersByProject(project.id);
@@ -13034,7 +13198,7 @@ Responde SOLO con un JSON válido con la estructura:
     try {
       await storage.createActivityLog({
         projectId: project.id, level: "info",
-        message: `[Fix47] Auto-loop con Lector Beta iniciado (máx ${maxIterations} iteraciones). [Fix112] Best-tracking + revert por regresión consecutiva activos (threshold=${REGRESSION_THRESHOLD}, max 2 caídas consecutivas).`,
+        message: `[Fix47] Auto-loop con Lector Beta iniciado (máx ${maxIterations} iteraciones). [Fix112] Best-tracking + revert por regresión consecutiva activos (threshold=${REGRESSION_THRESHOLD}, max 2 caídas consecutivas). [Fix120] Memoria de notas aplicadas + detección de oscilación (umbral ${Math.round(OSCILLATION_THRESHOLD * 100)}%) activos.`,
         agentRole: "editor",
       });
 
@@ -13055,7 +13219,12 @@ Responde SOLO con un JSON válido con la estructura:
           `Auto-loop Beta iteración ${iter}/${maxIterations}: leyendo el manuscrito completo...`
         );
 
-        const beta = await this.runBetaReview(currentProject);
+        // [Fix120] Pasamos al Beta el historial de notas ya aplicadas en
+        // iteraciones previas. En iter 1 está vacío y el Beta funciona como
+        // antes. En iter 2+ recibe el bloque para evitar pedir DESHACER lo
+        // que el cirujano acaba de aplicar.
+        const appliedHistoryStr = formatAppliedNotesHistory(appliedNotesHistory);
+        const beta = await this.runBetaReview(currentProject, appliedHistoryStr ? { appliedNotesHistory: appliedHistoryStr } : undefined);
         const notesText = (beta?.notesText || "").trim();
         // [Fix112] Score actual del Beta (puede ser null si el agente no lo emitió).
         const betaScore: number | null = typeof beta?.score === "number" ? beta.score : null;
@@ -13161,6 +13330,52 @@ Responde SOLO con un JSON válido con la estructura:
         const altas = instructions.filter((i: any) => (i?.prioridad || "").toLowerCase() === "alta").length;
         const total = instructions.length;
 
+        // [Fix120] Detección de oscilación: si ≥OSCILLATION_THRESHOLD de las
+        // instrucciones nuevas contradicen instrucciones aplicadas en iters
+        // anteriores (misma cap + acción opuesta), el loop está en ping-pong
+        // (el cirujano alargó cap5, el Beta ahora pide acortarlo). Aplicar
+        // estas notas degradaría el manuscrito sin convergir. Abortamos
+        // restaurando al best snapshot.
+        if (appliedNotesHistory.length > 0 && total > 0) {
+          const osc = detectOscillation(appliedNotesHistory, instructions);
+          // [Fix120 post-review] Doble condición: ratio ≥ umbral Y matches
+          // absolutos ≥ mínimo. Evita abortar por 1 contradicción ambigua
+          // en sets pequeños (p.ej. 1/2 instrucciones = 50% pero solo 1
+          // contradicción real, no patrón).
+          if (osc.ratio >= OSCILLATION_THRESHOLD && osc.matches >= OSCILLATION_MIN_MATCHES) {
+            const samplesStr = osc.samples.length > 0
+              ? ` Ejemplos: ${osc.samples.slice(0, 3).join(" | ")}`
+              : "";
+            let restoredNote = "";
+            if (bestSnapshot) {
+              const r = await restoreSnapshot(bestSnapshot.chapters);
+              const driftNote = r.structuralDrift ? ` ⚠️ Drift: ${r.missing} cap(s) del snapshot ya no existen.` : "";
+              restoredNote = ` Restaurados ${r.restored} capítulo(s) al mejor snapshot (Beta=${bestSnapshot.score} en iter ${bestSnapshot.iter}).${driftNote}`;
+            }
+            await storage.createActivityLog({
+              projectId: project.id, level: "warning",
+              message: `[Fix120] Iter ${iter}: OSCILACIÓN detectada — ${osc.matches}/${osc.total} (${Math.round(osc.ratio * 100)}%) instrucciones nuevas contradicen notas ya aplicadas con objeto temático compartido (umbral ${Math.round(OSCILLATION_THRESHOLD * 100)}% + ≥${OSCILLATION_MIN_MATCHES} contradicciones). El Beta está pidiendo deshacer lo que el cirujano acaba de aplicar (ping-pong). Auto-loop abortado para preservar la mejor versión.${samplesStr}${restoredNote}`,
+              agentRole: "editor",
+              metadata: { fix: "Fix120", iter, oscillationRatio: osc.ratio, contradictions: osc.matches, totalInstructions: osc.total, samples: osc.samples } as any,
+            });
+            const refreshedForBest = (await storage.getProject(project.id)) || currentProject;
+            if (bestSnapshot && bestSnapshot.score >= TARGET_BETA_SCORE) {
+              await this.runOrthotypographicPassAndUpdate(refreshedForBest);
+            } else {
+              try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
+            }
+            return;
+          } else if (osc.matches > 0) {
+            // Algunas contradicciones pero por debajo del umbral — solo log.
+            await storage.createActivityLog({
+              projectId: project.id, level: "info",
+              message: `[Fix120] Iter ${iter}: ${osc.matches}/${osc.total} (${Math.round(osc.ratio * 100)}%) instrucciones podrían contradecir notas previas, por debajo del umbral ${Math.round(OSCILLATION_THRESHOLD * 100)}%. Aplicación continúa.`,
+              agentRole: "editor",
+              metadata: { fix: "Fix120", iter, oscillationRatio: osc.ratio, contradictions: osc.matches, totalInstructions: osc.total } as any,
+            });
+          }
+        }
+
         // [Fix47] Si el Beta dejó notas extensas pero el parser no extrajo
         // NINGUNA instrucción aplicable, NO marcamos como aprobado: persistimos
         // las notas crudas y abortamos el loop para que el usuario revise. Si
@@ -13253,6 +13468,13 @@ Responde SOLO con un JSON válido con la estructura:
           // inicio de la siguiente iter; saltamos el refresco interno para no
           // duplicarlo.
           await this.applyEditorialNotes(currentProject, "", instructions, { skipReaderReviewRefresh: true, fromAutoLoop: true });
+          // [Fix120] Registrar las notas aplicadas en esta iter para que el
+          // Beta de la próxima iter las vea como contexto y la detección de
+          // oscilación al inicio de iter N+1 pueda cazar el ping-pong.
+          const applied = extractAppliedNotes(instructions);
+          if (applied.length > 0) {
+            appliedNotesHistory.push({ iter, instrucciones: applied });
+          }
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           await storage.createActivityLog({

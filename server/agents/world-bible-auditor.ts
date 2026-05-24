@@ -46,6 +46,36 @@ export interface WorldBibleAuditResult {
   feedback_para_arquitecto: string;
 }
 
+// [Fix119] Contexto opcional cuando el audit se dispara on-demand desde el
+// bucle SA (Fix115/Fix116) en vez de pre-flight. Le decimos al WBA EXACTAMENTE
+// qué dimensión estructural está fallando y le pasamos los problemas
+// residuales del Auditor Estructural para que pueda diagnosticar si la WB
+// tiene munición para resolverlos o si el problema es de implementación
+// (escaleta). Sin esto, el WBA puede devolver "apto" sin feedback porque la
+// base le parece coherente pese a que el SA no logra pasar de 5/10.
+export interface WorldBibleOnDemandFocus {
+  // Área SA que está fallando (arco_secreto, falso_aliado, escalada_acto2,
+  // ledger_info, dosificacion_revelacion, forma_escena, deus_ex_machina,
+  // trauma_protagonista). NO coincide 1:1 con las 5 áreas del WBA — el WBA
+  // debe MAPEAR a sus propias áreas (ver focusBlock).
+  area: string;
+  areaLabel: string;
+  // Razón por la que se disparó el audit (count concentrado o cobertura 0%).
+  triggerKind: "concentrated" | "chronic_zero";
+  // Problemas residuales que el SA reporta para esa área en la mejor
+  // escaleta lograda hasta ahora. El WBA lee estos problemas y decide si
+  // la WB tiene los elementos necesarios para resolverlos.
+  problemasResiduales: Array<{
+    descripcion: string;
+    sugerencia?: string;
+    severidad?: string;
+    capitulos?: number[];
+  }>;
+  // Score actual de la mejor escaleta SA (informativo, para que el WBA sepa
+  // a qué distancia está del umbral de 7).
+  bestSAScore?: number;
+}
+
 export interface WorldBibleAuditInput {
   title: string;
   genre: string;
@@ -54,6 +84,7 @@ export interface WorldBibleAuditInput {
   chapterCount: number;
   phase1Json: any;
   projectId?: number;
+  onDemandFocus?: WorldBibleOnDemandFocus;
 }
 
 const SYSTEM_PROMPT = `
@@ -161,6 +192,7 @@ export class WorldBibleAuditorAgent extends BaseAgent {
 
   async audit(input: WorldBibleAuditInput): Promise<{ result: WorldBibleAuditResult | null; raw: AgentResponse; failureReason?: string }> {
     const condensed = this.condensePhase1(input.phase1Json);
+    const focusBlock = this.buildOnDemandFocusBlock(input.onDemandFocus);
 
     const userPrompt = `
 NOVELA A AUDITAR (FASE 1 — antes de escaleta):
@@ -168,13 +200,15 @@ TÍTULO: ${input.title}
 GÉNERO: ${input.genre} / TONO: ${input.tone}
 LONGITUD PREVISTA: ${input.chapterCount} capítulos
 PREMISA: ${input.premise}
-
+${focusBlock}
 ═══════════════════════════════════════════════════════════════════
 FASE 1 DEL ARQUITECTO (lo que tiene que sostener N capítulos)
 ═══════════════════════════════════════════════════════════════════
 ${condensed}
 
-Audita las 5 áreas (antagonismo / escalada_actos / reservas_secretos / stakes_personaje / densidad_arcos) y devuelve el JSON.
+Audita las 5 áreas (antagonismo / escalada_actos / reservas_secretos / stakes_personaje / densidad_arcos) y devuelve el JSON.${input.onDemandFocus ? `
+
+RECORDATORIO: el bucle SA está atascado en "${input.onDemandFocus.areaLabel}". Tu diagnóstico tiene DOS resultados posibles igual de válidos: (1) la WB carece de munición → emite veredicto "necesita_revision"/"reescribir" y feedback CONCRETO de qué añadir a la Fase 1; (2) la WB tiene base suficiente → emite veredicto "apto" y feedback_para_arquitecto = "WB SUFICIENTE — el problema reside en la implementación de la escaleta, no en la base. La escaleta debe utilizar los siguientes elementos ya disponibles: [lista 2-4 elementos concretos de la Fase 1 que el Arquitecto podría usar para resolver el bottleneck]". NO inventes carencias para parecer útil — si la base aguanta, dilo claro.` : ""}
 `;
 
     const response = await this.generateContent(userPrompt, input.projectId);
@@ -208,6 +242,64 @@ Audita las 5 áreas (antagonismo / escalada_actos / reservas_secretos / stakes_p
       console.error(`[WorldBibleAuditor] ${reason}`);
       return { result: null, raw: response, failureReason: reason };
     }
+  }
+
+  // [Fix119] Construye el bloque de contexto on-demand cuando el audit se
+  // dispara desde el bucle SA. Mapea el área SA a las áreas WBA relevantes
+  // y enumera los problemas residuales que el SA reportó, para que el WBA
+  // pueda diagnosticar si la WB tiene munición para resolverlos.
+  private buildOnDemandFocusBlock(focus?: WorldBibleOnDemandFocus): string {
+    if (!focus) return "";
+
+    // Mapeo SA → WBA. Algunas áreas SA tienen 1-2 áreas WBA naturales.
+    const SA_TO_WBA_AREAS: Record<string, string[]> = {
+      arco_secreto: ["reservas_secretos", "stakes_personaje"],
+      falso_aliado: ["antagonismo", "densidad_arcos"],
+      escalada_acto2: ["escalada_actos", "antagonismo"],
+      ledger_info: ["reservas_secretos"],
+      dosificacion_revelacion: ["reservas_secretos"],
+      forma_escena: ["escalada_actos"],
+      deus_ex_machina: ["escalada_actos", "antagonismo"],
+      trauma_protagonista: ["stakes_personaje"],
+    };
+    const wbaAreas = SA_TO_WBA_AREAS[focus.area] || [];
+    const wbaAreasStr = wbaAreas.length > 0
+      ? wbaAreas.join(", ")
+      : "(sin mapeo directo — usa tu criterio)";
+
+    const triggerStr = focus.triggerKind === "chronic_zero"
+      ? `COBERTURA CRÓNICA 0% — el Auditor Estructural lleva ≥3 iteraciones consecutivas reportando que esta dimensión tiene 0% de cobertura en la escaleta. Suele indicar que la WB CARECE del elemento estructural requerido (p.ej. no hay personaje con ese rol, no hay secreto distribuible, no hay palanca dramática). Solo redibujar la escaleta NO lo resuelve.`
+      : `BOTTLENECK CONCENTRADO — el Auditor Estructural lleva 2 iteraciones consecutivas reportando ≥3 problemas en esta misma dimensión. Suele indicar que la WB no tiene suficiente munición para alimentar la dimensión: el Arquitecto rediseña la escaleta una y otra vez sobre la misma base y sigue cayendo en los mismos huecos.`;
+
+    const problemasStr = focus.problemasResiduales.length > 0
+      ? focus.problemasResiduales.slice(0, 10).map((p, i) => {
+          const sev = p.severidad ? ` [${p.severidad}]` : "";
+          const caps = p.capitulos && p.capitulos.length > 0 ? ` (caps ${p.capitulos.slice(0, 5).join(",")})` : "";
+          const sug = p.sugerencia ? `\n     Sugerencia del SA: ${p.sugerencia.slice(0, 220)}` : "";
+          return `  ${i + 1}.${sev}${caps} ${(p.descripcion || "").slice(0, 280)}${sug}`;
+        }).join("\n")
+      : "  (sin detalle de problemas — diagnostica usando solo el nombre del área)";
+
+    const scoreStr = typeof focus.bestSAScore === "number"
+      ? `${focus.bestSAScore}/10`
+      : "(no disponible)";
+
+    return `
+═══════════════════════════════════════════════════════════════════
+[Fix119] CONTEXTO DEL BOTTLENECK SA — AUDIT ON-DEMAND
+═══════════════════════════════════════════════════════════════════
+Este audit NO es pre-flight: el Auditor Estructural ya está corriendo sobre la escaleta y se ha atascado. Mejor score logrado: ${scoreStr} (umbral publicable: 7/10).
+
+DIMENSIÓN SA ATASCADA: "${focus.areaLabel}" (key SA: ${focus.area})
+ÁREAS WBA QUE SUELEN ESTAR DETRÁS DE ESTE FALLO: ${wbaAreasStr}
+RAZÓN DEL DISPARO: ${triggerStr}
+
+PROBLEMAS RESIDUALES QUE EL SA SIGUE REPORTANDO EN ESA DIMENSIÓN:
+${problemasStr}
+
+TU TAREA EN ESTE AUDIT: revisa la Fase 1 con FOCO en las áreas WBA mencionadas (sin ignorar las otras 3, pero priorizando éstas). Decide si la base tiene los elementos necesarios para resolver los problemas residuales listados. Si los tiene y el SA no los aprovecha, el problema es de implementación de escaleta (dilo claro en feedback_para_arquitecto). Si NO los tiene, lista exactamente qué añadir a la Fase 1 (personajes, palancas, secretos, vínculos, métodos del antagonista).
+═══════════════════════════════════════════════════════════════════
+`;
   }
 
   private condensePhase1(phase1: any): string {

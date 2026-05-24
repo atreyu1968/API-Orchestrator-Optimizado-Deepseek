@@ -33,6 +33,12 @@ interface BetaReaderInput {
   // tras leer el manuscrito completo. Mismo contrato que el Holístico: si
   // ambos coinciden en "apply", el orquestador la ejecuta sin confirmación.
   pendingAdminActions?: PendingAdminActionForReview[];
+  // [Fix120] Historial de notas YA aplicadas por el cirujano en iteraciones
+  // anteriores del auto-loop, ya formateado como bloque legible. El Beta
+  // debe leerlo y entender que esas instrucciones ya están en el manuscrito
+  // actual, para no pedir DESHACERLAS (ping-pong) ni repetirlas como nuevas.
+  // Si llega vacío o no llega, comportamiento pre-Fix120 sin cambio.
+  appliedNotesHistory?: string;
 }
 
 const TRANSLATION_LANG_NAMES: Record<string, string> = {
@@ -352,7 +358,26 @@ Palabras totales aproximadas: ${totalWords.toLocaleString("es-ES")}`;
       .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(sección vacía)"}`)
       .join("");
 
-    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${adminBlock}${translationBlock}${previousNotesBlock}
+    // [Fix120] Bloque de notas ya aplicadas por el cirujano en iteraciones
+    // previas del auto-loop. Le decimos al Beta que NO pida deshacerlas y
+    // que enfoque su lectura en cosas NUEVAS o evoluciones, no en oposiciones
+    // literales a lo que el cirujano acaba de aplicar.
+    const appliedHistoryBlock = (input.appliedNotesHistory && input.appliedNotesHistory.trim().length > 0)
+      ? `\n\n═══════════════════════════════════════════════════════════════════
+## [Fix120] HISTORIAL DE NOTAS YA APLICADAS POR EL CIRUJANO EN ESTE AUTO-LOOP
+═══════════════════════════════════════════════════════════════════
+
+${input.appliedNotesHistory}
+
+REGLA CRÍTICA: las instrucciones de arriba YA ESTÁN APLICADAS en el manuscrito que acabas de leer. Tu trabajo en esta relectura es:
+- NO repitas literalmente esas instrucciones como observaciones nuevas (el cirujano ya las ejecutó).
+- NO pidas DESHACERLAS. Si una nota previa pidió "alargar cap 5 con más diálogo" y ahora te parece largo, NO emitas "acortar cap 5 con menos diálogo" — eso es un PING-PONG que no converge: estás contradiciendo lo que tú mismo acabas de pedir y el cirujano ya aplicó.
+- Si una nota previa quedó MAL APLICADA (el cirujano la interpretó torcido o el resultado es peor de lo esperado), descríbela con ese matiz concreto ("la nota anterior pedía X y el cirujano lo aplicó como Y, pero falta Z" / "la expansión del cap 5 funcionó en estructura pero el diálogo añadido suena artificial"), NO como pedido de reversión.
+- Si una nota previa SIGUE PENDIENTE o se aplicó solo a medias, REPITELA pero AFINADA (más específica que la vez anterior).
+- Tu energía debe ir a pegas NUEVAS, EVOLUCIONES de las viejas, o MEJORAS INCREMENTALES — nunca a oposiciones literales.`
+      : "";
+
+    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${adminBlock}${translationBlock}${previousNotesBlock}${appliedHistoryBlock}
 
 ═══════════════════════════════════════════════════════════════════
 NOVELA COMPLETA QUE ACABAS DE LEER
