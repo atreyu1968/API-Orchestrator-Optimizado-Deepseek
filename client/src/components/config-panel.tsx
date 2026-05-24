@@ -921,104 +921,77 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
           )}
         />
 
-        <div className="space-y-4 pt-2">
-          <FormLabel className="text-base">Voz narrativa canónica</FormLabel>
-          <FormDescription className="text-xs">
-            Fija POV y tiempo verbal del proyecto. Es la fuente de verdad para el Arquitecto, el Narrador y el Revisor Final. Si tu guía de estilo o guía extendida ya menciona la voz (p.ej. "tercera persona" + "tiempo verbal: presente"), estos campos se rellenarán solos al seleccionarla; en caso contrario, fíjalos a mano. Si los dejas vacíos y la guía tampoco lo indica, el sistema abortará la generación.
-          </FormDescription>
+        {/* [Fix122] Voz narrativa canónica MOSTRADA SOLO EN LECTURA. La fuente
+            de verdad es la guía de estilo / extendida: el useEffect anterior
+            extrae POV + tiempo verbal + tipo de narrador automáticamente al
+            seleccionar guía. Aquí solo se muestra lo detectado, sin permitir
+            edición manual (para evitar que un valor en la UI contradiga la
+            guía y produzca capítulos con mezcla presente/pretérito). */}
+        <FormField
+          control={form.control}
+          name="narrativeVoice"
+          render={({ field }) => {
+            const v = (field.value as any) || {};
+            const POV_LABELS: Record<string, string> = {
+              first: "Primera persona",
+              third: "Tercera persona",
+              dual_first: "Dual (primera, alternando)",
+              dual_third: "Dual (tercera, alternando)",
+              second: "Segunda persona",
+            };
+            const TENSE_LABELS: Record<string, string> = {
+              present: "Presente",
+              past: "Pretérito (pasado)",
+            };
+            const NARRATOR_LABELS: Record<string, string> = {
+              omnisciente: "Omnisciente",
+              limitado: "Limitado",
+              testigo: "Testigo",
+            };
+            const povLabel = v.pov ? POV_LABELS[v.pov] || v.pov : null;
+            const tenseLabel = v.tense ? TENSE_LABELS[v.tense] || v.tense : null;
+            const narratorLabel = v.narratorType ? NARRATOR_LABELS[v.narratorType] || v.narratorType : null;
+            const hasCanon = !!(povLabel && tenseLabel);
+            const hasGuideSelected = !!(selectedExtendedGuideId || selectedStyleGuideId);
+            return (
+              <div className="space-y-3 pt-2" data-testid="narrative-voice-display">
+                <FormLabel className="text-base">Voz narrativa canónica</FormLabel>
+                <FormDescription className="text-xs">
+                  Se extrae automáticamente de la guía de estilo o de la guía extendida seleccionada y es la fuente de verdad para el Arquitecto, el Narrador y el Revisor Final. Para cambiarla, edita la guía (sección "Voz narrativa canónica" con POV y tiempo verbal explícitos).
+                </FormDescription>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <FormField
-              control={form.control}
-              name="narrativeVoice.pov"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-sm">Persona narrativa</FormLabel>
-                  <Select
-                    value={field.value ?? ""}
-                    onValueChange={(v) => {
-                      const current = (form.getValues("narrativeVoice") as any) || {};
-                      form.setValue("narrativeVoice", { ...current, pov: v as any });
-                    }}
-                  >
-                    <FormControl>
-                      <SelectTrigger data-testid="select-narrative-pov">
-                        <SelectValue placeholder="Elegir POV..." />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="first">Primera persona</SelectItem>
-                      <SelectItem value="third">Tercera persona</SelectItem>
-                      <SelectItem value="dual_first">Dual (primera, alternando)</SelectItem>
-                      <SelectItem value="dual_third">Dual (tercera, alternando)</SelectItem>
-                      <SelectItem value="second">Segunda persona</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="narrativeVoice.tense"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-sm">Tiempo verbal</FormLabel>
-                  <Select
-                    value={field.value ?? ""}
-                    onValueChange={(v) => {
-                      const current = (form.getValues("narrativeVoice") as any) || {};
-                      form.setValue("narrativeVoice", { ...current, tense: v as any });
-                    }}
-                  >
-                    <FormControl>
-                      <SelectTrigger data-testid="select-narrative-tense">
-                        <SelectValue placeholder="Elegir tiempo..." />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="present">Presente</SelectItem>
-                      <SelectItem value="past">Pasado</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="narrativeVoice.narratorType"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-sm">Tipo de narrador (opcional)</FormLabel>
-                  <Select
-                    value={field.value ?? "__none__"}
-                    onValueChange={(v) => {
-                      const current = (form.getValues("narrativeVoice") as any) || {};
-                      const next = v === "__none__" ? { ...current, narratorType: undefined } : { ...current, narratorType: v as any };
-                      form.setValue("narrativeVoice", next);
-                    }}
-                  >
-                    <FormControl>
-                      <SelectTrigger data-testid="select-narrator-type">
-                        <SelectValue placeholder="No especificar" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="__none__">No especificar</SelectItem>
-                      <SelectItem value="omnisciente">Omnisciente</SelectItem>
-                      <SelectItem value="limitado">Limitado</SelectItem>
-                      <SelectItem value="testigo">Testigo</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-        </div>
+                {hasCanon ? (
+                  <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-xs font-medium text-muted-foreground w-32">Persona narrativa:</span>
+                      <span className="text-sm font-semibold" data-testid="text-narrative-pov">{povLabel}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-xs font-medium text-muted-foreground w-32">Tiempo verbal:</span>
+                      <span className="text-sm font-semibold" data-testid="text-narrative-tense">{tenseLabel}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-xs font-medium text-muted-foreground w-32">Tipo de narrador:</span>
+                      <span className="text-sm" data-testid="text-narrator-type">{narratorLabel || <span className="text-muted-foreground italic">no especificado en la guía</span>}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground pt-1">Detectado desde la guía seleccionada.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-xs space-y-1" data-testid="warning-no-narrative-voice">
+                    <p className="font-medium text-amber-700 dark:text-amber-300">
+                      No se ha detectado voz narrativa en la guía.
+                    </p>
+                    <p className="text-muted-foreground">
+                      {hasGuideSelected
+                        ? "La guía seleccionada no incluye POV ni tiempo verbal de forma explícita. Edita la guía y añade un bloque final con \"## VOZ NARRATIVA CANÓNICA\" indicando POV (primera/tercera) y tiempo verbal (presente/pretérito). Sin esta información, el sistema abortará la generación."
+                        : "Selecciona una guía de estilo o guía extendida para detectar automáticamente la voz narrativa."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          }}
+        />
 
         <div className="space-y-4 pt-2">
           <FormLabel className="text-base">Secciones Adicionales</FormLabel>
