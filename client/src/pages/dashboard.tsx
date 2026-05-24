@@ -389,6 +389,8 @@ export default function Dashboard() {
   // Confirmation state for "Regenerar capítulo" — null when closed,
   // chapter number when the user clicked the regenerate icon and we await confirm.
   const [regenerateChapterTarget, setRegenerateChapterTarget] = useState<number | null>(null);
+  // [Fix121] Instrucciones manuales opcionales para la regeneración.
+  const [regenerateUserInstructions, setRegenerateUserInstructions] = useState<string>("");
 
   const revertChapterEditMutation = useMutation({
     mutationFn: async ({ projectId, chapterId }: { projectId: number; chapterId: number }) => {
@@ -411,8 +413,11 @@ export default function Dashboard() {
   });
 
   const regenerateChapterMutation = useMutation({
-    mutationFn: async ({ projectId, chapterNumber }: { projectId: number; chapterNumber: number }) => {
-      const response = await apiRequest("POST", `/api/projects/${projectId}/regenerate-chapter/${chapterNumber}`);
+    mutationFn: async ({ projectId, chapterNumber, userInstructions }: { projectId: number; chapterNumber: number; userInstructions?: string }) => {
+      const body = userInstructions && userInstructions.trim().length > 0
+        ? { userInstructions: userInstructions.trim() }
+        : undefined;
+      const response = await apiRequest("POST", `/api/projects/${projectId}/regenerate-chapter/${chapterNumber}`, body);
       return response.json();
     },
     onSuccess: (data: any) => {
@@ -2169,23 +2174,74 @@ export default function Dashboard() {
         }}
       />
 
-      <ConfirmDialog
+      {/* [Fix121] Diálogo de regeneración con textarea opcional de instrucciones manuales. */}
+      <Dialog
         open={regenerateChapterTarget !== null}
-        onOpenChange={(open) => !open && setRegenerateChapterTarget(null)}
-        title={`Regenerar ${regenerateChapterTarget !== null ? sectionLabel(regenerateChapterTarget) : ""}`}
-        description={`Se reescribirá el capítulo desde cero usando El Narrador (no pasa por Editor ni Estilista). El contenido actual se sustituirá. Tarda 1-5 min. ¿Continuar?`}
-        confirmText="Regenerar"
-        variant="destructive"
-        onConfirm={() => {
-          if (currentProject && regenerateChapterTarget !== null) {
-            regenerateChapterMutation.mutate({
-              projectId: currentProject.id,
-              chapterNumber: regenerateChapterTarget,
-            });
+        onOpenChange={(open) => {
+          if (!open) {
+            setRegenerateChapterTarget(null);
+            setRegenerateUserInstructions("");
           }
-          setRegenerateChapterTarget(null);
         }}
-      />
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>
+              Regenerar {regenerateChapterTarget !== null ? sectionLabel(regenerateChapterTarget) : ""}
+            </DialogTitle>
+            <DialogDescription>
+              Se reescribirá el capítulo desde cero usando El Narrador (no pasa por Editor ni Estilista). El contenido actual se sustituirá. Tarda 1-5 min. El Narrador recibirá el texto íntegro de los capítulos previos, la escaleta y la guía de estilo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label htmlFor="regenerate-user-instructions" className="text-sm font-medium">
+              Instrucciones específicas (opcional)
+            </label>
+            <Textarea
+              id="regenerate-user-instructions"
+              data-testid="textarea-regenerate-instructions"
+              placeholder='Ej.: "Reescribe íntegramente en pretérito (pasado simple/imperfecto). Está prohibido el presente narrativo en cualquier párrafo. Mantén la tercera persona y el narrador externo."'
+              value={regenerateUserInstructions}
+              onChange={(e) => setRegenerateUserInstructions(e.target.value)}
+              rows={5}
+              className="resize-y"
+            />
+            <p className="text-xs text-muted-foreground">
+              Si lo dejas vacío, se regenera con los ajustes por defecto del proyecto. Cuando escribes instrucciones, tienen prioridad sobre la guía de estilo en caso de ambigüedad.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setRegenerateChapterTarget(null);
+                setRegenerateUserInstructions("");
+              }}
+              data-testid="button-regenerate-cancel"
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              data-testid="button-regenerate-confirm"
+              disabled={regenerateChapterMutation.isPending}
+              onClick={() => {
+                if (currentProject && regenerateChapterTarget !== null) {
+                  regenerateChapterMutation.mutate({
+                    projectId: currentProject.id,
+                    chapterNumber: regenerateChapterTarget,
+                    userInstructions: regenerateUserInstructions,
+                  });
+                }
+                setRegenerateChapterTarget(null);
+                setRegenerateUserInstructions("");
+              }}
+            >
+              {regenerateChapterMutation.isPending ? "Regenerando..." : "Regenerar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Architect Instructions Dialog */}
       <Dialog open={showArchitectDialog} onOpenChange={setShowArchitectDialog}>

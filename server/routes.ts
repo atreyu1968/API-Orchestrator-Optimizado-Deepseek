@@ -2169,6 +2169,18 @@ export async function registerRoutes(
         setTimeout(() => reject(new Error("Timeout: La regeneración tardó demasiado tiempo")), REGENERATION_TIMEOUT_MS);
       });
 
+      // [Fix121] Instrucciones manuales opcionales del usuario para guiar la
+      // regeneración (p.ej. "reescribe en pretérito, prohibido el presente").
+      // Si vienen, se prependen con marca de prioridad para que el Narrador
+      // las respete sobre cualquier ambigüedad de la guía de estilo.
+      const userInstructionsRaw = typeof req.body?.userInstructions === "string"
+        ? req.body.userInstructions.trim()
+        : "";
+      const baseRefinement = "CRÍTICO: Escribe un capítulo COMPLETO de 2500-3500 palabras. NO truncar.";
+      const refinement = userInstructionsRaw
+        ? `INSTRUCCIONES DEL USUARIO (PRIORITARIAS — respetar literalmente sobre cualquier otra directriz):\n${userInstructionsRaw}\n\n${baseRefinement}`
+        : baseRefinement;
+
       // Execute with timeout
       const writerPromise = ghostwriter.execute({
         chapterNumber,
@@ -2176,7 +2188,7 @@ export async function registerRoutes(
         worldBible: worldBibleData.world_bible || worldBibleData,
         guiaEstilo,
         previousContinuity,
-        refinementInstructions: "CRÍTICO: Escribe un capítulo COMPLETO de 2500-3500 palabras. NO truncar.",
+        refinementInstructions: refinement,
         authorName: "",
         isRewrite: true,
         previousChaptersFullText,
