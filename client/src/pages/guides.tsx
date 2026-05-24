@@ -1114,31 +1114,29 @@ function GuideLibrary() {
 
   return (
     <>
-      <div className="grid gap-4">
+      <div className="grid gap-3">
         {guides.map((guide) => {
           const typeInfo = GUIDE_TYPE_LABELS[guide.guideType] || GUIDE_TYPE_LABELS.author_style;
           const IconComp = typeInfo.icon;
           return (
-            <Card key={guide.id} data-testid={`card-guide-${guide.id}`}>
-              <CardContent className="flex items-center justify-between py-4">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <IconComp className="w-5 h-5 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{guide.title}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="outline" className={typeInfo.color}>{typeInfo.label}</Badge>
+            <Card key={guide.id} data-testid={`card-guide-${guide.id}`} className="hover-elevate">
+              <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3 px-4">
+                <IconComp className="w-5 h-5 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 max-w-2xl">
+                  <p className="font-medium truncate">{guide.title}</p>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <Badge variant="outline" className={typeInfo.color}>{typeInfo.label}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(guide.createdAt).toLocaleDateString()}
+                    </span>
+                    {(guide.inputTokens || guide.outputTokens) ? (
                       <span className="text-xs text-muted-foreground">
-                        {new Date(guide.createdAt).toLocaleDateString()}
+                        {((guide.inputTokens || 0) + (guide.outputTokens || 0)).toLocaleString()} tokens
                       </span>
-                      {(guide.inputTokens || guide.outputTokens) ? (
-                        <span className="text-xs text-muted-foreground">
-                          {((guide.inputTokens || 0) + (guide.outputTokens || 0)).toLocaleString()} tokens
-                        </span>
-                      ) : null}
-                    </div>
+                    ) : null}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   <Button
                     variant="outline"
                     size="sm"
