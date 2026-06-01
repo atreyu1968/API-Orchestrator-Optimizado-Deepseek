@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { extractNarrativeVoiceFromGuide } from "@shared/narrative-voice-extractor";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -295,6 +295,23 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
       { shouldDirty: true, shouldValidate: false },
     );
   }, [selectedStyleGuideId, selectedExtendedGuideId, styleGuides, extendedGuides, form, defaultValues]);
+
+  // [Fix126] ¿La guía seleccionada aporta una voz canónica COMPLETA (POV +
+  // tiempo verbal)? Si la aporta, el panel de voz es solo-lectura (la guía es
+  // la fuente de verdad, intención de Fix122). Si NO la aporta (guías antiguas
+  // anteriores a Fix125 que describen la voz solo en prosa, o ninguna guía),
+  // el panel pasa a editable para que el usuario fije la voz a mano y el
+  // pre-flight (Fix108) no aborte la generación.
+  const guideProvidesVoice = useMemo(() => {
+    const styleGuide = styleGuides.find((g) => g.id === selectedStyleGuideId);
+    const extendedGuide = extendedGuides.find(
+      (g) => g.id === selectedExtendedGuideId,
+    );
+    const candidate = extendedGuide?.content || styleGuide?.content || "";
+    if (!candidate.trim()) return false;
+    const ex = extractNarrativeVoiceFromGuide(candidate);
+    return !!(ex.detected && ex.pov && ex.tense);
+  }, [selectedStyleGuideId, selectedExtendedGuideId, styleGuides, extendedGuides]);
 
   return (
     <Form {...form}>
@@ -951,42 +968,105 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
             const povLabel = v.pov ? POV_LABELS[v.pov] || v.pov : null;
             const tenseLabel = v.tense ? TENSE_LABELS[v.tense] || v.tense : null;
             const narratorLabel = v.narratorType ? NARRATOR_LABELS[v.narratorType] || v.narratorType : null;
-            const hasCanon = !!(povLabel && tenseLabel);
-            const hasGuideSelected = !!(selectedExtendedGuideId || selectedStyleGuideId);
+
+            // [Fix126] Merge parcial-o-completo en el field. Si POV+tiempo
+            // quedan ambos fijados, el objeto cumple narrativeVoiceConfigSchema;
+            // si falta uno, el zodResolver bloquea el submit con FormMessage.
+            const setPart = (patch: Record<string, string | undefined>) => {
+              const base = (field.value as any) || {};
+              const merged: Record<string, any> = { ...base, ...patch };
+              if (!merged.narratorType) delete merged.narratorType;
+              field.onChange(merged);
+            };
+
             return (
               <div className="space-y-3 pt-2" data-testid="narrative-voice-display">
                 <FormLabel className="text-base">Voz narrativa canónica</FormLabel>
-                <FormDescription className="text-xs">
-                  Se extrae automáticamente de la guía de estilo o de la guía extendida seleccionada y es la fuente de verdad para el Arquitecto, el Narrador y el Revisor Final. Para cambiarla, edita la guía (sección "Voz narrativa canónica" con POV y tiempo verbal explícitos).
-                </FormDescription>
 
-                {hasCanon ? (
-                  <div className="rounded-md border bg-muted/30 p-3 space-y-2">
-                    <div className="flex flex-wrap gap-2 items-center">
-                      <span className="text-xs font-medium text-muted-foreground w-32">Persona narrativa:</span>
-                      <span className="text-sm font-semibold" data-testid="text-narrative-pov">{povLabel}</span>
+                {guideProvidesVoice ? (
+                  <>
+                    <FormDescription className="text-xs">
+                      Se extrae automáticamente de la guía seleccionada y es la fuente de verdad para el Arquitecto, el Narrador y el Revisor Final. Para cambiarla, edita la guía (bloque "VOZ NARRATIVA CANÓNICA" con POV y tiempo verbal explícitos).
+                    </FormDescription>
+                    <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <span className="text-xs font-medium text-muted-foreground w-32">Persona narrativa:</span>
+                        <span className="text-sm font-semibold" data-testid="text-narrative-pov">{povLabel || <span className="text-muted-foreground italic">detectando…</span>}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <span className="text-xs font-medium text-muted-foreground w-32">Tiempo verbal:</span>
+                        <span className="text-sm font-semibold" data-testid="text-narrative-tense">{tenseLabel || <span className="text-muted-foreground italic">detectando…</span>}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <span className="text-xs font-medium text-muted-foreground w-32">Tipo de narrador:</span>
+                        <span className="text-sm" data-testid="text-narrator-type">{narratorLabel || <span className="text-muted-foreground italic">no especificado en la guía</span>}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground pt-1">Detectado desde la guía seleccionada.</p>
                     </div>
-                    <div className="flex flex-wrap gap-2 items-center">
-                      <span className="text-xs font-medium text-muted-foreground w-32">Tiempo verbal:</span>
-                      <span className="text-sm font-semibold" data-testid="text-narrative-tense">{tenseLabel}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2 items-center">
-                      <span className="text-xs font-medium text-muted-foreground w-32">Tipo de narrador:</span>
-                      <span className="text-sm" data-testid="text-narrator-type">{narratorLabel || <span className="text-muted-foreground italic">no especificado en la guía</span>}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground pt-1">Detectado desde la guía seleccionada.</p>
-                  </div>
+                  </>
                 ) : (
-                  <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-xs space-y-1" data-testid="warning-no-narrative-voice">
-                    <p className="font-medium text-amber-700 dark:text-amber-300">
-                      No se ha detectado voz narrativa en la guía.
-                    </p>
-                    <p className="text-muted-foreground">
-                      {hasGuideSelected
-                        ? "La guía seleccionada no incluye POV ni tiempo verbal de forma explícita. Edita la guía y añade un bloque final con \"## VOZ NARRATIVA CANÓNICA\" indicando POV (primera/tercera) y tiempo verbal (presente/pretérito). Sin esta información, el sistema abortará la generación."
-                        : "Selecciona una guía de estilo o guía extendida para detectar automáticamente la voz narrativa."}
-                    </p>
-                  </div>
+                  <>
+                    <FormDescription className="text-xs">
+                      La guía seleccionada no especifica la voz narrativa de forma explícita. Fíjala aquí a mano: el Arquitecto, el Narrador y el Revisor Final la usarán como canon. (Alternativa: edita la guía y añade un bloque final "## VOZ NARRATIVA CANÓNICA".)
+                    </FormDescription>
+                    <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 space-y-3" data-testid="narrative-voice-manual">
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-medium">Persona narrativa (POV)</span>
+                        <Select value={v.pov || ""} onValueChange={(val) => setPart({ pov: val })}>
+                          <SelectTrigger data-testid="select-narrative-pov">
+                            <SelectValue placeholder="Selecciona POV" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="first">Primera persona</SelectItem>
+                            <SelectItem value="third">Tercera persona</SelectItem>
+                            <SelectItem value="dual_first">Dual (primera, alternando)</SelectItem>
+                            <SelectItem value="dual_third">Dual (tercera, alternando)</SelectItem>
+                            <SelectItem value="second">Segunda persona</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-medium">Tiempo verbal</span>
+                        <Select value={v.tense || ""} onValueChange={(val) => setPart({ tense: val })}>
+                          <SelectTrigger data-testid="select-narrative-tense">
+                            <SelectValue placeholder="Selecciona tiempo verbal" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="present">Presente</SelectItem>
+                            <SelectItem value="past">Pretérito (pasado)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-medium">Tipo de narrador (opcional)</span>
+                        <Select value={v.narratorType || "_none"} onValueChange={(val) => setPart({ narratorType: val === "_none" ? undefined : val })}>
+                          <SelectTrigger data-testid="select-narrator-type">
+                            <SelectValue placeholder="Sin especificar" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_none">Sin especificar</SelectItem>
+                            <SelectItem value="omnisciente">Omnisciente</SelectItem>
+                            <SelectItem value="limitado">Limitado</SelectItem>
+                            <SelectItem value="testigo">Testigo</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {(v.pov || v.tense) && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => field.onChange(null)}
+                          data-testid="button-clear-narrative-voice"
+                        >
+                          <RotateCcw className="h-3 w-3 mr-1" />
+                          Limpiar
+                        </Button>
+                      )}
+                      <FormMessage />
+                    </div>
+                  </>
                 )}
               </div>
             );
