@@ -133,6 +133,17 @@ La guía debe cubrir TODOS estos apartados con profundidad:
     - Un párrafo original (no copiado) que ejemplifique el estilo descrito
     - Anotaciones sobre por qué ese párrafo captura la esencia del estilo
 
+11. **VOZ NARRATIVA CANÓNICA** (OBLIGATORIO — al FINAL del documento, formato literal)
+    Cierra la guía con un bloque EXACTAMENTE en este formato (sin emojis, sin variaciones), declarando la voz predominante de este estilo autorial:
+
+    ## VOZ NARRATIVA CANÓNICA
+
+    POV: <primera persona | tercera persona | segunda persona | dual primera | dual tercera>
+    Tiempo verbal: <presente | pasado>
+    Tipo de narrador: <omnisciente | limitado | testigo>  (opcional, solo si aplica)
+
+    Esta sección es OBLIGATORIA. El orquestador la usa como contrato inviolable para todos los agentes (Arquitecto, Narrador, Revisor Final). Si la omites, el sistema rechazará la guía en el pre-flight y no podrá generarse el manuscrito.
+
 ${langInstructions}
 Escribe de forma detallada y práctica. Esta guía será usada por un sistema de IA para generar novelas en este estilo.`;
 
@@ -365,6 +376,17 @@ Una línea en blanco después, y a continuación la guía completa con TODOS est
 12. **EJEMPLO DE ESCENA MODELO**
     - Una escena breve original (200-400 palabras) que ejemplifique cómo aplicar las reglas del pseudónimo a esta historia concreta.
 
+13. **VOZ NARRATIVA CANÓNICA** (OBLIGATORIO — al FINAL del documento, formato literal)
+    Cierra la guía con un bloque EXACTAMENTE en este formato (sin emojis, sin variaciones), coherente con la voz habitual del pseudónimo y con el apartado 3 (VOZ Y NARRADOR):
+
+    ## VOZ NARRATIVA CANÓNICA
+
+    POV: <primera persona | tercera persona | segunda persona | dual primera | dual tercera>
+    Tiempo verbal: <presente | pasado>
+    Tipo de narrador: <omnisciente | limitado | testigo>  (opcional, solo si aplica)
+
+    Esta sección es OBLIGATORIA. El orquestador la usa como contrato inviolable para todos los agentes (Arquitecto, Narrador, Revisor Final). Si la omites, el sistema rechazará la guía en el pre-flight y no podrá generarse el manuscrito.
+
 ${langInstructions}
 Sé específico y práctico. Esta guía será usada por el sistema para generar la novela completa, capítulo a capítulo.`;
     }
@@ -487,6 +509,17 @@ Crea una guía EXHAUSTIVA para mantener la coherencia y calidad a lo largo de to
          - vocabulario_epoca_autorizado: 10-20 términos
          - terminos_anacronicos_prohibidos: 10-20 términos modernos prohibidos (omitir sólo si la serie es estrictamente contemporánea)
          - notas_voz_historica: 2-4 frases
+
+12. **VOZ NARRATIVA CANÓNICA DE LA SERIE** (OBLIGATORIO — al FINAL del documento, formato literal)
+    Cierra la guía con un bloque EXACTAMENTE en este formato (sin emojis, sin variaciones), declarando la voz que comparten TODOS los volúmenes de la serie:
+
+    ## VOZ NARRATIVA CANÓNICA
+
+    POV: <primera persona | tercera persona | segunda persona | dual primera | dual tercera>
+    Tiempo verbal: <presente | pasado>
+    Tipo de narrador: <omnisciente | limitado | testigo>  (opcional, solo si aplica)
+
+    Esta sección es OBLIGATORIA. El orquestador la usa como contrato inviolable para todos los agentes (Arquitecto, Narrador, Revisor Final). Si la omites, el sistema rechazará la guía en el pre-flight y no podrá generarse el manuscrito.
 
 ${langInstructions}
 Sé exhaustivo y práctico. Esta guía será usada para mantener la coherencia de una serie literaria completa generada por IA.`;

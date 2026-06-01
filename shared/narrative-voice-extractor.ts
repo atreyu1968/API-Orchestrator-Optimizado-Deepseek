@@ -45,29 +45,29 @@ export function extractNarrativeVoiceFromGuide(
     });
   };
 
-  const hasFirst = testWithNegationGuard(/\b(primera\s+persona|1[aª]?\s*persona)\b/g);
+  const hasFirst = testWithNegationGuard(/\b(primera\s+persona|1[aª]?\s*persona|dual\s+primera)\b/g);
   const hasThird = testWithNegationGuard(
-    /\b(tercera\s+persona|3[aª]?\s*persona|narrador\s+(omnisciente|limitado|testigo|en\s+tercera))\b/g,
+    /\b(tercera\s+persona|3[aª]?\s*persona|dual\s+tercera|narrador\s+(omnisciente|limitado|testigo|en\s+tercera))\b/g,
   );
   const hasSecond = testWithNegationGuard(/\b(segunda\s+persona|2[aª]?\s*persona)\b/g);
   const isDual = testWithNegationGuard(
-    /\b(narraci[oó]n\s+dual|narrador\s+dual|pov\s+dual|doble\s+pov|alternando\s+(el\s+|los\s+)?povs?|povs?\s+alternantes?|cap[ií]tulos?\s+alternantes?|pov\s+de\s+[ée]l\s+y\s+pov\s+de\s+ella|pov\s+de\s+ella\s+y\s+pov\s+de\s+[ée]l)\b/g,
+    /\b(narraci[oó]n\s+dual|narrador\s+dual|pov\s+dual|doble\s+pov|dual\s+(primera|tercera)|alternando\s+(el\s+|los\s+)?povs?|povs?\s+alternantes?|cap[ií]tulos?\s+alternantes?|pov\s+de\s+[ée]l\s+y\s+pov\s+de\s+ella|pov\s+de\s+ella\s+y\s+pov\s+de\s+[ée]l)\b/g,
   );
 
   let narratorType: ExtractedNarratorType | undefined;
-  if (/\bnarrador\s+omnisciente\b/.test(text)) narratorType = "omnisciente";
-  else if (/\bnarrador\s+limitado\b/.test(text)) narratorType = "limitado";
-  else if (/\bnarrador\s+testigo\b/.test(text)) narratorType = "testigo";
+  if (/\bnarrador\s*:?\s*omnisciente\b/.test(text)) narratorType = "omnisciente";
+  else if (/\bnarrador\s*:?\s*limitado\b/.test(text)) narratorType = "limitado";
+  else if (/\bnarrador\s*:?\s*testigo\b/.test(text)) narratorType = "testigo";
 
   let tense: ExtractedTense | undefined;
   if (
-    /\b(tiempo|verbo|verbos?)\s+(en\s+)?presente\b|\ben\s+presente\b|\bnarrad[oa]\s+en\s+presente\b/.test(
+    /\b(tiempo|verbo|verbos?)\s+(en\s+)?presente\b|\btiempo\s+verbal\s*:\s*presente\b|\ben\s+presente\b|\bnarrad[oa]\s+en\s+presente\b/.test(
       text,
     )
   ) {
     tense = "present";
   } else if (
-    /\b(tiempo|verbo|verbos?)\s+(en\s+)?pasado\b|\ben\s+pasado\b|\bpret[eé]rito\s+(perfecto|imperfecto|indefinido)?\b|\bnarrad[oa]\s+en\s+pasado\b/.test(
+    /\b(tiempo|verbo|verbos?)\s+(en\s+)?pasado\b|\btiempo\s+verbal\s*:\s*pasado\b|\ben\s+pasado\b|\bpret[eé]rito\s+(perfecto|imperfecto|indefinido)?\b|\bnarrad[oa]\s+en\s+pasado\b/.test(
       text,
     )
   ) {
