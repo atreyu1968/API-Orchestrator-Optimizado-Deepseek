@@ -45,6 +45,7 @@ import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, T
 import { ensureChapterNumbers } from "./utils/extract-chapters";
 import { extractStyleDirectives, synthesizeVoiceBlock, type NarrativeVoiceConfig } from "./utils/style-directives";
 import { repairJson } from "./utils/json-repair";
+import { groundInstructionInChapter, extractFlaggedChapters } from "./utils/instruction-grounding";
 import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper } from "./utils/series-context-builder";
 import { calculateRealCost } from "./cost-calculator";
 import { runWithProjectContext } from "./utils/agent-context";
@@ -3048,7 +3049,52 @@ ${instruccionFinal}
               }
             }
 
-            const feedbackWithHistorySA = (wbaExternalFeedback || "") + lastAutopatchNotice + historyBlockSA + sa.instrucciones_revision;
+            // [Fix132] Directiva de PRIORIDAD: escalada REAL de apuestas por
+            // encima de la rotación de formas. Diagnóstico recurrente del acto
+            // 2: cuando "escalada_acto2" (y a veces "deus_ex_machina") queda KO,
+            // el Arquitecto tiende a "resolverlo" rotando forma_dominante /
+            // funcion_estructural / tipo_cierre — ejes que el auditor mide
+            // aparte y que ya pueden estar bien — sin añadir coste dramático
+            // nuevo. Variedad de FORMA no sube la APUESTA. Este bloque se
+            // antepone al feedback solo cuando esas dimensiones están KO, para
+            // forzar costes tangibles e irreversibles y una curva monotónica.
+            const escaladaKO = dimensionCountsSA.escalada_acto2 > 1 || dimensionHasAltaSA.escalada_acto2;
+            const deusKO = dimensionCountsSA.deus_ex_machina > 1 || dimensionHasAltaSA.deus_ex_machina;
+            let escaladaPriorityBlock = "";
+            if (escaladaKO || deusKO) {
+              const dimsKO = [
+                escaladaKO ? '"Escalada dramática acto 2"' : null,
+                deusKO ? '"Anti deus ex machina"' : null,
+              ].filter(Boolean).join(" y ");
+              const dimNombre = escaladaKO ? "Escalada dramática acto 2" : "Anti deus ex machina";
+              escaladaPriorityBlock = `═══════════════════════════════════════════════════════════════════
+[Fix132] PRIORIDAD: ESCALADA REAL DE APUESTAS, NO ROTACIÓN DE FORMAS
+═══════════════════════════════════════════════════════════════════
+El Auditor Estructural ha marcado KO: ${dimsKO}. ATENCIÓN: esta dimensión NO se
+arregla cambiando "forma_dominante", "funcion_estructural" ni "tipo_cierre" —
+esos ejes los mide el auditor por separado (variedad de forma) y pueden estar
+ya bien. Lo que falla es que el COSTE que paga el protagonista si fracasa NO
+sube a lo largo del acto 2.
+
+QUÉ DEBES HACER en los capítulos centrales (~25%-75% del total):
+  1. Sube "apuesta_dramatica" de forma MONOTÓNICA: prohibido 3+ caps seguidos
+     con apuesta igual o decreciente. Si caps N y N+1 comparten apuesta, el
+     cap N+2 sube un escalón.
+  2. Cada subida se paga con un COSTE TANGIBLE E IRREVERSIBLE, no con más
+     tensión emocional ni con otra forma de escena. Ejemplos: muerte o herida
+     de un aliado, exposición pública del protagonista, decisión irreversible
+     (firmar, traicionar, romper), pérdida de una habilidad o recurso, orden
+     de detención, ruptura definitiva con un personaje clave.
+  3. Al menos UN cap del acto 2 alcanza "alta" o "critica" (punto de no retorno
+     antes del clímax).
+${deusKO ? `  4. (Anti deus ex machina) Toda ayuda / informante / portador de prueba que resuelva una apuesta alta en el último 25% de la novela debe estar sembrado con peso real en >=2 caps previos. No introduzcas salvadores nuevos en el tramo final.\n` : ""}REGLA: si en este rediseño vuelves a rotar formas sin añadir costes nuevos a la
+escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
+═══════════════════════════════════════════════════════════════════
+
+`;
+            }
+
+            const feedbackWithHistorySA = (wbaExternalFeedback || "") + escaladaPriorityBlock + lastAutopatchNotice + historyBlockSA + sa.instrucciones_revision;
 
             try {
               const retryResult = await this.architect.execute({
@@ -5861,21 +5907,38 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         bestManuscriptSnapshot.score >= 8 &&
         bestManuscriptSnapshot.score - currentScore >= 1.0
       ) {
+        // [Fix131] Reversión SELECTIVA: solo restauramos los capítulos que la
+        // revisión ACTUAL sigue marcando como problemáticos. Los capítulos que
+        // esta revisión ya NO señala tienen sus defectos cerrados — restaurarlos
+        // a una versión anterior perdería correcciones válidas (aunque la nota
+        // global haya bajado por otros capítulos). Si la revisión no aporta señal
+        // por capítulo, restauramos todo (comportamiento clásico).
+        const flaggedNow = new Set<number>();
+        (result?.capitulos_para_reescribir || []).forEach(n => { if (typeof n === "number") flaggedNow.add(n); });
+        (result?.issues || []).forEach(i => (i.capitulos_afectados || []).forEach(n => { if (typeof n === "number") flaggedNow.add(n); }));
+        const selectiveFix39 = flaggedNow.size > 0;
         let restoredCount = 0;
+        let keptFix39 = 0;
         for (const ch of updatedChapters) {
           const snapContent = bestManuscriptSnapshot.chapters.get(ch.chapterNumber);
-          if (snapContent && snapContent !== ch.content) {
-            const wc = snapContent.split(/\s+/).filter(w => w.length > 0).length;
-            await storage.updateChapter(ch.id, { content: snapContent, wordCount: wc });
-            restoredCount++;
+          if (!snapContent || snapContent === ch.content) continue;
+          if (selectiveFix39 && !flaggedNow.has(ch.chapterNumber)) {
+            keptFix39++;
+            continue;
           }
+          const wc = snapContent.split(/\s+/).filter(w => w.length > 0).length;
+          await storage.updateChapter(ch.id, { content: snapContent, wordCount: wc });
+          restoredCount++;
         }
         consecutiveFix39Restorations++;
+        const keptNoteFix39 = selectiveFix39
+          ? ` Conservados ${keptFix39} capítulo(s) cuya corrección ya no está señalada por la revisión actual (reversión selectiva Fix131).`
+          : "";
         await storage.createActivityLog({
           projectId: project.id,
           level: "warning",
           agentRole: "final-reviewer",
-          message: `[Fix39] Regresión detectada: ciclo ${revisionCycle + 1} puntuó ${currentScore}/10 frente al mejor histórico (${bestManuscriptSnapshot.score}/10, caída ≥ 1.0). Restaurados ${restoredCount} capítulo(s) al estado del mejor ciclo. Saltando reescrituras de este ciclo y re-puntuando.`,
+          message: `[Fix39] Regresión detectada: ciclo ${revisionCycle + 1} puntuó ${currentScore}/10 frente al mejor histórico (${bestManuscriptSnapshot.score}/10, caída ≥ 1.0). Restaurados ${restoredCount} capítulo(s) al estado del mejor ciclo.${keptNoteFix39} Saltando reescrituras de este ciclo y re-puntuando.`,
         });
         this.callbacks.onAgentStatus("final-reviewer", "reviewing",
           `[Fix39] Manuscrito regresó a ${currentScore}/10 — restaurado al mejor ciclo (${bestManuscriptSnapshot.score}/10).`
@@ -8996,7 +9059,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         .filter(c => c.content)
         .map(c => ({ id: c.id, chapterNumber: c.chapterNumber, content: c.content! }));
     };
-    const restoreSnapshot = async (snap: SnapshotEntry[]): Promise<{ restored: number; missing: number; structuralDrift: boolean }> => {
+    // [Fix131] `restoreOnly` (opcional): si se pasa un conjunto NO vacío de
+    // números de capítulo, solo se restauran esos capítulos; el resto conserva
+    // su versión vigente (reversión selectiva — no perder correcciones válidas).
+    const restoreSnapshot = async (snap: SnapshotEntry[], restoreOnly?: Set<number>): Promise<{ restored: number; missing: number; structuralDrift: boolean; kept: number }> => {
       const current = await storage.getChaptersByProject(project.id);
       const currentById = new Map(current.map(c => [c.id, c]));
       const snapshotIds = new Set(snap.map(e => e.id));
@@ -9005,12 +9071,18 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const structuralDrift =
         snapshotIds.size !== currentIds.size ||
         Array.from(snapshotIds).some(id => !currentIds.has(id));
+      const selective = !!restoreOnly && restoreOnly.size > 0;
       let restored = 0;
       let missing = 0;
+      let kept = 0;
       for (const entry of snap) {
         const current = currentById.get(entry.id);
         if (!current) {
           missing++;
+          continue;
+        }
+        if (selective && !restoreOnly!.has(entry.chapterNumber)) {
+          if (current.content !== entry.content) kept++;
           continue;
         }
         if (current.content !== entry.content) {
@@ -9019,7 +9091,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           restored++;
         }
       }
-      return { restored, missing, structuralDrift };
+      return { restored, missing, structuralDrift, kept };
     };
 
     // [Fix89] Helper de "convergencia aceptable": el loop puede salir como
@@ -9194,13 +9266,19 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           const currentCombined = betaScore + holisticScore;
           const bestCombined = bestSnapshot.beta + bestSnapshot.holistic;
           if (bestCombined - currentCombined >= REGRESSION_THRESHOLD) {
-            const restoreResult = await restoreSnapshot(bestSnapshot.chapters);
+            // [Fix131] Reversión selectiva: solo restaurar los capítulos que la
+            // reseña ACTUAL (holístico + beta) todavía marca como problemáticos.
+            const flaggedNow = extractFlaggedChapters(`${holisticNotes}\n${betaNotes}`);
+            const restoreResult = await restoreSnapshot(bestSnapshot.chapters, flaggedNow);
             const driftNote = restoreResult.structuralDrift
               ? ` ⚠️ DRIFT ESTRUCTURAL detectado: ${restoreResult.missing} capítulo(s) del snapshot ya NO existen (eliminados por la iteración) — solo se restauró el contenido de los capítulos que aún existen; la estructura del snapshot NO se reconstruyó.`
               : "";
+            const keptNote = restoreResult.kept > 0
+              ? ` Conservados ${restoreResult.kept} capítulo(s) ya no señalados por la reseña actual (reversión selectiva Fix131).`
+              : "";
             await storage.createActivityLog({
               projectId: project.id, level: "warning",
-              message: `[Fix81] Regresión detectada en iter ${iter}: ${scoreLabel} (combinado ${currentCombined}) frente al mejor snapshot (Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}, combinado ${bestCombined}). Restaurados ${restoreResult.restored} capítulo(s) al estado del snapshot.${driftNote} Loop abortado para preservar la mejor versión.`,
+              message: `[Fix81] Regresión detectada en iter ${iter}: ${scoreLabel} (combinado ${currentCombined}) frente al mejor snapshot (Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}, combinado ${bestCombined}). Restaurados ${restoreResult.restored} capítulo(s) al estado del snapshot.${keptNote}${driftNote} Loop abortado para preservar la mejor versión.`,
               agentRole: "editor",
             });
             if (bestSnapshot.beta >= TARGET_BETA_SCORE && bestSnapshot.holistic >= TARGET_HOLISTIC_SCORE) {
@@ -10440,94 +10518,222 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
         // ─── FLUJO 1: CIRUGÍA DETERMINISTA PARA INSTRUCCIONES PUNTUALES ───
         if (puntuales.length > 0) {
-          const puntualesFormatted = puntuales.map((ins, idx) => {
-            const preserve = ins.elementos_a_preservar
-              ? `\n   PRESERVAR (NO TOCAR): ${ins.elementos_a_preservar}`
-              : "";
-            return `${idx + 1}. [${(ins.categoria || "otro").toUpperCase()}] ${ins.descripcion}\n   INSTRUCCIÓN: ${ins.instrucciones_correccion}${preserve}`;
-          }).join("\n\n");
-
-          this.callbacks.onAgentStatus("ghostwriter", "writing",
-            `Cirugía de texto en ${sectionLabel}: aplicando ${puntuales.length} corrección(es) puntual(es) sin tocar el resto...`
-          );
-
-          try {
-            const patchResult = await this.surgicalPatcher.execute({
-              chapterNumber: sectionData.numero,
-              chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
-              originalContent: workingContent,
-              instructions: puntualesFormatted,
-              // [Fix15] Canon compartido — sin esto el Cirujano podía cambiar
-              // nombres canónicos al ejecutar replace_with.
-              worldBibleContext: editorialWorldBibleContext,
-            });
-
-            await this.trackTokenUsage(project.id, patchResult.tokenUsage, "Cirujano de Texto", "deepseek-v4-flash", sectionData.numero, "surgical_patch");
-
-            const operations = patchResult.result?.operations || [];
-
-            if (operations.length === 0) {
-              // El cirujano declaró las puntuales como no aplicables → reclasificar como estructurales.
-              const reason = patchResult.result?.not_applicable_reason || "El cirujano no encontró operaciones puntuales aplicables.";
+          // [Fix128] Revalida cada puntual contra el texto VIGENTE: descarta las
+          // que citan prosa que ya NO existe en el capítulo (instrucción fantasma
+          // de un ciclo previo que ya modificó/eliminó ese pasaje). Evita gastar
+          // una llamada al cirujano y que este intente "reconstruir" lo inexistente.
+          const puntualesGrounded: typeof puntuales = [];
+          for (const ins of puntuales) {
+            const citationText = [
+              ins.descripcion,
+              ins.instrucciones_correccion,
+              ins.plan_por_capitulo?.[String(chapterNum)] || "",
+            ].filter(Boolean).join("\n");
+            const g = groundInstructionInChapter(citationText, workingContent);
+            if (!g.grounded) {
               await storage.createActivityLog({
                 projectId: project.id,
-                level: "info",
-                message: `${sectionLabel}: cirugía no aplicable (${reason}). Las ${puntuales.length} instrucciones puntuales se reclasifican como estructurales.`,
+                level: "warning",
+                message: `${sectionLabel}: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: ${g.missing.slice(0, 2).map(m => `"${m.slice(0, 60)}…"`).join("; ")}`,
                 agentRole: "surgical-patcher",
               });
-              estructurales.push(...puntuales);
-            } else {
-              const report = this.surgicalPatcher.applyOperations(workingContent, operations);
-
-              if (report.applied.length > 0) {
-                workingContent = report.finalContent;
-                chapterModified = true;
-                const newWc = workingContent.split(/\s+/).filter(w => w.length > 0).length;
-
-                await storage.updateChapter(chapter.id, {
-                  content: workingContent,
-                  wordCount: newWc,
+              const dedupKey = `${chapterNum}::${(ins.instrucciones_correccion || ins.descripcion || "").slice(0, 200)}`;
+              const already = this.staleInstructionsForFinalReviewer.some(s => `${s.chapter}::${s.instruction.slice(0, 200)}` === dedupKey);
+              if (!already) {
+                this.staleInstructionsForFinalReviewer.push({
+                  chapter: chapterNum,
+                  instruction: (ins.instrucciones_correccion || ins.descripcion || "").slice(0, 500),
+                  reason: "Cita prosa inexistente en el texto vigente (fantasma, Fix128).",
                 });
+              }
+              continue;
+            }
+            puntualesGrounded.push(ins);
+          }
 
-                const failedNote = report.failed.length > 0
-                  ? ` ${report.failed.length} operación(es) descartada(s) por no encontrar el texto literal.`
-                  : "";
+          if (puntualesGrounded.length > 0) {
+            const puntualesFormatted = puntualesGrounded.map((ins, idx) => {
+              const preserve = ins.elementos_a_preservar
+                ? `\n   PRESERVAR (NO TOCAR): ${ins.elementos_a_preservar}`
+                : "";
+              return `${idx + 1}. [${(ins.categoria || "otro").toUpperCase()}] ${ins.descripcion}\n   INSTRUCCIÓN: ${ins.instrucciones_correccion}${preserve}`;
+            }).join("\n\n");
+
+            // [Fix129] Capítulos de referencia SOLO-LECTURA (vecinos inmediatos +
+            // capítulos de siembra de arcos multi-capítulo) para que el cirujano
+            // verifique la siembra previa y no invente resoluciones (anti deus ex machina).
+            const referenceChapters = (() => {
+              const parts: string[] = [];
+              const seen = new Set<number>();
+              const labelFor = (n: number) => n === 0 ? "Prólogo" : n === -1 ? "Epílogo" : n === -2 ? "Nota del autor" : `Capítulo ${n}`;
+              const excerpt = (text: string, mode: "tail" | "head" | "both") => {
+                const t = (text || "").trim(); if (!t) return "";
+                const H = 1200, T = 1200;
+                if (t.length <= H + T) return t;
+                if (mode === "head") return t.slice(0, H) + " […]";
+                if (mode === "tail") return "[…] " + t.slice(-T);
+                return t.slice(0, H) + " […] " + t.slice(-T);
+              };
+              const addChap = (n: number, mode: "tail" | "head" | "both", note: string) => {
+                if (seen.has(n) || n === chapterNum) return;
+                const c = allChapters.find(cc => cc.chapterNumber === n);
+                if (!c || !c.content) return;
+                const ex = excerpt(c.content, mode); if (!ex) return;
+                seen.add(n);
+                parts.push(`### ${labelFor(n)}${note ? ` (${note})` : ""}:\n${ex}`);
+              };
+              addChap(chapterNum - 1, "tail", "capítulo anterior");
+              addChap(chapterNum + 1, "head", "capítulo siguiente");
+              for (const ins of puntualesGrounded) {
+                const sibs = (ins.capitulos_afectados || []).filter(n => n !== chapterNum);
+                for (const n of sibs) {
+                  const role = ins.plan_por_capitulo?.[String(n)] || "";
+                  addChap(n, "both", role ? `arco/siembra: ${role}`.slice(0, 120) : "arco/siembra");
+                }
+              }
+              return parts.join("\n\n").slice(0, 9000);
+            })();
+
+            this.callbacks.onAgentStatus("ghostwriter", "writing",
+              `Cirugía de texto en ${sectionLabel}: aplicando ${puntualesGrounded.length} corrección(es) puntual(es) sin tocar el resto...`
+            );
+
+            try {
+              const patchResult = await this.surgicalPatcher.execute({
+                chapterNumber: sectionData.numero,
+                chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
+                originalContent: workingContent,
+                instructions: puntualesFormatted,
+                // [Fix15] Canon compartido — sin esto el Cirujano podía cambiar
+                // nombres canónicos al ejecutar replace_with.
+                worldBibleContext: editorialWorldBibleContext,
+                // [Fix129] Contexto vecino/siembra (solo lectura).
+                referenceChapters: referenceChapters || undefined,
+                // [Fix130] Exigir cobertura de las N instrucciones.
+                instructionCount: puntualesGrounded.length,
+              });
+
+              await this.trackTokenUsage(project.id, patchResult.tokenUsage, "Cirujano de Texto", "deepseek-v4-flash", sectionData.numero, "surgical_patch");
+
+              const operations = patchResult.result?.operations || [];
+              const coverage = patchResult.result?.instruction_coverage || [];
+              const covByIdx = new Map<number, string>();
+              for (const c of coverage) covByIdx.set(c.instruccion, c.estado);
+
+              let appliedOk = false;
+              if (operations.length > 0) {
+                const report = this.surgicalPatcher.applyOperations(workingContent, operations);
+                if (report.applied.length > 0) {
+                  appliedOk = true;
+                  workingContent = report.finalContent;
+                  chapterModified = true;
+                  const newWc = workingContent.split(/\s+/).filter(w => w.length > 0).length;
+
+                  await storage.updateChapter(chapter.id, {
+                    content: workingContent,
+                    wordCount: newWc,
+                  });
+
+                  const failedNote = report.failed.length > 0
+                    ? ` ${report.failed.length} operación(es) descartada(s) por no encontrar el texto literal.`
+                    : "";
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "success",
+                    message: `${sectionLabel}: cirugía aplicada — ${report.applied.length}/${operations.length} operaciones puntuales (${report.originalLength}→${report.finalLength} caracteres, ${((Math.abs(report.finalLength - report.originalLength) / report.originalLength) * 100).toFixed(1)}% de cambio).${failedNote}`,
+                    agentRole: "surgical-patcher",
+                  });
+
+                  if (report.failed.length > 0) {
+                    for (const f of report.failed.slice(0, 3)) {
+                      await storage.createActivityLog({
+                        projectId: project.id,
+                        level: "warning",
+                        message: `${sectionLabel}: operación descartada — "${f.op.find_exact.slice(0, 80)}..." → ${f.reason}`,
+                        agentRole: "surgical-patcher",
+                      });
+                    }
+                  }
+                }
+              }
+
+              // [Fix130] COBERTURA POR INSTRUCCIÓN: garantiza que ninguna instrucción
+              // se pierda en silencio. Cada puntual no resuelta por cirugía se reescribe
+              // con el Narrador (más capaz), salvo "siembra_ausente" (anti deus ex
+              // machina: NO se fuerza; se devuelve al revisor para sembrar antes).
+              const escalate: typeof puntuales = [];
+              if (!appliedOk && coverage.length === 0) {
+                // Sin operaciones aplicadas ni señales de cobertura → fallback clásico.
+                const reason = patchResult.result?.not_applicable_reason || "El cirujano no aplicó operaciones puntuales.";
                 await storage.createActivityLog({
                   projectId: project.id,
-                  level: "success",
-                  message: `${sectionLabel}: cirugía aplicada — ${report.applied.length}/${operations.length} operaciones puntuales (${report.originalLength}→${report.finalLength} caracteres, ${((Math.abs(report.finalLength - report.originalLength) / report.originalLength) * 100).toFixed(1)}% de cambio).${failedNote}`,
+                  level: "info",
+                  message: `${sectionLabel}: cirugía no aplicable (${reason}). Las ${puntualesGrounded.length} instrucciones puntuales se reclasifican como estructurales.`,
                   agentRole: "surgical-patcher",
                 });
-
-                if (report.failed.length > 0) {
-                  for (const f of report.failed.slice(0, 3)) {
+                escalate.push(...puntualesGrounded);
+              } else {
+                for (let idx = 0; idx < puntualesGrounded.length; idx++) {
+                  const ins = puntualesGrounded[idx];
+                  const estado = covByIdx.get(idx + 1);
+                  const addressedByOp = appliedOk && operations.some(op => {
+                    const j = (op.justification || "").trim();
+                    return j.startsWith(`${idx + 1}:`) || j.startsWith(`${idx + 1}.`) || j.startsWith(`${idx + 1} `);
+                  });
+                  if (estado === "ya_cumplida") continue;
+                  // [Fix130 post-review] Para dar por cubierta una instrucción
+                  // "aplicada" exigimos evidencia POR INSTRUCCIÓN (una operación
+                  // cuyo justification empiece por "N:" 1-based), NO el flag
+                  // global appliedOk. Antes `|| appliedOk` marcaba cubierta
+                  // cualquier instrucción en cuanto se aplicaba UNA operación del
+                  // capítulo, aunque esa instrucción no tuviera operación mapeada
+                  // — instrucciones puntuales quedaban sin resolver y sin escalar.
+                  // Si el cirujano la reporta "aplicada" pero ninguna operación la
+                  // mapea, cae a `escalate` (reescritura con el Narrador).
+                  if (estado === "aplicada" && addressedByOp) continue;
+                  if (estado === "siembra_ausente") {
+                    const cov = coverage.find(c => c.instruccion === idx + 1);
                     await storage.createActivityLog({
                       projectId: project.id,
                       level: "warning",
-                      message: `${sectionLabel}: operación descartada — "${f.op.find_exact.slice(0, 80)}..." → ${f.reason}`,
                       agentRole: "surgical-patcher",
+                      message: `${sectionLabel}: instrucción ${idx + 1} NO aplicada para evitar un deus ex machina — falta la siembra previa.${cov?.motivo ? ` Motivo: ${cov.motivo}` : ""} Se devuelve al revisor para repartir la siembra en capítulos anteriores.`,
                     });
+                    const dedupKey = `${chapterNum}::${(ins.instrucciones_correccion || ins.descripcion || "").slice(0, 200)}`;
+                    const already = this.staleInstructionsForFinalReviewer.some(s => `${s.chapter}::${s.instruction.slice(0, 200)}` === dedupKey);
+                    if (!already) {
+                      this.staleInstructionsForFinalReviewer.push({
+                        chapter: chapterNum,
+                        instruction: (ins.instrucciones_correccion || ins.descripcion || "").slice(0, 500),
+                        reason: `Falta siembra previa (anti deus ex machina, Fix129). ${cov?.motivo || ""}`.slice(0, 300),
+                      });
+                    }
+                    continue;
                   }
+                  // "requiere_estructural", "aplicada" sin operación real, o sin entrada
+                  // de cobertura → reescritura completa con el Narrador.
+                  escalate.push(ins);
                 }
-              } else {
+              }
+              if (escalate.length > 0) {
                 await storage.createActivityLog({
                   projectId: project.id,
-                  level: "warning",
-                  message: `${sectionLabel}: cirugía falló — ninguna de las ${operations.length} operaciones encontró el texto literal. Reclasificando puntuales como estructurales.`,
+                  level: "info",
                   agentRole: "surgical-patcher",
+                  message: `${sectionLabel}: ${escalate.length} instrucción(es) puntual(es) no resueltas por cirugía se reescriben con el Narrador (cobertura Fix130).`,
                 });
-                estructurales.push(...puntuales);
+                estructurales.push(...escalate);
               }
+            } catch (patchErr) {
+              console.error(`[ApplyEditorialNotes] SurgicalPatcher error on ${sectionLabel}:`, patchErr);
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warning",
+                message: `${sectionLabel}: error en cirugía (${patchErr instanceof Error ? patchErr.message : "desconocido"}). Reclasificando puntuales como estructurales.`,
+                agentRole: "surgical-patcher",
+              });
+              estructurales.push(...puntualesGrounded);
             }
-          } catch (patchErr) {
-            console.error(`[ApplyEditorialNotes] SurgicalPatcher error on ${sectionLabel}:`, patchErr);
-            await storage.createActivityLog({
-              projectId: project.id,
-              level: "warning",
-              message: `${sectionLabel}: error en cirugía (${patchErr instanceof Error ? patchErr.message : "desconocido"}). Reclasificando puntuales como estructurales.`,
-              agentRole: "surgical-patcher",
-            });
-            estructurales.push(...puntuales);
           }
         }
 
@@ -13173,7 +13379,9 @@ Responde SOLO con un JSON válido con la estructura:
         .filter(c => c.content)
         .map(c => ({ id: c.id, chapterNumber: c.chapterNumber, content: c.content! }));
     };
-    const restoreSnapshot = async (snap: SnapshotEntry[]): Promise<{ restored: number; missing: number; structuralDrift: boolean }> => {
+    // [Fix131] `restoreOnly` (opcional): reversión selectiva — solo se restauran
+    // los capítulos del conjunto; el resto conserva su versión vigente.
+    const restoreSnapshot = async (snap: SnapshotEntry[], restoreOnly?: Set<number>): Promise<{ restored: number; missing: number; structuralDrift: boolean; kept: number }> => {
       const current = await storage.getChaptersByProject(project.id);
       const currentById = new Map(current.map(c => [c.id, c]));
       const snapshotIds = new Set(snap.map(e => e.id));
@@ -13181,18 +13389,24 @@ Responde SOLO con un JSON válido con la estructura:
       const structuralDrift =
         snapshotIds.size !== currentIds.size ||
         Array.from(snapshotIds).some(id => !currentIds.has(id));
+      const selective = !!restoreOnly && restoreOnly.size > 0;
       let restored = 0;
       let missing = 0;
+      let kept = 0;
       for (const entry of snap) {
         const cur = currentById.get(entry.id);
         if (!cur) { missing++; continue; }
+        if (selective && !restoreOnly!.has(entry.chapterNumber)) {
+          if (cur.content !== entry.content) kept++;
+          continue;
+        }
         if (cur.content !== entry.content) {
           const wordCount = entry.content.split(/\s+/).filter(w => w.length > 0).length;
           await storage.updateChapter(entry.id, { content: entry.content, wordCount });
           restored++;
         }
       }
-      return { restored, missing, structuralDrift };
+      return { restored, missing, structuralDrift, kept };
     };
 
     try {
@@ -13246,13 +13460,19 @@ Responde SOLO con un JSON válido con la estructura:
               agentRole: "editor",
             });
             if (consecutiveRegressions >= 2) {
-              const r = await restoreSnapshot(bestSnapshot.chapters);
+              // [Fix131] Reversión selectiva: conservar capítulos que la reseña
+              // Beta vigente ya no señala (sus defectos quedaron cerrados).
+              const flaggedNow = extractFlaggedChapters(notesText);
+              const r = await restoreSnapshot(bestSnapshot.chapters, flaggedNow);
               const driftNote = r.structuralDrift
                 ? ` ⚠️ DRIFT ESTRUCTURAL: ${r.missing} capítulo(s) del snapshot ya no existen — solo se restauró el contenido de los que aún existen.`
                 : "";
+              const keptNote = r.kept > 0
+                ? ` Conservados ${r.kept} capítulo(s) ya no señalados por la reseña Beta actual (reversión selectiva Fix131).`
+                : "";
               await storage.createActivityLog({
                 projectId: project.id, level: "warning",
-                message: `[Fix112] Iter ${iter}: 2 regresiones consecutivas vs best (Beta=${bestSnapshot.score}). Restaurados ${r.restored} capítulo(s) al estado del mejor snapshot.${driftNote} Loop abortado para preservar la mejor versión vista.`,
+                message: `[Fix112] Iter ${iter}: 2 regresiones consecutivas vs best (Beta=${bestSnapshot.score}). Restaurados ${r.restored} capítulo(s) al estado del mejor snapshot.${keptNote}${driftNote} Loop abortado para preservar la mejor versión vista.`,
                 agentRole: "editor",
               });
               const refreshedForBest = (await storage.getProject(project.id)) || currentProject;

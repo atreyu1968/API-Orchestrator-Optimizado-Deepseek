@@ -1,0 +1,1 @@
+- [Re-edit coverage & selective reverts](reedit-coverage-and-reverts.md) — cobertura por instrucción exige evidencia por-instrucción, no flag global; reverts selectivos solo en puntos de regresión.

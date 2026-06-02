@@ -7,9 +7,27 @@ export interface PatchOperation {
   justification: string;
 }
 
+// [Fix130] Estado de cobertura por instrucción: el cirujano declara, para cada
+// instrucción numerada que recibe, si la resolvió, si el capítulo ya la cumplía,
+// si no es aplicable como cirugía puntual (requiere reescritura) o si exige una
+// siembra previa ausente (anti deus ex machina, Fix129).
+export type InstructionCoverageStatus =
+  | "aplicada"
+  | "ya_cumplida"
+  | "requiere_estructural"
+  | "siembra_ausente";
+
+export interface InstructionCoverage {
+  instruccion: number;
+  estado: InstructionCoverageStatus;
+  motivo?: string;
+}
+
 export interface SurgicalPatchResult {
   operations: PatchOperation[];
   not_applicable_reason?: string;
+  // [Fix130] Una entrada por cada instrucción numerada recibida.
+  instruction_coverage?: InstructionCoverage[];
 }
 
 export interface AppliedPatchReport {
@@ -26,6 +44,12 @@ interface PatcherInput {
   originalContent: string;
   instructions: string;
   worldBibleContext?: string;
+  // [Fix129] Extractos SOLO-LECTURA de capítulos vecinos / de siembra para
+  // verificar coherencia y siembra previa (anti deus ex machina). NO editables.
+  referenceChapters?: string;
+  // [Fix130] Número de instrucciones numeradas que se envían, para exigir una
+  // entrada de cobertura por cada una.
+  instructionCount?: number;
 }
 
 export class SurgicalPatcherAgent extends BaseAgent {
@@ -55,6 +79,8 @@ REGLAS INVIOLABLES:
 10. Si el original ya cumple lo que pide la instrucción, devuelve "operations": [].
 11. PROHIBIDO contradecir el WORLD BIBLE. Si la instrucción te empuja a introducir un dato que choca con la canon (nombre, edad, ubicación, parentesco, regla del mundo, evento previo, motivación de personaje, cronología, etc.), NO la apliques: omite esa operación o, si toda la instrucción depende de violar la canon, devuelve "operations": [] con "not_applicable_reason" explicando qué hecho del World Bible se vería violado. Tu replace_with siempre debe ser COMPATIBLE con cada hecho del World Bible que se te ha pasado.
 12. PROHIBIDO ABSOLUTO mencionar la estructura del libro dentro del replace_with. La novela NO sabe que es una novela. NUNCA introduzcas frases como "como ocurrió en el Capítulo 3", "ya vimos en el prólogo", "tal y como se contó en el cap. 7", "en el epílogo", "en la primera parte", ni ninguna referencia a números de capítulo, partes, secciones o divisiones del manuscrito. Si necesitas evocar algo que pasó antes en la historia, usa SIEMPRE referencias narrativas internas a la ficción (lugares, personajes, fechas, sucesos: "aquella noche en la cripta", "lo que descubrió en Plasencia", "la última conversación con Vasco"). Si la instrucción del editor menciona números de capítulo como referencia, tradúcelos a esa forma diegética; nunca los copies tal cual al texto.
+13. [Fix129] ANTI DEUS EX MACHINA. Si se te entregan CAPÍTULOS DE REFERENCIA (solo lectura), úsalos para verificar coherencia con lo que pasa antes y después. Son SOLO contexto: NUNCA generes operaciones sobre ellos ni copies su texto a este capítulo. Si una instrucción te pide RESOLVER un conflicto, INTRODUCIR un aliado/objeto/poder/revelación decisivos, o CERRAR una trama, y la SIEMBRA que lo haría verosímil (pista, presencia previa, causa) NO aparece ni en este capítulo ni en los de referencia, NO inventes la resolución: no produzcas esa operación y declara esa instrucción como "siembra_ausente" en "instruction_coverage", explicando qué siembra falta y en qué capítulo previo debería estar. Resolver sin siembra crea un deus ex machina y está PROHIBIDO.
+14. [Fix130] COBERTURA OBLIGATORIA. Recibirás N instrucciones numeradas (1..N). DEBES devolver el array "instruction_coverage" con EXACTAMENTE una entrada por cada instrucción, indicando su "estado": "aplicada" (generaste operación(es) que la resuelven), "ya_cumplida" (el capítulo ya la satisface, sin cambios), "requiere_estructural" (no se puede como cirugía puntual, necesita reescritura del capítulo) o "siembra_ausente" (regla 13). No omitas ninguna instrucción del array, aunque no generes operaciones para ella. El campo "justification" de cada operación debe empezar por el número de la instrucción que resuelve (ej: "2: ...").
 
 FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
 {
@@ -62,14 +88,21 @@ FORMATO DE SALIDA — ÚNICAMENTE JSON VÁLIDO, SIN PREFIJOS, SIN MARKDOWN:
     {
       "find_exact": "Vasco apareció en el umbral de la cripta sin previo aviso.",
       "replace_with": "Vasco apareció en el umbral de la cripta. Lara comprendió tarde que la nota interceptada en Plasencia era el mapa que él había seguido.",
-      "justification": "Resuelve la verosimilitud de la aparición añadiendo la causa previa señalada por el editor."
+      "justification": "1: Resuelve la verosimilitud de la aparición añadiendo la causa previa señalada por el editor."
     }
+  ],
+  "instruction_coverage": [
+    { "instruccion": 1, "estado": "aplicada" },
+    { "instruccion": 2, "estado": "requiere_estructural", "motivo": "Pide replantear todo el clímax: no es puntual." }
   ]
 }
 
-O bien, si no se puede:
+O bien, si no se puede ninguna:
 {
   "operations": [],
+  "instruction_coverage": [
+    { "instruccion": 1, "estado": "requiere_estructural", "motivo": "La instrucción pide replantear el clímax entero del capítulo." }
+  ],
   "not_applicable_reason": "La instrucción pide replantear el clímax entero del capítulo: requiere reescritura estructural, no parches puntuales."
 }`,
     });
@@ -86,18 +119,35 @@ ${input.worldBibleContext}
 `
       : "";
 
+    // [Fix129] Bloque SOLO-LECTURA de capítulos de referencia (vecinos / siembra).
+    const referenceBlock = input.referenceChapters && input.referenceChapters.trim().length > 0
+      ? `═══════════════════════════════════════════════════════════════════
+CAPÍTULOS DE REFERENCIA — SOLO LECTURA (NO los edites, NO copies su texto; úsalos
+para verificar coherencia y SIEMBRA previa: regla 13 anti deus ex machina):
+═══════════════════════════════════════════════════════════════════
+${input.referenceChapters}
+═══════════════════════════════════════════════════════════════════
+
+`
+      : "";
+
+    // [Fix130] Recordatorio del número de instrucciones para exigir cobertura completa.
+    const coverageReminder = input.instructionCount && input.instructionCount > 0
+      ? `\n\nRecibes ${input.instructionCount} instrucción(es) numerada(s). Devuelve "instruction_coverage" con EXACTAMENTE ${input.instructionCount} entrada(s), una por cada instrucción (regla 14).`
+      : "";
+
     const prompt = `CAPÍTULO ${input.chapterNumber}: "${input.chapterTitle}"
 
-${worldBibleBlock}═══════════════════════════════════════════════════════════════════
+${worldBibleBlock}${referenceBlock}═══════════════════════════════════════════════════════════════════
 TEXTO ORIGINAL DEL CAPÍTULO (no lo modifiques fuera de las operaciones que devuelvas):
 ═══════════════════════════════════════════════════════════════════
 ${input.originalContent}
 ═══════════════════════════════════════════════════════════════════
 
 INSTRUCCIONES EDITORIALES A APLICAR (todas):
-${input.instructions}
+${input.instructions}${coverageReminder}
 
-Devuelve ÚNICAMENTE el JSON con las operaciones find/replace que resuelvan estas instrucciones. Recuerda: "find_exact" debe ser COPIADO LITERAL del texto original arriba, y cada "replace_with" debe respetar el WORLD BIBLE al 100%.`;
+Devuelve ÚNICAMENTE el JSON con las operaciones find/replace que resuelvan estas instrucciones. Recuerda: "find_exact" debe ser COPIADO LITERAL del texto original arriba (NUNCA de los capítulos de referencia), y cada "replace_with" debe respetar el WORLD BIBLE al 100%.`;
 
     const response = await this.generateContent(prompt);
 
@@ -109,6 +159,18 @@ Devuelve ÚNICAMENTE el JSON con las operaciones find/replace que resuelvan esta
       result.operations = result.operations.filter(
         (op) => typeof op.find_exact === "string" && op.find_exact.length > 0 && typeof op.replace_with === "string"
       );
+      // [Fix130] Saneamiento del array de cobertura.
+      if (Array.isArray(result.instruction_coverage)) {
+        result.instruction_coverage = result.instruction_coverage
+          .filter((c) => c && typeof (c as any).instruccion === "number" && typeof (c as any).estado === "string")
+          .map((c) => ({
+            instruccion: (c as any).instruccion,
+            estado: (c as any).estado,
+            motivo: typeof (c as any).motivo === "string" ? (c as any).motivo : undefined,
+          }));
+      } else {
+        result.instruction_coverage = undefined;
+      }
       return { ...response, result };
     } catch (e) {
       console.error("[SurgicalPatcher] Failed to parse JSON response", e);

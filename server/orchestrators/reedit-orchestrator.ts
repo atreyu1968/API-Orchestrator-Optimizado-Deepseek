@@ -25,6 +25,7 @@ import { PlotThreadClosureAuditorAgent } from "../agents/plot-thread-closure-aud
 import { ManuscriptAnalyzerAgent } from "../agents/manuscript-analyzer";
 import { ensureChapterNumbers } from "../utils/extract-chapters";
 import { SurgicalPatcherAgent } from "../agents/surgical-patcher";
+import { groundInstructionInChapter } from "../utils/instruction-grounding";
 import { parseHolisticBetaForReedit, type ReeditPendingEditorialParse, type ReeditEditorialInstruction } from "../utils/reedit-editorial-parser";
 // [Fix33] Logger persistente por proyecto.
 import { logReeditEvent } from "../utils/reedit-logger";
@@ -5638,6 +5639,53 @@ export class ReeditOrchestrator {
             planForChap ? `\nPLAN ESPECÍFICO PARA ESTE CAPÍTULO: ${planForChap}` : "",
             ins.elementos_a_preservar ? `\nELEMENTOS A PRESERVAR: ${ins.elementos_a_preservar}` : "",
           ].join("");
+
+          // [Fix128] Descarta la instrucción si cita prosa que ya no existe en el
+          // texto vigente del capítulo (fantasma de un ciclo previo).
+          const grounding = groundInstructionInChapter(
+            [ins.descripcion, ins.instrucciones_correccion, planForChap].filter(Boolean).join("\n"),
+            original,
+          );
+          if (!grounding.grounded) {
+            perChapFailed += 1;
+            reasons.push(`cap ${capNum}: instrucción fantasma — cita un pasaje inexistente en el texto actual`);
+            await logReeditEvent(projectId, "warn", "apply_holistic_beta",
+              `[Fix128] Cap ${capNum}: instrucción descartada (cita prosa que ya no existe en el texto vigente).`, { chapter: capNum });
+            continue;
+          }
+
+          // [Fix129] Capítulos de referencia SOLO-LECTURA (vecinos + siembra del arco).
+          const refChapters = (() => {
+            const parts: string[] = [];
+            const seen = new Set<number>();
+            const labelFor = (n: number) => n === 0 ? "Prólogo" : n === -1 ? "Epílogo" : n === -2 ? "Nota del autor" : `Capítulo ${n}`;
+            const excerpt = (text: string, mode: "tail" | "head" | "both") => {
+              const t = (text || "").trim(); if (!t) return "";
+              const H = 1200, T = 1200;
+              if (t.length <= H + T) return t;
+              if (mode === "head") return t.slice(0, H) + " […]";
+              if (mode === "tail") return "[…] " + t.slice(-T);
+              return t.slice(0, H) + " […] " + t.slice(-T);
+            };
+            const addChap = (n: number, mode: "tail" | "head" | "both", note: string) => {
+              if (seen.has(n) || n === capNum) return;
+              const c = chapterByNumber.get(n);
+              const txt = c ? (c.editedContent || c.originalContent || "") : "";
+              if (!txt) return;
+              const ex = excerpt(txt, mode); if (!ex) return;
+              seen.add(n);
+              parts.push(`### ${labelFor(n)}${note ? ` (${note})` : ""}:\n${ex}`);
+            };
+            addChap(capNum - 1, "tail", "capítulo anterior");
+            addChap(capNum + 1, "head", "capítulo siguiente");
+            for (const sib of caps) {
+              if (sib === capNum) continue;
+              const role = planByChap[String(sib)] || "";
+              addChap(sib, "both", role ? `arco/siembra: ${role}`.slice(0, 120) : "arco/siembra");
+            }
+            return parts.join("\n\n").slice(0, 9000);
+          })();
+
           const start = Date.now();
           const result = await patcher.execute({
             chapterNumber: capNum,
@@ -5645,7 +5693,19 @@ export class ReeditOrchestrator {
             originalContent: original,
             instructions: instrText,
             worldBibleContext,
+            referenceChapters: refChapters || undefined,
+            instructionCount: 1,
           });
+          // [Fix129] Si el cirujano declara que falta la siembra previa, NO aplicamos:
+          // forzar la resolución crearía un deus ex machina. Se registra para el revisor.
+          const siembraAusente = (result.result?.instruction_coverage || []).find(c => c.estado === "siembra_ausente");
+          if (siembraAusente) {
+            perChapFailed += 1;
+            reasons.push(`cap ${capNum}: no aplicada para evitar deus ex machina — falta siembra previa${siembraAusente.motivo ? ` (${siembraAusente.motivo})` : ""}`);
+            await logReeditEvent(projectId, "warn", "apply_holistic_beta",
+              `[Fix129] Cap ${capNum}: instrucción no aplicada para evitar deus ex machina (falta siembra previa en capítulos anteriores).`, { chapter: capNum });
+            continue;
+          }
           const ops = result.result?.operations || [];
           if (ops.length === 0) {
             perChapFailed += 1;
