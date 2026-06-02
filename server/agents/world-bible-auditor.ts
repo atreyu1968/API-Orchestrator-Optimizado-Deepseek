@@ -211,15 +211,35 @@ Audita las 5 áreas (antagonismo / escalada_actos / reservas_secretos / stakes_p
 RECORDATORIO: el bucle SA está atascado en "${input.onDemandFocus.areaLabel}". Tu diagnóstico tiene DOS resultados posibles igual de válidos: (1) la WB carece de munición → emite veredicto "necesita_revision"/"reescribir" y feedback CONCRETO de qué añadir a la Fase 1; (2) la WB tiene base suficiente → emite veredicto "apto" y feedback_para_arquitecto = "WB SUFICIENTE — el problema reside en la implementación de la escaleta, no en la base. La escaleta debe utilizar los siguientes elementos ya disponibles: [lista 2-4 elementos concretos de la Fase 1 que el Arquitecto podría usar para resolver el bottleneck]". NO inventes carencias para parecer útil — si la base aguanta, dilo claro.` : ""}
 `;
 
-    const response = await this.generateContent(userPrompt, input.projectId);
-    if (response.error || response.timedOut || !response.content?.trim()) {
-      const reason = response.timedOut
+    // [Fix137] El auditor abortaba el run entero ante UNA respuesta vacía /
+    // timeout transitoria del LLM (frecuente con thinking activado, que a veces
+    // consume todo el presupuesto pensando y devuelve content vacío). El bucle
+    // WBA hace break al primer resultado nulo, así que una sola respuesta vacía
+    // saltaba POR COMPLETO el gate de calidad de la World Bible (visto en run
+    // real: "respuesta vacía del LLM" → cae al flujo clásico sin auditar nunca).
+    // Reintentamos la llamada UNA vez ante un fallo TRANSITORIO (vacío / timeout
+    // / error de red), NUNCA ante parse o esquema (eso repetiría el mismo fallo
+    // determinista). Coste acotado: como mucho 1 llamada extra solo si la 1ª
+    // falla de forma transitoria.
+    const MAX_TRANSIENT_RETRIES = 1;
+    let response!: AgentResponse;
+    let transientReason = "";
+    for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
+      response = await this.generateContent(userPrompt, input.projectId);
+      if (!(response.error || response.timedOut || !response.content?.trim())) {
+        transientReason = "";
+        break;
+      }
+      transientReason = response.timedOut
         ? `timeout tras ${Math.round(this.timeoutMs / 1000)}s`
         : response.error
           ? `error LLM: ${response.error}`
           : "respuesta vacía del LLM";
-      console.error(`[WorldBibleAuditor] ${reason}`);
-      return { result: null, raw: response, failureReason: reason };
+      const willRetry = attempt < MAX_TRANSIENT_RETRIES;
+      console.error(`[WorldBibleAuditor] ${transientReason}${willRetry ? ` — reintento transitorio ${attempt + 1}/${MAX_TRANSIENT_RETRIES}` : ""}`);
+    }
+    if (transientReason) {
+      return { result: null, raw: response, failureReason: transientReason };
     }
 
     try {
