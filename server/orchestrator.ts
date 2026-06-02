@@ -9017,6 +9017,62 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     }
   }
 
+  // [Fix134] Tras restaurar el MEJOR snapshot en un auto-loop, el TEXTO vuelve a
+  // la mejor versión pero la puntuación y el informe persistidos seguían siendo
+  // los de la ÚLTIMA lectura (la regresada), así que el dashboard mostraba un
+  // score/informe que NO concordaba con el manuscrito vigente ("no siempre se
+  // actualiza la puntuación tras una sesión de correcciones"). Estos helpers
+  // re-persisten la puntuación y el informe capturados EN ese snapshot para que
+  // la pantalla refleje la versión realmente restaurada. Coste 0 LLM (solo BD).
+  // Nota: en restauraciones SELECTIVAS (Fix131) el texto resultante es híbrido;
+  // re-persistir el score del mejor snapshot es coherente con lo que el log ya
+  // anuncia al usuario ("restaurado al mejor snapshot Beta=X, Holístico=Y").
+  private async syncHolisticBetaPersistenceToSnapshot(
+    projectId: number,
+    snap: { beta: number; holistic: number; holisticNotes: string; betaNotes: string },
+  ): Promise<void> {
+    try {
+      const now = new Date();
+      const patch: any = {
+        holisticScore: snap.holistic,
+        holisticScoreAt: now,
+        betaScore: snap.beta,
+        betaScoreAt: now,
+      };
+      if (snap.holisticNotes && snap.holisticNotes.trim()) {
+        patch.lastHolisticNotes = snap.holisticNotes.slice(0, 24000);
+        patch.lastHolisticNotesAt = now;
+      }
+      if (snap.betaNotes && snap.betaNotes.trim()) {
+        patch.lastBetaNotes = snap.betaNotes.slice(0, 24000);
+        patch.lastBetaNotesAt = now;
+      }
+      await storage.updateProject(projectId, patch);
+    } catch (e) {
+      console.warn(`[Fix134] No se pudo sincronizar score/notas al snapshot restaurado (holístico+beta): ${(e as Error).message}`);
+    }
+  }
+
+  private async syncBetaPersistenceToSnapshot(
+    projectId: number,
+    snap: { score: number; notes: string },
+  ): Promise<void> {
+    try {
+      const now = new Date();
+      const patch: any = {
+        betaScore: snap.score,
+        betaScoreAt: now,
+      };
+      if (snap.notes && snap.notes.trim()) {
+        patch.lastBetaNotes = snap.notes.slice(0, 24000);
+        patch.lastBetaNotesAt = now;
+      }
+      await storage.updateProject(projectId, patch);
+    } catch (e) {
+      console.warn(`[Fix134] No se pudo sincronizar score/notas al snapshot restaurado (beta): ${(e as Error).message}`);
+    }
+  }
+
   private async runAutoHolisticReviewLoop(project: Project): Promise<void> {
     // [Fix81] Bucle iterativo Holístico + Beta con TARGET DUAL ESTRICTO:
     //   Beta ≥ 9/10 AND Holístico ≥ 8/10
@@ -9042,7 +9098,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // descartar el progreso por no haber clavado el target dual estricto.
     let initialBetaScore: number | null = null;
     let initialHolisticScore: number | null = null;
-    let bestSnapshot: { beta: number; holistic: number; chapters: { id: number; chapterNumber: number; content: string }[] } | null = null;
+    // [Fix134] Guardamos también el informe (holístico/beta) capturado en el
+    // momento del snapshot para re-persistirlo si más tarde restauramos esta
+    // versión, manteniendo coherentes el texto, la puntuación y el informe.
+    let bestSnapshot: { beta: number; holistic: number; holisticNotes: string; betaNotes: string; chapters: { id: number; chapterNumber: number; content: string }[] } | null = null;
 
     // [Fix81 v2] Snapshot estructural: captura ID + chapterNumber + content por
     // capítulo. Esto detecta cambios estructurales (eliminación/renumeración por
@@ -9128,6 +9187,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         restoreNote = r.restored > 0
           ? ` Restaurados ${r.restored} capítulo(s) del mejor snapshot (Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}).${r.structuralDrift ? " ⚠️ Drift estructural: " + r.missing + " cap(s) del snapshot ya no existen." : ""}`
           : "";
+        // [Fix134] Re-persistir score+informe del snapshot restaurado.
+        await this.syncHolisticBetaPersistenceToSnapshot(project.id, bestSnapshot);
       }
       await storage.createActivityLog({
         projectId: project.id,
@@ -9270,6 +9331,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             // reseña ACTUAL (holístico + beta) todavía marca como problemáticos.
             const flaggedNow = extractFlaggedChapters(`${holisticNotes}\n${betaNotes}`);
             const restoreResult = await restoreSnapshot(bestSnapshot.chapters, flaggedNow);
+            // [Fix134] Re-persistir score+informe del snapshot restaurado.
+            await this.syncHolisticBetaPersistenceToSnapshot(project.id, bestSnapshot);
             const driftNote = restoreResult.structuralDrift
               ? ` ⚠️ DRIFT ESTRUCTURAL detectado: ${restoreResult.missing} capítulo(s) del snapshot ya NO existen (eliminados por la iteración) — solo se restauró el contenido de los capítulos que aún existen; la estructura del snapshot NO se reconstruyó.`
               : "";
@@ -9305,7 +9368,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           const bestCombined = bestSnapshot ? bestSnapshot.beta + bestSnapshot.holistic : -1;
           if (currentCombined > bestCombined) {
             const snap = await snapshotManuscript();
-            bestSnapshot = { beta: betaScore, holistic: holisticScore, chapters: snap };
+            bestSnapshot = { beta: betaScore, holistic: holisticScore, holisticNotes, betaNotes, chapters: snap };
             await storage.createActivityLog({
               projectId: project.id, level: "info",
               message: `[Fix81] Iter ${iter}: nuevo mejor snapshot guardado (${scoreLabel}, ${snap.length} capítulos).`,
@@ -13244,7 +13307,10 @@ Responde SOLO con un JSON válido con la estructura:
     // consecutivas, restauramos y salimos sobre la mejor versión.
     const TARGET_BETA_SCORE = 9;
     const REGRESSION_THRESHOLD = 0.5; // Más estricto que el dual (1.0) porque aquí solo hay un score.
-    let bestSnapshot: { score: number; chapters: { id: number; chapterNumber: number; content: string }[]; iter: number } | null = null;
+    // [Fix134] Guardamos también las notas Beta capturadas en el snapshot para
+    // re-persistirlas si luego restauramos esta versión (texto/score/informe
+    // coherentes en el dashboard).
+    let bestSnapshot: { score: number; notes: string; chapters: { id: number; chapterNumber: number; content: string }[]; iter: number } | null = null;
     let prevBetaScore: number | null = null;
     let initialBetaScore: number | null = null;
     let consecutiveRegressions = 0;
@@ -13464,6 +13530,8 @@ Responde SOLO con un JSON válido con la estructura:
               // Beta vigente ya no señala (sus defectos quedaron cerrados).
               const flaggedNow = extractFlaggedChapters(notesText);
               const r = await restoreSnapshot(bestSnapshot.chapters, flaggedNow);
+              // [Fix134] Re-persistir score+informe Beta del snapshot restaurado.
+              await this.syncBetaPersistenceToSnapshot(project.id, bestSnapshot);
               const driftNote = r.structuralDrift
                 ? ` ⚠️ DRIFT ESTRUCTURAL: ${r.missing} capítulo(s) del snapshot ya no existen — solo se restauró el contenido de los que aún existen.`
                 : "";
@@ -13497,7 +13565,7 @@ Responde SOLO con un JSON válido con la estructura:
         // [Fix112] Actualizar mejor snapshot si el score actual lo supera.
         if (betaScore !== null && (bestSnapshot === null || betaScore > bestSnapshot.score)) {
           const snap = await snapshotManuscript();
-          bestSnapshot = { score: betaScore, chapters: snap, iter };
+          bestSnapshot = { score: betaScore, notes: notesText, chapters: snap, iter };
           await storage.createActivityLog({
             projectId: project.id, level: "info",
             message: `[Fix112] Iter ${iter}: nuevo mejor snapshot guardado (${scoreLabel}, ${snap.length} capítulos).`,
@@ -13514,6 +13582,8 @@ Responde SOLO con un JSON válido con la estructura:
           let finalProject = currentProject;
           if (bestSnapshot && betaScore !== null && bestSnapshot.score - betaScore >= REGRESSION_THRESHOLD) {
             const r = await restoreSnapshot(bestSnapshot.chapters);
+            // [Fix134] Re-persistir score+informe Beta del snapshot restaurado.
+            await this.syncBetaPersistenceToSnapshot(project.id, bestSnapshot);
             const driftNote = r.structuralDrift ? ` ⚠️ Drift: ${r.missing} cap(s) del snapshot ya no existen.` : "";
             await storage.createActivityLog({
               projectId: project.id, level: "info",
@@ -13569,6 +13639,8 @@ Responde SOLO con un JSON válido con la estructura:
             let restoredNote = "";
             if (bestSnapshot) {
               const r = await restoreSnapshot(bestSnapshot.chapters);
+              // [Fix134] Re-persistir score+informe Beta del snapshot restaurado.
+              await this.syncBetaPersistenceToSnapshot(project.id, bestSnapshot);
               const driftNote = r.structuralDrift ? ` ⚠️ Drift: ${r.missing} cap(s) del snapshot ya no existen.` : "";
               restoredNote = ` Restaurados ${r.restored} capítulo(s) al mejor snapshot (Beta=${bestSnapshot.score} en iter ${bestSnapshot.iter}).${driftNote}`;
             }
@@ -13623,6 +13695,8 @@ Responde SOLO con un JSON válido con la estructura:
           // para no aplicar la pulida sobre una versión inferior.
           if (bestSnapshot && betaScore !== null && bestSnapshot.score - betaScore >= REGRESSION_THRESHOLD) {
             const r = await restoreSnapshot(bestSnapshot.chapters);
+            // [Fix134] Re-persistir score+informe Beta del snapshot restaurado.
+            await this.syncBetaPersistenceToSnapshot(project.id, bestSnapshot);
             const driftNote = r.structuralDrift ? ` ⚠️ Drift: ${r.missing} cap(s) del snapshot ya no existen.` : "";
             await storage.createActivityLog({
               projectId: project.id, level: "info",
@@ -13648,6 +13722,8 @@ Responde SOLO con un JSON válido con la estructura:
           let restoredToBest = false;
           if (bestSnapshot && betaScore !== null && bestSnapshot.score - betaScore >= REGRESSION_THRESHOLD) {
             const r = await restoreSnapshot(bestSnapshot.chapters);
+            // [Fix134] Re-persistir score+informe Beta del snapshot restaurado.
+            await this.syncBetaPersistenceToSnapshot(project.id, bestSnapshot);
             const driftNote = r.structuralDrift ? ` ⚠️ Drift: ${r.missing} cap(s) del snapshot ya no existen.` : "";
             await storage.createActivityLog({
               projectId: project.id, level: "warning",
