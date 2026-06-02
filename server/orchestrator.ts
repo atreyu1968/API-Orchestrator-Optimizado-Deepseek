@@ -209,6 +209,13 @@ export class Orchestrator {
   // al inicio de `generateNovel`.
   private midNovelBetaAttempted: boolean = false;
 
+  // [Fix135-C] Segunda pasada del Beta a mid-novela. La primera pasada se
+  // adelanta a ~45% del manuscrito (antes era a 2/3, demasiado tarde para
+  // enderezar el acto 2 mientras se escribe); la segunda corre a ~70% para
+  // refrescar la critica con mas capitulos leidos justo antes del tramo final,
+  // donde mas se notaba el bajon. Flag de idempotencia, reseteado en generateNovel.
+  private midNovelBetaSecondAttempted: boolean = false;
+
   // [Fix29] Issues estructurales detectados por el Holístico antes del
   // primer ciclo del Final Reviewer. Se inyectan en `issuesPreviosCorregidos`
   // para que el FR los aborde desde el ciclo 1 en vez de descubrirlos en
@@ -1032,6 +1039,7 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
     // [Fix30] Resetear la crítica del Beta de mid-novela al iniciar nueva generación.
     this.midNovelBetaCritique = "";
     this.midNovelBetaAttempted = false;
+    this.midNovelBetaSecondAttempted = false;
     try {
       // Check if chapters already exist (recovery after crash)
       const existingChapters = await storage.getChaptersByProject(project.id);
@@ -2609,6 +2617,31 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
 
             const altas = sa.problemas.filter(p => p.severidad === "alta").length;
             const medias = sa.problemas.filter(p => p.severidad === "media").length;
+
+            // [Fix135-A] Gate de dimensiones CRITICAS de segunda mitad. El score
+            // agregado del Auditor puede cruzar SA_THRESHOLD (>=7) mientras una
+            // de estas dimensiones sigue KO con severidad MEDIA (sin alta), porque
+            // el umbral mira el agregado y no exige que cada dimension critica este
+            // sana. Esas dimensiones (escalada del acto 2, arco del secreto y
+            // anti-deus-ex del climax) son justo las que producen un acto 2 plano
+            // y un final sin sembrar -> el bajon de la segunda mitad. Detectamos su
+            // salud ANTES de la decision de salida para forzar otra iteracion
+            // mientras queden iteraciones (los guards de lastIter y de regresion
+            // consecutiva siguen acotando el coste; el bestSA restaura el mejor).
+            const CRITICAL_SECOND_HALF_DIMS = ["escalada_acto2", "arco_secreto", "deus_ex_machina"];
+            const criticalDimCountsSA: Record<string, number> = {};
+            const criticalDimHasAltaSA: Record<string, boolean> = {};
+            for (const d of CRITICAL_SECOND_HALF_DIMS) { criticalDimCountsSA[d] = 0; criticalDimHasAltaSA[d] = false; }
+            for (const p of sa.problemas) {
+              if (p.area in criticalDimCountsSA) {
+                criticalDimCountsSA[p.area]++;
+                if (p.severidad === "alta") criticalDimHasAltaSA[p.area] = true;
+              }
+            }
+            // Misma definicion de KO que el mapa de salud Fix102: KO si count>=2 O hay alta.
+            const criticalKODims = CRITICAL_SECOND_HALF_DIMS
+              .filter(d => criticalDimCountsSA[d] >= 2 || criticalDimHasAltaSA[d]);
+            const criticalSecondHalfKO = criticalKODims.length > 0;
             // [Fix109c] Inyectar el campo `sugerencia` (quirúrgico, ya
             // generado por el auditor con instrucciones cap-por-cap
             // concretas) además de `descripcion`, `area` y `capitulos`.
@@ -2665,7 +2698,11 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             // Retry si score bajo O si hay cualquier severidad alta (incluso con score ≥ 7
             // — p.ej. 1 alta = score 8.0 pero un info-dump no debería pasar).
             const hasAlta = altas > 0;
-            const needsRetry = (sa.puntuacion_global < SA_THRESHOLD || hasAlta) && sa.instrucciones_revision.trim().length > 0;
+            // [Fix135-A] Se añade `criticalSecondHalfKO`: aunque el agregado pase
+            // el umbral y no haya severidad alta, si una dimension critica de
+            // segunda mitad sigue KO forzamos otra iteracion (siempre que el
+            // Auditor haya emitido instrucciones accionables).
+            const needsRetry = (sa.puntuacion_global < SA_THRESHOLD || hasAlta || criticalSecondHalfKO) && sa.instrucciones_revision.trim().length > 0;
             const lastIter = saIter === MAX_SA_ITERATIONS - 1;
             // [Fix109d] Early-stop por regresión consecutiva: si llevamos
             // ≥2 iters seguidas por debajo del best, el Arquitecto está
@@ -2674,6 +2711,19 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             // saIter ≥ 1 para que tenga sentido ("best" implica que ya hubo
             // alguna iter previa).
             const earlyStopByRegression = consecutiveRegressionsSA >= 2 && bestSA != null && saIter >= 1;
+            // [Fix135-A] Aviso cuando el retry lo fuerza SOLO una dimension critica
+            // de segunda mitad (el agregado ya pasa el umbral y no hay alta), para
+            // que en los logs quede claro por que el bucle no acepta todavia.
+            if (criticalSecondHalfKO && !(sa.puntuacion_global < SA_THRESHOLD || hasAlta)
+                && sa.instrucciones_revision.trim().length > 0 && !lastIter && !earlyStopByRegression) {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "info",
+                agentRole: "architect",
+                message: `[Fix135] El score estructural agregado (${sa.puntuacion_global}/10) ya pasa el umbral ${SA_THRESHOLD}/10, pero dimension(es) critica(s) de segunda mitad siguen KO: ${criticalKODims.join(", ")}. Se fuerza otra iteracion para no aceptar un acto 2 plano / un climax sin sembrar (causa raiz del bajon de la segunda mitad).`,
+                metadata: { fix: "Fix135", criticalKODims, score: sa.puntuacion_global, iteration: saIter + 1, maxIterations: MAX_SA_ITERATIONS },
+              });
+            }
             if (!needsRetry || lastIter || earlyStopByRegression) {
               // [Fix101] Si salimos sin alcanzar umbral en última iter, lo decimos.
               if (lastIter && needsRetry) {
@@ -4099,56 +4149,36 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         // alimentar al Ghostwriter en los próximos capítulos (evitar muletillas globales).
         await this.runProactiveSemanticScan(project, i + 1, allSections.length, worldBibleData);
 
-        // [Fix30] Lector Beta a mid-novela. Cuando se cumplen los 2/3 del manuscrito,
-        // disparamos el Beta UNA SOLA VEZ sobre los capítulos ya escritos y guardamos
-        // su crítica en `midNovelBetaCritique`. Los Ghostwriters de los capítulos
-        // restantes la recibirán como `editorialCritique`. Best-effort: si falla,
-        // log y seguimos sin la inyección. Solo se dispara si quedan al menos 2
-        // capítulos por escribir, para que la inversión valga la pena.
+        // [Fix30/Fix135-C] Lector Beta a mid-novela en DOS pasadas. La primera
+        // se adelanta a ~45% del manuscrito (antes una sola a 2/3, demasiado
+        // tarde para enderezar el acto 2 mientras se escribe); la segunda corre
+        // a ~70% y refresca la critica con mas capitulos leidos justo antes del
+        // tramo final, donde mas se notaba el bajon. La critica vigente se
+        // inyecta en los Ghostwriters restantes como `editorialCritique`.
+        // Best-effort: si falla, log y seguimos sin la inyeccion. Solo se dispara
+        // si quedan al menos 2 capitulos por escribir, para que valga la pena.
         const completedSoFar = i + 1;
         const totalChaptersForBeta = chapters.length;
-        const twoThirdsMark = Math.floor(totalChaptersForBeta * 2 / 3);
+        const firstBetaMark = Math.floor(totalChaptersForBeta * 0.45);
+        const secondBetaMark = Math.floor(totalChaptersForBeta * 0.70);
         const remainingAfter = totalChaptersForBeta - completedSoFar;
-        if (
-          !this.midNovelBetaAttempted &&
-          completedSoFar >= twoThirdsMark &&
-          remainingAfter >= 2 &&
-          totalChaptersForBeta >= 6 &&
-          !this.aborted
-        ) {
+        const betaEligible = totalChaptersForBeta >= 6 && remainingAfter >= 2 && !this.aborted;
+        if (betaEligible && !this.midNovelBetaAttempted && completedSoFar >= firstBetaMark) {
           // [Fix30 — code review #1] Marcar attempted ANTES de la llamada para
-          // garantizar one-shot incluso si runMidNovelBetaReview falla o devuelve
-          // notas vacías; evita reintentos en cada capítulo siguiente.
+          // garantizar one-shot por pasada incluso si runMidNovelBetaReview falla
+          // o devuelve notas vacías; evita reintentos en cada capítulo siguiente.
           this.midNovelBetaAttempted = true;
-          try {
-            this.callbacks.onAgentStatus("beta-reader", "reviewing",
-              `[Fix30] Lector Beta leyendo los primeros ${completedSoFar}/${totalChaptersForBeta} capítulos para informar el resto de la novela...`
-            );
-            // [Fix30 — code review #2] Usar el helper scoped que filtra a solo
-            // capítulos COMPLETED + content no vacío, en lugar de runBetaReview
-            // (que vía loadFullNovelContext incluiría placeholders pendientes
-            // con contenido "" y degradaría la calidad de la crítica).
-            const betaOutcome = await this.runMidNovelBetaReview(project);
-            if (this.aborted) {
-              console.log(`[Orchestrator] [Fix30] Aborted tras Beta mid-novela. Saliendo silenciosamente.`);
-              return;
-            }
-            if (betaOutcome?.notesText && betaOutcome.notesText.trim().length > 200) {
-              this.midNovelBetaCritique = betaOutcome.notesText;
-              await storage.createActivityLog({
-                projectId: project.id,
-                level: "info",
-                agentRole: "beta-reader",
-                message: `[Fix30] Crítica del Beta a mid-novela capturada (${this.midNovelBetaCritique.length.toLocaleString("es-ES")} chars). Se inyectará en los ${remainingAfter} capítulos restantes.`,
-              });
-              this.callbacks.onAgentStatus("beta-reader", "complete",
-                `[Fix30] Beta mid-novela completado. Crítica activa para los ${remainingAfter} capítulos restantes.`
-              );
-            } else {
-              console.warn(`[Orchestrator] [Fix30] Beta mid-novela devolvió notas vacías o muy cortas. No se inyectará crítica.`);
-            }
-          } catch (betaErr) {
-            console.warn(`[Orchestrator] [Fix30] Beta mid-novela falló (best-effort, generación continúa): ${(betaErr as Error).message}`);
+          await this.runMidNovelBetaPass(project, completedSoFar, totalChaptersForBeta, remainingAfter, 1);
+          if (this.aborted) {
+            console.log(`[Orchestrator] [Fix135-C] Aborted tras Beta mid-novela (pasada 1). Saliendo silenciosamente.`);
+            return;
+          }
+        } else if (betaEligible && this.midNovelBetaAttempted && !this.midNovelBetaSecondAttempted && completedSoFar >= secondBetaMark) {
+          this.midNovelBetaSecondAttempted = true;
+          await this.runMidNovelBetaPass(project, completedSoFar, totalChaptersForBeta, remainingAfter, 2);
+          if (this.aborted) {
+            console.log(`[Orchestrator] [Fix135-C] Aborted tras Beta mid-novela (pasada 2). Saliendo silenciosamente.`);
+            return;
           }
         }
 
@@ -7483,6 +7513,46 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
    * escribir. Reutiliza `loadFullNovelContext` (style guide + world bible
    * summary) y solo sustituye la lista de capítulos.
    */
+  // [Fix135-C] Ejecuta UNA pasada del Beta a mid-novela y captura/refresca la
+  // critica en `midNovelBetaCritique`. Best-effort: si falla o devuelve notas
+  // vacias, log y la generacion continua. Extraido del trigger inline (Fix30)
+  // para reutilizarlo en las dos pasadas (~45% y ~70%).
+  private async runMidNovelBetaPass(
+    project: Project,
+    completedSoFar: number,
+    total: number,
+    remainingAfter: number,
+    passNumber: 1 | 2,
+  ): Promise<void> {
+    try {
+      this.callbacks.onAgentStatus("beta-reader", "reviewing",
+        `[Fix135-C] Lector Beta (pasada ${passNumber}) leyendo los primeros ${completedSoFar}/${total} capítulos para informar el resto de la novela...`
+      );
+      // [Fix30 — code review #2] Usar el helper scoped que filtra a solo
+      // capítulos COMPLETED + content no vacío, en lugar de runBetaReview
+      // (que vía loadFullNovelContext incluiría placeholders pendientes con
+      // contenido "" y degradaría la calidad de la crítica).
+      const betaOutcome = await this.runMidNovelBetaReview(project);
+      if (this.aborted) return;
+      if (betaOutcome?.notesText && betaOutcome.notesText.trim().length > 200) {
+        this.midNovelBetaCritique = betaOutcome.notesText;
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          agentRole: "beta-reader",
+          message: `[Fix135-C] Crítica del Beta a mid-novela (pasada ${passNumber}) capturada (${this.midNovelBetaCritique.length.toLocaleString("es-ES")} chars, leídos ${completedSoFar}/${total} caps). Se inyectará en los ${remainingAfter} capítulos restantes.`,
+        });
+        this.callbacks.onAgentStatus("beta-reader", "complete",
+          `[Fix135-C] Beta mid-novela (pasada ${passNumber}) completado. Crítica activa para los ${remainingAfter} capítulos restantes.`
+        );
+      } else {
+        console.warn(`[Orchestrator] [Fix135-C] Beta mid-novela (pasada ${passNumber}) devolvió notas vacías o muy cortas. No se actualizará la crítica.`);
+      }
+    } catch (betaErr) {
+      console.warn(`[Orchestrator] [Fix135-C] Beta mid-novela (pasada ${passNumber}) falló (best-effort, generación continúa): ${(betaErr as Error).message}`);
+    }
+  }
+
   private async runMidNovelBetaReview(project: Project): Promise<BetaReaderResult> {
     const ctx = await this.loadFullNovelContext(project);
     const seriesContext = await this.buildSeriesContextForReviewers(project);
@@ -9073,6 +9143,129 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     }
   }
 
+  // [Fix135-B] Brazo estructural del bucle Holistico+Beta. El cirujano cap-a-cap
+  // ignora por seguridad las instrucciones estructurales (Fix87/Fix111), asi que
+  // un decaimiento de acto 2 / segunda mitad detectado por el Holistico no se
+  // corrige nunca: el bucle relee, no ve mejora y abandona. Cuando el informe
+  // describe un sag estructural y no quedan instrucciones quirurgicas aplicables,
+  // disparamos UNA reescritura completa dirigida de los capitulos flojos de la
+  // segunda mitad, reutilizando el pipeline verificado rewriteChapterForQA
+  // (cirugia -> fallback a Narrador con red de longitud + verificacion del Editor
+  // + revert por capitulo si introduce regresion). El bucle vuelve a leer despues;
+  // si la reescritura empeora el combinado, el mecanismo de regresion/snapshot
+  // del propio bucle restaura la mejor version. Devuelve cuantos capitulos toco.
+  private async runStructuralSecondHalfRescue(
+    project: Project,
+    holisticNotes: string,
+    betaNotes: string,
+  ): Promise<number> {
+    // 1) Solo actuamos si el informe describe un sag estructural de acto 2 /
+    //    segunda mitad. Heuristica por palabras clave sobre los informes.
+    const combined = `${holisticNotes}\n${betaNotes}`;
+    const haystack = combined.toLowerCase();
+    const sagSignals = [
+      "acto 2", "acto ii", "segundo acto", "segunda mitad", "tramo central",
+      "decae", "decaimiento", "pierde tension", "pierde tensión", "pierde fuerza",
+      "pierde ritmo", "se desinfla", "se diluye", "ritmo plano", "tension plana",
+      "tensión plana", "meseta", "estancamiento", "estanca", "anticlimat",
+      "clímax", "climax", "sin sembrar", "no paga", "no escala", "falta escalada",
+      "apuestas no suben", "tension sostenida", "tensión sostenida",
+    ];
+    const matched = sagSignals.filter(s => haystack.includes(s));
+    if (matched.length === 0) return 0;
+
+    // 2) Setup canonico (mismo patron que resolveDocumentedIssues).
+    const worldBible = await storage.getWorldBibleByProject(project.id);
+    if (!worldBible) return 0;
+    const worldBibleData = this.reconstructWorldBibleData(worldBible, project);
+    const allChapters = await storage.getChaptersByProject(project.id);
+    const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
+
+    let styleGuideContent = "";
+    if (project.styleGuideId) {
+      const sg = await storage.getStyleGuide(project.styleGuideId);
+      if (sg) styleGuideContent = sg.content;
+    }
+    const guiaEstilo = styleGuideContent
+      ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+      : `Género: ${project.genre}, Tono: ${project.tone}`;
+
+    // 3) Capitulos objetivo: la segunda mitad (caps positivos del 50% al 90%,
+    //    excluyendo el ultimo para no tocar el cierre/climax final). Si el
+    //    informe ancla capitulos concretos, priorizamos los flagged que caen en
+    //    esa franja; si no, tomamos la franja por posicion.
+    const positives = allChapters
+      .filter(c => c.chapterNumber > 0 && c.content && c.content.trim().length > 100)
+      .sort((a, b) => a.chapterNumber - b.chapterNumber);
+    const total = positives.length;
+    if (total < 6) return 0;
+    const startIdx = Math.floor(total * 0.5);
+    const endIdx = Math.max(startIdx, Math.floor(total * 0.9) - 1);
+    const windowChapters = positives.slice(startIdx, endIdx + 1).map(c => c.chapterNumber);
+    const windowSet = new Set(windowChapters);
+
+    const flaggedSet = extractFlaggedChapters(combined);
+    const flaggedInWindow = Array.from(flaggedSet).filter(n => windowSet.has(n));
+    let targets = flaggedInWindow.length > 0 ? flaggedInWindow : windowChapters;
+    // Acotamos el coste: como mucho MAX caps, priorizando los primeros del tramo
+    // (sembrar la escalada cuanto antes arrastra el resto).
+    const MAX_RESCUE_CHAPTERS = 6;
+    targets = Array.from(new Set(targets)).sort((a, b) => a - b).slice(0, MAX_RESCUE_CHAPTERS);
+    if (targets.length === 0) return 0;
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "info",
+      agentRole: "editor",
+      message: `[Fix135-B] Brazo estructural activado: el informe señala decaimiento de la segunda mitad (señales: ${matched.slice(0, 5).join(", ")}) que el cirujano cap-a-cap no puede aplicar. Reescritura dirigida de ${targets.length} capítulo(s) del tramo flojo: ${targets.join(", ")}.`,
+      metadata: { fix: "Fix135-B", targets, signals: matched.slice(0, 8) },
+    });
+
+    // 4) Instruccion estructural compartida (filosofia Fix132: escalada monotona
+    //    pagada con coste tangible e irreversible, sin salvadores sin sembrar).
+    const holisticExcerpt = holisticNotes.trim().slice(0, 6000);
+    let rewritten = 0;
+    for (const chapterNum of targets) {
+      if (this.aborted) break;
+      const chapter = allChapters.find(c => c.chapterNumber === chapterNum);
+      const sectionData = allSections.find(s => s.numero === chapterNum);
+      if (!chapter || !sectionData || !chapter.content) continue;
+
+      const instruction = [
+        `REESCRITURA ESTRUCTURAL DIRIGIDA — ELEVAR LA TENSIÓN DE LA SEGUNDA MITAD (acto 2 / tramo flojo).`,
+        `El Lector Holístico detecta que este tramo del manuscrito decae: las apuestas no escalan, el ritmo se aplana y/o el avance hacia el clímax no se paga con coste real. Reescribe ESTE capítulo (${this.getSectionLabel(sectionData)}) para corregirlo SIN romper la continuidad ni el World Bible:`,
+        `1. SUBE la apuesta dramática respecto al capítulo anterior (escalada monótona): el protagonista debe arriesgar o perder más que antes.`,
+        `2. PAGA esa subida con un coste TANGIBLE E IRREVERSIBLE dentro de la escena (una herida o pérdida, una decisión sin vuelta atrás, una exposición pública, la rotura de un recurso o aliado). Nada de tensión que se resuelve gratis.`,
+        `3. PROHIBIDO introducir salvadores, informantes o soluciones que no estén ya sembrados antes en la novela (anti deus ex machina): trabaja solo con elementos ya presentes.`,
+        `4. CONSERVA los hechos canónicos, los nombres, las revelaciones ya dosificadas y la trama; cambia la INTENSIDAD y las consecuencias, no los hechos.`,
+        ``,
+        `INFORME DEL LECTOR HOLÍSTICO (contexto del problema global):`,
+        holisticExcerpt,
+      ].join("\n");
+
+      await this.rewriteChapterForQA(
+        project,
+        chapter,
+        sectionData,
+        worldBibleData,
+        guiaEstilo,
+        "editorial",
+        instruction,
+      );
+      rewritten++;
+    }
+
+    if (rewritten > 0) {
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "success",
+        agentRole: "editor",
+        message: `[Fix135-B] Reescritura estructural del tramo flojo completada: ${rewritten} capítulo(s). Se vuelve a leer Holístico+Beta; si el combinado empeora, el snapshot del bucle restaura la mejor versión.`,
+      });
+    }
+    return rewritten;
+  }
+
   private async runAutoHolisticReviewLoop(project: Project): Promise<void> {
     // [Fix81] Bucle iterativo Holístico + Beta con TARGET DUAL ESTRICTO:
     //   Beta ≥ 9/10 AND Holístico ≥ 8/10
@@ -9090,6 +9283,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     let prevBetaScore: number | null = null;
     let prevHolisticScore: number | null = null;
     let stalledIterations = 0;
+    // [Fix135-B] One-shot por bucle del brazo estructural: evita reescritura ->
+    // relectura -> reescritura en cadena. Si tras el rescate sigue sin converger,
+    // se acepta la salida normal (convergencia/persistencia para revision manual).
+    let structuralRescueDone = false;
     // [Fix89] Trackeo del score inicial para detectar progreso acumulado. Se
     // setean en la PRIMERA iteración con un score no-nulo. Sirven para la
     // salida por "convergencia aceptable": si tras varias iteraciones el
@@ -9472,6 +9669,20 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         // Sin instrucciones aplicables: aunque el Beta no haya llegado a 9, no
         // hay nada concreto que aplicar. Persistimos y terminamos.
         if (instructions.length === 0) {
+          // [Fix135-B] Caso típico del sag estructural: el parser no extrae
+          // instrucciones quirúrgicas (todas son estructurales rutadas a
+          // pendingAdminActions por Fix87). Antes de rendirnos, si el Holístico
+          // describe un decaimiento de la segunda mitad y aún no convergimos,
+          // disparamos UNA reescritura estructural dirigida del tramo flojo y
+          // volvemos a leer.
+          if (!structuralRescueDone && holisticScore !== null && holisticScore < TARGET_HOLISTIC_SCORE) {
+            structuralRescueDone = true;
+            const rescued = await this.runStructuralSecondHalfRescue(currentProject, holisticNotes, betaNotes);
+            if (rescued > 0 && !this.aborted) {
+              currentProject = (await storage.getProject(project.id)) ?? currentProject;
+              continue;
+            }
+          }
           // [Fix89] Antes de salir como "sin target alcanzado", probamos la
           // salida por convergencia aceptable. Es el caso típico tras Fix87:
           // el Holístico solo emite estructurales no aplicables que se rutan
@@ -9503,6 +9714,19 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           stalledIterations = 0;
         }
         if (stalledIterations >= 2) {
+          // [Fix135-B] Estancamiento con instrucciones quirúrgicas que no mueven
+          // el score suele significar que el problema real es estructural (sag
+          // de acto 2) y el cirujano no puede tocarlo. Antes de declarar
+          // estancamiento, intentamos UNA reescritura estructural del tramo flojo.
+          if (!structuralRescueDone && holisticScore !== null && holisticScore < TARGET_HOLISTIC_SCORE) {
+            structuralRescueDone = true;
+            const rescued = await this.runStructuralSecondHalfRescue(currentProject, holisticNotes, betaNotes);
+            if (rescued > 0 && !this.aborted) {
+              stalledIterations = 0;
+              currentProject = (await storage.getProject(project.id)) ?? currentProject;
+              continue;
+            }
+          }
           // [Fix89] Antes de declarar estancamiento total, probamos la salida
           // por convergencia aceptable (Holístico ≥ initial+2 AND Beta ≥ 8).
           // Caso típico: el Holístico subió de 5 → 7 y se atasca porque las
