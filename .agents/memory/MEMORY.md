@@ -1,1 +1,2 @@
 - [Re-edit coverage & selective reverts](reedit-coverage-and-reverts.md) — cobertura por instrucción exige evidencia por-instrucción, no flag global; reverts selectivos solo en puntos de regresión.
+- [Auto-review readers & version memory](review-readers-version-memory.md) — Holístico lee limpio (sin notas previas); Beta sí arrastra su reacción anterior y debe tratar el manuscrito actual como única fuente de verdad.
