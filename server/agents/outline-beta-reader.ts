@@ -255,8 +255,9 @@ Define el perfil del lector objetivo y evalúa la escaleta desde su perspectiva.
     }
 
     try {
-      const repaired = repairJson(response.content);
-      const parsed = JSON.parse(repaired) as OutlineBetaReaderResult;
+      // [Fix136] repairJson ya devuelve el objeto parseado; el JSON.parse
+      // extra lo coaccionaba a "[object Object]" y reventaba siempre.
+      const parsed = repairJson(response.content) as OutlineBetaReaderResult;
 
       if (typeof parsed.puntuacion_global !== "number" || !parsed.veredicto || !Array.isArray(parsed.problemas)) {
         console.error(`[OutlineBetaReader] JSON inválido: campos requeridos faltan.`);

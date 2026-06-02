@@ -183,8 +183,9 @@ Analiza el outline y detecta clichés, arquetipos planos, tropos sin reinventar 
     }
 
     try {
-      const repaired = repairJson(response.content);
-      const parsed = JSON.parse(repaired) as OriginalityCriticResult;
+      // [Fix136] repairJson ya devuelve el objeto parseado; el JSON.parse
+      // extra lo coaccionaba a "[object Object]" y reventaba siempre.
+      const parsed = repairJson(response.content) as OriginalityCriticResult;
 
       if (typeof parsed.score_originalidad !== "number" || !parsed.veredicto || !Array.isArray(parsed.clusters)) {
         console.error(`[OriginalityCritic] JSON inválido: campos requeridos faltan.`);

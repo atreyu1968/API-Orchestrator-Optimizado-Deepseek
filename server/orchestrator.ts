@@ -1549,14 +1549,23 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             // válido), la guardamos como "salvavidas" para reutilizarla
             // igual en el architectAttempt loop — la base no está auditada
             // pero al menos no tiramos los ~2-3 min de Fase 1.
-            const phase1LookValid = phase1Json && phase1Json.world_bible && Array.isArray(phase1Json.world_bible.personajes) && phase1Json.world_bible.personajes.length > 0;
+            // [Fix136] El salvavidas ya no congela una base con densidad de
+            // arcos insuficiente. Antes solo exigía personajes>0, así que una
+            // Fase 1 con 0 subtramas (caso real: "4 personajes, 0 arcos") se
+            // reutilizaba sin auditar cuando el auditor fallaba técnicamente —
+            // justo el problema que densidad_arcos debía bloquear. Exigimos el
+            // mínimo de arcos que el propio auditor pide (N<20→2, N≤30→3,
+            // N>30→4); si no se cumple, caemos al flujo clásico (regenera Fase 1).
+            const subtramasCount = Array.isArray(phase1Json?.matriz_arcos?.subtramas) ? phase1Json.matriz_arcos.subtramas.length : 0;
+            const minArcs = project.chapterCount > 30 ? 4 : project.chapterCount < 20 ? 2 : 3;
+            const phase1LookValid = phase1Json && phase1Json.world_bible && Array.isArray(phase1Json.world_bible.personajes) && phase1Json.world_bible.personajes.length > 0 && subtramasCount >= minArcs;
             try {
               await storage.createActivityLog({
                 projectId: project.id,
                 level: "warn",
                 agentRole: "world-bible-auditor",
-                message: `[Fix110] El Auditor de World Bible falló en iter ${wbaIter + 1}: ${failureReason}.${phase1LookValid ? " La Fase 1 generada SÍ es estructuralmente válida — se reutilizará sin auditar (no se tira el coste de generarla)." : " La Fase 1 tampoco es válida — se cae al flujo clásico."}`,
-                metadata: { fix: "Fix110", iteration: wbaIter + 1, failureReason, phase1Salvaged: phase1LookValid },
+                message: `[Fix110] El Auditor de World Bible falló en iter ${wbaIter + 1}: ${failureReason}.${phase1LookValid ? " La Fase 1 generada SÍ es estructuralmente válida — se reutilizará sin auditar (no se tira el coste de generarla)." : ` La Fase 1 no es reutilizable (personajes o densidad de arcos insuficiente: ${subtramasCount} arcos, mínimo ${minArcs}) — se cae al flujo clásico.`}`,
+                metadata: { fix: "Fix110", iteration: wbaIter + 1, failureReason, phase1Salvaged: phase1LookValid, subtramasCount, minArcs },
               });
             } catch {}
             if (phase1LookValid && !bestWBA) {

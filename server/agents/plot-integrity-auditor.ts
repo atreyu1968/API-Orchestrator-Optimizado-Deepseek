@@ -172,8 +172,9 @@ Audita las tres áreas (foreshadowing / antagonista / pacing) y devuelve el JSON
     }
 
     try {
-      const repaired = repairJson(response.content);
-      const parsed = JSON.parse(repaired) as PlotIntegrityResult;
+      // [Fix136] repairJson ya devuelve el objeto parseado; el JSON.parse
+      // extra lo coaccionaba a "[object Object]" y reventaba siempre.
+      const parsed = repairJson(response.content) as PlotIntegrityResult;
       if (typeof parsed.puntuacion_global !== "number" || !parsed.veredicto || !Array.isArray(parsed.problemas)) {
         console.error(`[PlotIntegrityAuditor] JSON inválido: campos requeridos faltan.`);
         return { result: null, raw: response };

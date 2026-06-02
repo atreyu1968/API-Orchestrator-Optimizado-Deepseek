@@ -156,11 +156,12 @@ ${volumesBlock}
 INSTRUCCIÓN: Produce la biblia de serie consolidada según el formato definido. Solo JSON.`;
 
     const response = await this.generateContent(prompt);
-    const repaired = repairJson(response.content);
 
     let worldBible: SeriesWorldBibleConsolidated;
     try {
-      worldBible = JSON.parse(repaired);
+      // [Fix136] repairJson ya devuelve el objeto parseado; el JSON.parse
+      // extra lo coaccionaba a "[object Object]" y reventaba siempre.
+      worldBible = repairJson(response.content);
     } catch (e) {
       console.error(`[SeriesWBConsolidator] JSON.parse falló: ${(e as Error).message}`);
       worldBible = {

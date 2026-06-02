@@ -223,8 +223,11 @@ RECORDATORIO: el bucle SA está atascado en "${input.onDemandFocus.areaLabel}". 
     }
 
     try {
-      const repaired = repairJson(response.content);
-      const parsed = JSON.parse(repaired) as WorldBibleAuditResult;
+      // [Fix136] repairJson ya devuelve el objeto parseado; un segundo
+      // JSON.parse coaccionaba el objeto a "[object Object]" y reventaba
+      // siempre, dejando el auditor inservible (caía al fallback "reusar
+      // Fase 1 sin auditar"). Usar el resultado de repairJson directamente.
+      const parsed = repairJson(response.content) as WorldBibleAuditResult;
       if (typeof parsed.puntuacion_global !== "number" || !parsed.veredicto || !Array.isArray(parsed.problemas)) {
         const reason = `JSON parseado pero faltan campos requeridos (puntuacion_global=${typeof parsed.puntuacion_global}, veredicto=${parsed.veredicto}, problemas=${Array.isArray(parsed.problemas) ? "array" : typeof parsed.problemas})`;
         console.error(`[WorldBibleAuditor] ${reason}`);
