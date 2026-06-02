@@ -8419,9 +8419,92 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const filename = `${filenameSafe}-${projectId}-logs.txt`;
       const body = await readProjectLog(projectId);
       const header = `# Logs del reedit "${project?.title || ""}" (proyecto ${projectId})\n# Generado: ${new Date().toISOString()}\n# Bytes: ${stats.bytes}${stats.updatedAt ? `\n# Última escritura: ${stats.updatedAt}` : ""}\n# Estado actual: ${project?.status || "(desconocido)"}\n\n`;
+
+      // [Fix127] Anexar al final del log dos secciones para diagnosticar por qué
+      // los defectos no se corrigen o aparecen nuevos: (A) OPINIONES DE LOS
+      // LECTORES — notas crudas del Holístico+Beta (persistidas como audit reports
+      // "holistic_beta_notes" y "auto_beta_loop_translation_raw") + sus notas /10;
+      // (B) SOLUCIONES APLICADAS — historial durable de instrucciones editoriales
+      // aplicadas ("holistic_beta_applied") + las que siguen pendientes sin aplicar.
+      let extra = "";
+      try {
+        const SEP = "\n\n" + "=".repeat(72) + "\n";
+        const fmtScore = (s: any) => (typeof s === "number" ? `${s}/10` : "(sin nota)");
+        const fmtDate = (d: any) => {
+          if (!d) return "(sin fecha)";
+          const date = new Date(d);
+          return Number.isNaN(date.getTime()) ? "(fecha inválida)" : date.toISOString();
+        };
+        const reports = await storage.getReeditAuditReportsByProject(projectId).catch(() => [] as any[]);
+        const byDateAsc = (a: any, b: any) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+
+        // (A) OPINIONES DE LOS LECTORES
+        extra += SEP + "OPINIONES DE LOS LECTORES (notas crudas de los revisores)\n" + "=".repeat(72) + "\n";
+        extra += `\nNotas /10 actuales — Holístico: ${fmtScore((project as any)?.holisticScore)} (${fmtDate((project as any)?.holisticScoreAt)}) · Beta: ${fmtScore((project as any)?.betaScore)} (${fmtDate((project as any)?.betaScoreAt)})\n`;
+        const noteReports = (reports || [])
+          .filter((r: any) => r.auditType === "holistic_beta_notes" || r.auditType === "auto_beta_loop_translation_raw")
+          .sort(byDateAsc);
+        if (noteReports.length === 0) {
+          extra += "\n(No hay notas crudas de los revisores registradas todavía.)\n";
+        } else {
+          noteReports.forEach((rep: any, idx: number) => {
+            const f = rep.findings || {};
+            extra += `\n--- Revisión #${idx + 1} · ${fmtDate(rep.createdAt)} ---\n`;
+            if (rep.auditType === "holistic_beta_notes") {
+              const h = String(f.holisticNotes || "").trim();
+              const b = String(f.betaNotes || "").trim();
+              extra += `\n[LECTOR HOLÍSTICO]\n${h || "(sin notas)"}\n`;
+              extra += `\n[LECTOR BETA]\n${b || "(sin notas)"}\n`;
+            } else {
+              const n = String(f.notesText || "").trim();
+              extra += `[LECTOR BETA (traducción${f.targetLanguage ? ` · ${f.targetLanguage}` : ""}${typeof f.iteration === "number" ? ` · iter ${f.iteration}` : ""})]\n${n || "(sin notas)"}\n`;
+            }
+          });
+        }
+
+        // (B) SOLUCIONES APLICADAS
+        extra += SEP + "SOLUCIONES APLICADAS (instrucciones editoriales del Holístico+Beta)\n" + "=".repeat(72) + "\n";
+        const applyReports = (reports || []).filter((r: any) => r.auditType === "holistic_beta_applied").sort(byDateAsc);
+        if (applyReports.length === 0) {
+          extra += "\n(No hay registros de aplicación de instrucciones todavía.)\n";
+        } else {
+          applyReports.forEach((rep: any, idx: number) => {
+            const f = rep.findings || {};
+            extra += `\n--- Aplicación #${idx + 1} · ${fmtDate(rep.createdAt)} ---\n`;
+            extra += `Resumen: ${f.summary || "(sin resumen)"}\n`;
+            extra += `Aplicadas: ${f.applied ?? 0} · Fallidas: ${f.failed ?? 0} · Omitidas: ${f.skipped ?? 0} · Pendientes: ${f.kept_pending ?? 0}\n`;
+            const per = Array.isArray(f.perInstruction) ? f.perInstruction : [];
+            for (const p of per) {
+              extra += `  [id ${p.id}] (${p.tipo || "?"}) ${String(p.status || "?").toUpperCase()}: ${p.detail || ""}\n`;
+            }
+          });
+        }
+
+        // (B.2) Instrucciones aún pendientes sin aplicar, con su texto completo.
+        const pending = (project as any)?.pendingEditorialParse;
+        const pendingInstr = pending && Array.isArray(pending.instrucciones) ? pending.instrucciones : [];
+        extra += "\n--- INSTRUCCIONES PENDIENTES SIN APLICAR ---\n";
+        if (pendingInstr.length === 0) {
+          extra += "(Ninguna instrucción pendiente.)\n";
+        } else {
+          if (pending.resumen_general) extra += `Resumen general: ${pending.resumen_general}\n`;
+          pendingInstr.forEach((ins: any) => {
+            const caps = Array.isArray(ins.capitulos_afectados) ? ins.capitulos_afectados.join(", ") || "—" : "—";
+            extra += `\n[id ${ins.id}] (${ins.categoria || "?"} · prioridad ${ins.prioridad || "?"} · tipo ${ins.tipo || "estructural"}) caps ${caps}\n`;
+            if (ins.descripcion) extra += `  PROBLEMA: ${ins.descripcion}\n`;
+            if (ins.instrucciones_correccion) extra += `  SOLUCIÓN: ${ins.instrucciones_correccion}\n`;
+            if (ins.elementos_a_preservar) extra += `  PRESERVAR: ${ins.elementos_a_preservar}\n`;
+          });
+        }
+        extra += "\n";
+      } catch (diagErr) {
+        console.error("[Fix127] No se pudieron construir las secciones de diagnóstico del log:", diagErr);
+        extra = "\n\n(No se pudieron anexar las secciones de opiniones/soluciones por un error interno.)\n";
+      }
+
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      res.send(header + (body || "(sin entradas registradas)\n"));
+      res.send(header + (body || "(sin entradas registradas)\n") + extra);
     } catch (error) {
       console.error("Error fetching reedit logs:", error);
       res.status(500).json({ error: "Failed to fetch logs" });

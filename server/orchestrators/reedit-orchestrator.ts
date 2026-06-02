@@ -5283,6 +5283,24 @@ export class ReeditOrchestrator {
         if (holisticNotes.length === 0 && betaNotes.length === 0) {
           console.log(`[ReeditOrchestrator Stage8] [Fix34] Sin notesText de Holístico/Beta; omito parseo de instrucciones.`);
         } else {
+          // [Fix127] Persistir las notas crudas del Holístico+Beta como audit
+          // report durable ("holistic_beta_notes") para que la descarga de logs
+          // pueda anexar las "opiniones de los lectores". Hasta ahora el texto
+          // original solo se parseaba a pendingEditorialParse y se descartaba, así
+          // que era imposible analizar a posteriori qué señaló cada revisor.
+          try {
+            await storage.createReeditAuditReport({
+              projectId,
+              auditType: "holistic_beta_notes",
+              findings: {
+                holisticNotes: holisticNotes.slice(0, 60000),
+                betaNotes: betaNotes.slice(0, 60000),
+                completedAt: new Date().toISOString(),
+              },
+            } as any);
+          } catch (persistErr) {
+            console.error(`[Fix127] No se pudieron persistir notas crudas Holístico+Beta: ${(persistErr as Error).message}`);
+          }
           const concatenated = [
             holisticNotes && `═══ INFORME DEL LECTOR HOLÍSTICO ═══\n${holisticNotes}`,
             betaNotes && `═══ INFORME DEL LECTOR BETA ═══\n${betaNotes}`,
