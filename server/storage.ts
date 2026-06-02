@@ -131,6 +131,7 @@ export interface IStorage {
   createActivityLog(data: InsertActivityLog): Promise<ActivityLog>;
   getActivityLogsByProject(projectId: number | null, limit?: number): Promise<ActivityLog[]>;
   getLastActivityLogTime(projectId: number): Promise<Date | null>;
+  getLastMeaningfulActivityLogTime(projectId: number): Promise<Date | null>;
   cleanupOldActivityLogs(projectId: number | null, keepCount: number): Promise<void>;
 
   // Project Queue operations
@@ -684,6 +685,27 @@ export class DatabaseStorage implements IStorage {
     const [log] = await db.select({ createdAt: activityLogs.createdAt })
       .from(activityLogs)
       .where(eq(activityLogs.projectId, projectId))
+      .orderBy(desc(activityLogs.createdAt))
+      .limit(1);
+    return log?.createdAt ?? null;
+  }
+
+  // [Fix138] Igual que getLastActivityLogTime pero EXCLUYE los logs META que NO
+  // indican un worker vivo: el "Reanudación ignorada" que escribe el propio guard
+  // Fix103 al bloquear, y los "Auto-recovery..." que escribe el monitor de
+  // congelados. Si se contaran como actividad, esos logs (que se generan SIN que
+  // haya un worker real trabajando) mantendrían el reloj del monitor de
+  // congelados perpetuamente fresco y la auto-recuperación no dispararía nunca
+  // sobre un proyecto realmente muerto.
+  async getLastMeaningfulActivityLogTime(projectId: number): Promise<Date | null> {
+    const [log] = await db.select({ createdAt: activityLogs.createdAt })
+      .from(activityLogs)
+      .where(and(
+        eq(activityLogs.projectId, projectId),
+        sql`${activityLogs.message} NOT ILIKE '%Reanudación ignorada%'`,
+        sql`${activityLogs.message} NOT ILIKE '%Reanudacion ignorada%'`,
+        sql`${activityLogs.message} NOT ILIKE '%Auto-recovery%'`,
+      ))
       .orderBy(desc(activityLogs.createdAt))
       .limit(1);
     return log?.createdAt ?? null;

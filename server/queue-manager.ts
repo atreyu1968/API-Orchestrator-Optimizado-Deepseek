@@ -107,7 +107,7 @@ export class QueueManager {
       const heartbeatAtCheck = this.lastHeartbeat;
       try {
         try {
-          const lastDbActivity = await storage.getLastActivityLogTime(projectIdAtCheck);
+          const lastDbActivity = await storage.getLastMeaningfulActivityLogTime(projectIdAtCheck);
           if (this.currentProjectId !== projectIdAtCheck || this.lastHeartbeat !== heartbeatAtCheck) {
             // El proyecto activo cambió mientras consultábamos la DB: abortar.
             return;
@@ -382,7 +382,7 @@ export class QueueManager {
       const generatingProjects = projects.filter((p: Project) => monitoredStatuses.includes(p.status));
       
       for (const project of generatingProjects) {
-        const lastActivity = await storage.getLastActivityLogTime(project.id);
+        const lastActivity = await storage.getLastMeaningfulActivityLogTime(project.id);
         
         if (lastActivity) {
           const timeSinceActivity = Date.now() - lastActivity.getTime();

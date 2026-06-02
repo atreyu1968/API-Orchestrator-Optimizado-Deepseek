@@ -4528,16 +4528,22 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // actividad reciente (< 120 s) en el activity log: el orquestador
       // emite logs constantes desde los agentes/auditores. Si la hay, NO
       // tocamos nada y dejamos que la otra corra.
-      // [Fix103 post-review] getActivityLogsByProject incluye también logs
-      // globales (projectId IS NULL), por lo que un log de sistema reciente
-      // podría falso-positivear el guard en proyectos sin actividad propia.
-      // Filtramos en memoria al projectId concreto. Además ActivityLog solo
-      // tiene `createdAt` (no `timestamp`).
-      const recentLogsRaw = await storage.getActivityLogsByProject(project.id, 20);
-      const recentLogs = recentLogsRaw.filter((l) => l.projectId === project.id);
-      if (recentLogs.length > 0) {
-        const newest = recentLogs[0];
-        const ageMs = Date.now() - new Date(newest.createdAt).getTime();
+      // [Fix138] Frescura POR-PROYECTO sin mezclar logs globales. Antes este guard
+      // leía getActivityLogsByProject(project.id, 20) (que incluye logs globales
+      // projectId IS NULL) y filtraba en memoria: si los 20 más recientes eran
+      // globales, podía no ver actividad REAL del proyecto y permitir una
+      // reanudación CONCURRENTE (dos orquestadores). Además, el propio guard escribe
+      // abajo "Reanudación ignorada" cada vez que bloquea; en la SIGUIENTE
+      // invocación ese log propio era el más reciente (<120s) y volvía a bloquear,
+      // así que un proyecto con el worker MUERTO quedaba en deadlock perpetuo (cada
+      // reanudación manual del dashboard o del watchdog se autobloqueaba).
+      // getLastMeaningfulActivityLogTime consulta directamente projectId = ... (NO
+      // globales) y excluye los logs META que NO indican un worker vivo
+      // ("Reanudación ignorada"/"Auto-recovery"). Así solo la actividad REAL de
+      // agentes <120s cuenta como "otro orquestador vivo".
+      const lastRealActivity = await storage.getLastMeaningfulActivityLogTime(project.id);
+      if (lastRealActivity) {
+        const ageMs = Date.now() - new Date(lastRealActivity).getTime();
         if (ageMs < 120_000) {
           console.warn(`[Orchestrator] [Fix103] resumeNovel invocado pero hay actividad muy reciente del proyecto (${Math.round(ageMs/1000)}s). Probablemente hay otro orquestador vivo para este proyecto. Aborto la reanudación para no destruir su progreso.`);
           await storage.createActivityLog({
@@ -4545,7 +4551,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             level: "warning",
             agentRole: "orchestrator",
             message: `[Fix103] Reanudación ignorada: hay actividad muy reciente del proyecto (hace ${Math.round(ageMs/1000)}s). Se conserva el progreso en curso.`,
-            metadata: { fix: "Fix103", ageMs, lastLogLevel: newest.level },
+            metadata: { fix: "Fix103", ageMs },
           });
           return;
         }

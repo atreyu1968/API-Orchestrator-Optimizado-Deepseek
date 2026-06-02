@@ -1,4 +1,5 @@
 - [Re-edit coverage & selective reverts](reedit-coverage-and-reverts.md) — cobertura por instrucción exige evidencia por-instrucción, no flag global; reverts selectivos solo en puntos de regresión.
 - [Auto-review readers & version memory](review-readers-version-memory.md) — Holístico lee limpio (sin notas previas); Beta sí arrastra su reacción anterior y debe tratar el manuscrito actual como única fuente de verdad.
+- [Resume freshness guard self-deadlock](resume-freshness-deadlock.md) — un guard que mide "actividad reciente" no debe contar sus propios logs ni mezclar logs globales, o se auto-bloquea / falla la auto-recovery.
 - [repairJson devuelve objeto, no string](repairjson-contract.md) — repairJson() ya parsea; envolverlo en JSON.parse coacciona a "[object Object]" y falla siempre (rompió 5 agentes).
 - [Second-half quality system](second-half-quality-system.md) — gate de dims críticas del SA + brazo estructural one-shot (solo en abandono, no en regresión) + doble Beta mid-novela; frenos que acotan coste y por qué.
