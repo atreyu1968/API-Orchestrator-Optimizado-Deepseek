@@ -9299,7 +9299,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // — antes corría ANTES del loop y las reescrituras la destruían).
     // Incluye snapshot/regresión estilo Fix39 para no perder versiones mejores.
     const TARGET_BETA_SCORE = 9;
-    const TARGET_HOLISTIC_SCORE = 8;
+    const TARGET_HOLISTIC_SCORE = 7;
     const MAX_ITERATIONS = 8;
     const REGRESSION_THRESHOLD = 1.0;
     let iter = 0;
