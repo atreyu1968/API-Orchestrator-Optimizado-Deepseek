@@ -18,3 +18,13 @@ Regla: al revertir al mejor snapshot por regresión de score, restaura SOLO los 
 **Why:** un revert completo deshacía arreglos legítimos que una reseña posterior ya no señalaba, perdiendo trabajo bueno por una caída de nota global.
 
 **How to apply:** `restoreSnapshot` acepta `restoreOnly?: Set<number>`; maneja drift estructural (capítulos del snapshot que ya no existen). No introducir reversión selectiva en los restores de salida — es una decisión deliberada.
+
+## Capas de auto-revert tras aplicar notas editoriales
+
+Tras `applyEditorialNotes` hay DOS gatillos de revert distintos en `recalculateFinalScoreAfterEdits`, con umbrales y señales DELIBERADAMENTE diferentes — no unificarlos:
+- Catastrófico del REVISOR FINAL (Fix69-C): caída ≥2.0 de la nota del Revisor Final → revierte y cortocircuita (`return`) ANTES del bloque de lectores.
+- Regresión de LECTORES (Fix139): si la lectura real (Holístico/Beta) empeora aunque el Revisor Final no caiga catastróficamente. Guardas: ambos lectores con nota nueva Y previa, `bestDelta<=0` (ninguno mejoró), `worstDelta<=-1.0` (al menos uno bajó ≥1 punto), Y la nota del Revisor Final NO mejoró (ambas comparables y `new<=prev`).
+
+**Why:** las notas editoriales pueden mantener o subir la nota del Revisor Final y AUN ASÍ empeorar la lectura del lector real; sin Fix139 ese caso solo se avisaba y nunca revertía. Regla de ambigüedad: si el Revisor Final MEJORA o no es comparable (falta alguna nota), NO se revierte por lectores — revertir tiraría una ganancia real o se basaría en datos incompletos. El architect dio FAIL hasta exigir ambas notas del Revisor Final presentes.
+
+**How to apply:** todo revert post-edición debe ser coherente texto+score+informe (filosofía Fix134): al restaurar la prosa (a `preEditContent`, `continuityState:null`), repón TAMBIÉN los scores e informes previos (`finalScore`/`finalReviewResult`, `holisticScore`/`betaScore`, `lastHolisticNotes`/`lastBetaNotes` + timestamps), porque la re-evaluación de lectores ya persistió las notas NUEVAS. Restaura notas por `!== null` (no truthy) para cubrir versión previa sin notas (`""`). El World Bible modificado en la sesión NO se revierte (solo prosa de capítulos): avisar por log.

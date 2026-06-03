@@ -10248,6 +10248,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
     const prevH = opts?.previousHolisticScore ?? null;
     const prevB = opts?.previousBetaScore ?? null;
+    // [Fix139] Capturamos notas/resultado previos para poder restaurarlos junto
+    // con la prosa si las correcciones REGRESAN la lectura (Holístico/Beta), de
+    // modo que texto, puntuación e informe queden coherentes (filosofía Fix134).
+    const prevHolisticNotesText = ((project as any).lastHolisticNotes ?? null) as string | null;
+    const prevBetaNotesText = ((project as any).lastBetaNotes ?? null) as string | null;
+    const prevFinalReviewResult = (project as any).finalReviewResult ?? null;
 
     try {
       this.callbacks.onAgentStatus("editor", "thinking",
@@ -10304,6 +10310,102 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const failureNote = holisticFailed || betaFailed
         ? ` Aviso: ${holisticFailed ? "Holístico" : ""}${holisticFailed && betaFailed ? " y " : ""}${betaFailed ? "Beta" : ""} fallaron (puntuación previa intacta).`
         : "";
+
+      // [Fix139] Auto-revert por REGRESIÓN DE LECTORES (Holístico/Beta).
+      // El auto-revert previo (Fix69-C) solo cubría una caída catastrófica
+      // (>=2.0) de la nota del REVISOR FINAL. Pero las notas editoriales pueden
+      // mantener/subir la nota del Revisor Final y AUN ASÍ empeorar la lectura
+      // (Holístico/Beta), que es lo que percibe el lector real. El usuario pidió:
+      // si una reescritura con indicaciones de los lectores baja las
+      // puntuaciones, hay que restaurar la versión anterior. Aquí cerramos ese
+      // hueco. Guardas conservadoras para no revertir por ruido:
+      //   - ambos lectores con nota nueva Y previa (poder comparar de verdad),
+      //   - NINGUNA lectura mejoró (bestDelta <= 0),
+      //   - al menos una bajó >= 1.0 (worstDelta <= -1.0),
+      //   - la nota del Revisor Final NO mejoró (si mejorara, revertir tiraría
+      //     una ganancia real -> caso ambiguo: solo se avisa, no se revierte),
+      //   - hay capítulos modificados con snapshot pre-edición que restaurar.
+      const readersRegressed =
+        newH != null && newB != null && prevH != null && prevB != null &&
+        bestDelta <= 0 && worstDelta <= -1.0;
+      // Exigimos AMBAS notas del Revisor Final presentes para comparar: si
+      // falta alguna no podemos afirmar que "no mejoró", así que NO revertimos
+      // (caso no comparable -> solo aviso informativo).
+      const finalNotImproved =
+        newScoreRaw != null && previousFinalScore != null && newScoreRaw <= previousFinalScore;
+      const canRevertReaders = Array.isArray(modifiedChapterIds) && modifiedChapterIds.length > 0;
+
+      if (readersRegressed && finalNotImproved && canRevertReaders) {
+        let restored = 0;
+        for (const chapterId of modifiedChapterIds!) {
+          try {
+            const ch = updatedChaptersForReview.find(c => c.id === chapterId);
+            if (!ch) continue;
+            const pre = (ch as any).preEditContent as string | null | undefined;
+            if (!pre || !pre.trim()) continue;
+            const restoredWc = pre.split(/\s+/).filter(w => w.length > 0).length;
+            // continuityState:null igual que Fix69-C: el snapshot de continuidad
+            // se calculó sobre el texto editado (ahora descartado); se regenerará.
+            await storage.updateChapter(chapterId, {
+              content: pre,
+              wordCount: restoredWc,
+              status: "completed",
+              needsRevision: false,
+              revisionReason: null,
+              continuityState: null,
+            } as any);
+            restored++;
+          } catch (revertErr) {
+            console.error(`[Fix139] No se pudo restaurar cap id=${chapterId}:`, revertErr);
+          }
+        }
+
+        // Reponer puntuaciones e informes previos para que texto/nota/informe
+        // queden coherentes con la versión restaurada (la re-evaluación ya
+        // persistió las notas NUEVAS de Holístico/Beta; las revertimos).
+        const restoreUpdate: any = {};
+        if (previousFinalScore != null) {
+          restoreUpdate.finalScore = Math.round(previousFinalScore);
+          restoreUpdate.finalScoreAt = new Date();
+        }
+        // Restaurar el informe del Revisor Final previo SIEMPRE que lo tengamos
+        // (desacoplado de previousFinalScore): la re-evaluación pudo persistir un
+        // finalReviewResult de la versión editada que ya no concuerda con la
+        // prosa restaurada. Si no hay informe previo pero SÍ restauramos la nota,
+        // limpiamos el informe a null para no dejar score restaurado junto a un
+        // informe de la versión editada (coherencia post-revert).
+        if (prevFinalReviewResult != null) restoreUpdate.finalReviewResult = prevFinalReviewResult;
+        else if (previousFinalScore != null) restoreUpdate.finalReviewResult = null;
+        if (prevH != null) { restoreUpdate.holisticScore = Math.round(prevH); restoreUpdate.holisticScoreAt = new Date(); }
+        if (prevB != null) { restoreUpdate.betaScore = Math.round(prevB); restoreUpdate.betaScoreAt = new Date(); }
+        // Restauramos por nulabilidad explícita (!== null), no por truthy: si la
+        // versión previa NO tenía notas (""), reponer "" es coherente y evita
+        // dejar colgada la nota de la versión editada revertida.
+        if (prevHolisticNotesText !== null) { restoreUpdate.lastHolisticNotes = prevHolisticNotesText; restoreUpdate.lastHolisticNotesAt = new Date(); }
+        if (prevBetaNotesText !== null) { restoreUpdate.lastBetaNotes = prevBetaNotesText; restoreUpdate.lastBetaNotesAt = new Date(); }
+        try {
+          if (Object.keys(restoreUpdate).length > 0) await storage.updateProject(project.id, restoreUpdate);
+        } catch (e) {
+          console.error("[Fix139] No se pudieron re-persistir scores/notas previos:", e);
+        }
+
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `[Fix139] Auto-revert por regresión de lectores: ${holisticLabel}; ${betaLabel}. Las notas editoriales empeoraron la lectura sin mejorar la nota del Revisor Final (${previousFinalScore ?? "?"}/10 → ${newScoreRaw ?? "?"}/10). Restaurados ${restored}/${modifiedChapterIds!.length} capítulo(s) a su versión anterior y repuestas las puntuaciones previas (Holístico=${prevH}, Beta=${prevB}).`,
+          agentRole: "editor",
+        });
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `Aviso post-revert: el auto-revert solo restaura la prosa de los ${restored} capítulo(s) afectados. Si esta sesión editorial modificó entradas del World Bible (heridas, decisiones de trama, líneas temporales), esos cambios PERMANECEN — revísalo si detectas inconsistencias entre prosa restaurada y canon.`,
+          agentRole: "editor",
+        });
+        this.callbacks.onAgentStatus("editor", "completed",
+          `Auto-revert tras regresión de lectores (Holístico ${prevH}→restaurado, Beta ${prevB}→restaurado). ${restored} capítulo(s) restaurado(s).`
+        );
+        return;
+      }
 
       await storage.createActivityLog({
         projectId: project.id,
