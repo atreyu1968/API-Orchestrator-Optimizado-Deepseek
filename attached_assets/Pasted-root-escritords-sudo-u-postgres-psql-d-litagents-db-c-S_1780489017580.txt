@@ -1,0 +1,18 @@
+root@escritords:~# sudo -u postgres psql -d litagents_db -c "SELECT project_id, message, created_at FROM activity_logs WHERE message ILIKE '%mid-novela%' ORDER BY created_at DESC;"
+ project_id |                                                                     message                                                                      |         created_at         
+------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------
+        116 | [Fix135-C] Beta mid-novela (pasada 2) completado. Cr<C3><AD>tica activa para los 10 cap<C3><AD>tulos restantes.                                              | 2026-06-03 01:45:41.888152
+        116 | [Fix135-C] Cr<C3><AD>tica del Beta a mid-novela (pasada 2) capturada (12.997 chars, le<C3><AD>dos 22/32 caps). Se inyectar<C3><A1> en los 10 cap<C3><AD>tulos restantes. | 2026-06-03 01:45:41.876406
+        116 | [Fix30] Iniciando lectura beta de mid-novela (22 cap<C3><AD>tulos completados).                                                                        | 2026-06-03 01:44:24.996876
+        116 | [Fix135-C] Beta mid-novela (pasada 1) completado. Cr<C3><AD>tica activa para los 18 cap<C3><AD>tulos restantes.                                              | 2026-06-03 01:14:09.384504
+        116 | [Fix135-C] Cr<C3><AD>tica del Beta a mid-novela (pasada 1) capturada (14.600 chars, le<C3><AD>dos 14/32 caps). Se inyectar<C3><A1> en los 18 cap<C3><AD>tulos restantes. | 2026-06-03 01:14:09.370001
+        116 | [Fix30] Iniciando lectura beta de mid-novela (14 cap<C3><AD>tulos completados).                                                                        | 2026-06-03 01:11:54.040508
+        113 | [Fix30] Beta mid-novela completado. Cr<C3><AD>tica activa para los 11 cap<C3><AD>tulos restantes.                                                            | 2026-06-02 16:34:53.436751
+        113 | [Fix30] Cr<C3><AD>tica del Beta a mid-novela capturada (16.910 chars). Se inyectar<C3><A1> en los 11 cap<C3><AD>tulos restantes.                                   | 2026-06-02 16:34:53.426423
+        113 | [Fix30] Iniciando lectura beta de mid-novela (21 cap<C3><AD>tulos completados).                                                                        | 2026-06-02 16:33:57.370439
+        112 | [Fix30] Beta mid-novela completado. Cr<C3><AD>tica activa para los 13 cap<C3><AD>tulos restantes.                                                            | 2026-06-02 00:13:01.702231
+        112 | [Fix30] Cr<C3><AD>tica del Beta a mid-novela capturada (15.036 chars). Se inyectar<C3><A1> en los 13 cap<C3><AD>tulos restantes.                                   | 2026-06-02 00:13:01.691661
+        112 | [Fix30] Iniciando lectura beta de mid-novela (24 cap<C3><AD>tulos completados).                                                                        | 2026-06-02 00:12:18.540199
+        111 | [Fix30] Beta mid-novela completado. Cr<C3><AD>tica activa para los 11 cap<C3><AD>tulos restantes.                                                            | 2026-06-01 15:34:18.505813
+        111 | [Fix30] Cr<C3><AD>tica del Beta a mid-novela capturada (19.530 chars). Se inyectar<C3><A1> en los 11 cap<C3><AD>tulos restantes.                                   | 2026-06-01 15:34:18.463594
+        111 | [Fix30] Iniciando lectura beta de mid-novela (21 cap<C3><AD>tulos completados).                                                               :
