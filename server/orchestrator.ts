@@ -7438,11 +7438,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     });
   }
 
-  async runHolisticReview(project: Project): Promise<HolisticReviewerResult> {
-    return runWithProjectContext(project.id, () => this._runHolisticReview(project));
+  async runHolisticReview(project: Project, options?: { regressionWarning?: string }): Promise<HolisticReviewerResult> {
+    return runWithProjectContext(project.id, () => this._runHolisticReview(project, options));
   }
 
-  private async _runHolisticReview(project: Project): Promise<HolisticReviewerResult> {
+  private async _runHolisticReview(project: Project, options?: { regressionWarning?: string }): Promise<HolisticReviewerResult> {
     const ctx = await this.loadFullNovelContext(project);
     const seriesContext = await this.buildSeriesContextForReviewers(project);
 
@@ -7477,6 +7477,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         secondaryChapter: typeof a?.secondaryChapter === "number" ? a.secondaryChapter : null,
         reason: String(a?.reason || ""),
       })).filter((a: any) => Number.isFinite(a.id) && Number.isFinite(a.targetChapter)),
+      // [Fix140] Aviso de regresión (auto-loop): la ronda anterior bajó la nota
+      // y se revirtió a la mejor versión. El Holístico relee esa mejor versión
+      // y debe ser conservador: solo defectos graves y reales, evitando exigir
+      // reescrituras amplias de alto riesgo que vuelvan a empeorar el conjunto.
+      regressionWarning: options?.regressionWarning,
     }, project.id);
 
     await this.trackTokenUsage(
@@ -7626,7 +7631,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     return result;
   }
 
-  async runBetaReview(project: Project, options?: { appliedNotesHistory?: string }): Promise<BetaReaderResult> {
+  async runBetaReview(project: Project, options?: { appliedNotesHistory?: string; regressionWarning?: string }): Promise<BetaReaderResult> {
     const ctx = await this.loadFullNovelContext(project);
     const seriesContext = await this.buildSeriesContextForReviewers(project);
 
@@ -7670,6 +7675,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // auto-loop (runAutoBetaLoop). Llamadas one-shot manuales no lo pasan
       // y el Beta funciona como antes.
       appliedNotesHistory: options?.appliedNotesHistory,
+      // [Fix140] Aviso de regresión: la ronda anterior de correcciones bajó la
+      // nota y se revirtió a la mejor versión. El Beta relee esa mejor versión
+      // y debe ser MUY selectivo para no volver a empeorar el conjunto.
+      regressionWarning: options?.regressionWarning,
     }, project.id);
 
     await this.trackTokenUsage(
@@ -9302,6 +9311,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // relectura -> reescritura en cadena. Si tras el rescate sigue sin converger,
     // se acepta la salida normal (convergencia/persistencia para revision manual).
     let structuralRescueDone = false;
+    // [Fix140] Aviso de regresión para los lectores: si una ronda de correcciones
+    // BAJA la nota, restauramos la mejor versión y REINTENTAMOS desde ahí avisando
+    // a los lectores (Holístico+Beta) para que sean conservadores y no vuelvan a
+    // romperla. Se setea al detectar regresión y se limpia al guardar un nuevo
+    // mejor snapshot (señal de mejora real). Usa el límite de iteraciones EXISTENTE.
+    let regressionAwareness: string | null = null;
     // [Fix89] Trackeo del score inicial para detectar progreso acumulado. Se
     // setean en la PRIMERA iteración con un score no-nulo. Sirven para la
     // salida por "convergencia aceptable": si tras varias iteraciones el
@@ -9444,15 +9459,20 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         );
 
         // [Fix25] Holístico + Beta en paralelo. Si uno falla, seguimos con el otro.
-        const [holisticOutcome, betaOutcome] = await Promise.allSettled([
-          this.runHolisticReview(currentProject),
-          this.runBetaReview(currentProject),
+        // [Fix140] Si venimos de una regresión revertida, avisamos a ambos lectores.
+        const readerOpts: { regressionWarning: string } | undefined = regressionAwareness ? { regressionWarning: regressionAwareness } : undefined;
+        const [holisticOutcome, betaOutcome]: [
+          PromiseSettledResult<HolisticReviewerResult>,
+          PromiseSettledResult<BetaReaderResult>,
+        ] = await Promise.allSettled([
+          this.runHolisticReview(currentProject, readerOpts),
+          this.runBetaReview(currentProject, readerOpts),
         ]);
 
-        const holisticNotes = holisticOutcome.status === "fulfilled"
+        const holisticNotes: string = holisticOutcome.status === "fulfilled"
           ? (holisticOutcome.value?.notesText || "").trim()
           : "";
-        const betaNotes = betaOutcome.status === "fulfilled"
+        const betaNotes: string = betaOutcome.status === "fulfilled"
           ? (betaOutcome.value?.notesText || "").trim()
           : "";
         const betaScore: number | null = betaOutcome.status === "fulfilled"
@@ -9553,7 +9573,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               : "";
             await storage.createActivityLog({
               projectId: project.id, level: "warning",
-              message: `[Fix81] Regresión detectada en iter ${iter}: ${scoreLabel} (combinado ${currentCombined}) frente al mejor snapshot (Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}, combinado ${bestCombined}). Restaurados ${restoreResult.restored} capítulo(s) al estado del snapshot.${keptNote}${driftNote} Loop abortado para preservar la mejor versión.`,
+              message: `[Fix81] Regresión detectada en iter ${iter}: ${scoreLabel} (combinado ${currentCombined}) frente al mejor snapshot (Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}, combinado ${bestCombined}). Restaurados ${restoreResult.restored} capítulo(s) al estado del snapshot.${keptNote}${driftNote}`,
               agentRole: "editor",
             });
             if (bestSnapshot.beta >= TARGET_BETA_SCORE && bestSnapshot.holistic >= TARGET_HOLISTIC_SCORE) {
@@ -9563,13 +9583,32 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                 agentRole: "editor",
               });
               await this.runOrthotypographicPassAndUpdate(currentProject);
-            } else {
-              await this.persistAutoReviewResult(
-                project.id,
-                { resumen_general: `Mejor snapshot: Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}. No alcanzó target dual (${TARGET_BETA_SCORE}/${TARGET_HOLISTIC_SCORE}).`, instrucciones: [] },
-                "auto_holistic_regression_no_target",
-              );
+              return;
             }
+            // [Fix140] El mejor snapshot AÚN no cumple target. En vez de abortar,
+            // reintentamos desde la mejor versión avisando a los lectores del fallo,
+            // siempre que quede presupuesto de iteraciones. prevScores=best para que
+            // el contador de estancamiento (stalledIterations) actúe de red de
+            // seguridad si los reintentos no logran superar la mejor versión.
+            if (iter < MAX_ITERATIONS) {
+              regressionAwareness = `En la ronda anterior, las correcciones aplicadas EMPEORARON la novela: la valoración de los lectores bajó de Beta=${bestSnapshot.beta}/Holístico=${bestSnapshot.holistic} a Beta=${betaScore}/Holístico=${holisticScore}, así que se ha restaurado la mejor versión. La estás releyendo ahora.`;
+              prevBetaScore = bestSnapshot.beta;
+              prevHolisticScore = bestSnapshot.holistic;
+              currentProject = (await storage.getProject(project.id)) || currentProject;
+              await storage.createActivityLog({
+                projectId: project.id, level: "info",
+                message: `[Fix140] Reintentando desde la mejor versión (Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}) con aviso de regresión a los lectores, para no volver a empeorarla. Iteraciones restantes: ${MAX_ITERATIONS - iter}.`,
+                agentRole: "editor",
+              });
+              continue;
+            }
+            // Agotado el presupuesto de iteraciones: persistimos la mejor versión
+            // conocida para revisión manual.
+            await this.persistAutoReviewResult(
+              project.id,
+              { resumen_general: `Mejor snapshot: Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}. No alcanzó target dual (${TARGET_BETA_SCORE}/${TARGET_HOLISTIC_SCORE}) tras agotar las ${MAX_ITERATIONS} iteraciones.`, instrucciones: [] },
+              "auto_holistic_regression_no_target",
+            );
             return;
           }
         }
@@ -9581,6 +9620,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           if (currentCombined > bestCombined) {
             const snap = await snapshotManuscript();
             bestSnapshot = { beta: betaScore, holistic: holisticScore, holisticNotes, betaNotes, chapters: snap };
+            // [Fix140] Mejora real: limpiamos el aviso de regresión (si existía) para
+            // que los lectores vuelvan a operar con normalidad a partir de aquí.
+            regressionAwareness = null;
             await storage.createActivityLog({
               projectId: project.id, level: "info",
               message: `[Fix81] Iter ${iter}: nuevo mejor snapshot guardado (${scoreLabel}, ${snap.length} capítulos).`,
@@ -13655,6 +13697,11 @@ Responde SOLO con un JSON válido con la estructura:
     let prevBetaScore: number | null = null;
     let initialBetaScore: number | null = null;
     let consecutiveRegressions = 0;
+    // [Fix140] Aviso de regresión para el Beta: si una ronda baja la nota, se
+    // restaura la mejor versión y se REINTENTA desde ahí avisando al lector para
+    // que sea muy selectivo y no vuelva a empeorarla. Se limpia al guardar un
+    // nuevo mejor snapshot. Reutiliza el límite de iteraciones EXISTENTE.
+    let regressionAwareness: string | null = null;
 
     // [Fix120] Memoria de notas aplicadas por iteración + detección de
     // oscilación. Sin esto, el Beta en iter N+1 leía desde cero y podía
@@ -13819,7 +13866,7 @@ Responde SOLO con un JSON válido con la estructura:
     try {
       await storage.createActivityLog({
         projectId: project.id, level: "info",
-        message: `[Fix47] Auto-loop con Lector Beta iniciado (máx ${maxIterations} iteraciones). [Fix112] Best-tracking + revert por regresión consecutiva activos (threshold=${REGRESSION_THRESHOLD}, max 2 caídas consecutivas). [Fix120] Memoria de notas aplicadas + detección de oscilación (umbral ${Math.round(OSCILLATION_THRESHOLD * 100)}%) activos.`,
+        message: `[Fix47] Auto-loop con Lector Beta iniciado (máx ${maxIterations} iteraciones). [Fix112/Fix140] Best-tracking + revert a la mejor versión en la 1ª regresión, reintentando desde ahí con aviso al lector mientras quede presupuesto (threshold=${REGRESSION_THRESHOLD}). [Fix120] Memoria de notas aplicadas + detección de oscilación (umbral ${Math.round(OSCILLATION_THRESHOLD * 100)}%) activos.`,
         agentRole: "editor",
       });
 
@@ -13845,7 +13892,14 @@ Responde SOLO con un JSON válido con la estructura:
         // antes. En iter 2+ recibe el bloque para evitar pedir DESHACER lo
         // que el cirujano acaba de aplicar.
         const appliedHistoryStr = formatAppliedNotesHistory(appliedNotesHistory);
-        const beta = await this.runBetaReview(currentProject, appliedHistoryStr ? { appliedNotesHistory: appliedHistoryStr } : undefined);
+        // [Fix140] Si venimos de una regresión revertida, avisamos al Beta.
+        const betaOpts = (appliedHistoryStr || regressionAwareness)
+          ? {
+              ...(appliedHistoryStr ? { appliedNotesHistory: appliedHistoryStr } : {}),
+              ...(regressionAwareness ? { regressionWarning: regressionAwareness } : {}),
+            }
+          : undefined;
+        const beta = await this.runBetaReview(currentProject, betaOpts);
         const notesText = (beta?.notesText || "").trim();
         // [Fix112] Score actual del Beta (puede ser null si el agente no lo emitió).
         const betaScore: number | null = typeof beta?.score === "number" ? beta.score : null;
@@ -13861,42 +13915,66 @@ Responde SOLO con un JSON válido con la estructura:
         if (bestSnapshot && betaScore !== null) {
           if (bestSnapshot.score - betaScore >= REGRESSION_THRESHOLD) {
             consecutiveRegressions++;
+            // [Fix140] Antes (Fix112) se toleraba 1 caída y solo se revertía a la
+            // SEGUNDA regresión consecutiva. Ahora, en cuanto una ronda empeora la
+            // nota, restauramos la mejor versión y REINTENTAMOS desde ahí avisando
+            // al Beta, mientras quede presupuesto de iteraciones — para no dejar el
+            // manuscrito en una versión peor ni acumular ping-pong.
+            const flaggedNow = extractFlaggedChapters(notesText);
+            const r = await restoreSnapshot(bestSnapshot.chapters, flaggedNow);
+            // [Fix134] Re-persistir score+informe Beta del snapshot restaurado.
+            await this.syncBetaPersistenceToSnapshot(project.id, bestSnapshot);
+            const driftNote = r.structuralDrift
+              ? ` ⚠️ DRIFT ESTRUCTURAL: ${r.missing} capítulo(s) del snapshot ya no existen — solo se restauró el contenido de los que aún existen.`
+              : "";
+            const keptNote = r.kept > 0
+              ? ` Conservados ${r.kept} capítulo(s) ya no señalados por la reseña Beta actual (reversión selectiva Fix131).`
+              : "";
             await storage.createActivityLog({
               projectId: project.id, level: "warning",
-              message: `[Fix112] Iter ${iter}: regresión detectada (${scoreLabel}) vs mejor snapshot (Beta=${bestSnapshot.score} en iter ${bestSnapshot.iter}). Caídas consecutivas: ${consecutiveRegressions}/2.`,
+              message: `[Fix112] Iter ${iter}: regresión detectada (${scoreLabel}) vs mejor snapshot (Beta=${bestSnapshot.score} en iter ${bestSnapshot.iter}). Restaurados ${r.restored} capítulo(s) al estado del mejor snapshot.${keptNote}${driftNote}`,
               agentRole: "editor",
             });
-            if (consecutiveRegressions >= 2) {
-              // [Fix131] Reversión selectiva: conservar capítulos que la reseña
-              // Beta vigente ya no señala (sus defectos quedaron cerrados).
-              const flaggedNow = extractFlaggedChapters(notesText);
-              const r = await restoreSnapshot(bestSnapshot.chapters, flaggedNow);
-              // [Fix134] Re-persistir score+informe Beta del snapshot restaurado.
-              await this.syncBetaPersistenceToSnapshot(project.id, bestSnapshot);
-              const driftNote = r.structuralDrift
-                ? ` ⚠️ DRIFT ESTRUCTURAL: ${r.missing} capítulo(s) del snapshot ya no existen — solo se restauró el contenido de los que aún existen.`
-                : "";
-              const keptNote = r.kept > 0
-                ? ` Conservados ${r.kept} capítulo(s) ya no señalados por la reseña Beta actual (reversión selectiva Fix131).`
-                : "";
+            const refreshedForBest = (await storage.getProject(project.id)) || currentProject;
+            // [Fix140] Si queda presupuesto, reintentamos desde la mejor versión
+            // avisando al Beta. prevBetaScore=best para que el resto de guardas
+            // (estancamiento/oscilación) midan contra la mejor versión.
+            if (iter < maxIterations) {
+              regressionAwareness = `En la ronda anterior, las correcciones aplicadas EMPEORARON la novela: tu valoración bajó de Beta=${bestSnapshot.score} a Beta=${betaScore}, así que se ha restaurado la mejor versión. La estás releyendo ahora.`;
+              prevBetaScore = bestSnapshot.score;
+              currentProject = refreshedForBest;
+              // [Fix140] Rebobinar el historial de notas aplicadas al estado del
+              // snapshot restaurado: las entradas posteriores a bestSnapshot.iter
+              // corresponden a las rondas revertidas y ya NO están en el texto, así
+              // que dejarlas confundiría la detección de oscilación (Fix120) y al
+              // propio Beta en los reintentos.
+              for (let h = appliedNotesHistory.length - 1; h >= 0; h--) {
+                if (appliedNotesHistory[h].iter > bestSnapshot.iter) appliedNotesHistory.splice(h, 1);
+              }
               await storage.createActivityLog({
-                projectId: project.id, level: "warning",
-                message: `[Fix112] Iter ${iter}: 2 regresiones consecutivas vs best (Beta=${bestSnapshot.score}). Restaurados ${r.restored} capítulo(s) al estado del mejor snapshot.${keptNote}${driftNote} Loop abortado para preservar la mejor versión vista.`,
+                projectId: project.id, level: "info",
+                message: `[Fix140] Reintentando desde la mejor versión (Beta=${bestSnapshot.score}) con aviso de regresión al Beta, para no volver a empeorarla. Iteraciones restantes: ${maxIterations - iter}.`,
                 agentRole: "editor",
               });
-              const refreshedForBest = (await storage.getProject(project.id)) || currentProject;
-              if (bestSnapshot.score >= TARGET_BETA_SCORE) {
-                await storage.createActivityLog({
-                  projectId: project.id, level: "success",
-                  message: `[Fix112] El snapshot restaurado YA cumple TARGET (Beta=${bestSnapshot.score} ≥ ${TARGET_BETA_SCORE}). Ejecutando corrección ortotipográfica final sobre la mejor versión.`,
-                  agentRole: "editor",
-                });
-                await this.runOrthotypographicPassAndUpdate(refreshedForBest);
-              } else {
-                try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
-              }
-              return;
+              continue;
             }
+            // Agotado el presupuesto: nos quedamos con la mejor versión restaurada.
+            await storage.createActivityLog({
+              projectId: project.id, level: "warning",
+              message: `[Fix140] Regresión en la última iteración: se conserva la mejor versión (Beta=${bestSnapshot.score}). Loop finalizado.`,
+              agentRole: "editor",
+            });
+            if (bestSnapshot.score >= TARGET_BETA_SCORE) {
+              await storage.createActivityLog({
+                projectId: project.id, level: "success",
+                message: `[Fix112] El snapshot restaurado YA cumple TARGET (Beta=${bestSnapshot.score} ≥ ${TARGET_BETA_SCORE}). Ejecutando corrección ortotipográfica final sobre la mejor versión.`,
+                agentRole: "editor",
+              });
+              await this.runOrthotypographicPassAndUpdate(refreshedForBest);
+            } else {
+              try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
+            }
+            return;
           } else {
             // Score igualó o superó al best (con margen de tolerancia) → reset.
             consecutiveRegressions = 0;
@@ -13907,6 +13985,8 @@ Responde SOLO con un JSON válido con la estructura:
         if (betaScore !== null && (bestSnapshot === null || betaScore > bestSnapshot.score)) {
           const snap = await snapshotManuscript();
           bestSnapshot = { score: betaScore, notes: notesText, chapters: snap, iter };
+          // [Fix140] Mejora real: limpiamos el aviso de regresión (si existía).
+          regressionAwareness = null;
           await storage.createActivityLog({
             projectId: project.id, level: "info",
             message: `[Fix112] Iter ${iter}: nuevo mejor snapshot guardado (${scoreLabel}, ${snap.length} capítulos).`,
@@ -16200,6 +16280,33 @@ Responde SOLO con un JSON válido con la estructura:
           );
           return;
         }
+        // [Fix141] El cirujano declara que la corrección NO corresponde a ESTE
+        // capítulo sino a otro(s). Caso típico de continuidad cruzada: el cap N
+        // establece un hecho y otro cap M lo contradice; el Revisor Final
+        // documenta el issue en N, pero el arreglo va en M. Antes caíamos a una
+        // reescritura COMPLETA del capítulo EQUIVOCADO con el Narrador (visto en
+        // logs: cap 11 → "requiere cambios en 26/27" → narrador 6/10 → conservado;
+        // cap 14 → "pide modificar el cap 23" → narrador 4/10 → conservado): puro
+        // gasto de IA y riesgo de degradar. El capítulo objetivo se resuelve por
+        // separado en la misma cola de issues, así que aquí NO tocamos el actual.
+        if (this.surgeonReasonBelongsToOtherChapter(reason, chapter.chapterNumber)) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `${sectionLabel}: el cirujano indica que la corrección pertenece a OTRO capítulo, no a este. NO se reescribe con el Narrador (evitamos degradar el capítulo equivocado y gastar IA); el capítulo objetivo se resuelve por separado en la cola de issues. Razón del cirujano: ${reason}`,
+            agentRole: "surgical-patcher",
+          });
+          await storage.updateChapter(chapter.id, {
+            status: "completed",
+            needsRevision: false,
+            revisionReason: null,
+          });
+          this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+          this.callbacks.onAgentStatus("surgical-patcher", "completed",
+            `${sectionLabel}: corrección enrutada a otro capítulo; capítulo actual no tocado.`
+          );
+          return;
+        }
         await storage.createActivityLog({
           projectId: project.id,
           level: "info",
@@ -16855,6 +16962,40 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
     ];
 
     return [...noExistencePatterns, ...alreadySatisfiedPatterns].some(re => re.test(r));
+  }
+
+  // [Fix141] Detecta que el cirujano declara que la corrección NO va en ESTE
+  // capítulo sino en otro(s). Distinto de "obsoleta/ya satisfecha": aquí el
+  // issue es REAL pero pertenece a otro capítulo (continuidad cruzada). Si se
+  // deja pasar, el flujo reescribe el capítulo EQUIVOCADO con el Narrador
+  // (gasto + riesgo). Dos señales conservadoras sobre la RAZÓN del cirujano:
+  //   A) Dice "no en el capítulo {actual}" / "no en este/el capítulo actual".
+  //   B) Dice que el cambio "requiere/corresponde/pide modificar/cambios en"
+  //      capítulo(s) cuyos números son TODOS distintos del actual.
+  private surgeonReasonBelongsToOtherChapter(surgeonReason: string, currentChapterNumber: number): boolean {
+    const r = (surgeonReason || "").toLowerCase().trim();
+    if (!r) return false;
+    const curNum = String(currentChapterNumber);
+
+    // Señal A: el cambio NO va en el capítulo actual (por número o "este/actual").
+    const notHere =
+      new RegExp(`\\bno\\b[^.;]{0,25}?\\bcap(?:[íi]tulo)?\\.?\\s*${curNum}\\b`).test(r) ||
+      /\bno\b[^.;]{0,25}?\bcap(?:[íi]tulo)?\.?\s*(?:actual|presente|este)\b/.test(r) ||
+      /\b(?:este|el)\s+cap(?:[íi]tulo)?\.?\s*(?:actual|presente)?\s*no\s+(?:requiere|necesita|debe)\b/.test(r);
+
+    // Señal B: el cambio pertenece a OTRO(s) capítulo(s) (números != actual).
+    let belongsElsewhere = false;
+    const re = /(?:requiere[n]?|corresponde[n]?|pertenece[n]?|pide\s+modificar|modificar\s+el|cambios?\s+(?:en|al)|aplicar(?:se)?\s+(?:en|al)|se\s+requiere\s+acceso\s+a|debe\s+(?:modificarse|aplicarse|hacerse)\s+en)\b[^.;]{0,40}?cap(?:[íi]tulos?)?\.?\s*([0-9]+(?:\s*(?:,|o|y|e|\/|-)\s*[0-9]+)*)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(r)) !== null) {
+      const nums = m[1].split(/[^0-9]+/).map(s => parseInt(s, 10)).filter(n => !Number.isNaN(n));
+      if (nums.length > 0 && nums.every(n => n !== currentChapterNumber)) {
+        belongsElsewhere = true;
+        break;
+      }
+    }
+
+    return notHere || belongsElsewhere;
   }
 
   // Heurística: la razón del cirujano deja claro que la nota pide una operación

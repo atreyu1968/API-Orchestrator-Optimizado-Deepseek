@@ -39,6 +39,10 @@ interface BetaReaderInput {
   // actual, para no pedir DESHACERLAS (ping-pong) ni repetirlas como nuevas.
   // Si llega vacío o no llega, comportamiento pre-Fix120 sin cambio.
   appliedNotesHistory?: string;
+  // [Fix140] Aviso de regresión del auto-loop: la ronda anterior de correcciones
+  // BAJÓ tu valoración y se revirtió a la mejor versión. Relees esa mejor versión
+  // y debes ser MUY selectivo. Si llega vacío o no llega, sin cambio.
+  regressionWarning?: string;
 }
 
 const TRANSLATION_LANG_NAMES: Record<string, string> = {
@@ -377,7 +381,22 @@ REGLA CRÍTICA: las instrucciones de arriba YA ESTÁN APLICADAS en el manuscrito
 - Tu energía debe ir a pegas NUEVAS, EVOLUCIONES de las viejas, o MEJORAS INCREMENTALES — nunca a oposiciones literales.`
       : "";
 
-    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${adminBlock}${translationBlock}${previousNotesBlock}${appliedHistoryBlock}
+    // [Fix140] Aviso de regresión: la ronda previa empeoró la nota y se revirtió.
+    const regressionBlock = (input.regressionWarning && input.regressionWarning.trim().length > 0)
+      ? `\n\n═══════════════════════════════════════════════════════════════════
+## [Fix140] AVISO: LA RONDA ANTERIOR DE CORRECCIONES EMPEORÓ LA NOVELA
+═══════════════════════════════════════════════════════════════════
+
+${input.regressionWarning}
+
+REGLA CRÍTICA para esta relectura:
+- Estás releyendo la MEJOR versión conocida (se revirtió porque las últimas correcciones bajaron tu valoración). Tu objetivo es NO volver a romperla.
+- Sé MUY SELECTIVO: pide SOLO cambios de ALTO VALOR y BAJO RIESGO, anclados a un (cap N) concreto del texto actual.
+- EVITA reescrituras amplias o cambios de tono/estructura que ya provocaron una regresión. Prefiere afinados mínimos y localizados.
+- Si la novela ya está sólida, es legítimo emitir pocas o ninguna instrucción en vez de forzar cambios que puedan empeorar el conjunto.`
+      : "";
+
+    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${adminBlock}${translationBlock}${previousNotesBlock}${appliedHistoryBlock}${regressionBlock}
 
 ═══════════════════════════════════════════════════════════════════
 NOVELA COMPLETA QUE ACABAS DE LEER

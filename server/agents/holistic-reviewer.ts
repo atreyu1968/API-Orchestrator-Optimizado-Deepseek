@@ -37,6 +37,10 @@ interface HolisticReviewerInput {
   // un array no vacío, el agente añade a su informe un bloque
   // VEREDICTO_ADMIN_ACCIONES con apply / keep_pending / discard por cada id.
   pendingAdminActions?: PendingAdminActionForReview[];
+  // [Fix140] Aviso de regresión del auto-loop: la ronda anterior de correcciones
+  // BAJÓ la nota y se revirtió a la mejor versión. El Holístico relee esa mejor
+  // versión y debe ser conservador. Si llega vacío o no llega, sin cambio.
+  regressionWarning?: string;
 }
 
 export interface HolisticReviewerResult {
@@ -354,7 +358,22 @@ Palabras totales aproximadas: ${totalWords.toLocaleString("es-ES")}`;
       .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(sección vacía)"}`)
       .join("");
 
-    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${adminBlock}
+    // [Fix140] Aviso de regresión: la ronda previa empeoró la nota y se revirtió.
+    const regressionBlock = (input.regressionWarning && input.regressionWarning.trim().length > 0)
+      ? `\n\n═══════════════════════════════════════════════════════════════════
+## [Fix140] AVISO: LA RONDA ANTERIOR DE CORRECCIONES EMPEORÓ LA NOVELA
+═══════════════════════════════════════════════════════════════════
+
+${input.regressionWarning}
+
+REGLA CRÍTICA para esta relectura:
+- Estás releyendo la MEJOR versión conocida (se revirtió porque las últimas correcciones la empeoraron). Tu objetivo es NO volver a romperla.
+- Sé CONSERVADOR y QUIRÚRGICO: señala SOLO defectos graves, reales y verificables en el texto actual; cita el (cap N).
+- EVITA exigir reescrituras amplias, refundiciones de tono o cambios estructurales de alto riesgo: ya provocaron una regresión. Prefiere ajustes mínimos y localizados de alto valor y bajo riesgo.
+- Si el manuscrito ya está sólido, dilo: es legítimo emitir pocas o ninguna instrucción en vez de forzar cambios que puedan empeorar el conjunto.`
+      : "";
+
+    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${adminBlock}${regressionBlock}
 
 ═══════════════════════════════════════════════════════════════════
 NOVELA COMPLETA A REVISAR

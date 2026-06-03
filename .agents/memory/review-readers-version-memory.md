@@ -24,3 +24,11 @@ Las puntuaciones (`betaScore`/`holisticScore`) y los informes (`lastBetaNotes`/`
 **Why:** el dashboard deriva los datos de la query `["/api/projects"]` (refresca sola cada 3 s); el frontend nunca fue el problema. La desincronización venía de restaurar el texto sin actualizar las métricas. Por eso `bestSnapshot` guarda también las notas del momento.
 
 **How to apply:** si añades un nuevo punto de `restoreSnapshot(bestSnapshot...)` o un nuevo auto-loop, captura las notas al crear el snapshot y llama al helper de sync tras restaurar. Cambios de texto SIN relectura (aplicar notas manuales, ortotipográfica, imports) quedan fuera: el score seguirá siendo el de la última lectura real (limitación conocida, no bug).
+
+## Contexto OPERATIVO vs notas de contenido previas (aviso de regresión)
+
+Inyectar al Holístico un `regressionWarning` ("la ronda anterior empeoró la novela; relees la mejor versión, sé conservador") NO viola la regla de "el Holístico lee limpio". La distinción durable: el Holístico debe seguir sin recibir **notas de contenido previas** (su propia lectura pasada, que reabriría pegas resueltas), pero SÍ puede recibir **contexto operativo del loop** (que venimos de una regresión revertida). Son cosas distintas.
+
+**Why:** la regla "lee limpio" existe para que no confunda su lectura anterior con el texto actual; un aviso de que el estado es la mejor versión restaurada no aporta pegas concretas que reabrir, solo calibra cuán agresivo ser. Confundir ambas cosas llevaría o a re-ensuciar (si se le dan notas previas) o a perder la oportunidad de frenar el ping-pong de regresiones (si se le niega todo contexto).
+
+**How to apply:** cuando un auto-loop reintente desde la mejor versión tras una regresión, pásale el aviso a AMBOS lectores como contexto operativo y límpialo (`regressionAwareness=null`) al guardar un nuevo mejor snapshot. Nunca lo uses para colar notas de contenido de lecturas anteriores al Holístico.
