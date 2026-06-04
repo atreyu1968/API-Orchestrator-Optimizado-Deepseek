@@ -23,3 +23,16 @@ El acto 2 / segunda mitad de las novelas decae de forma recurrente. Tres mecanis
   - Flags one-shot por pasada (`midNovelBetaAttempted` / `midNovelBetaSecondAttempted`) se marcan ANTES de la llamada para garantizar one-shot aunque la lectura falle.
 
 **Riesgos asumidos conscientemente (architect)**: el gate SA hereda la dependencia de `instrucciones_revision` no vacías; la heurística de keywords del rescate puede dar falsos positivos (mitigado por one-shot + snapshot); marcas 45%/70% con `Math.floor` pueden disparar un capítulo antes en novelas muy cortas (aceptable).
+
+## Prevención TEMPRANA en la propia generación (capa preventiva, NO correctiva)
+
+La filosofía de arriba es reactiva (corrige tras escribir). Una segunda capa actúa ANTES/DURANTE para que el defecto no llegue a existir:
+
+- **Gate PREVIO al primer carácter escrito** (helper `criticalSecondHalfKODims`): mismas dims críticas que el gate reactivo (`escalada_acto2`/`arco_secreto`/`deus_ex_machina`, KO si count≥2 O alta), pero aplicado a la ESCALETA antes de generar. El agregado SA puede cruzar 7 con una dim crítica KO (caso real: escaleta 7.9 con `escalada_acto2` KO por 2 medios). Antes eso pasaba silencioso a generación; ahora el `break` del outer SA loop exige `score≥MIN` **Y** sin KO crítico, y el gate `awaiting_structural_guidance` dispara con `score<MIN` **O** KO crítico.
+  - **Por qué una sola pasada extra (no bucle)**: si el agregado pasa pero hay KO, se reusa la auto-guidance de Fix118 una vez; si persiste, se PAUSA para guidance humana en vez de iterar a ciegas. El `reason` opcional del generador de guidance evita el texto falso "por debajo del mínimo" cuando el agregado sí pasa.
+
+- **Lecturas HOLÍSTICAS tempranas guía-only** (~30/55/80%), espejo del doble Beta: el Holístico (macro/estructural) diagnostica mientras se escribe y la crítica se inyecta como `editorialCritique` en los caps RESTANTES vía `combinedMidNovelCritique()` (Holístico primero + Beta). NUNCA reescribe lo ya escrito — solo guía lo que falta.
+  - **Por qué NO persiste `holisticScore`/`lastHolisticNotes`** (a diferencia de la lectura final): es guía interna; pisar esos campos ensuciaría el dashboard y confundiría al bucle dual final, que relee limpio. Sí registra tokens.
+  - Mismas guardas one-shot + `betaEligible` que el Beta; flags marcados ANTES de la llamada.
+
+- **Reintento de originalidad ampliado**: el rediseño ONE-shot del outline antes solo disparaba con `veredicto==="rechazado"`. Un "revisar" con `score_originalidad<7` pasaba con clichés. Ahora cubre ambos. Sigue ONE-shot para acotar coste.

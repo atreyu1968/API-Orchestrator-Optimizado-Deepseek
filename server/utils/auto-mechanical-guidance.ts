@@ -37,6 +37,11 @@ export function generateMechanicalGuidanceFromProblems(
   problemas: StructuralAuditProblem[],
   bestScore: number,
   threshold: number,
+  // [Fix143-B] Cuando el agregado SÍ cruza el umbral pero una dimensión crítica
+  // de segunda mitad sigue KO, el intro por defecto ("por debajo del mínimo
+  // publicable") sería falso y confundiría al Arquitecto. Si llega `reason`, se
+  // usa como frase de apertura en su lugar.
+  reason?: string,
 ): string {
   if (!problemas || problemas.length === 0) return "";
 
@@ -56,7 +61,7 @@ export function generateMechanicalGuidanceFromProblems(
   lines.push("[GUIDANCE MECÁNICA AUTO-GENERADA (Fix118)]");
   lines.push("═══════════════════════════════════════════════════════════════════");
   lines.push(
-    `Tu intento anterior se quedó en ${bestScore}/10, por debajo del mínimo publicable ${threshold}/10. El Auditor Estructural detectó ${problemas.length} problemas residuales (${altas} alta(s), ${medias} media(s), ${bajas} baja(s)). El sistema ha extraído de ellos un conjunto de correcciones MECÁNICAS que debes aplicar EXACTAMENTE en el rediseño. No improvises: cada problema lista los caps afectados y los tokens concretos que necesitas usar.`,
+    `${reason ? reason : `Tu intento anterior se quedó en ${bestScore}/10, por debajo del mínimo publicable ${threshold}/10.`} El Auditor Estructural detectó ${problemas.length} problemas residuales (${altas} alta(s), ${medias} media(s), ${bajas} baja(s)). El sistema ha extraído de ellos un conjunto de correcciones MECÁNICAS que debes aplicar EXACTAMENTE en el rediseño. No improvises: cada problema lista los caps afectados y los tokens concretos que necesitas usar.`,
   );
   lines.push("");
   lines.push("PRINCIPIOS NO NEGOCIABLES:");

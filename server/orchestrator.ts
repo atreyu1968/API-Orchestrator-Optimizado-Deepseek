@@ -216,6 +216,20 @@ export class Orchestrator {
   // donde mas se notaba el bajon. Flag de idempotencia, reseteado en generateNovel.
   private midNovelBetaSecondAttempted: boolean = false;
 
+  // [Fix143-A] Crítica del Lector HOLÍSTICO a mid-novela. Espejo del patrón Beta
+  // pero con el lector más analítico/macro (estructura, arcos, ritmo de conjunto)
+  // para detectar de forma PREVENTIVA fallos estructurales y de otro tipo mientras
+  // aún se escribe, y solo GUIAR los capítulos restantes (no reescribe lo ya
+  // escrito). Se vacía al inicio de generateNovel. Best-effort: si falla queda
+  // vacío y la generación continúa.
+  private midNovelHolisticCritique: string = "";
+  // Tres pasadas tempranas (~30%/55%/80%), one-shot cada una. Flags de idempotencia
+  // reseteados en generateNovel para que un fallo/notas vacías no las repita en cada
+  // capítulo posterior.
+  private midNovelHolisticAttempted: boolean = false;
+  private midNovelHolisticSecondAttempted: boolean = false;
+  private midNovelHolisticThirdAttempted: boolean = false;
+
   // [Fix29] Issues estructurales detectados por el Holístico antes del
   // primer ciclo del Final Reviewer. Se inyectan en `issuesPreviosCorregidos`
   // para que el FR los aborde desde el ciclo 1 en vez de descubrirlos en
@@ -1040,6 +1054,11 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
     this.midNovelBetaCritique = "";
     this.midNovelBetaAttempted = false;
     this.midNovelBetaSecondAttempted = false;
+    // [Fix143-A] Resetear la crítica y los flags del Holístico de mid-novela.
+    this.midNovelHolisticCritique = "";
+    this.midNovelHolisticAttempted = false;
+    this.midNovelHolisticSecondAttempted = false;
+    this.midNovelHolisticThirdAttempted = false;
     try {
       // Check if chapters already exist (recovery after crash)
       const existingChapters = await storage.getChaptersByProject(project.id);
@@ -2177,8 +2196,16 @@ ${chapterSummaries || "Sin capítulos disponibles"}
               metadata: { originalityScore: critic.score_originalidad, veredicto: critic.veredicto, clusters: critic.clusters as any },
             });
 
-            if (critic.veredicto === "rechazado" && critic.instrucciones_revision?.trim()) {
-              console.log(`[Orchestrator] Crítico de Originalidad RECHAZÓ el outline. Re-ejecutando Arquitecto con instrucciones de revisión...`);
+            // [Fix143-C] Antes solo se reintentaba con veredicto "rechazado". Una
+            // escaleta marcada "revisar" con score < 7 (caso real 6/10: legado del
+            // mentor asesinado, topo en la causa, juicio final) pasaba a generación
+            // SIN corregir los clichés. Ahora también reintenta (ONE-shot, igual que
+            // antes) cuando el veredicto es "revisar" y el score baja de 7.
+            const needsOriginalityRetry =
+              critic.veredicto === "rechazado" ||
+              (critic.veredicto === "revisar" && critic.score_originalidad < 7);
+            if (needsOriginalityRetry && critic.instrucciones_revision?.trim()) {
+              console.log(`[Orchestrator] [Fix143-C] Crítico de Originalidad ${critic.veredicto === "rechazado" ? "RECHAZÓ" : `marcó REVISAR (${critic.score_originalidad}/10 < 7)`} el outline. Re-ejecutando Arquitecto con instrucciones de revisión...`);
               this.callbacks.onAgentStatus("architect", "thinking", `Outline con baja originalidad (${critic.score_originalidad}/10). El Arquitecto está rediseñando para evitar clichés...`);
 
               const baseInstructions = project.architectInstructions || "";
@@ -3255,7 +3282,23 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
 
           if (this.aborted) break outerSALoop;
           const currentBestScore = bestSAOverall?.score ?? 0;
-          if (currentBestScore >= MIN_PUBLISHABLE_SA_SCORE) break outerSALoop;
+          // [Fix143-B] KO de dimensión crítica de segunda mitad del best. El
+          // agregado puede cruzar el umbral mientras escalada_acto2 / arco_secreto /
+          // deus_ex_machina siguen KO (acto 2 plano, clímax sin sembrar) -> antes
+          // se aceptaba la escaleta y se generaba la novela con el defecto. Ahora no
+          // salimos por score si el best aún tiene una dimensión crítica KO.
+          let bestCriticalKODimsLoop: string[] = [];
+          if (bestSAOverall) {
+            try {
+              const auditForKO = runArchitectStructuralAudits(
+                bestSAOverall.data.escaleta_capitulos as any[],
+                (bestSAOverall.data as any).world_bible
+              );
+              bestCriticalKODimsLoop = this.criticalSecondHalfKODims(auditForKO.problemas);
+            } catch {}
+          }
+          const bestCriticalKOLoop = bestCriticalKODimsLoop.length > 0;
+          if (currentBestScore >= MIN_PUBLISHABLE_SA_SCORE && !bestCriticalKOLoop) break outerSALoop;
           if (autoMechanicalGuidanceApplied) break outerSALoop;
           if (!bestSAOverall) break outerSALoop;
 
@@ -3265,10 +3308,17 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
               (bestSAOverall.data as any).world_bible
             );
             if (!finalAuditForGuidance.problemas.length) break outerSALoop;
+            // [Fix143-B] Si el agregado SÍ pasa el umbral pero hay KO crítico, el
+            // intro por defecto ("por debajo del mínimo publicable") sería falso;
+            // pasamos una razón específica para no confundir al Arquitecto.
+            const scoreOkButCriticalKO = currentBestScore >= MIN_PUBLISHABLE_SA_SCORE && bestCriticalKOLoop;
             const autoGuidance = generateMechanicalGuidanceFromProblems(
               finalAuditForGuidance.problemas,
               bestSAOverall.score,
               MIN_PUBLISHABLE_SA_SCORE,
+              scoreOkButCriticalKO
+                ? `Tu intento anterior alcanzó ${bestSAOverall.score}/10 en el agregado, pero una dimensión CRÍTICA de la segunda mitad sigue KO (${bestCriticalKODimsLoop.join(", ")}): el acto 2 se aplana o el clímax no está sembrado. Corrige EXACTAMENTE esa dimensión sin tocar lo que ya está bien.`
+                : undefined,
             );
             if (!autoGuidance) break outerSALoop;
             effectiveArchitectInstructionsForSA = (effectiveArchitectInstructionsForSA || "") + "\n\n" + autoGuidance;
@@ -3278,7 +3328,7 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
               projectId: project.id,
               level: "info",
               agentRole: "architect",
-              message: `[Fix118] Auto-guidance mecánica generada desde los ${finalAuditForGuidance.problemas.length} problemas residuales (best ${bestSAOverall.score}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10). Reintentando el bucle SA UNA vez más con las correcciones mecánicas inyectadas en architectInstructions antes de activar el gate human-in-the-loop.`,
+              message: `[Fix118${scoreOkButCriticalKO ? "/Fix143-B" : ""}] Auto-guidance mecánica generada desde los ${finalAuditForGuidance.problemas.length} problemas residuales (best ${bestSAOverall.score}/10 ${scoreOkButCriticalKO ? `≥ ${MIN_PUBLISHABLE_SA_SCORE}/10 pero con dimensión crítica de segunda mitad KO: ${bestCriticalKODimsLoop.join(", ")}` : `< ${MIN_PUBLISHABLE_SA_SCORE}/10`}). Reintentando el bucle SA UNA vez más con las correcciones mecánicas inyectadas en architectInstructions antes de activar el gate human-in-the-loop.`,
               metadata: {
                 fix: "Fix118",
                 bestScore: bestSAOverall.score,
@@ -3310,16 +3360,33 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
           // reanuda la generación reusando el snapshot vía Fix106 y pasando
           // la guidance del usuario al Arquitecto.
           const finalSAScore = bestSAOverall?.score ?? lastSeenScoreSAOverall;
-          if (bestSAOverall && finalSAScore < MIN_PUBLISHABLE_SA_SCORE) {
-            const finalAudit = runArchitectStructuralAudits(
-              bestSAOverall.data.escaleta_capitulos as any[],
-              (bestSAOverall.data as any).world_bible
-            );
+          // [Fix143-B] Auditamos el best UNA vez y comprobamos también el KO de
+          // dimensión crítica de segunda mitad: el gate dispara si el agregado no
+          // llega al mínimo O si una dimensión crítica sigue KO (acto 2 plano /
+          // clímax sin sembrar) aunque el agregado pase. Así no se escribe la novela
+          // con el bajón de la segunda mitad sin resolver tras la pasada extra.
+          const finalAudit = bestSAOverall
+            ? runArchitectStructuralAudits(
+                bestSAOverall.data.escaleta_capitulos as any[],
+                (bestSAOverall.data as any).world_bible
+              )
+            : null;
+          const gateCriticalKODims = finalAudit ? this.criticalSecondHalfKODims(finalAudit.problemas) : [];
+          const gateCriticalKO = gateCriticalKODims.length > 0;
+          const gateByCriticalKOOnly = finalSAScore >= MIN_PUBLISHABLE_SA_SCORE && gateCriticalKO;
+          if (bestSAOverall && finalAudit && (finalSAScore < MIN_PUBLISHABLE_SA_SCORE || gateCriticalKO)) {
             // [Fix118] Si ya generamos auto-guidance en la pasada previa y
             // los problemas siguen, refrescamos la auto-guidance contra los
             // problemas RESIDUALES de esta última pasada (no los originales).
             const autoGuidanceForPanel = autoMechanicalGuidanceApplied
-              ? generateMechanicalGuidanceFromProblems(finalAudit.problemas, finalSAScore, MIN_PUBLISHABLE_SA_SCORE)
+              ? generateMechanicalGuidanceFromProblems(
+                  finalAudit.problemas,
+                  finalSAScore,
+                  MIN_PUBLISHABLE_SA_SCORE,
+                  gateByCriticalKOOnly
+                    ? `La estructura alcanzó ${finalSAScore}/10 en el agregado pero una dimensión CRÍTICA de la segunda mitad sigue KO (${gateCriticalKODims.join(", ")}).`
+                    : undefined,
+                )
               : "";
             const pendingPayload = {
               bestScore: finalSAScore,
@@ -3344,11 +3411,13 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
               projectId: project.id,
               level: "warning",
               agentRole: "architect",
-              message: `[Fix115] La estructura no alcanzó el mínimo publicable (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10) tras ${lastMaxSAIterations} iteraciones${lastWbaExternalCount > 0 ? ` + ${lastWbaExternalCount} audit(s) on-demand del Auditor de World Bible (Fix115/Fix116)` : ""}${autoMechanicalGuidanceApplied ? " + 1 pasada extra con auto-guidance mecánica (Fix118)" : ""}. NO se escribe la novela sobre una escaleta defectuosa. El proyecto queda pausado en "awaiting_structural_guidance" — abre el panel desde el dashboard para revisar los problemas residuales y dar guidance manual al Arquitecto${autoMechanicalGuidanceApplied ? " (ya hay una propuesta auto-generada pre-rellenada que puedes editar o enviar tal cual)" : ""}.`,
+              message: `[Fix115${gateByCriticalKOOnly ? "/Fix143-B" : ""}] ${gateByCriticalKOOnly ? `La estructura alcanzó el mínimo agregado (${finalSAScore}/10 ≥ ${MIN_PUBLISHABLE_SA_SCORE}/10) pero una dimensión CRÍTICA de la segunda mitad sigue KO (${gateCriticalKODims.join(", ")}): acto 2 plano o clímax sin sembrar` : `La estructura no alcanzó el mínimo publicable (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10)`} tras ${lastMaxSAIterations} iteraciones${lastWbaExternalCount > 0 ? ` + ${lastWbaExternalCount} audit(s) on-demand del Auditor de World Bible (Fix115/Fix116)` : ""}${autoMechanicalGuidanceApplied ? " + 1 pasada extra con auto-guidance mecánica (Fix118)" : ""}. NO se escribe la novela sobre una escaleta defectuosa. El proyecto queda pausado en "awaiting_structural_guidance" — abre el panel desde el dashboard para revisar los problemas residuales y dar guidance manual al Arquitecto${autoMechanicalGuidanceApplied ? " (ya hay una propuesta auto-generada pre-rellenada que puedes editar o enviar tal cual)" : ""}.`,
               metadata: {
-                fix: "Fix115",
+                fix: gateByCriticalKOOnly ? "Fix143-B" : "Fix115",
                 finalScore: finalSAScore,
                 threshold: MIN_PUBLISHABLE_SA_SCORE,
+                criticalKODims: gateCriticalKODims,
+                gateByCriticalKOOnly,
                 wbaExternalRan: lastWbaExternalCount > 0,
                 wbaExternalCount: lastWbaExternalCount,
                 wbaExternalAreas: lastWbaExternalAreas,
@@ -3358,7 +3427,7 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
               },
             });
             try {
-              this.callbacks.onAgentStatus("architect", "idle", `Pausado: la estructura necesita tu guidance manual (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10).`);
+              this.callbacks.onAgentStatus("architect", "idle", gateByCriticalKOOnly ? `Pausado: una dimensión crítica de la segunda mitad sigue KO (${gateCriticalKODims.join(", ")}) pese a un agregado de ${finalSAScore}/10.` : `Pausado: la estructura necesita tu guidance manual (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10).`);
             } catch {}
             return; // NO continuamos al Narrador.
           }
@@ -3832,7 +3901,7 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
             previousChapterContent: isStalled ? undefined : previousContent,
             previousChaptersFullText,
             recentSceneMolds: recentSceneMolds || undefined,
-            editorialCritique: this.midNovelBetaCritique || undefined,
+            editorialCritique: this.combinedMidNovelCritique(),
             seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
             seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
@@ -4189,6 +4258,38 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           await this.runMidNovelBetaPass(project, completedSoFar, totalChaptersForBeta, remainingAfter, 2);
           if (this.aborted) {
             console.log(`[Orchestrator] [Fix135-C] Aborted tras Beta mid-novela (pasada 2). Saliendo silenciosamente.`);
+            return;
+          }
+        }
+
+        // [Fix143-A] Lector HOLÍSTICO a mid-novela en TRES pasadas tempranas
+        // (~30%/55%/80%). Espejo del Beta pero con el lector macro/estructural:
+        // detecta de forma PREVENTIVA fallos estructurales/arcos/ritmo mientras
+        // aún se escribe y solo GUÍA los capítulos restantes (no reescribe lo ya
+        // escrito). Best-effort + one-shot por pasada (flag puesto ANTES de la
+        // llamada). Reutiliza las guardas/contadores del bloque Beta de arriba.
+        const firstHolisticMark = Math.floor(totalChaptersForBeta * 0.30);
+        const secondHolisticMark = Math.floor(totalChaptersForBeta * 0.55);
+        const thirdHolisticMark = Math.floor(totalChaptersForBeta * 0.80);
+        if (betaEligible && !this.midNovelHolisticAttempted && completedSoFar >= firstHolisticMark) {
+          this.midNovelHolisticAttempted = true;
+          await this.runMidNovelHolisticPass(project, completedSoFar, totalChaptersForBeta, remainingAfter, 1);
+          if (this.aborted) {
+            console.log(`[Orchestrator] [Fix143-A] Aborted tras Holístico mid-novela (pasada 1). Saliendo silenciosamente.`);
+            return;
+          }
+        } else if (betaEligible && this.midNovelHolisticAttempted && !this.midNovelHolisticSecondAttempted && completedSoFar >= secondHolisticMark) {
+          this.midNovelHolisticSecondAttempted = true;
+          await this.runMidNovelHolisticPass(project, completedSoFar, totalChaptersForBeta, remainingAfter, 2);
+          if (this.aborted) {
+            console.log(`[Orchestrator] [Fix143-A] Aborted tras Holístico mid-novela (pasada 2). Saliendo silenciosamente.`);
+            return;
+          }
+        } else if (betaEligible && this.midNovelHolisticSecondAttempted && !this.midNovelHolisticThirdAttempted && completedSoFar >= thirdHolisticMark) {
+          this.midNovelHolisticThirdAttempted = true;
+          await this.runMidNovelHolisticPass(project, completedSoFar, totalChaptersForBeta, remainingAfter, 3);
+          if (this.aborted) {
+            console.log(`[Orchestrator] [Fix143-A] Aborted tras Holístico mid-novela (pasada 3). Saliendo silenciosamente.`);
             return;
           }
         }
@@ -4763,7 +4864,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousContinuity,
             refinementInstructions: refinementInstructions + stalledEscalationResume,
             antiRepetitionGuidance: (project as any).antiRepetitionGuidance || undefined,
-            editorialCritique: this.midNovelBetaCritique || undefined,
+            editorialCritique: this.combinedMidNovelCritique(),
             authorName,
             isRewrite: isRewrite || isStalledResume,
             minWordCount: perChapterMinResume,
@@ -7631,6 +7732,129 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     }
 
     return result;
+  }
+
+  // [Fix143-B] Devuelve las dimensiones CRÍTICAS de segunda mitad que están KO en
+  // un conjunto de problemas del Auditor Estructural. Misma definición que el gate
+  // del bucle SA (Fix135-A / mapa de salud Fix102): dimensiones
+  // ["escalada_acto2","arco_secreto","deus_ex_machina"]; una dimensión está KO si
+  // acumula >=2 problemas O tiene al menos uno de severidad "alta". Se usa para no
+  // aceptar una escaleta cuyo agregado pasa el umbral pero con el acto 2 plano o el
+  // clímax sin sembrar.
+  private criticalSecondHalfKODims(problemas: Array<{ area: string; severidad: string }>): string[] {
+    const CRITICAL_SECOND_HALF_DIMS = ["escalada_acto2", "arco_secreto", "deus_ex_machina"];
+    const counts: Record<string, number> = {};
+    const hasAlta: Record<string, boolean> = {};
+    for (const d of CRITICAL_SECOND_HALF_DIMS) { counts[d] = 0; hasAlta[d] = false; }
+    for (const p of problemas || []) {
+      if (p.area in counts) {
+        counts[p.area]++;
+        if (p.severidad === "alta") hasAlta[p.area] = true;
+      }
+    }
+    return CRITICAL_SECOND_HALF_DIMS.filter(d => counts[d] >= 2 || hasAlta[d]);
+  }
+
+  // [Fix143-A] Combina la crítica del Holístico y del Beta de mid-novela en un
+  // solo bloque para inyectarlo al Ghostwriter como `editorialCritique`. El
+  // Holístico va primero (visión macro/estructural). Cada parte se acota para no
+  // inflar el prompt del Narrador. Devuelve undefined si ambas están vacías.
+  private combinedMidNovelCritique(): string | undefined {
+    const MAX_PART = 12000;
+    const parts: string[] = [];
+    const holistic = this.midNovelHolisticCritique?.trim();
+    const beta = this.midNovelBetaCritique?.trim();
+    if (holistic && holistic.length > 0) {
+      parts.push(`### LECTURA HOLÍSTICA TEMPRANA (editor estructural — estructura, arcos, ritmo de conjunto)\n${holistic.slice(0, MAX_PART)}`);
+    }
+    if (beta && beta.length > 0) {
+      parts.push(`### LECTURA BETA TEMPRANA (lector objetivo — enganche, claridad, promesa de género)\n${beta.slice(0, MAX_PART)}`);
+    }
+    if (parts.length === 0) return undefined;
+    return parts.join("\n\n");
+  }
+
+  // [Fix143-A] Ejecuta UNA pasada del Holístico a mid-novela y captura/refresca la
+  // crítica en `midNovelHolisticCritique`. Best-effort: si falla o devuelve notas
+  // vacías, log y la generación continúa. Espejo de `runMidNovelBetaPass`.
+  private async runMidNovelHolisticPass(
+    project: Project,
+    completedSoFar: number,
+    total: number,
+    remainingAfter: number,
+    passNumber: 1 | 2 | 3,
+  ): Promise<void> {
+    try {
+      this.callbacks.onAgentStatus("editor", "reviewing",
+        `[Fix143-A] Lector Holístico (pasada ${passNumber}) leyendo los primeros ${completedSoFar}/${total} capítulos para guiar el resto de la novela...`
+      );
+      const notesText = await this.runMidNovelHolisticReview(project);
+      if (this.aborted) return;
+      if (notesText && notesText.trim().length > 200) {
+        this.midNovelHolisticCritique = notesText;
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          agentRole: "editor",
+          message: `[Fix143-A] Crítica del Holístico a mid-novela (pasada ${passNumber}) capturada (${this.midNovelHolisticCritique.length.toLocaleString("es-ES")} chars, leídos ${completedSoFar}/${total} caps). Se inyectará en los ${remainingAfter} capítulos restantes (guía-only, no reescribe lo ya escrito).`,
+        });
+        this.callbacks.onAgentStatus("editor", "complete",
+          `[Fix143-A] Holístico mid-novela (pasada ${passNumber}) completado. Guía activa para los ${remainingAfter} capítulos restantes.`
+        );
+      } else {
+        console.warn(`[Orchestrator] [Fix143-A] Holístico mid-novela (pasada ${passNumber}) devolvió notas vacías o muy cortas. No se actualizará la guía.`);
+      }
+    } catch (holErr) {
+      console.warn(`[Orchestrator] [Fix143-A] Holístico mid-novela (pasada ${passNumber}) falló (best-effort, generación continúa): ${(holErr as Error).message}`);
+    }
+  }
+
+  // [Fix143-A] Variante scoped del Lector Holístico para uso mid-novela. Filtra a
+  // solo capítulos COMPLETED + content no vacío (sin placeholders pendientes) y
+  // devuelve solo el texto del informe. A diferencia de la lectura final, NO
+  // persiste holisticScore/lastHolisticNotes: es una guía preventiva interna y no
+  // debe pisar la nota/informe que el dashboard muestra ni confundir al bucle dual
+  // (que relee limpio). Sí registra el consumo de tokens.
+  private async runMidNovelHolisticReview(project: Project): Promise<string> {
+    const ctx = await this.loadFullNovelContext(project);
+    const seriesContext = await this.buildSeriesContextForReviewers(project);
+    const allChapters = await storage.getChaptersByProject(project.id);
+    const completedChapters = allChapters
+      .filter(c => c.status === "completed" && c.content && c.content.trim().length > 100)
+      .sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0))
+      .map(c => ({
+        numero: c.chapterNumber || 0,
+        titulo: c.title || "",
+        contenido: c.content || "",
+      }));
+
+    if (completedChapters.length === 0) {
+      throw new Error("[Fix143-A] No hay capítulos completados para el Holístico mid-novela.");
+    }
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "info",
+      message: `[Fix143-A] Iniciando lectura holística temprana de mid-novela (${completedChapters.length} capítulos completados).`,
+      agentRole: "editor",
+    });
+
+    const result = await this.holisticReviewer.runReview({
+      projectTitle: project.title,
+      chapters: completedChapters,
+      guiaEstilo: ctx.styleGuideContent,
+      worldBibleSummary: ctx.worldBibleSummary,
+      generoObjetivo: project.genre || undefined,
+      longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
+      seriesContext,
+    }, project.id);
+
+    await this.trackTokenUsage(
+      project.id, result.tokenUsage,
+      "Lector Holístico (mid-novela)", "deepseek-v4-flash", undefined, "holistic_review"
+    );
+
+    return result.notesText;
   }
 
   async runBetaReview(project: Project, options?: { appliedNotesHistory?: string; regressionWarning?: string }): Promise<BetaReaderResult> {
