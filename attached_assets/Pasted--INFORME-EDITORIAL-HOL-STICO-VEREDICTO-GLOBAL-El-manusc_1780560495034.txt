@@ -1,0 +1,235 @@
+# INFORME EDITORIAL HOLÍSTICO
+
+## VEREDICTO GLOBAL
+El manuscrito presenta una premisa sólida y un arranque potente, pero la ejecución del segundo acto se desmorona entre repeticiones estructurales, una subtrama de Leonor desaprovechada y un clímax sostenido por un deus ex machina (la carta del rey en cap 33). El problema más urgente es la numeración caótica de capítulos (coexisten dos sistemas de conteo que convierten la lectura en un ejercicio de confusión), lo que indica falta de revisión de continuidad editorial básica. La prosa está sobrecargada de descripciones sensoriales que lastran el ritmo, y el personaje de Nicolás, pese a su potencial, permanece pasivo en los momentos clave. Con correcciones quirúrgicas de estructura, ritmo y arco de personajes secundarios, la novela podría alcanzar un nivel publicable, pero en su estado actual no defendible sin reescritura del tramo central.
+
+## PROBLEMAS ESTRUCTURALES (crítico)
+
+1. **Numeración de capítulos incoherente** – El manuscrito alterna dos sistemas de numeración: los títulos de los capítulos en el índice (Cap 1, Cap 2…) no coinciden con los encabezados dentro del texto (Capítulo 8, Capítulo 9…). Por ejemplo, el «Capítulo 5» del índice se abre como «Capítulo 8: El archivo del diablo», y esta duplicidad se arrastra hasta el final, donde el epílogo aparece como «Capítulo -1». Esto no es un error menor: rompe la continuidad de lectura y sugiere que el manuscrito no ha pasado por una revisión de maquetación básica. Es imprescindible unificar toda la numeración en una secuencia única (Prólogo = 0, capítulos del 1 al 34, Epílogo = -1 o eliminado).
+
+2. **Segundo acto desinflado por repetición de set-pieces (caps 10-16)** – Entre el capítulo de la cena de conspiradores (cap 13) y el rescate de Leonor (cap 20), la novela entra en un bucle: Elvira es acosada por Almonte, perseguida por El Zurdo, se reúne con aliados que repiten la misma información, y huye de escenarios calcados. Las escenas de persecución (cap 4, cap 15, cap 24) siguen el mismo patrón: Elvira corre, encuentra un escondite precario, los esbirros pasan de largo. La cena de conspiradores (cap 13) es una escena de exposición que no avanza la trama; el intento de violación de Almonte (cap 14) y la búsqueda de la carta (cap 15) podrían condensarse en un solo capítulo. Sugiero fusionar los caps 10-16 en cuatro capítulos máximo, eliminando escenas redundantes y acortando las persecuciones.
+
+3. **Clímax resuelto por deus ex machina (cap 33)** – La intervención del rey mediante un mensajero que llega justo cuando Alderete va a dictar sentencia carece de cualquier preparación previa. El rey ha sido una figura ausente durante toda la novela; no hay pistas de que estuviera siguiendo el juicio, ni de que hubiera una facción en la Corte dispuesta a salvar a Elvira. Esto desactiva toda la tensión acumulada en el juicio y convierte el desenlace en un artificio. Es necesario añadir foreshadowing en caps 25-30 (una carta, un rumor, una mención a la inestabilidad política que obligue al rey a intervenir) para que la resolución se sienta orgánica.
+
+4. **Arco de Leonor inconcluso** – Leonor aparece en cap 1, desaparece hasta cap 16, es secuestrada en cap 19, liberada en cap 20, y luego regresa en cap 34 para una despedida melodramática que no se ha ganado. Su personaje no evoluciona: pasa de ser la hermana devota y asustada a la hermana devota y resentida, sin que el lector comprenda su transformación interna. Necesita al menos dos escenas intermedias (caps 12-15) donde muestre su conflicto entre la lealtad a Elvira y el miedo a la Inquisición, y quizás un momento de acción que la redima antes del final.
+
+## ARCOS DE PERSONAJE (mayor)
+
+**Elvira Narváez** – Arco completo pero con un problema de motivación en cap 8. Acepta el trato de Almonte sin mostrar suficiente conflicto interno; pasa de la negativa a la aceptación en apenas dos párrafos. Sugiero añadir una escena de duda donde sopesa las opciones y recuerda a su padre, para que su decisión tenga más peso. El resto del arco funciona: evoluciona de viuda acobardada a defensora de la verdad.
+
+**Casimiro Almonte** – Arco bien trazado pero su muerte en cap 27 es abrupta y carece de resonancia. No hay un último momento de reflexión sobre su hija o sobre la traición. Sugiero añadir un breve parlamento antes de morir, donde reconozca su derrota y quizás mencione a Clara.
+
+**Fray Silveira** – El arco de redención es efectivo, pero su desaparición entre caps 19 y 29 lo debilita. Una escena corta en cap 23 o 24, donde se le vea en prisión manteniendo su determinación, mantendría viva su presencia. La escena de rescate funciona bien, pero pierde impacto por la ausencia previa.
+
+**Leonor Narváez** – Arco abandonado (ver punto 4 de Problemas Estructurales). No se entiende por qué pasa de la devoción al resentimiento. Necesita un momento en caps 12-15 donde descubra algo de la conspiración y se posicione.
+
+**Nicolás** – Personaje funcional pero demasiado pasivo en el tercer acto. En caps 28-32 se limita a seguir a Elvira y guardar objetos. Sugiero darle un momento de agencia: que sea él quien decida esconder los pliegos en la cripta, o que se enfrente a un esbirro en cap 29 para permitir la huida de Elvira.
+
+## CONTINUIDAD Y COHERENCIA INTERNA (mayor)
+
+1. En cap 4,2 Elvira pierde el frasco de ácido durante la persecución, pero en cap 4,3 lo tiene de nuevo. Corregir: añadir una línea donde lo recupera al salir del callejón.
+
+2. El taller aparece precintado en cap 23, pero en cap 24 Elvira y Nicolás entran sin dificultad. Debería describirse cómo fuerzan el precinto o acceden por el sótano.
+
+3. El tiempo de la huida a Toledo (caps 23-24) es inconsistente: salen de Madrid, cruzan el olivar, y llegan al convento en lo que parecen horas, pero luego el motín de Madrid parece desarrollarse en paralelo. Añadir referencias temporales (el sol, las campanas) para anclar la cronología.
+
+4. En cap 18, la imprenta clandestina está en una cripta bajo el convento de San Felipe, pero en cap 23 se accede a ella desde otro lugar. Unificar la geografía: aclarar si la cripta está bajo el convento o bajo la plazuela.
+
+5. Los poderes de El Zurdo son inconsistentes: en cap 4 persigue a pie, en cap 15 aparece montado, en cap 24 aparece de repente en el palacio de Almonte sin explicación. Sugiero que siempre se desplace a caballo y que tenga una red de informantes que justifique su ubicuidad.
+
+6. En cap 7 (taller de nuevo), Nicolás usa el código de señas, pero en cap 23 habla en voz alta. Decidir si es mudo o no; si el código es solo con Elvira, mantener la coherencia.
+
+## RITMO Y TENSIÓN (mayor)
+
+**Arranque (caps 0-7):** Buen ritmo, con un prólogo potente (cap 0) y una presentación eficaz de la conspiración. La tensión se mantiene hasta la primera persecución (cap 4).
+
+**Desarrollo medio (caps 8-16):** PROBLEMA GRAVE. La novela se estanca aquí. Las escenas se repiten (persecuciones, conspiradores que explican lo mismo, Elvira que duda y luego avanza). La cena de conspiradores (cap 13) es exposición pura. El ritmo se recupera momentáneamente con la muerte del librero (cap 16), pero vuelve a caer en caps 17-19 con la confesión de Silveira y el secuestro de Leonor.
+
+**Tercer acto (caps 17-26):** Irregular. La huida a Toledo (cap 23) recupera tensión, pero la persecución en el olivar se resuelve demasiado pronto. La impresión de los pliegos (cap 25) es larga pero efectiva. El juicio (caps 27-29) se alarga innecesariamente: el alegato de Elvira repite las mismas pruebas que ya conocemos. Reducir el juicio a dos caps.
+
+**Clímax (caps 30-31):** La intervención del rey (cap 33) desactiva toda la tensión. La despedida de Leonor (cap 34) es melodramática y alarga innecesariamente el final.
+
+**Resolución y epílogo:** Funciona mejor, pero el tono cambia drásticamente a reflexivo, lo que desconecta del thriller histórico precedente. Si se mantiene, debería ser más breve (un capítulo, no dos).
+
+## ESCENAS Y CAPÍTULOS PROBLEMÁTICOS (mayor/menor)
+
+- **Cap 10 (taller de nuevo)** — Capítulo huérfano: no avanza trama ni profundiza personaje. Eliminar o fusionar con cap 9. La información que contiene (la plancha falsa) puede integrarse en cap 11.
+- **Cap 13 (cena de conspiradores)** — Escena de exposición disfrazada de acción. Reducir a dos páginas y extraer solo la dinámica entre los personajes (la tensión entre Espinosa e Izquierdo, la simpatía de Beltrán). El resto es relleno.
+- **Cap 14 (beso de Almonte)** — El clímax funciona, pero la huida de Elvira es demasiado fácil. Almonte debería tener alguna consecuencia (un moretón visible en la siguiente escena, o que intente detenerla).
+- **Cap 16 (asesinato del librero)** — El hallazgo del cuerpo es atmosférico, pero la escena se alarga con descripciones redundantes. Podar un 30%.
+- **Cap 25 (última impresión)** — Secuencia poderosa, pero la repetición del proceso de impresión se vuelve monótona. Mostrar solo las tres primeras y la última; lo de en medio se narra en elipsis.
+- **Cap 27 (muerte de Almonte)** — La muerte es abrupta y el personaje no tiene tiempo de despedida. Añadir un parlamento breve donde reflexione sobre su hija o sobre su traición.
+- **Caps 27-29 (juicio)** — Excesivamente largos. El alegato de Elvira repite pruebas ya conocidas. Reducir a dos caps (el juicio y la intervención del rey en el segundo).
+
+## REPETICIONES Y CLICHÉS (menor)
+
+1. Repetición de la frase «el cobre no miente» hasta la saturación (caps 1, 3, 9, 28, 31). Usarla una o dos veces como máximo; en el resto, variar a otras imágenes relacionadas con el oficio.
+
+2. Estructura de persecución calcada en caps 4, 15 y 24: Elvira corre, los esbirros la acorralan, ella encuentra una salida milagrosa. Variar las tácticas en cada ocasión (en una que se mezcle con la multitud, en otra que soborne a alguien, en otra que use un túnel).
+
+3. Cliché del «villano que explica su plan» en boca de Almonte (cap 6) y Alderete (cap 21). Subvertir: que Alderete no revele todos sus motivos, que queden zonas de ambigüedad.
+
+4. Cliché de la «viuda valiente que desafía al poder» sin matices. Elvira necesita un momento de flaqueza genuina que no sea solo físico (el cansancio), sino moral: que dude de si está haciendo lo correcto al poner en riesgo a los que la rodean.
+
+5. Descripciones sensoriales excesivas en prácticamente todos los capítulos. Cada entrada a un espacio nuevo incluye tres o cuatro líneas de olores, texturas y luces. Reducir a una línea por escena.
+
+## SUGERENCIAS CONCRETAS DE CORRECCIÓN
+
+1. Unificar la numeración de capítulos en una secuencia única: Prólogo = 0, caps del 1 al 34, Epílogo = -1 (o eliminarlo fusionándolo con cap 34). Revisar que los títulos de los encabezados coincidan con los del índice.
+
+2. Fusionar los caps 10, 11, 12 y 13 en un solo capítulo (nuevo cap 10) que abarque la propuesta de Almonte, el taller de nuevo y la cena de conspiradores en una secuencia continua. Eliminar el capítulo huérfano 10.
+
+3. Acortar las persecuciones: en cap 4, reducir la huida a dos párrafos; en cap 15, eliminar la variante con el carro de estiércol; en cap 24, que Elvira escape por el tejado sin la larga escena del callejón.
+
+4. Añadir foreshadowing de la intervención del rey en caps 25-30: una carta que Nerváez recibe de un contacto en la Corte, una mención a la inestabilidad del valido Godoy, o un rumor sobre el descontento del monarca con Alderete.
+
+5. Desarrollar el arco de Leonor entre caps 12 y 15: añadir una escena donde Leonor descubra un detalle de la conspiración (quizás una carta que Elvira ha dejado olvidada) y deba decidir si callar o actuar.
+
+6. Dar agencia a Nicolás en el tercer acto: en cap 29, que sea él quien enfrente a un esbirro para permitir la huida de Elvira; en cap 32, que sea su idea grabar la luna negra como legado.
+
+7. Podar un 25% de las descripciones sensoriales en cada capítulo, especialmente en las entradas a nuevos espacios. Mantener solo los detalles que sean relevantes para la trama o el estado de ánimo de Elvira.
+
+8. Reducir el juicio (caps 27-29) a dos capítulos: cap 27 con las acusaciones y los testigos, cap 28 con el alegato de Elvira y la intervención del rey.
+
+9. Añadir un momento de conflicto interno en cap 8 donde Elvira sopesa el trato de Almonte y recuerda a su padre, para que su decisión no parezca automática.
+
+10. Reescribir la muerte de Almonte (cap 27) incluyendo un breve parlamento donde recuerde a su hija o reconozca su derrota, para darle un cierre emocional.
+
+## LO QUE FUNCIONA
+
+1. El prólogo (cap 0) es excelente: establece la conspiración, presenta el símbolo de la luna negra y genera intriga inmediata.
+2. La relación entre Elvira y Nicolás está bien construida a través de gestos silenciosos y el código de señas; es lo más original de la novela.
+3. El personaje de fray Silveira tiene un arco de redención creíble, y su sacrificio en cap 19 está bien justificado.
+4. La ambientación histórica es sólida y convincente (el Madrid inquisitorial, los detalles del oficio de grabador, la imprenta clandestina).
+5. El epílogo, aunque melodramático, cierra el tema de la transmisión del oficio de manera emotiva y conecta con el título de la novela.
+
+## PUNTUACIÓN EDITORIAL (JSON)
+
+<!-- PUNTUACION_HOLISTICA_INICIO -->
+```json
+{"puntuacion_global": 5, "justificacion": "El segundo acto se desinfla por repeticiones estructurales, el clímax depende de un deus ex machina sin foreshadowing, y la numeración de capítulos está rota. Requiere reestructuración profunda del tramo central y revisiones de continuidad antes de ser defendible."}
+```
+<!-- PUNTUACION_HOLISTICA_FIN -->
+
+## INSTRUCCIONES AUTO-APLICABLES (JSON)
+
+<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->
+```json
+{
+  "instrucciones": [
+    {
+      "capitulos_afectados": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, -1],
+      "categoria": "estilo",
+      "descripcion": "Unificar la numeración de capítulos en una secuencia única y coherente.",
+      "instrucciones_correccion": "Renumerar todos los capítulos de forma consecutiva: Prólogo = 0, caps del 1 al 34, Epílogo = -1 (o fundirlo con cap 34). Revisar que los títulos de los encabezados coincidan exactamente con los del índice.",
+      "tipo": "global_style",
+      "prioridad": "alta"
+    },
+    {
+      "capitulos_afectados": [10, 11, 12, 13],
+      "categoria": "trama",
+      "descripcion": "Fusionar caps 10-13 en un solo capítulo eliminando escenas redundantes.",
+      "instrucciones_correccion": "Integrar la información de los caps 10 (taller de nuevo), 11 (beso de Almonte), 12 (doble carta) y 13 (cena de conspiradores) en un único capítulo. Mantener solo: la propuesta de Almonte, el rechazo de Elvira, la cena reducida a dos páginas con los personajes clave, y la huida de Elvira. Eliminar toda la exposición repetitiva sobre la conspiración.",
+      "tipo": "fusionar",
+      "merge_into": 10,
+      "merge_sources": [10, 11, 12, 13],
+      "prioridad": "alta"
+    },
+    {
+      "capitulos_afectados": [25, 26, 27, 28, 29],
+      "categoria": "trama",
+      "descripcion": "Añadir foreshadowing de la intervención del rey en el juicio.",
+      "instrucciones_correccion": "En los caps 25-28, añadir en al menos dos ocasiones: una mención de Elvira a un rumor sobre la inestabilidad del valido Godoy, una carta que recibe de un contacto en la Corte advirtiendo que el rey sigue el caso, o un diálogo entre Beltrán y Elvira donde especulen sobre las divisiones en el Alcázar. En cap 29, justo antes del juicio, que Elvira note la ausencia de ciertos nobles o la tensión entre Alderete y sus secretarios.",
+      "tipo": "estructural",
+      "prioridad": "alta",
+      "plan_por_capitulo": {
+        "25": "Añadir un párrafo donde Elvira reflexione sobre un rumor que oyó en la imprenta: que Godoy ha perdido el favor del rey y que alguien en la Corte quiere usar el juicio para desacreditar a Alderete.",
+        "26": "Insertar un breve intercambio entre Elvira y Beltrán en la celda donde él mencione que hay 'corrientes encontradas en el Alcázar'.",
+        "27": "En la sala del juicio, describir la ausencia de algunos nobles habituales y la inquietud entre los secretarios de Alderete.",
+        "29": "Antes de que Alderete dicte sentencia, mostrar un instante de duda en el Inquisidor cuando mira hacia la puerta, como si esperara algo."
+      }
+    },
+    {
+      "capitulos_afectados": [12, 14, 15, 16, 17],
+      "categoria": "personaje",
+      "descripcion": "Desarrollar el arco de Leonor con escenas intermedias.",
+      "instrucciones_correccion": "Añadir una escena entre caps 12 y 14 donde Leonor descubra por casualidad un documento de la conspiración (una carta de Almonte que Elvira ha dejado olvidada). En caps 15-16, mostrar su conflicto interno entre la lealtad a su hermana y el miedo a la Inquisición, culminando en una decisión que la lleve a ayudar a Elvira de forma activa (quizás ocultando un pliego).",
+      "tipo": "estructural",
+      "prioridad": "alta",
+      "plan_por_capitulo": {
+        "12": "Añadir una escena en casa de Leonor: ella encuentra una carta de Almonte bajo el jergón de Elvira, la lee y se queda paralizada. Decide no decir nada pero empieza a observar a su hermana con otros ojos.",
+        "14": "Breve secuencia donde Leonor confronta a Elvira sobre la carta; Elvira le explica a medias. Leonor no la aprueba pero promete guardar silencio.",
+        "16": "Antes del secuestro, Leonor ayuda a Elvira a esconder un pliego en el doble fondo del arcón, demostrando que ha decidido colaborar aunque con miedo."
+      }
+    },
+    {
+      "capitulos_afectados": [29, 30, 31],
+      "categoria": "personaje",
+      "descripcion": "Dar agencia a Nicolás en el tercer acto.",
+      "instrucciones_correccion": "En cap 29, que Nicolás sea quien distraiga a los esbirros para que Elvira pueda huir del Alcázar. En cap 30, durante el juicio, que él mismo decida esconder los pliegos en un lugar que solo él conoce, sin consultar a Elvira. En cap 31, que sea suya la idea de grabar una luna negra como legado.",
+      "tipo": "estructural",
+      "prioridad": "media",
+      "plan_por_capitulo": {
+        "29": "Al ser arrestados en el Alcázar, Nicolás finge una pelea con un esbirro, permitiendo que Elvira escape mientras él es reducido.",
+        "30": "Antes de ser conducido a la celda, Nicolás esconde el hatillo de pliegos en una grieta del muro del callejón del Matadero, lugar que solo él conoce.",
+        "31": "En la celda, Nicolás traza un boceto de la luna negra en el suelo con un clavo, y se lo muestra a Elvira con una sonrisa: entiende que el símbolo debe pervivir."
+      }
+    },
+    {
+      "capitulos_afectados": [4, 15, 24],
+      "categoria": "ritmo",
+      "descripcion": "Acortar las tres persecuciones calcadas.",
+      "instrucciones_correccion": "En cap 4, reducir la huida a dos párrafos: Elvira corre, se esconde en el callejón, los esbirros pasan de largo. Eliminar la variante del carro de estiércol. En cap 15, que la persecución termine en el olivar sin la larga espera; que los jinetes se alejen al no encontrar huellas. En cap 24, que Elvira escape por el tejado sin la escena del callejón trasero; que salte a un corral y se deslice calle abajo.",
+      "tipo": "puntual",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [27, 28],
+      "categoria": "ritmo",
+      "descripcion": "Reducir el juicio a dos capítulos.",
+      "instrucciones_correccion": "Fusionar caps 27 y 28 en un único capítulo: comenzar con los testigos, seguir con el alegato de Elvira (reducido a una página), y terminar con el revuelo y la suspensión del juicio. Eliminar toda repetición de las pruebas (el expediente de Illescas, las cartas, etc.) que ya se presentaron en caps anteriores. El cap 29 pasa a ser la intervención del rey y la sentencia.",
+      "tipo": "fusionar",
+      "merge_into": 27,
+      "merge_sources": [27, 28],
+      "prioridad": "alta"
+    },
+    {
+      "capitulos_afectados": [8],
+      "categoria": "personaje",
+      "descripcion": "Añadir conflicto interno en la aceptación del trato de Almonte.",
+      "instrucciones_correccion": "En cap 8, después de que Almonte se marche, añadir un párrafo donde Elvira se quede sola y reflexione: sopesa las opciones, recuerda a su padre grabando la luna negra, siente miedo pero también una determinación creciente. La decisión debe sentirse como un acto de voluntad, no como una concesión automática.",
+      "tipo": "puntual",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [27],
+      "categoria": "personaje",
+      "descripcion": "Añadir parlamento final para Almonte antes de morir.",
+      "instrucciones_correccion": "Justo antes de que El Zurdo lo apuñale, que Almonte murmure algo sobre su hija Clara ('Al menos volveré a verte, pequeña') o sobre su propia traición ('Mauro, tenías razón. Todo fue inútil.'). Incluir una línea que cierre su arco.",
+      "tipo": "puntual",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, -1],
+      "categoria": "estilo",
+      "descripcion": "Podar un 25% de descripciones sensoriales en todos los capítulos.",
+      "instrucciones_correccion": "En cada capítulo, reducir las descripciones de olores, texturas y luces a una o dos líneas por escena. Mantener solo los detalles relevantes para la trama o el estado de ánimo del personaje. Por ejemplo: en las entradas a nuevos espacios, eliminar la enumeración de olores y centrarse en un solo elemento sensorial que defina el ambiente.",
+      "tipo": "global_style",
+      "prioridad": "media"
+    }
+  ]
+}
+```
+<!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->
+
+## VEREDICTO DE REPARABILIDAD AUTOMÁTICA (JSON)
+
+<!-- VEREDICTO_GATE_INICIO -->
+```json
+{
+  "severidad_global": "reparable_con_reservas",
+  "issues_irreparables": [
+    {"capitulo": 10, "problema": "Fusión de cuatro capítulos que requiere decisión humana sobre qué contenido conservar y cuál eliminar", "motivo": "El sistema puede fusionar técnicamente los caps, pero no puede discernir qué pasajes son redundantes sin criterio editorial; necesita supervisión para evitar pérdida de información relevante."},
+    {"capitulo": 27, "problema": "El clímax depende de un deus ex machina (carta del rey) sin foreshadowing previo, que requiere añadir contenido en varios capítulos anteriores", "motivo": "El sistema puede insertar párrafos de foreshadowing en caps 25-29, pero la decisión sobre el contenido exacto (qué rumor, qué carta, qué diálogo) y su integración orgánica en la trama existente requiere criterio humano para no crear incoherencias."},
+    {"capitulo": 14, "problema": "Desarrollo del arco de Leonor requiere añadir escenas en múltiples capítulos intermedios (12-16) con coordinación entre ellas", "motivo": "Insertar escenas en varios caps que deben tener continuidad narrativa (Leonor descubre la carta en cap 12, confronta a Elvira en 14, ayuda en 16) es una operación que el sistema puede ejecutar, pero la coherencia del arco resultante requiere validación humana."}
+  ]
