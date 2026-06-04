@@ -86,7 +86,7 @@ npm run dev
 
 ## User preferences
 
-Preferred communication style: Simple, everyday language.
+Preferred communication style: Simple, everyday language. Communicate ALWAYS in Spanish.
 
 ## Gotchas
 
