@@ -231,6 +231,74 @@ function escapeUnescapedInnerQuotes(text: string): string {
   return out.join('');
 }
 
+/**
+ * [Fix144] Inserta comas faltantes entre elementos consecutivos de un array u
+ * objeto (mismo-línea o separados por whitespace). Caso real: el Arquitecto
+ * (Fase 2, escaleta) devolvió JSON con `Expected ',' or ']' after array element`
+ * — dos elementos pegados sin coma (`}{`, `"" `, `] [`, `1 2`, `] "`...).
+ *
+ * Es STRING-AWARE: nunca toca caracteres dentro de strings, así que no corrompe
+ * la prosa (que está llena de `{`, `}`, `"`, comas y dos puntos). Sobre JSON ya
+ * válido es idempotente (las comas existentes resetean el estado, no se duplican).
+ *
+ * Heurística: marca `valueJustEnded` al cerrar un valor (`}`, `]`, fin de string,
+ * fin de número/literal). Cuando, tras ese estado, aparece el INICIO de otro
+ * elemento (`{`, `[`, `"`, dígito, `-`, `t/f/n`) sin una coma/`:` por medio,
+ * inserta la coma. Un `:` o `,` resetea el estado (key:value y comas reales no
+ * disparan inserción).
+ */
+function insertMissingCommas(text: string): string {
+  const out: string[] = [];
+  let i = 0;
+  let inString = false;
+  let escape = false;
+  let valueJustEnded = false;
+  const isTokenStart = (ch: string) => /[0-9tfn-]/.test(ch);
+  while (i < text.length) {
+    const c = text[i];
+    if (inString) {
+      out.push(c);
+      if (escape) { escape = false; i++; continue; }
+      if (c === '\\') { escape = true; i++; continue; }
+      if (c === '"') { inString = false; valueJustEnded = true; }
+      i++; continue;
+    }
+    if (c === '"') {
+      if (valueJustEnded) out.push(',');
+      out.push(c);
+      inString = true;
+      valueJustEnded = false;
+      i++; continue;
+    }
+    if (c === '{' || c === '[') {
+      if (valueJustEnded) out.push(',');
+      out.push(c);
+      valueJustEnded = false;
+      i++; continue;
+    }
+    if (c === '}' || c === ']') {
+      out.push(c);
+      valueJustEnded = true;
+      i++; continue;
+    }
+    if (c === ':' || c === ',') {
+      out.push(c);
+      valueJustEnded = false;
+      i++; continue;
+    }
+    if (/\s/.test(c)) { out.push(c); i++; continue; }
+    // Bare token (número, true/false/null o artefacto). Lo consumimos entero
+    // para no partir un número multidígito (no insertar coma entre sus cifras).
+    if (isTokenStart(c) && valueJustEnded) out.push(',');
+    let j = i;
+    while (j < text.length && !/[\s,:\]}{["]/.test(text[j])) j++;
+    out.push(text.substring(i, j));
+    valueJustEnded = true;
+    i = j;
+  }
+  return out.join('');
+}
+
 export function repairJson(raw: string): any {
   // Strategy 1: plain parse on extracted block (the happy path).
   let lastErr: Error | null = null;
@@ -262,6 +330,29 @@ export function repairJson(raw: string): any {
     const escaped = escapeUnescapedInnerQuotes(text);
     const repaired = jsonrepair(escaped);
     return JSON.parse(repaired);
+  } catch (e) { lastErr = e as Error; }
+
+  // [Fix144] Strategy 2.6: insertar comas faltantes entre elementos consecutivos
+  // de un array/objeto (`Expected ',' or ']' after array element`). Caso real:
+  // el Arquitecto (Fase 2, escaleta) emitió dos elementos pegados sin coma.
+  try {
+    const text = extractJsonBlock(raw);
+    return JSON.parse(insertMissingCommas(text));
+  } catch (e) { lastErr = e as Error; }
+
+  // [Fix144] Strategy 2.7: pipeline COMBINADO para el caso entrelazado (comilla
+  // interna sin escapar Y coma faltante), que ninguna estrategia individual
+  // recupera. Se escapan primero las comillas internas (deja límites de string
+  // bien formados) y luego se insertan las comas; jsonrepair como red final.
+  try {
+    const text = extractJsonBlock(raw);
+    const withCommas = insertMissingCommas(escapeUnescapedInnerQuotes(text));
+    return JSON.parse(withCommas);
+  } catch (e) { lastErr = e as Error; }
+  try {
+    const text = extractJsonBlock(raw);
+    const withCommas = insertMissingCommas(escapeUnescapedInnerQuotes(text));
+    return JSON.parse(jsonrepair(withCommas));
   } catch (e) { lastErr = e as Error; }
 
   // Strategy 3: stack-based smart truncation salvage on the RAW text (preserves
