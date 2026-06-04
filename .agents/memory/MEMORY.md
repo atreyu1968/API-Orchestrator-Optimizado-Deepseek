@@ -4,3 +4,4 @@
 - [Resume freshness guard self-deadlock](resume-freshness-deadlock.md) — un guard que mide "actividad reciente" no debe contar sus propios logs ni mezclar logs globales, o se auto-bloquea / falla la auto-recovery.
 - [repairJson devuelve objeto, no string](repairjson-contract.md) — repairJson() ya parsea; envolverlo en JSON.parse coacciona a "[object Object]" y falla siempre (rompió 5 agentes).
 - [Second-half quality system](second-half-quality-system.md) — gate de dims críticas del SA + brazo estructural one-shot (solo en abandono, no en regresión) + doble Beta mid-novela; frenos que acotan coste y por qué.
+- [Structural generation gates](structural-generation-gates.md) — variedad por ETIQUETA se salta (dos set-pieces igual etiquetados distinto); pauta para añadir dim determinista al gate SA (conservadora, series-safe, 5 mapas, no a CRITICAL_SECOND_HALF_DIMS).

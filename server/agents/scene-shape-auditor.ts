@@ -129,7 +129,8 @@ export interface StructuralAuditProblem {
     | "falso_aliado"
     | "escalada_acto2"
     | "deus_ex_machina"
-    | "trauma_protagonista";
+    | "trauma_protagonista"
+    | "arco_secundario";
   tipo: string;
   severidad: "alta" | "media" | "baja";
   capitulos: number[];
@@ -146,6 +147,7 @@ export interface StructuralAuditCoverage {
   apuesta_dramatica_pct: number;
   deus_ex_machina_pct: number;
   trauma_protagonista_pct: number;
+  arco_secundario_pct: number;
 }
 
 export interface StructuralAuditResult {
@@ -1542,6 +1544,207 @@ function auditTraumaProtagonista(
 }
 
 // ────────────────────────────────────────────────────────────────────
+// (9) [Fix142-A] Continuidad de arco de personaje SECUNDARIO.
+// Ninguna dimensión previa vigilaba que un secundario al que la World Bible
+// le declara un ARCO DE TRANSFORMACIÓN mantenga presencia a lo largo del
+// libro. `auditArcoSecreto`/`auditFalsoAliado` solo cubren reveals de
+// secreto/traidor; `auditTraumaProtagonista` solo cubre al protagonista.
+// El defecto recurrente (caso "Leonor"): un secundario presentado como
+// relevante en el acto 1 se evapora durante un tramo largo y reaparece tarde
+// para un cierre no ganado, o nunca se desarrolla.
+//
+// Técnica: misma que `auditArcoSecreto` — tokens de nombre (≥4 chars) y
+// presencia textual por capítulo (set de tokens del corpus, palabra
+// completa). CONSERVADOR para evitar falsos positivos:
+//   - Solo audita secundarios con `arco_transformacion` DECLARADO y NO
+//     vacío (el contrato explícito de la WB de que ese personaje cambia).
+//   - Excluye protagonista / antagonista / traidor (los cubren otras dims).
+//   - Solo en novelas de ≥10 caps regulares (en libros cortos la señal de
+//     "brecha" no es fiable).
+// Compatible con SERIES: solo penaliza desapariciones DENTRO del volumen
+// (presentado pronto y ausente del tramo final del MISMO libro). Un arco
+// que continúa en el siguiente volumen mantiene presencia a lo largo de
+// este y por tanto NO se marca.
+// ────────────────────────────────────────────────────────────────────
+const SECUNDARIO_EXCLUDE_ROLE_PATTERNS = [
+  "protagonista",
+  "protagonist",
+  "narrador",
+  "antagonista",
+  "antagonist",
+  "villano",
+  "villana",
+  "villan",
+  "adversari",
+  "enemigo",
+  ...TRAITOR_ROLE_PATTERNS,
+];
+
+function arcTransformacionDeclarado(arc: any): boolean {
+  if (!arc) return false;
+  if (typeof arc === "string") return arc.trim().length >= 8;
+  if (typeof arc === "object") {
+    const partes = [
+      arc.estado_inicial,
+      arc.catalizador_cambio,
+      arc.punto_crisis,
+      arc.estado_final,
+    ];
+    const llenas = partes.filter(
+      (v) => typeof v === "string" && v.trim().length >= 8
+    ).length;
+    // Exigimos al menos 2 campos sustanciales: un arco con solo el
+    // estado_inicial relleno no es un contrato de transformación.
+    return llenas >= 2;
+  }
+  return false;
+}
+
+function auditArcoSecundario(
+  escaleta: any[],
+  worldBible: any
+): { problemas: StructuralAuditProblem[]; coverage: number } {
+  const { all, total } = getActSlices(escaleta);
+  const problemas: StructuralAuditProblem[] = [];
+  // [Fix142-A] En libros cortos la heurística de brechas no es fiable.
+  if (total < 10) return { problemas, coverage: 1 };
+
+  const personajes: any[] =
+    worldBible?.personajes || worldBible?.world_bible?.personajes || [];
+  const stripAccents = (s: string) =>
+    s
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+
+  const secundarios = personajes
+    .map((p: any) => {
+      const rol = stripAccents(String(p?.rol || p?.role || ""));
+      if (SECUNDARIO_EXCLUDE_ROLE_PATTERNS.some((pat) => rol.includes(pat))) {
+        return null;
+      }
+      if (!arcTransformacionDeclarado(p?.arco_transformacion)) return null;
+      const nombre = String(p?.nombre || p?.name || "").trim();
+      if (!nombre) return null;
+      const normFull = stripAccents(nombre)
+        .replace(/[^\w\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const tokens = normFull
+        .split(/\s+/)
+        .filter((t) => t.length >= 4 && !STOPWORDS_ES.has(t));
+      if (tokens.length === 0) return null;
+      return { nombre, rol, tokens };
+    })
+    .filter(Boolean) as { nombre: string; rol: string; tokens: string[] }[];
+
+  if (secundarios.length === 0) return { problemas, coverage: 1 };
+
+  // Set de tokens (palabra completa) por capítulo, igual que auditArcoSecreto.
+  const tokensByCap: Record<number, Set<string>> = {};
+  const capNumsOrdenados: number[] = [];
+  for (const c of all) {
+    const n = capNum(c);
+    capNumsOrdenados.push(n);
+    const norm = capCorpus(c)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^\w\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    tokensByCap[n] = new Set(norm.split(/\s+/).filter(Boolean));
+  }
+
+  const earlyCutoff = Math.ceil(total * 0.4);
+  const finalStretchStart = Math.floor(total * 0.75);
+
+  let auditados = 0;
+  let conformes = 0;
+
+  for (const sec of secundarios) {
+    auditados += 1;
+    const apariciones: number[] = [];
+    for (const n of capNumsOrdenados) {
+      const capTokens = tokensByCap[n];
+      if (!capTokens || capTokens.size === 0) continue;
+      if (sec.tokens.some((t) => capTokens.has(t))) apariciones.push(n);
+    }
+
+    if (apariciones.length === 0) {
+      // Declara arco de transformación pero NO aparece en ningún capítulo.
+      problemas.push({
+        area: "arco_secundario",
+        tipo: "personaje_con_arco_ausente",
+        severidad: "media",
+        capitulos: [],
+        descripcion: `"${sec.nombre}" (rol "${sec.rol}") tiene un "arco_transformacion" declarado en la World Bible pero el auditor no lo encuentra mencionado en NINGÚN capítulo de la escaleta. Un arco prometido que nunca aparece es un hilo muerto o un nombre mal escrito en los capítulos.`,
+        sugerencia: `Si "${sec.nombre}" es relevante, dale presencia: al menos 1 escena de presentación en el acto 1 y 2-3 escenas intermedias donde tome una decisión o se posicione, más una resolución de su arco. Si NO es relevante, quítale el "arco_transformacion" en la World Bible (un secundario sin arco no se audita aquí).`,
+      });
+      continue;
+    }
+
+    const firstApp = apariciones[0];
+    const lastApp = apariciones[apariciones.length - 1];
+    const introducedEarly = firstApp <= earlyCutoff;
+    const reachesFinalStretch = lastApp >= finalStretchStart;
+
+    // Brecha máxima entre apariciones consecutivas.
+    let maxGap = 0;
+    let gapDesde = firstApp;
+    let gapHasta = firstApp;
+    for (let i = 1; i < apariciones.length; i++) {
+      const g = apariciones[i] - apariciones[i - 1];
+      if (g > maxGap) {
+        maxGap = g;
+        gapDesde = apariciones[i - 1];
+        gapHasta = apariciones[i];
+      }
+    }
+
+    // (a) ARCO ABANDONADO: presentado pronto pero ausente del tramo final del
+    // libro. El lector esperaba el pago del arco y el personaje se evaporó.
+    if (introducedEarly && !reachesFinalStretch) {
+      const gapToEnd = total - lastApp;
+      // Severidad alta solo en un caso INEQUÍVOCO: hilo sustancial (≥4
+      // apariciones tempranas) que desaparece todo el tercio final (≥40%).
+      const strong =
+        apariciones.length >= 4 && gapToEnd >= Math.floor(total * 0.4);
+      problemas.push({
+        area: "arco_secundario",
+        tipo: "arco_secundario_abandonado",
+        severidad: strong ? "alta" : "media",
+        capitulos: [lastApp],
+        descripcion: `"${sec.nombre}" (rol "${sec.rol}", con arco_transformacion declarado) aparece por última vez en el cap ${lastApp} de ${total} (${Math.round((lastApp / total) * 100)}%) tras presentarse pronto (cap ${firstApp}). Desaparece del tramo final del libro (a partir del cap ${finalStretchStart}) sin resolver su arco. Apariciones totales: ${apariciones.length} (caps ${apariciones.join(", ")}). Es el patrón "secundario abandonado": prometido como relevante y luego evaporado.`,
+        sugerencia: `Reparte la presencia de "${sec.nombre}" hasta el final: añade 1-2 escenas en el último tercio (a partir del cap ${finalStretchStart}) donde el personaje tome una DECISIÓN concreta, se posicione ante el conflicto o reciba la consecuencia de su arco (estado_final declarado en la World Bible). Evita la reaparición fantasma de último capítulo: el cierre debe estar GANADO con escenas intermedias, no anunciado de golpe.`,
+      });
+      continue;
+    }
+
+    // (b) DESAPARICIÓN PROLONGADA: brecha enorme en mitad del libro (se
+    // evapora y reaparece) sin escenas intermedias que mantengan el hilo.
+    const gapUmbral = Math.max(5, Math.floor(total * 0.45));
+    if (maxGap >= gapUmbral) {
+      problemas.push({
+        area: "arco_secundario",
+        tipo: "desaparicion_prolongada",
+        severidad: "media",
+        capitulos: [gapDesde, gapHasta],
+        descripcion: `"${sec.nombre}" (rol "${sec.rol}", con arco_transformacion declarado) desaparece entre los caps ${gapDesde} y ${gapHasta} (${gapHasta - gapDesde} caps sin presencia, umbral ${gapUmbral}) y luego reaparece. Una reaparición tras una brecha tan larga sin escenas intermedias hace que el lector lo haya olvidado y que su arco avance "fuera de cámara".`,
+        sugerencia: `Inserta al menos 1 escena entre los caps ${gapDesde} y ${gapHasta} donde "${sec.nombre}" haga avanzar su arco en pantalla (una decisión, un conflicto con el protagonista, un pequeño revés o ganancia). El arco del secundario debe verse evolucionar, no saltar de A a Z.`,
+      });
+      continue;
+    }
+
+    conformes += 1;
+  }
+
+  const coverage = auditados > 0 ? conformes / auditados : 1;
+  return { problemas, coverage };
+}
+
+// ────────────────────────────────────────────────────────────────────
 // Helpers de instrucciones agrupadas (≤700 palabras).
 // ────────────────────────────────────────────────────────────────────
 function buildInstructions(problemas: StructuralAuditProblem[]): string {
@@ -1570,6 +1773,7 @@ function buildInstructions(problemas: StructuralAuditProblem[]): string {
   renderArea("6) ESCALADA DE APUESTAS EN EL ACTO 2 (anti bucle de presión)", byArea["escalada_acto2"]);
   renderArea("7) DEUS EX MACHINA (informante / portador sin siembra)", byArea["deus_ex_machina"]);
   renderArea("8) TRAUMA ACTIVO DEL PROTAGONISTA (primer 60% de la novela)", byArea["trauma_protagonista"]);
+  renderArea("9) CONTINUIDAD DE ARCO SECUNDARIO (sin abandono ni brechas largas)", byArea["arco_secundario"]);
 
   lines.push("REGLA ANTI-RECURRENCIA: en la próxima generación, declara y respeta ESTOS campos por capítulo:");
   lines.push(
@@ -1748,6 +1952,7 @@ export function runArchitectStructuralAudits(
   const esc = auditEscaladaActo2(escaleta);
   const dem = auditDeusExMachina(escaleta, worldBible);
   const trauma = auditTraumaProtagonista(escaleta, worldBible);
+  const arcoSec = auditArcoSecundario(escaleta, worldBible);
 
   const problemas = [
     ...forma.problemas,
@@ -1758,6 +1963,7 @@ export function runArchitectStructuralAudits(
     ...esc.problemas,
     ...dem.problemas,
     ...trauma.problemas,
+    ...arcoSec.problemas,
   ];
   const altas = problemas.filter((p) => p.severidad === "alta").length;
   const medias = problemas.filter((p) => p.severidad === "media").length;
@@ -1769,7 +1975,7 @@ export function runArchitectStructuralAudits(
   else if (altas <= 1 && medias <= 3) veredicto = "necesita_revision";
   else veredicto = "reescribir";
 
-  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}; Arco secreto: ${arco.problemas.length}; Falso aliado: ${fa.problemas.length}; Escalada acto 2: ${esc.problemas.length}; Deus ex machina: ${dem.problemas.length}; Trauma protagonista: ${trauma.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}% arco=${Math.round(arco.coverage * 100)}% aliado=${Math.round(fa.coverage * 100)}% apuesta=${Math.round(esc.coverage * 100)}% deus=${Math.round(dem.coverage * 100)}% trauma=${Math.round(trauma.coverage * 100)}%.`;
+  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}; Arco secreto: ${arco.problemas.length}; Falso aliado: ${fa.problemas.length}; Escalada acto 2: ${esc.problemas.length}; Deus ex machina: ${dem.problemas.length}; Trauma protagonista: ${trauma.problemas.length}; Arco secundario: ${arcoSec.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}% arco=${Math.round(arco.coverage * 100)}% aliado=${Math.round(fa.coverage * 100)}% apuesta=${Math.round(esc.coverage * 100)}% deus=${Math.round(dem.coverage * 100)}% trauma=${Math.round(trauma.coverage * 100)}% arcoSec=${Math.round(arcoSec.coverage * 100)}%.`;
 
   return {
     puntuacion_global: Math.round(score * 10) / 10,
@@ -1784,6 +1990,7 @@ export function runArchitectStructuralAudits(
       apuesta_dramatica_pct: Math.round(esc.coverage * 100) / 100,
       deus_ex_machina_pct: Math.round(dem.coverage * 100) / 100,
       trauma_protagonista_pct: Math.round(trauma.coverage * 100) / 100,
+      arco_secundario_pct: Math.round(arcoSec.coverage * 100) / 100,
     },
     resumen,
     instrucciones_revision: problemas.length > 0 ? buildInstructions(problemas) : "",

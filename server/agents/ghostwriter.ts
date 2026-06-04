@@ -396,6 +396,22 @@ El peor error es el DEUS EX MACHINA. NUNCA escribas:
    - Si la respuesta es NO, busca otra solución que SÍ esté fundamentada
    - Consulta los "riesgos_de_verosimilitud" del Arquitecto si los hay
 
+5. [Fix142] SIEMBRA REAL EN LA PROSA (no solo en la metadata):
+   - Si la escaleta marca este capítulo como SIEMBRA de una ayuda/giro futuro
+     (campos como "setup_capitulos", "siembra", "informacion_nueva" que apunta
+     a algo que se pagará más adelante), planta esa preparación EN EL TEXTO con
+     tokens concretos: el NOMBRE del personaje, el LUGAR, el OBJETO o la ACCIÓN
+     que volverá a importar. No basta con que el Arquitecto lo declare: el lector
+     debe poder releer este capítulo y encontrar la pista escrita.
+   - El salvador, informante o recurso decisivo del CLÍMAX debe tener presencia
+     textual real en capítulos anteriores (no introducido de golpe al final). Si
+     en este capítulo aparece por primera vez un personaje/objeto que luego
+     resolverá el clímax, dale una escena con peso aquí, no una mención de paso.
+   - ARCO DE SECUNDARIOS: si un personaje secundario importante tiene un arco que
+     debe evolucionar, no lo dejes desaparecer entre capítulos: cuando esté en
+     escena, hazlo TOMAR UNA DECISIÓN o POSICIONARSE, para que su cierre se sienta
+     ganado y no un regreso fantasma de último minuto.
+
 ═══════════════════════════════════════════════════════════════════
 TRANSICIONES DE UBICACIÓN (OBLIGATORIAS)
 ═══════════════════════════════════════════════════════════════════

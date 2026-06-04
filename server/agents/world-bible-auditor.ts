@@ -284,6 +284,7 @@ RECORDATORIO: el bucle SA está atascado en "${input.onDemandFocus.areaLabel}". 
       forma_escena: ["escalada_actos"],
       deus_ex_machina: ["escalada_actos", "antagonismo"],
       trauma_protagonista: ["stakes_personaje"],
+      arco_secundario: ["densidad_arcos", "stakes_personaje"],
     };
     const wbaAreas = SA_TO_WBA_AREAS[focus.area] || [];
     const wbaAreasStr = wbaAreas.length > 0

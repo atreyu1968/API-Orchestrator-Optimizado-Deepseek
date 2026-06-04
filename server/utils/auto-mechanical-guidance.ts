@@ -9,6 +9,7 @@ const AREA_LABEL: Record<string, string> = {
   escalada_acto2: "Escalada dramática del acto 2",
   deus_ex_machina: "Anti deus ex machina",
   trauma_protagonista: "Trauma del protagonista",
+  arco_secundario: "Continuidad de arco secundario",
 };
 
 const AREA_RULE: Record<string, string> = {
@@ -28,6 +29,8 @@ const AREA_RULE: Record<string, string> = {
     'REGLA MECÁNICA: el reveal de un falso aliado debe ocurrir entre el 50% y el 75% del recorrido (acto 2 tardío), nunca después. Si el cap del reveal cae fuera de ese rango, muévelo dentro y reorganiza las pistas previas.',
   trauma_protagonista:
     'REGLA MECÁNICA: cualquier reveal completo del trauma del protagonista debe tener ≥3 caps previos con menciones parciales (sueño, recuerdo intrusivo, evitación de un lugar, fobia concreta).',
+  arco_secundario:
+    'REGLA MECÁNICA: todo personaje secundario con "arco_transformacion" declarado en la World Bible debe aparecer (mencionado por su nombre en la escaleta) de forma repartida: al menos 1 escena en el acto 1, ≥1 escena intermedia cada ~40% del libro (sin brechas mayores) y ≥1 escena en el último tercio donde reciba la consecuencia de su arco (su "estado_final"). PROHIBIDO el cierre fantasma: un secundario que reaparece solo en el último capítulo para cerrar su arco sin escenas intermedias. Si el personaje no es relevante, quítale el "arco_transformacion".',
 };
 
 export function generateMechanicalGuidanceFromProblems(

@@ -2558,7 +2558,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
           const coverageHistorySA: Record<string, number[]> = {
             forma_escena: [], ledger_info: [], dosificacion_revelacion: [],
             arco_secreto: [], falso_aliado: [], escalada_acto2: [],
-            deus_ex_machina: [], trauma_protagonista: [],
+            deus_ex_machina: [], trauma_protagonista: [], arco_secundario: [],
           };
           const AREA_TO_COVERAGE_FIELD: Record<string, string> = {
             forma_escena: "forma_dominante_pct",
@@ -2569,6 +2569,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             escalada_acto2: "apuesta_dramatica_pct",
             deus_ex_machina: "deus_ex_machina_pct",
             trauma_protagonista: "trauma_protagonista_pct",
+            arco_secundario: "arco_secundario_pct",
           };
           const CHRONIC_ZERO_COVERAGE_ITERS = 3;
 
@@ -2782,11 +2783,12 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
               escalada_acto2: "Escalada dramática acto 2",
               deus_ex_machina: "Anti deus ex machina / setup de ayudas",
               trauma_protagonista: "Trauma del protagonista como palanca activa",
+              arco_secundario: "Continuidad de arco de personaje secundario",
             };
             const dimensionCountsSA: Record<string, number> = {
               forma_escena: 0, ledger_info: 0, dosificacion_revelacion: 0,
               arco_secreto: 0, falso_aliado: 0, escalada_acto2: 0,
-              deus_ex_machina: 0, trauma_protagonista: 0,
+              deus_ex_machina: 0, trauma_protagonista: 0, arco_secundario: 0,
             };
             // [Fix102 post-review] Marcador de severidad alta por dimensión.
             // Una "alta" obliga a KO aunque haya un único problema, evitando
@@ -2795,7 +2797,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             const dimensionHasAltaSA: Record<string, boolean> = {
               forma_escena: false, ledger_info: false, dosificacion_revelacion: false,
               arco_secreto: false, falso_aliado: false, escalada_acto2: false,
-              deus_ex_machina: false, trauma_protagonista: false,
+              deus_ex_machina: false, trauma_protagonista: false, arco_secundario: false,
             };
             for (const p of sa.problemas) {
               if (p.area in dimensionCountsSA) {
