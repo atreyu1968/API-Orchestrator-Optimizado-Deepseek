@@ -130,7 +130,8 @@ export interface StructuralAuditProblem {
     | "escalada_acto2"
     | "deus_ex_machina"
     | "trauma_protagonista"
-    | "arco_secundario";
+    | "arco_secundario"
+    | "set_piece_clonado";
   tipo: string;
   severidad: "alta" | "media" | "baja";
   capitulos: number[];
@@ -148,6 +149,7 @@ export interface StructuralAuditCoverage {
   deus_ex_machina_pct: number;
   trauma_protagonista_pct: number;
   arco_secundario_pct: number;
+  set_piece_clonado_pct: number;
 }
 
 export interface StructuralAuditResult {
@@ -1801,6 +1803,7 @@ function buildInstructions(problemas: StructuralAuditProblem[]): string {
   renderArea("7) DEUS EX MACHINA (informante / portador sin siembra)", byArea["deus_ex_machina"]);
   renderArea("8) TRAUMA ACTIVO DEL PROTAGONISTA (primer 60% de la novela)", byArea["trauma_protagonista"]);
   renderArea("9) CONTINUIDAD DE ARCO SECUNDARIO (sin abandono ni brechas largas)", byArea["arco_secundario"]);
+  renderArea("10) SET-PIECES CLONADOS (mismo tipo con escenario/táctica/oposición/coste calcados)", byArea["set_piece_clonado"]);
 
   lines.push("REGLA ANTI-RECURRENCIA: en la próxima generación, declara y respeta ESTOS campos por capítulo:");
   lines.push(
@@ -1964,6 +1967,227 @@ export function autopatchDecorativeSetupCapitulos(escaleta: any[]): {
 }
 
 // ────────────────────────────────────────────────────────────────────
+// (10) [Task] SET-PIECES CLONADOS — repetición de set-pieces de acción por
+// CONTENIDO, no por etiqueta. Fix142 (instr. 18 del Arquitecto) pedía variar
+// dos set-pieces del MISMO tipo (dos persecuciones, dos asaltos, dos
+// interrogatorios) en escenario/táctica/oposición/coste, pero NO había gate:
+// `auditFormaEscena` mide variedad por la ETIQUETA `forma_dominante`, así que
+// dos persecuciones etiquetadas distinto pasaban aunque la coreografía fuera
+// idéntica. Esta dimensión es DETERMINISTA y CONSERVADORA (preferir
+// falso-negativo): agrupa los capítulos por TIPO de set-piece detectado en
+// `funcion_estructural` (refuerzo: tipo_capitulo "D"=persecución) y, dentro de
+// cada grupo del MISMO tipo, mide el solapamiento real entre pares en cuatro
+// ejes —escenario (`ubicacion`), oposición (`elenco_presente`), táctica
+// (`objetivo_narrativo`+`beats`) y coste (`apuesta_dramatica`)— y solo marca
+// cuando el solapamiento es INEQUÍVOCO: táctica calcada + ≥2 de los otros ejes
+// y el segundo set-piece NO sube el coste. Compatible con SERIES (solo compara
+// capítulos DENTRO del volumen, igual que el resto del auditor).
+// ────────────────────────────────────────────────────────────────────
+const SET_PIECE_KEYWORDS: Record<string, string[]> = {
+  persecucion: ["persecuc", "perseguid", "huida", "fuga", "escapad", "escapar"],
+  asalto: ["asalto", "atraco", "redada", "irrupcion", "asedio", "incursion"],
+  interrogatorio: ["interrogator", "interrogac", "careo"],
+  emboscada: ["emboscada", "celada"],
+  combate: ["batalla", "combate", "pelea", "duelo", "tiroteo", "enfrentamiento", "refriega"],
+  rescate: ["rescate", "salvamento"],
+  secuestro: ["secuestro", "rapto"],
+  infiltracion: ["infiltrac"],
+  robo: ["hurto", "saqueo"],
+};
+
+const SET_PIECE_TYPE_LABEL: Record<string, string> = {
+  persecucion: "persecución/huida",
+  asalto: "asalto/atraco",
+  interrogatorio: "interrogatorio/careo",
+  emboscada: "emboscada/celada",
+  combate: "combate/duelo",
+  rescate: "rescate",
+  secuestro: "secuestro/rapto",
+  infiltracion: "infiltración",
+  robo: "robo/saqueo",
+};
+
+const SET_PIECE_NAME_NOISE = new Set([
+  "inspector", "inspectora", "comisario", "comisaria", "agente", "agentes",
+  "doctor", "doctora", "teniente", "sargento", "capitan", "capitana",
+  "don", "dona", "senor", "senora", "senorita", "padre", "madre",
+]);
+
+function normalizeForTokens(text: string): string {
+  return (text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenSet(text: string, minLen: number): Set<string> {
+  return new Set(
+    normalizeForTokens(text)
+      .split(/\s+/)
+      .filter((t) => t.length >= minLen && !STOPWORDS_ES.has(t) && !/^\d+$/.test(t))
+  );
+}
+
+function jaccardSets(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const x of a) if (b.has(x)) inter++;
+  const uni = a.size + b.size - inter;
+  return uni === 0 ? 0 : inter / uni;
+}
+
+function sharedCount(a: Set<string>, b: Set<string>): number {
+  let inter = 0;
+  for (const x of a) if (b.has(x)) inter++;
+  return inter;
+}
+
+// Detecta el/los tipo(s) de set-piece de un capítulo a partir de
+// `funcion_estructural` (semántica) y, como refuerzo, tipo_capitulo "D".
+function detectSetPieceTypes(c: any): string[] {
+  const fe = normalizeForTokens(String(c?.funcion_estructural || ""));
+  const types: string[] = [];
+  for (const [tipo, kws] of Object.entries(SET_PIECE_KEYWORDS)) {
+    if (kws.some((kw) => fe.includes(kw))) types.push(tipo);
+  }
+  // Refuerzo conservador: tipo_capitulo "D" = persecución en el esquema del
+  // Arquitecto. Solo se añade si no se detectó ya por funcion_estructural.
+  const tc = String(c?.tipo_capitulo || "").trim().toUpperCase();
+  if (tc === "D" && !types.includes("persecucion")) types.push("persecucion");
+  return types;
+}
+
+const SET_PIECE_APUESTA_RANK: Record<string, number> = {
+  baja: 1, media: 2, alta: 3, critica: 4,
+};
+
+function auditSetPiecesClonados(
+  escaleta: any[]
+): { problemas: StructuralAuditProblem[]; coverage: number } {
+  const problemas: StructuralAuditProblem[] = [];
+  const all = Array.isArray(escaleta) ? escaleta : [];
+
+  // Guarda conservadora: solo en novelas con cuerpo suficiente. Con pocos
+  // capítulos un par del mismo tipo puede ser intencional (apertura/clímax).
+  if (all.length < 8) return { problemas, coverage: 1 };
+
+  // Agrupa caps por tipo de set-piece. Un cap puede pertenecer a varios.
+  const groups: Record<string, Array<{ c: any; num: number }>> = {};
+  const setPieceCapNums = new Set<number>();
+  for (const c of all) {
+    const num = capNum(c);
+    if (!Number.isFinite(num)) continue;
+    const types = detectSetPieceTypes(c);
+    if (types.length === 0) continue;
+    setPieceCapNums.add(num);
+    for (const t of types) (groups[t] ||= []).push({ c, num });
+  }
+
+  if (setPieceCapNums.size === 0) return { problemas, coverage: 1 };
+
+  const flaggedCaps = new Set<number>();
+  type Hit = {
+    tipo: string;
+    a: number;
+    b: number;
+    severidad: "alta" | "media";
+    ejes: string[];
+  };
+  const hits: Hit[] = [];
+
+  for (const [tipo, members] of Object.entries(groups)) {
+    if (members.length < 2) continue;
+    // Pre-computa los sets de tokens por miembro (una vez).
+    const enriched = members.map((m) => {
+      const ubic = tokenSet(String(m.c?.ubicacion || ""), 4);
+      const elencoRaw = Array.isArray(m.c?.elenco_presente)
+        ? m.c.elenco_presente.join(" ")
+        : String(m.c?.elenco_presente || "");
+      const elenco = new Set(
+        Array.from(tokenSet(elencoRaw, 4)).filter((t) => !SET_PIECE_NAME_NOISE.has(t))
+      );
+      const beats = Array.isArray(m.c?.beats) ? m.c.beats.join(" ") : String(m.c?.beats || "");
+      const tactica = tokenSet(`${String(m.c?.objetivo_narrativo || "")} ${beats}`, 6);
+      const apuesta = SET_PIECE_APUESTA_RANK[
+        normalizeForTokens(String(m.c?.apuesta_dramatica || ""))
+      ];
+      return { ...m, ubic, elenco, tactica, apuesta };
+    });
+
+    for (let i = 0; i < enriched.length; i++) {
+      for (let j = i + 1; j < enriched.length; j++) {
+        const A = enriched[i];
+        const B = enriched[j];
+
+        // Eje TÁCTICA (coreografía) — obligatorio. Requiere corpus suficiente
+        // en ambos para que el solapamiento sea significativo.
+        if (A.tactica.size < 6 || B.tactica.size < 6) continue;
+        const tacticaOverlap = jaccardSets(A.tactica, B.tactica) >= 0.4;
+        if (!tacticaOverlap) continue;
+
+        // Eje ESCENARIO.
+        const escenarioOverlap =
+          A.ubic.size > 0 && B.ubic.size > 0 &&
+          (sharedCount(A.ubic, B.ubic) >= 2 || jaccardSets(A.ubic, B.ubic) >= 0.5);
+
+        // Eje OPOSICIÓN (mismos personajes enfrentados).
+        const oposicionOverlap =
+          A.elenco.size >= 2 && B.elenco.size >= 2 &&
+          (sharedCount(A.elenco, B.elenco) >= 2 || jaccardSets(A.elenco, B.elenco) >= 0.6);
+
+        // Eje COSTE: el segundo set-piece NO sube la apuesta dramática.
+        const costeNoEscala =
+          typeof A.apuesta === "number" && typeof B.apuesta === "number" &&
+          B.apuesta <= A.apuesta;
+
+        const ejes: string[] = ["táctica/coreografía"];
+        if (escenarioOverlap) ejes.push("escenario");
+        if (oposicionOverlap) ejes.push("oposición");
+        if (costeNoEscala) ejes.push("coste sin escalar");
+
+        const otherCount =
+          (escenarioOverlap ? 1 : 0) + (oposicionOverlap ? 1 : 0) + (costeNoEscala ? 1 : 0);
+        // CONSERVADOR: táctica + ≥2 de los otros tres ejes.
+        if (otherCount < 2) continue;
+
+        const allFour = escenarioOverlap && oposicionOverlap && costeNoEscala;
+        const severidad: "alta" | "media" = allFour ? "alta" : "media";
+        hits.push({ tipo, a: A.num, b: B.num, severidad, ejes });
+        flaggedCaps.add(A.num);
+        flaggedCaps.add(B.num);
+      }
+    }
+  }
+
+  // Orden: altas primero, luego por número de cap. Cap a 6 problemas para no
+  // inundar las instrucciones del Arquitecto.
+  hits.sort((x, y) => {
+    if (x.severidad !== y.severidad) return x.severidad === "alta" ? -1 : 1;
+    return x.a - y.a;
+  });
+  for (const h of hits.slice(0, 6)) {
+    const tipoLabel = SET_PIECE_TYPE_LABEL[h.tipo] || h.tipo;
+    problemas.push({
+      area: "set_piece_clonado",
+      tipo: "set_piece_clonado",
+      severidad: h.severidad,
+      capitulos: [h.a, h.b],
+      descripcion: `Dos set-pieces del mismo tipo (${tipoLabel}) en los caps ${h.a} y ${h.b} comparten ${h.ejes.join(", ")}: la segunda repite la misma coreografía sin variación real, no solo la etiqueta. ${h.severidad === "alta" ? "Solapamiento INEQUÍVOCO en escenario, oposición y coste — el lector percibirá un calco." : "Solapamiento alto: el lector percibirá déjà vu."}`,
+      sugerencia: `Rediseña el segundo set-piece (cap ${h.b}) para que difiera del primero (cap ${h.a}) en AL MENOS DOS ejes: ESCENARIO distinto (otra localización con geografía/obstáculos propios), TÁCTICA distinta (el protagonista resuelve con otro recurso/aproximación, no la misma secuencia de acciones), OPOSICIÓN distinta (otro adversario o nueva configuración de fuerzas) y/o COSTE superior (que el segundo set-piece exija pagar algo tangible e irreversible que el primero no exigió, subiendo la apuesta_dramatica). Repetir el mismo tipo de set-piece solo es válido si cada repetición escala y reconfigura el conflicto.`,
+    });
+  }
+
+  const auditados = setPieceCapNums.size;
+  const conformes = auditados - flaggedCaps.size;
+  const coverage = auditados > 0 ? Math.max(0, conformes) / auditados : 1;
+
+  return { problemas, coverage };
+}
+
+// ────────────────────────────────────────────────────────────────────
 // Entry point principal — llamado por el orquestador después del
 // PlotIntegrityAuditor. Determinista (sin coste de tokens).
 // ────────────────────────────────────────────────────────────────────
@@ -1980,6 +2204,7 @@ export function runArchitectStructuralAudits(
   const dem = auditDeusExMachina(escaleta, worldBible);
   const trauma = auditTraumaProtagonista(escaleta, worldBible);
   const arcoSec = auditArcoSecundario(escaleta, worldBible);
+  const setPiece = auditSetPiecesClonados(escaleta);
 
   const problemas = [
     ...forma.problemas,
@@ -1991,6 +2216,7 @@ export function runArchitectStructuralAudits(
     ...dem.problemas,
     ...trauma.problemas,
     ...arcoSec.problemas,
+    ...setPiece.problemas,
   ];
   const altas = problemas.filter((p) => p.severidad === "alta").length;
   const medias = problemas.filter((p) => p.severidad === "media").length;
@@ -2002,7 +2228,7 @@ export function runArchitectStructuralAudits(
   else if (altas <= 1 && medias <= 3) veredicto = "necesita_revision";
   else veredicto = "reescribir";
 
-  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}; Arco secreto: ${arco.problemas.length}; Falso aliado: ${fa.problemas.length}; Escalada acto 2: ${esc.problemas.length}; Deus ex machina: ${dem.problemas.length}; Trauma protagonista: ${trauma.problemas.length}; Arco secundario: ${arcoSec.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}% arco=${Math.round(arco.coverage * 100)}% aliado=${Math.round(fa.coverage * 100)}% apuesta=${Math.round(esc.coverage * 100)}% deus=${Math.round(dem.coverage * 100)}% trauma=${Math.round(trauma.coverage * 100)}% arcoSec=${Math.round(arcoSec.coverage * 100)}%.`;
+  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}; Arco secreto: ${arco.problemas.length}; Falso aliado: ${fa.problemas.length}; Escalada acto 2: ${esc.problemas.length}; Deus ex machina: ${dem.problemas.length}; Trauma protagonista: ${trauma.problemas.length}; Arco secundario: ${arcoSec.problemas.length}; Set-pieces clonados: ${setPiece.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}% arco=${Math.round(arco.coverage * 100)}% aliado=${Math.round(fa.coverage * 100)}% apuesta=${Math.round(esc.coverage * 100)}% deus=${Math.round(dem.coverage * 100)}% trauma=${Math.round(trauma.coverage * 100)}% arcoSec=${Math.round(arcoSec.coverage * 100)}% setpiece=${Math.round(setPiece.coverage * 100)}%.`;
 
   return {
     puntuacion_global: Math.round(score * 10) / 10,
@@ -2018,6 +2244,7 @@ export function runArchitectStructuralAudits(
       deus_ex_machina_pct: Math.round(dem.coverage * 100) / 100,
       trauma_protagonista_pct: Math.round(trauma.coverage * 100) / 100,
       arco_secundario_pct: Math.round(arcoSec.coverage * 100) / 100,
+      set_piece_clonado_pct: Math.round(setPiece.coverage * 100) / 100,
     },
     resumen,
     instrucciones_revision: problemas.length > 0 ? buildInstructions(problemas) : "",

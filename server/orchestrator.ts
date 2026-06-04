@@ -2586,6 +2586,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             forma_escena: [], ledger_info: [], dosificacion_revelacion: [],
             arco_secreto: [], falso_aliado: [], escalada_acto2: [],
             deus_ex_machina: [], trauma_protagonista: [], arco_secundario: [],
+            set_piece_clonado: [],
           };
           const AREA_TO_COVERAGE_FIELD: Record<string, string> = {
             forma_escena: "forma_dominante_pct",
@@ -2597,6 +2598,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
             deus_ex_machina: "deus_ex_machina_pct",
             trauma_protagonista: "trauma_protagonista_pct",
             arco_secundario: "arco_secundario_pct",
+            set_piece_clonado: "set_piece_clonado_pct",
           };
           const CHRONIC_ZERO_COVERAGE_ITERS = 3;
 
@@ -2811,11 +2813,13 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
               deus_ex_machina: "Anti deus ex machina / setup de ayudas",
               trauma_protagonista: "Trauma del protagonista como palanca activa",
               arco_secundario: "Continuidad de arco de personaje secundario",
+              set_piece_clonado: "Set-pieces clonados (variedad real por contenido)",
             };
             const dimensionCountsSA: Record<string, number> = {
               forma_escena: 0, ledger_info: 0, dosificacion_revelacion: 0,
               arco_secreto: 0, falso_aliado: 0, escalada_acto2: 0,
               deus_ex_machina: 0, trauma_protagonista: 0, arco_secundario: 0,
+              set_piece_clonado: 0,
             };
             // [Fix102 post-review] Marcador de severidad alta por dimensión.
             // Una "alta" obliga a KO aunque haya un único problema, evitando
@@ -2825,6 +2829,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
               forma_escena: false, ledger_info: false, dosificacion_revelacion: false,
               arco_secreto: false, falso_aliado: false, escalada_acto2: false,
               deus_ex_machina: false, trauma_protagonista: false, arco_secundario: false,
+              set_piece_clonado: false,
             };
             for (const p of sa.problemas) {
               if (p.area in dimensionCountsSA) {

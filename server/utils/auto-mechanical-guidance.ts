@@ -10,6 +10,7 @@ const AREA_LABEL: Record<string, string> = {
   deus_ex_machina: "Anti deus ex machina",
   trauma_protagonista: "Trauma del protagonista",
   arco_secundario: "Continuidad de arco secundario",
+  set_piece_clonado: "Set-pieces clonados (variedad por contenido)",
 };
 
 const AREA_RULE: Record<string, string> = {
@@ -31,6 +32,8 @@ const AREA_RULE: Record<string, string> = {
     'REGLA MECÁNICA: cualquier reveal completo del trauma del protagonista debe tener ≥3 caps previos con menciones parciales (sueño, recuerdo intrusivo, evitación de un lugar, fobia concreta).',
   arco_secundario:
     'REGLA MECÁNICA: todo personaje secundario con "arco_transformacion" declarado en la World Bible debe aparecer (mencionado por su nombre en la escaleta) de forma repartida: al menos 1 escena en el acto 1, ≥1 escena intermedia cada ~40% del libro (sin brechas mayores) y ≥1 escena en el último tercio donde reciba la consecuencia de su arco (su "estado_final"). PROHIBIDO el cierre fantasma: un secundario que reaparece solo en el último capítulo para cerrar su arco sin escenas intermedias. Si el personaje no es relevante, quítale el "arco_transformacion".',
+  set_piece_clonado:
+    'REGLA MECÁNICA: dos set-pieces del MISMO tipo (dos persecuciones, dos asaltos, dos interrogatorios, dos huidas) NO pueden compartir la misma coreografía. El segundo set-piece debe diferir del primero en AL MENOS DOS de estos ejes: (1) ESCENARIO — otra "ubicacion" con geografía/obstáculos propios; (2) TÁCTICA — el protagonista resuelve con otro recurso/aproximación, no la misma secuencia de "beats"; (3) OPOSICIÓN — otro adversario o nueva configuración de fuerzas en "elenco_presente"; (4) COSTE — sube la "apuesta_dramatica" y haz que el segundo exija pagar algo tangible e irreversible que el primero no exigió. Repetir el tipo solo vale si cada repetición escala y reconfigura el conflicto.',
 };
 
 export function generateMechanicalGuidanceFromProblems(
