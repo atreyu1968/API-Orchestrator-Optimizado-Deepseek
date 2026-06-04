@@ -1689,6 +1689,12 @@ function auditArcoSecundario(
     const lastApp = apariciones[apariciones.length - 1];
     const introducedEarly = firstApp <= earlyCutoff;
     const reachesFinalStretch = lastApp >= finalStretchStart;
+    // Apariciones en el acto central (entre la presentación temprana y el
+    // tramo final). Si está vacío y el personaje reaparece al final, el arco
+    // avanzó "fuera de cámara" y el cierre no está ganado.
+    const middleAppearances = apariciones.filter(
+      (c) => c > earlyCutoff && c < finalStretchStart
+    );
 
     // Brecha máxima entre apariciones consecutivas.
     let maxGap = 0;
@@ -1722,17 +1728,38 @@ function auditArcoSecundario(
       continue;
     }
 
-    // (b) DESAPARICIÓN PROLONGADA: brecha enorme en mitad del libro (se
-    // evapora y reaparece) sin escenas intermedias que mantengan el hilo.
+    // (b) CIERRE FANTASMA (caso "Leonor"): presentado pronto, AUSENTE de todo
+    // el acto central y reaparece en el tramo final solo para "cerrar" su arco.
+    // Es el defecto inequívoco que el usuario reportó: el cierre NO está ganado
+    // porque el arco avanzó fuera de cámara. Severidad ALTA: fuerza retry del
+    // bucle SA aunque el agregado cruce el umbral.
+    if (introducedEarly && reachesFinalStretch && middleAppearances.length === 0) {
+      problemas.push({
+        area: "arco_secundario",
+        tipo: "cierre_fantasma_secundario",
+        severidad: "alta",
+        capitulos: [firstApp, lastApp],
+        descripcion: `"${sec.nombre}" (rol "${sec.rol}", con arco_transformacion declarado) se presenta pronto (cap ${firstApp}), DESAPARECE de todo el acto central (ninguna aparición entre el cap ${earlyCutoff + 1} y el cap ${finalStretchStart - 1}) y reaparece en el tramo final (cap ${lastApp} de ${total}) para resolver su arco. Apariciones: caps ${apariciones.join(", ")}. Es un "cierre fantasma": el arco no está GANADO porque evolucionó fuera de cámara; el lector ya lo había olvidado.`,
+        sugerencia: `Reparte la presencia de "${sec.nombre}" por el acto central: añade 2-3 escenas entre el cap ${earlyCutoff + 1} y el cap ${finalStretchStart - 1} donde tome decisiones, se posicione o sufra reveses que construyan su arco PASO A PASO. La resolución final debe ser la consecuencia de esas escenas, no una reaparición de último minuto. Si el personaje no merece ese espacio, quítale el "arco_transformacion" en la World Bible.`,
+      });
+      continue;
+    }
+
+    // (c) DESAPARICIÓN PROLONGADA: brecha enorme en mitad del libro (se
+    // evapora y reaparece) sin escenas intermedias que mantengan el hilo. Si la
+    // reaparición ocurre EN el tramo final tras presentarse pronto, es el mismo
+    // patrón de cierre no ganado aunque haya alguna escena central suelta → ALTA.
     const gapUmbral = Math.max(5, Math.floor(total * 0.45));
     if (maxGap >= gapUmbral) {
+      const reaparicionTardiaNoGanada =
+        introducedEarly && gapHasta >= finalStretchStart;
       problemas.push({
         area: "arco_secundario",
         tipo: "desaparicion_prolongada",
-        severidad: "media",
+        severidad: reaparicionTardiaNoGanada ? "alta" : "media",
         capitulos: [gapDesde, gapHasta],
-        descripcion: `"${sec.nombre}" (rol "${sec.rol}", con arco_transformacion declarado) desaparece entre los caps ${gapDesde} y ${gapHasta} (${gapHasta - gapDesde} caps sin presencia, umbral ${gapUmbral}) y luego reaparece. Una reaparición tras una brecha tan larga sin escenas intermedias hace que el lector lo haya olvidado y que su arco avance "fuera de cámara".`,
-        sugerencia: `Inserta al menos 1 escena entre los caps ${gapDesde} y ${gapHasta} donde "${sec.nombre}" haga avanzar su arco en pantalla (una decisión, un conflicto con el protagonista, un pequeño revés o ganancia). El arco del secundario debe verse evolucionar, no saltar de A a Z.`,
+        descripcion: `"${sec.nombre}" (rol "${sec.rol}", con arco_transformacion declarado) desaparece entre los caps ${gapDesde} y ${gapHasta} (${gapHasta - gapDesde} caps sin presencia, umbral ${gapUmbral}) y luego reaparece${reaparicionTardiaNoGanada ? ` ya en el tramo final (cap ${gapHasta} ≥ ${finalStretchStart}), de modo que su arco se "cierra" tras una larga ausencia sin haberse construido en escena` : ""}. Una reaparición tras una brecha tan larga sin escenas intermedias hace que el lector lo haya olvidado y que su arco avance "fuera de cámara".`,
+        sugerencia: `Inserta al menos 1-2 escenas entre los caps ${gapDesde} y ${gapHasta} donde "${sec.nombre}" haga avanzar su arco en pantalla (una decisión, un conflicto con el protagonista, un pequeño revés o ganancia). El arco del secundario debe verse evolucionar, no saltar de A a Z.`,
       });
       continue;
     }
