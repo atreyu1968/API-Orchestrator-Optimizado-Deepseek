@@ -3379,7 +3379,46 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
           const gateCriticalKODims = finalAudit ? this.criticalSecondHalfKODims(finalAudit.problemas) : [];
           const gateCriticalKO = gateCriticalKODims.length > 0;
           const gateByCriticalKOOnly = finalSAScore >= MIN_PUBLISHABLE_SA_SCORE && gateCriticalKO;
-          if (bestSAOverall && finalAudit && (finalSAScore < MIN_PUBLISHABLE_SA_SCORE || gateCriticalKO)) {
+          // [Fix145-B] Una sola dimension determinista cronica al 0% no debe
+          // atrapar la novela en awaiting_structural_guidance para siempre. Caso
+          // real ("falso_aliado", novela "EL GRABADO DE LA LUNA NEGRA"): el
+          // detector no reconoce como el Arquitecto declaro el reveal del traidor
+          // (falso negativo confirmado por el audit on-demand del WBA: "WB
+          // suficiente 8/10, problema de implementacion de escaleta") y su unico
+          // problema "reveal_no_declarado" (media, -0.7) deja el agregado por
+          // debajo del minimo iteracion tras iteracion (atasco de ~6 h + 2
+          // bloqueos pese a guidance manual). Si el UNICO motivo por el que no se
+          // llega al minimo es esa dimension (sin su penalizacion el score si
+          // seria publicable) y no hay KO critico de segunda mitad, seguimos a
+          // generacion con un aviso en vez de bloquear: el Narrador si puede
+          // materializar el giro del traidor en prosa. Part A (detector mas
+          // tolerante) hace que este caso sea raro; esta es la red de seguridad.
+          let faChronicSoleBlocker = false;
+          if (bestSAOverall && finalAudit && finalSAScore < MIN_PUBLISHABLE_SA_SCORE && !gateCriticalKO) {
+            const faProblems = finalAudit.problemas.filter((p) => p.area === "falso_aliado");
+            const faOnlyRevealNotDeclared =
+              faProblems.length > 0 && faProblems.every((p) => p.tipo === "reveal_no_declarado");
+            if (faOnlyRevealNotDeclared) {
+              const nonFa = finalAudit.problemas.filter((p) => p.area !== "falso_aliado");
+              const altasNF = nonFa.filter((p) => p.severidad === "alta").length;
+              const mediasNF = nonFa.filter((p) => p.severidad === "media").length;
+              const scoreWithoutFa = Math.max(1, Math.min(10, 10 - 2 * altasNF - 0.7 * mediasNF));
+              faChronicSoleBlocker = scoreWithoutFa >= MIN_PUBLISHABLE_SA_SCORE;
+            }
+          }
+          if (faChronicSoleBlocker) {
+            console.warn(
+              `[Orchestrator] [Fix145-B] Gate estructural OMITIDO: la unica dimension que mantiene el agregado por debajo del minimo es "falso_aliado" (reveal del traidor no detectado, posible falso negativo del detector). Sin su penalizacion el score seria >= ${MIN_PUBLISHABLE_SA_SCORE}/10 y no hay KO critico de segunda mitad. Continuamos a generacion con aviso.`
+            );
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              agentRole: "architect",
+              message: `[Fix145] La estructura quedo en ${finalSAScore}/10 SOLO porque el Auditor Estructural no detecto la revelacion del falso aliado/traidor en la escaleta (las demas dimensiones alcanzan el minimo publicable ${MIN_PUBLISHABLE_SA_SCORE}/10 y ninguna dimension critica de segunda mitad esta KO). Suele ser un falso negativo del detector, no una carencia real (el audit on-demand del World Bible lo confirmo en runs previos). En lugar de pausar la novela indefinidamente, se continua a la escritura: el Narrador debe materializar el giro del traidor de forma explicita y humanizada en la prosa.`,
+              metadata: { fix: "Fix145-B", finalScore: finalSAScore, threshold: MIN_PUBLISHABLE_SA_SCORE },
+            });
+          }
+          if (bestSAOverall && finalAudit && (finalSAScore < MIN_PUBLISHABLE_SA_SCORE || gateCriticalKO) && !faChronicSoleBlocker) {
             // [Fix118] Si ya generamos auto-guidance en la pasada previa y
             // los problemas siguen, refrescamos la auto-guidance contra los
             // problemas RESIDUALES de esta última pasada (no los originales).

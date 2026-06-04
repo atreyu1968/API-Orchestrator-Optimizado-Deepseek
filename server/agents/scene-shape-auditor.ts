@@ -987,6 +987,57 @@ const HECHO_REVEAL_KEYWORDS = [
   "heredero oculto",
 ];
 
+// [Fix145-A] Keywords fuertes para el FALLBACK TOLERANTE por corpus (prosa de
+// objetivo_narrativo / eventos_pivotales / informacion_nueva). Solo se usan
+// cuando los REVEAL_PATTERN_TEMPLATES estrictos no han encontrado nada Y el
+// nombre del traidor co-ocurre en el MISMO capitulo del ultimo 40%. Conceder
+// cobertura ante un falso positivo es la direccion SEGURA (evita atrapar la
+// novela en bucle por un falso negativo del detector); el coste de un falso
+// positivo es solo dejar de penalizar una dimension.
+const STRONG_CORPUS_REVEAL_KEYWORDS = [
+  "traici",
+  "es el topo",
+  "es un topo",
+  "es la topo",
+  "el topo",
+  "doble agente",
+  "doble juego",
+  "doble vida",
+  "doble cara",
+  "infiltrad",
+  "trabaja para",
+  "trabajaba para",
+  "reporta a",
+  "reportaba a",
+  "no es quien",
+  "no es realmente",
+  "no es lo que parece",
+  "verdadero villano",
+  "verdadero antagonista",
+  "verdadero heredero",
+  "verdadero elegido",
+  "falso elegido",
+  "amante secreto",
+  "amante oculto",
+  "hijo secreto",
+  "hija secreta",
+  "padre biolog",
+  "madre biolog",
+  "hermano oculto",
+  "hermana oculta",
+  "identidad oculta",
+  "verdadera identidad",
+  "en realidad es",
+  "en verdad es",
+  "resulta ser",
+  "se revela como",
+  "se descubre que",
+  "conspira",
+  "conspiraba",
+  "nos traiciona",
+  "los traiciona",
+];
+
 function buildRevealRegexes(nameTokens: string[]): RegExp[] {
   // Construye un patrón de nombre = alternativa de los tokens del nombre real
   // (cualquiera de ellos basta — apellido suele ser suficiente). Cada token
@@ -1023,7 +1074,24 @@ function auditFalsoAliado(
       const nombre = String(p.nombre || p.name || "").trim();
       if (!nombre) return null;
       const normFull = stripAccents(nombre).replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
-      const tokens = normFull.split(/\s+/).filter((t) => t.length >= 4);
+      let tokens = normFull.split(/\s+/).filter((t) => t.length >= 4);
+      // [Fix145-A] Nombres cortos (Leo, Ana, Eva, Noa, Ian) dejaban tokens=[]
+      // -> buildRevealRegexes devolvia [] y tr.tokens.some(...) nunca casaba ->
+      // la dimension caia a 0% para SIEMPRE sin posibilidad de deteccion. Si no
+      // hay tokens >=4 bajamos el umbral a 3 y, en ultimo extremo, conservamos
+      // el token mas largo disponible (>=2). La relajacion solo afecta a
+      // traidores de nombre corto; los \b...\b de las plantillas evitan que un
+      // token de 3 letras encaje dentro de otra palabra.
+      if (tokens.length === 0) {
+        tokens = normFull.split(/\s+/).filter((t) => t.length >= 3);
+      }
+      if (tokens.length === 0) {
+        const longest = normFull
+          .split(/\s+/)
+          .filter(Boolean)
+          .sort((a, b) => b.length - a.length)[0];
+        if (longest && longest.length >= 2) tokens = [longest];
+      }
       return { nombre, rol, tokens };
     })
     .filter(Boolean) as { nombre: string; rol: string; tokens: string[] }[];
@@ -1068,7 +1136,13 @@ function auditFalsoAliado(
         const revealer = stripAccents(String(r?.personaje_revelador || ""));
         const refersToTraitor =
           tr.tokens.some((t) => hecho.includes(t) || revealer.includes(t));
-        if (refersToTraitor && HECHO_REVEAL_KEYWORDS.some((k) => hecho.includes(k))) {
+        const keywordHit = HECHO_REVEAL_KEYWORDS.some((k) => hecho.includes(k));
+        // [Fix145-A] Si solo hay UN traidor en el world_bible, el Arquitecto a
+        // veces declara la revelacion sin nombrarlo ("se descubre al topo",
+        // "el infiltrado cae") en hecho_revelado. Sin ambiguedad sobre a quien
+        // se refiere, una keyword de reveal basta. Con >=2 traidores seguimos
+        // exigiendo el nombre para no atribuir el giro al personaje equivocado.
+        if (keywordHit && (refersToTraitor || traidores.length === 1)) {
           revDosMatch = true;
           break;
         }
@@ -1076,6 +1150,39 @@ function auditFalsoAliado(
       if (hasReveal || revDosMatch) {
         revealCap = capNum(c);
         break;
+      }
+    }
+
+    if (revealCap === null) {
+      // [Fix145-A] Fallback TOLERANTE por corpus: el Arquitecto pudo declarar el
+      // giro en prosa (objetivo_narrativo / eventos_pivotales / informacion_nueva)
+      // sin la estructura copular exacta que exigen REVEAL_PATTERN_TEMPLATES.
+      // Antes de penalizar, buscamos en el ultimo 40% un cap donde co-ocurran un
+      // token del nombre del traidor y una keyword FUERTE de reveal. Solo concede
+      // cobertura (direccion segura): un falso positivo evita atrapar la novela
+      // por un falso negativo del detector; un reveal real declarado de otra
+      // forma deja de penalizar. Al exigir cap >= minRevealCap no produce
+      // reveal_temprano espurio.
+      // [Fix145-A] Para tokens cortos (<4 chars) exigimos frontera de palabra:
+      // un `corpus.includes("leo")` casaria dentro de "pueblo"/"galeote" y daria
+      // cobertura espuria. Con >=4 chars el riesgo de match accidental es bajo y
+      // mantenemos includes (mas barato y tolera flexion: "marlen"->"marlena").
+      const corpusMentionsToken = (corpus: string, t: string): boolean => {
+        if (t.length >= 4) return corpus.includes(t);
+        const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp(`\\b${escaped}\\b`).test(corpus);
+      };
+      for (const c of all) {
+        const n = capNum(c);
+        if (n < minRevealCap) continue;
+        const corpus = corpusByCap[n] || "";
+        if (!corpus) continue;
+        const mentionsName = tr.tokens.some((t) => corpusMentionsToken(corpus, t));
+        if (!mentionsName) continue;
+        if (STRONG_CORPUS_REVEAL_KEYWORDS.some((k) => corpus.includes(k))) {
+          revealCap = n;
+          break;
+        }
       }
     }
 
