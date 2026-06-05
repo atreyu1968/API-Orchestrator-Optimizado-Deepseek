@@ -8,3 +8,4 @@
 - [Autonomous quality redesign](autonomous-quality-redesign.md) — rediseño de calidad 100% autónomo (sin humano, sin awaiting_structural_guidance); patrón de puerta y orden de las 6.
 - [Structural generation gates](structural-generation-gates.md) — variedad por ETIQUETA se salta (dos set-pieces igual etiquetados distinto); pauta para añadir dim determinista al gate SA (conservadora, series-safe, 5 mapas, no a CRITICAL_SECOND_HALF_DIMS).
 - [DeepSeek thinking + techo de salida](deepseek-thinking-output-budget.md) — un juez con thinking + entrada grande devuelve null (JSON vacío/cortado) si maxOutputTokens es bajo; el techo es COMBINADO razonamiento+contenido, súbelo a >=16384.
+- [Pulido post-finalización es advisory](post-finalization-review-advisory.md) — el bucle Holístico+Beta corre tras aprobar el Revisor Final; nunca dejar "no aprobado" ni saltar ortotipográfica; rama revertir-y-reintentar debe contar rondas sin avance o gasta todo el presupuesto.

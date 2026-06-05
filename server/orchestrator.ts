@@ -10948,6 +10948,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     let prevBetaScore: number | null = null;
     let prevHolisticScore: number | null = null;
     let stalledIterations = 0;
+    // [Fix157] Anti-paliza: cuenta rondas consecutivas que NO establecen un nuevo
+    // mejor snapshot (regresion -> restaura -> reintenta, o sin mejora real). Al
+    // llegar al tope cortamos pronto en vez de gastar las 8 iteraciones dando
+    // vueltas sin avanzar (el log mostraba 4 regresiones seguidas hasta agotar iter).
+    let consecutiveNonImproving = 0;
+    const MAX_NONIMPROVING_ROUNDS = 2;
     // [Fix135-B] One-shot por bucle del brazo estructural: evita reescritura ->
     // relectura -> reescritura en cadena. Si tras el rescate sigue sin converger,
     // se acepta la salida normal (convergencia/persistencia para revision manual).
@@ -11070,6 +11076,41 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         resumen: `Convergencia aceptable: Beta=${currentScores.beta}, Holístico=${currentScores.holistic} (Δ+${holisticDelta} desde inicio).`,
       });
       return true;
+    };
+
+    // [Fix157] Cierre ADVISORY del loop SIN dejar el manuscrito "no aprobado".
+    // Este loop corre DESPUES de finalizeCompletedProject, es decir, el Revisor
+    // Final YA aprobo el manuscrito (9+/10, arcos/hilos cerrados). El target dual
+    // (Beta>=9 AND Holistico>=7) es un pulido ASPIRACIONAL, no una puerta de
+    // calidad: cuando el loop no lo clava (estancamiento, regresiones, maximo de
+    // iteraciones, sin notas...), restauramos la mejor version vista, ejecutamos
+    // la ortotipografica final IGUALMENTE (antes se saltaba, dejando peor salida
+    // para una novela ya bestseller) y dejamos las sugerencias restantes como
+    // pulido OPCIONAL. Nunca marca "no aprobado".
+    const finalizeAdvisoryWithOrtho = async (
+      parsed: { resumen_general?: string | null; instrucciones: any[] },
+      source: string,
+      reason: string,
+    ): Promise<void> => {
+      let restoreNote = "";
+      if (bestSnapshot) {
+        const r = await restoreSnapshot(bestSnapshot.chapters);
+        // [Fix134] Re-persistir score+informe del snapshot restaurado.
+        await this.syncHolisticBetaPersistenceToSnapshot(project.id, bestSnapshot);
+        restoreNote = r.restored > 0
+          ? ` Restaurados ${r.restored} capitulo(s) del mejor snapshot.${r.structuralDrift ? " (drift estructural: " + r.missing + " cap(s) del snapshot ya no existen)" : ""}`
+          : "";
+      }
+      // Persistir sugerencias restantes como pulido OPCIONAL (persistAutoReviewResult
+      // ya emite la notificacion SSE onAutoReviewReady).
+      await this.persistAutoReviewResult(project.id, parsed, source);
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "success",
+        message: `[Fix157] ${reason} El manuscrito YA fue APROBADO por el Revisor Final (9+/10) antes de este pulido, asi que el loop Holistico+Beta es ADVISORY y NO revoca ese veredicto. Se conserva la mejor version (Beta=${bestSnapshot?.beta ?? "?"}, Holistico=${bestSnapshot?.holistic ?? "?"}) y se ejecuta la correccion ortotipografica final igualmente.${restoreNote} Las ${parsed.instrucciones?.length ?? 0} sugerencia(s) restante(s) quedan como pulido OPCIONAL en el dashboard.`,
+        agentRole: "editor",
+      });
+      await this.runOrthotypographicPassAndUpdate(currentProject);
     };
 
     try {
@@ -11231,24 +11272,29 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             // siempre que quede presupuesto de iteraciones. prevScores=best para que
             // el contador de estancamiento (stalledIterations) actúe de red de
             // seguridad si los reintentos no logran superar la mejor versión.
-            if (iter < MAX_ITERATIONS) {
+            // [Fix157] Cada regresion cuenta como ronda sin avance. Reintentamos
+            // desde la mejor version solo si queda presupuesto de iteraciones Y no
+            // hemos agotado el tope anti-paliza de rondas consecutivas sin avance.
+            consecutiveNonImproving++;
+            if (iter < MAX_ITERATIONS && consecutiveNonImproving < MAX_NONIMPROVING_ROUNDS) {
               regressionAwareness = `En la ronda anterior, las correcciones aplicadas EMPEORARON la novela: la valoración de los lectores bajó de Beta=${bestSnapshot.beta}/Holístico=${bestSnapshot.holistic} a Beta=${betaScore}/Holístico=${holisticScore}, así que se ha restaurado la mejor versión. La estás releyendo ahora.`;
               prevBetaScore = bestSnapshot.beta;
               prevHolisticScore = bestSnapshot.holistic;
               currentProject = (await storage.getProject(project.id)) || currentProject;
               await storage.createActivityLog({
                 projectId: project.id, level: "info",
-                message: `[Fix140] Reintentando desde la mejor versión (Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}) con aviso de regresión a los lectores, para no volver a empeorarla. Iteraciones restantes: ${MAX_ITERATIONS - iter}.`,
+                message: `[Fix140] Reintentando desde la mejor versión (Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}) con aviso de regresión a los lectores, para no volver a empeorarla. Iteraciones restantes: ${MAX_ITERATIONS - iter}. Rondas sin avance: ${consecutiveNonImproving}/${MAX_NONIMPROVING_ROUNDS}.`,
                 agentRole: "editor",
               });
               continue;
             }
-            // Agotado el presupuesto de iteraciones: persistimos la mejor versión
-            // conocida para revisión manual.
-            await this.persistAutoReviewResult(
-              project.id,
-              { resumen_general: `Mejor snapshot: Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}. No alcanzó target dual (${TARGET_BETA_SCORE}/${TARGET_HOLISTIC_SCORE}) tras agotar las ${MAX_ITERATIONS} iteraciones.`, instrucciones: [] },
+            // [Fix157] Agotado el presupuesto (iteraciones o rondas sin avance):
+            // cerramos en modo ADVISORY ejecutando la ortotipografica sobre la mejor
+            // version, sin dejar el manuscrito "no aprobado" (antes solo se persistia).
+            await finalizeAdvisoryWithOrtho(
+              { resumen_general: `Mejor snapshot: Beta=${bestSnapshot.beta}, Holístico=${bestSnapshot.holistic}. No alcanzó el target dual de pulido (${TARGET_BETA_SCORE}/${TARGET_HOLISTIC_SCORE}).`, instrucciones: [] },
               "auto_holistic_regression_no_target",
+              `Pulido detenido tras ${consecutiveNonImproving} ronda(s) consecutiva(s) sin superar la mejor version (anti-paliza Fix157).`,
             );
             return;
           }
@@ -11264,6 +11310,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             // [Fix140] Mejora real: limpiamos el aviso de regresión (si existía) para
             // que los lectores vuelvan a operar con normalidad a partir de aquí.
             regressionAwareness = null;
+            // [Fix157] Hubo avance real: reseteamos el contador anti-paliza.
+            consecutiveNonImproving = 0;
             await storage.createActivityLog({
               projectId: project.id, level: "info",
               message: `[Fix81] Iter ${iter}: nuevo mejor snapshot guardado (${scoreLabel}, ${snap.length} capítulos).`,
@@ -11277,10 +11325,22 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         // que NO debe enmascararse como aprobación.
         if (!notes) {
           if (!holisticSucceeded && !betaSucceeded) {
+            // [Fix157] Ambos lectores fallaron esta iter. Si ya teniamos una mejor
+            // version del loop, cerramos ADVISORY con ortotipografica (el manuscrito
+            // ya estaba aprobado por el Revisor Final). Si no hay snapshot, es un
+            // fallo operativo en la primera lectura: abortamos para revision manual.
+            if (bestSnapshot) {
+              await finalizeAdvisoryWithOrtho(
+                { resumen_general: `Ambos lectores fallaron en iter ${iter}; se conserva la mejor version del loop (Beta=${bestSnapshot.beta}, Holistico=${bestSnapshot.holistic}).`, instrucciones: [] },
+                "auto_holistic_readers_failed",
+                `Iter ${iter}: ambos lectores fallaron en esta iteracion.`,
+              );
+              return;
+            }
             await storage.createActivityLog({
               projectId: project.id,
               level: "error",
-              message: `[Fix81] Iter ${iter}: ambos lectores fallaron en esta iteración. Auto-revisión abortada SIN marcar el manuscrito como aprobado — lanza la revisión manual desde el dashboard cuando puedas.`,
+              message: `[Fix81] Iter ${iter}: ambos lectores fallaron en esta iteración y no hay mejor snapshot previo. Auto-revisión abortada — lanza la revisión manual desde el dashboard cuando puedas.`,
               agentRole: "editor",
             });
             return;
@@ -11305,16 +11365,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             await this.runOrthotypographicPassAndUpdate(currentProject);
             this.callbacks.onAutoReviewReady?.({ count: 0, resumen: "Sin observaciones" });
           } else {
-            await storage.createActivityLog({
-              projectId: project.id,
-              level: "warning",
-              message: `[Fix81] Iter ${iter}: sin notas aplicables pero target dual NO cumplido (${scoreLabel}, faltan Beta≥${TARGET_BETA_SCORE} AND Holístico≥${TARGET_HOLISTIC_SCORE}). Auto-revisión finalizada SIN marcar aprobado y SIN corrección ortotipográfica. Revisión manual requerida.`,
-              agentRole: "editor",
-            });
-            await this.persistAutoReviewResult(
-              project.id,
-              { resumen_general: `Sin notas pero target dual no alcanzado (${scoreLabel}).`, instrucciones: [] },
+            // [Fix157] Sin notas pero sin clavar el target de pulido: el manuscrito
+            // ya esta aprobado por el Revisor Final, asi que cerramos ADVISORY
+            // ejecutando la ortotipografica en vez de dejarlo "no aprobado".
+            await finalizeAdvisoryWithOrtho(
+              { resumen_general: `Sin notas pero target dual de pulido no alcanzado (${scoreLabel}).`, instrucciones: [] },
               "auto_holistic_no_notes_no_target",
+              `Iter ${iter}: los lectores no dejaron notas aplicables y no se clavo el target de pulido (${scoreLabel}).`,
             );
           }
           return;
@@ -11349,16 +11406,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           parsed = await this.parseEditorialNotesOnly(currentProject, notes, { fromAutoLoop: true });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          await storage.createActivityLog({
-            projectId: project.id,
-            level: "warning",
-            message: `[Fix81] Iter ${iter}: el parser de notas falló (${msg.slice(0, 200)}). Persistimos las notas crudas en pendingEditorialParse para revisión manual y abortamos el loop.`,
-            agentRole: "editor",
-          });
-          await this.persistAutoReviewResult(
-            project.id,
+          // [Fix157] El parser falla ANTES de tocar la prosa, asi que el manuscrito
+          // sigue en el estado aprobado por el Revisor Final (o en el mejor snapshot).
+          // Cerramos ADVISORY ejecutando la ortotipografica igualmente, en vez de
+          // dejarlo sin pulir; las notas crudas quedan como pulido OPCIONAL.
+          await finalizeAdvisoryWithOrtho(
             { resumen_general: notes.slice(0, 500), instrucciones: [] },
             "auto_holistic_parser_failed",
+            `Iter ${iter}: el parser de notas fallo (${msg.slice(0, 200)}); no se aplico ningun cambio en esta iteracion.`,
           );
           return;
         }
@@ -11389,12 +11444,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           if (await tryAcceptableConvergenceExit({ beta: betaScore, holistic: holisticScore }, "sin instrucciones aplicables")) {
             return;
           }
-          await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_no_instructions");
-          await storage.createActivityLog({
-            projectId: project.id, level: "info",
-            message: `[Fix81] Iter ${iter}: ${scoreLabel}. Ambos lectores escribieron prosa pero el parser no extrajo instrucciones aplicables (o todas se rutaron a acciones administrativas por Fix87). Auto-revisión finalizada SIN target dual alcanzado.`,
-            agentRole: "editor",
-          });
+          // [Fix157] Sin instrucciones quirurgicas aplicables (p.ej. todas
+          // estructurales rutadas a acciones administrativas). Cerramos ADVISORY
+          // con ortotipografica en vez de dejar el manuscrito "no aprobado".
+          await finalizeAdvisoryWithOrtho(
+            parsed,
+            "auto_holistic_no_instructions",
+            `Iter ${iter}: ${scoreLabel}. Los lectores escribieron prosa pero el parser no extrajo instrucciones aplicables (o todas se rutaron a acciones administrativas).`,
+          );
           return;
         }
 
@@ -11433,12 +11490,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           if (await tryAcceptableConvergenceExit({ beta: betaScore, holistic: holisticScore }, "estancamiento tras 2 iters sin mejora")) {
             return;
           }
-          await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_stalled");
-          await storage.createActivityLog({
-            projectId: project.id, level: "warning",
-            message: `[Fix81] Iter ${iter}: 2 iteraciones consecutivas sin mejora en ningún score (${scoreLabel}). Estancamiento detectado. ${instructions.length} instrucción(es) persistida(s) para revisión manual. Target dual NO alcanzado — el manuscrito NO se marca como aprobado.`,
-            agentRole: "editor",
-          });
+          // [Fix157] Estancamiento: cerramos ADVISORY con ortotipografica sobre la
+          // mejor version en vez de dejar el manuscrito "no aprobado".
+          await finalizeAdvisoryWithOrtho(
+            parsed,
+            "auto_holistic_stalled",
+            `Iter ${iter}: ${instructions.length} instruccion(es) aplicadas no movieron el score en 2 iteraciones seguidas (${scoreLabel}); estancamiento.`,
+          );
           return;
         }
         prevBetaScore = betaScore;
@@ -11450,12 +11508,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           if (await tryAcceptableConvergenceExit({ beta: betaScore, holistic: holisticScore }, `máximo de iteraciones (${MAX_ITERATIONS}) alcanzado`)) {
             return;
           }
-          await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_max_iter");
-          await storage.createActivityLog({
-            projectId: project.id, level: "warning",
-            message: `[Fix81] Máximo de iteraciones alcanzado (${MAX_ITERATIONS}) con ${scoreLabel}. ${instructions.length} instrucción(es) persistida(s) para revisión manual. Target dual (Beta≥${TARGET_BETA_SCORE} AND Holístico≥${TARGET_HOLISTIC_SCORE}) NO alcanzado — el manuscrito NO se marca como aprobado y NO se ejecuta la corrección ortotipográfica.`,
-            agentRole: "editor",
-          });
+          // [Fix157] Maximo de iteraciones sin clavar el target de pulido: cerramos
+          // ADVISORY con ortotipografica sobre la mejor version, sin dejarlo "no aprobado".
+          await finalizeAdvisoryWithOrtho(
+            parsed,
+            "auto_holistic_max_iter",
+            `Maximo de iteraciones de pulido alcanzado (${MAX_ITERATIONS}) con ${scoreLabel}; ${instructions.length} sugerencia(s) restante(s).`,
+          );
           return;
         }
 
@@ -11475,12 +11534,25 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           await this.applyEditorialNotes(currentProject, "", instructions, { skipReaderReviewRefresh: true, fromAutoLoop: true });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
+          try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
+          // [Fix157] applyEditorialNotes pudo dejar la prosa en estado PARCIAL. Solo
+          // cerramos ADVISORY con ortotipografica si hay un mejor snapshot LIMPIO que
+          // restaurar (finalizeAdvisoryWithOrtho lo restaura antes de pulir). Sin
+          // snapshot no podemos garantizar un manuscrito integro: persistimos y
+          // abortamos para revision manual (igual que antes).
+          if (bestSnapshot) {
+            await finalizeAdvisoryWithOrtho(
+              parsed,
+              "auto_holistic_apply_failed",
+              `Iter ${iter}: applyEditorialNotes fallo (${msg.slice(0, 200)}); se restaura el mejor snapshot limpio.`,
+            );
+            return;
+          }
           await storage.createActivityLog({
             projectId: project.id, level: "error",
-            message: `[Fix81] Iter ${iter}: applyEditorialNotes falló (${msg.slice(0, 200)}). Auto-revisión abortada; manuscrito restaurado a status="completed" y notas persistidas para revisión manual.`,
+            message: `[Fix81] Iter ${iter}: applyEditorialNotes falló (${msg.slice(0, 200)}) y no hay mejor snapshot previo para restaurar. Auto-revisión abortada; manuscrito restaurado a status="completed" y notas persistidas para revisión manual.`,
             agentRole: "editor",
           });
-          try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
           await this.persistAutoReviewResult(project.id, parsed, "auto_holistic_apply_failed");
           return;
         }
@@ -15249,7 +15321,7 @@ Responde SOLO con un JSON válido con la estructura:
     processChecklist.push({
       step: "Corrección Ortotipográfica",
       status: "skipped",
-      detail: "se ejecuta tras alcanzar Beta≥9 y Holístico≥8 (Fix81)",
+      detail: "se ejecuta al cerrar el pulido Holístico+Beta, siempre sobre la mejor versión (Fix81/Fix157)",
     });
 
     const checklistSummary = processChecklist.map(p => {
