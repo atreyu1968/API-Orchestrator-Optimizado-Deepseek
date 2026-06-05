@@ -21,6 +21,8 @@ export { AgencyCriticAgent, getProtagonistName, detectExternalRescueSmell, stamp
 // [Fix148][Puerta 4] Editor de Prosa de Agencia (juez de la PROSA escrita).
 export { ProseAgencyEditorAgent, type ProseAgencyEditorResult, type ProseAgencyProblem, type ProseAgencyProblemType } from "./prose-agency-editor";
 export { FinalAxisReaderAgent, type FinalAxisReaderResult, type FinalAxisProblem, type FinalAxisEje, type FinalAxisEjes } from "./final-axis-reader";
+// [Fix156][Puerta Acto 2] Editor de Ritmo del Acto 2 (juez de la PROSA del tramo central, mid-novela).
+export { Act2PacingEditorAgent, type Act2PacingEditorResult, type Act2Problem, type Act2ProblemType } from "./act2-pacing-editor";
 // [Fix150][Puerta 0] Director Creativo: forja el concepto rector antes de generar.
 export { ConceptForgeAgent, type ConceptForgeResult, type ConceptForgeInput } from "./concept-forge";
 export { HolisticReviewerAgent, type HolisticReviewerResult } from "./holistic-reviewer";

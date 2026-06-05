@@ -25,6 +25,9 @@ import {
   FinalAxisReaderAgent,
   type FinalAxisReaderResult,
   type FinalAxisProblem,
+  Act2PacingEditorAgent,
+  type Act2PacingEditorResult,
+  type Act2Problem,
   ConceptForgeAgent,
   OutlineBetaReaderAgent,
   PlotIntegrityAuditorAgent,
@@ -202,6 +205,8 @@ export class Orchestrator {
   // [Fix148][Puerta 4] Editor de Prosa de Agencia (juez de la PROSA escrita).
   private proseAgencyEditor = new ProseAgencyEditorAgent();
   private finalAxisReader = new FinalAxisReaderAgent();
+  // [Fix156][Puerta Acto 2] Editor de Ritmo del Acto 2 (juez de la PROSA del tramo central, mid-novela).
+  private act2PacingEditor = new Act2PacingEditorAgent();
   // [Fix150][Puerta 0] Director Creativo: forja el concepto rector pre-generación.
   private conceptForge = new ConceptForgeAgent();
   private callbacks: OrchestratorCallbacks;
@@ -253,6 +258,12 @@ export class Orchestrator {
   private midNovelHolisticAttempted: boolean = false;
   private midNovelHolisticSecondAttempted: boolean = false;
   private midNovelHolisticThirdAttempted: boolean = false;
+
+  // [Fix156][Puerta Acto 2] Puerta semantica del ritmo del acto 2 a mid-novela:
+  // corre UNA vez cuando el acto 2 ya esta escrito (~75%) y aun quedan capitulos
+  // (acto 3) por escribir, para reescribir el tramo central flojo ANTES de
+  // construir el climax encima. One-shot; flag reseteado en generateNovel.
+  private act2GateAttempted: boolean = false;
 
   // [Fix29] Issues estructurales detectados por el Holístico antes del
   // primer ciclo del Final Reviewer. Se inyectan en `issuesPreviosCorregidos`
@@ -1083,6 +1094,8 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
     this.midNovelHolisticAttempted = false;
     this.midNovelHolisticSecondAttempted = false;
     this.midNovelHolisticThirdAttempted = false;
+    // [Fix156][Puerta Acto 2] Resetear el flag one-shot de la puerta del acto 2.
+    this.act2GateAttempted = false;
     try {
       // Check if chapters already exist (recovery after crash)
       const existingChapters = await storage.getChaptersByProject(project.id);
@@ -4655,6 +4668,34 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
         }
 
+        // [Fix156][Puerta Acto 2] Puerta SEMANTICA del ritmo del acto 2 a
+        // mid-novela. A diferencia de las pasadas Beta/Holistico de arriba (que
+        // solo GUIAN los capitulos futuros, no reescriben lo ya escrito), esta
+        // puerta REESCRIBE el tramo central flojo EN CUANTO el acto 2 esta
+        // completo (~75%), antes de construir el acto 3/climax encima. Espejo de
+        // las Puertas 4/5 pero adelantado: el bajon cronico del acto 2 se ataja
+        // aqui, no al final (rescate tardio y caro). One-shot, advisory, jamas
+        // bloquea. Requiere que aun queden capitulos por escribir (acto 3) para
+        // que valga la pena, y suficientes capitulos totales para un tramo central
+        // significativo.
+        const act2Mark = Math.floor(totalChaptersForBeta * 0.75);
+        if (
+          !this.act2GateAttempted &&
+          totalChaptersForBeta >= 8 &&
+          remainingAfter >= 1 &&
+          completedSoFar >= act2Mark &&
+          !this.aborted
+        ) {
+          // One-shot: marcar ANTES de la llamada para no reintentar en cada
+          // capitulo siguiente aunque la puerta falle o se omita.
+          this.act2GateAttempted = true;
+          await this.runAct2ProseGate(project, worldBibleData, fullStyleGuide, totalChaptersForBeta);
+          if (this.aborted) {
+            console.log(`[Orchestrator] [Fix156][Puerta Acto 2] Aborted tras la puerta del acto 2. Saliendo silenciosamente.`);
+            return;
+          }
+        }
+
         // PUENTE C — Checkpoint holístico ligero cada N capítulos (configurable).
         // Best-effort: detecta duplicados y drift de nombre del protagonista sin
         // pausar la generación. Si midGenCheckpointEvery <= 0 está desactivado.
@@ -6406,6 +6447,273 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     } catch (error) {
       // La puerta es best-effort: un fallo aqui jamas debe abortar la finalizacion.
       console.warn(`[Fix148][Puerta 4] runProseAgencyGate fallo (no bloqueante): ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * [Fix156][Puerta Acto 2] EDITOR DE RITMO DEL ACTO 2 (mid-novela). Espejo en
+   * PROSA de las Puertas 4/5, pero ADELANTADO: corre UNA vez a mitad de novela,
+   * cuando el acto 2 ya esta escrito (~75% del manuscrito) y aun quedan capitulos
+   * (acto 3) por escribir. Lee la PROSA REAL del tramo central (acto 2, ~25%-75%)
+   * y juzga si la tension ESCALA hacia el climax o si se hunde en una meseta
+   * (apuestas que no suben, avance sin coste, repeticion, subtramas estancadas).
+   * Reescribe los capitulos flojos del acto 2 EN CUANTO se detectan, para que el
+   * acto 3/climax se construya sobre un acto 2 ya solido, en vez de esperar al
+   * rescate final (tarde y caro). A diferencia de las pasadas Beta/Holistico
+   * mid-novela (que solo GUIAN los capitulos futuros), esta SI reescribe lo ya
+   * escrito.
+   *
+   * Bucle AUTONOMO (sin humano): sale por CALIDAD (score>=7 Y escala_correctamente
+   * Y sin problema critico/alto); ante estancamiento auto-escala la intensidad;
+   * fail-safe determinista (reescritura forzada del peor capitulo). Anti-regresion
+   * por snapshot (revert-by-default tras el fail-safe). MAX_PASSES bajo y tope de
+   * reescrituras (mas ligero que la puerta final, porque corre a mitad de obra).
+   * NUNCA bloquea: todo best-effort en try/catch, jamas rompe la generacion.
+   */
+  private async runAct2ProseGate(
+    project: Project,
+    worldBibleData: ParsedWorldBible,
+    fullStyleGuide: string,
+    plannedTotalChapters: number,
+  ): Promise<void> {
+    const MAX_PASSES = 2;
+    const MAX_ACT2_REWRITES = 4;
+    const MIN_ACT2_SCORE = 7;
+    try {
+      const wb = (worldBibleData as any)?.world_bible || {};
+      const protName = getProtagonistName(wb);
+      // Filosofia estructural (Fix132): escalada monotona + coste irreversible +
+      // anti deus ex machina + conservar el canon. Se antepone a cada directiva de
+      // reescritura para que el Narrador eleve la INTENSIDAD sin inventar hechos.
+      const act2Philosophy = `FILOSOFIA DEL ACTO 2 (no negociable): la tension debe ESCALAR de forma monotona hacia el climax. Cada avance se PAGA con un coste tangible e irreversible (una herida, una perdida, una decision sin vuelta atras, la rotura de un recurso o aliado). PROHIBIDO introducir salvadores, informantes o soluciones que no esten ya sembrados antes (anti deus ex machina): eleva la intensidad con elementos YA presentes. CONSERVA intactos los hechos canonicos, nombres, revelaciones y la trama de ${project.title || "la novela"}: lo que se corrige es la INTENSIDAD, el coste y la variedad de escena, NO los hechos.`;
+
+      // Ventana del acto 2: capitulos completados cuyo numero cae en [25%, 75%]
+      // del total PLANIFICADO (zona estable aunque aun falten capitulos por escribir).
+      const totalRef = Math.max(plannedTotalChapters, 1);
+      const act2From = Math.max(1, Math.floor(totalRef * 0.25));
+      const act2To = Math.max(act2From, Math.floor(totalRef * 0.75));
+      const loadAct2 = async (): Promise<{ chapter: Chapter; section: SectionData; prosa: string }[]> => {
+        const all = (await storage.getChaptersByProject(project.id))
+          .filter((c) => c.status === "completed" && c.chapterNumber > 0)
+          .sort((a, b) => a.chapterNumber - b.chapterNumber);
+        const out: { chapter: Chapter; section: SectionData; prosa: string }[] = [];
+        for (const c of all) {
+          if (c.chapterNumber < act2From || c.chapterNumber > act2To) continue;
+          const section = this.buildSectionDataFromChapter(c, worldBibleData);
+          const prosa = ((c as any).editedContent || c.originalContent || (c as any).content || "") as string;
+          if (prosa.trim()) out.push({ chapter: c, section, prosa });
+        }
+        return out;
+      };
+
+      let act2 = await loadAct2();
+      if (act2.length < 3) {
+        // Tramo central demasiado corto para juzgar escalada con sentido: omite.
+        return;
+      }
+
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "act2-pacing-editor",
+        message: `[Fix156][Puerta Acto 2] Editor de Ritmo del Acto 2: auditando la escalada del tramo central a mitad de novela (antes de construir el acto 3). Capitulos en revision: ${act2.map((c) => c.chapter.chapterNumber).join(", ")}.`,
+      });
+
+      // Anti-regresion: snapshot de la prosa del tramo para restaurar la MEJOR
+      // version conocida si una reescritura posterior la empeora.
+      type ProseSnapshot = { id: number; content: string; wordCount: number }[];
+      const snapshotOf = (cs: typeof act2): ProseSnapshot =>
+        cs.map((c) => ({
+          id: c.chapter.id,
+          content: c.prosa,
+          wordCount: c.chapter.wordCount || c.prosa.split(/\s+/).filter((w) => w.length > 0).length,
+        }));
+      const restoreSnapshot = async (snap: ProseSnapshot): Promise<void> => {
+        for (const s of snap) {
+          await storage.updateChapter(s.id, {
+            content: s.content,
+            wordCount: s.wordCount,
+            status: "completed",
+            needsRevision: false,
+            revisionReason: null,
+          });
+        }
+      };
+
+      // Calidad compuesta para elegir el "mejor": menos problemas criticos/altos,
+      // luego escala_correctamente, luego score numerico.
+      const critCount = (r: Act2PacingEditorResult) =>
+        r.capitulos_problematicos.filter((p) => p.severidad === "critica" || p.severidad === "alta").length;
+      const isBetter = (a: Act2PacingEditorResult, b: Act2PacingEditorResult): boolean => {
+        const ca = critCount(a), cb = critCount(b);
+        if (ca !== cb) return ca < cb;
+        const aa = a.escala_correctamente ? 1 : 0;
+        const ab = b.escala_correctamente ? 1 : 0;
+        if (aa !== ab) return aa > ab;
+        return a.puntuacion_acto2 > b.puntuacion_acto2;
+      };
+
+      const judgeAct2 = async (cs: typeof act2): Promise<Act2PacingEditorResult | null> => {
+        const { result } = await this.act2PacingEditor.analyze({
+          title: project.title || "Sin titulo",
+          genre: (project as any).genre || "",
+          tone: (project as any).tone || "",
+          protagonista: protName,
+          premise: (project as any).premise || (project as any).description || "",
+          capitulos: cs.map((c) => ({
+            numero: c.chapter.chapterNumber,
+            titulo: c.section.titulo || `Capitulo ${c.chapter.chapterNumber}`,
+            prosa: c.prosa,
+          })),
+          projectId: project.id,
+        });
+        return result || null;
+      };
+      const esApto = (r: Act2PacingEditorResult): boolean =>
+        r.veredicto === "apto"
+        && r.puntuacion_acto2 >= MIN_ACT2_SCORE
+        && r.escala_correctamente
+        && critCount(r) === 0;
+
+      let best: Act2PacingEditorResult | null = null;
+      let bestSnapshot: ProseSnapshot | null = null;
+      let prevScore = -1;
+      let stallCount = 0;
+      let rewritesDone = 0;
+
+      for (let pass = 0; pass < MAX_PASSES; pass++) {
+        const passSnapshot = snapshotOf(act2);
+        const result = await judgeAct2(act2);
+
+        if (!result) {
+          console.warn(`[Fix156][Puerta Acto 2] El juez del acto 2 no devolvio resultado (pasada ${pass + 1}); se continua sin bloquear.`);
+          break;
+        }
+        if (!best || isBetter(result, best)) {
+          best = result;
+          bestSnapshot = passSnapshot;
+        }
+
+        const criticos = result.capitulos_problematicos.filter(
+          (p) => p.severidad === "critica" || p.severidad === "alta",
+        );
+        if (esApto(result)) {
+          await storage.createActivityLog({
+            projectId: project.id, level: "info", agentRole: "act2-pacing-editor",
+            message: `[Fix156][Puerta Acto 2] ACTO 2 APTO en ritmo (${result.puntuacion_acto2}/10): ${result.resumen || "el tramo central escala hacia el climax con coste real."}`,
+          });
+          return;
+        }
+
+        if (result.puntuacion_acto2 <= prevScore) stallCount++;
+        prevScore = result.puntuacion_acto2;
+
+        const aReescribir = criticos.length > 0
+          ? criticos
+          : result.capitulos_problematicos.filter((p) => p.severidad === "media");
+        if (aReescribir.length === 0) break;
+
+        const intensidad = stallCount >= 1
+          ? "REESCRITURA OBLIGATORIA Y RADICAL de la escalada del capitulo"
+          : "Reescritura dirigida";
+
+        for (const prob of aReescribir) {
+          if (rewritesDone >= MAX_ACT2_REWRITES) break;
+          const target = act2.find((c) => c.chapter.chapterNumber === prob.numero);
+          if (!target) continue;
+          const directiva = `${intensidad} POR BAJON DEL ACTO 2 (${prob.tipo}). ${prob.descripcion}\n\nQUE HACER EN ESTE CAPITULO: ${prob.directiva_de_reescritura}\n\n${act2Philosophy}`;
+          await this.rewriteChapterForQA(
+            project,
+            target.chapter,
+            target.section,
+            worldBibleData,
+            fullStyleGuide,
+            "editorial",
+            directiva,
+          );
+          rewritesDone++;
+        }
+
+        act2 = await loadAct2();
+        if (act2.length === 0) break;
+        if (rewritesDone >= MAX_ACT2_REWRITES) break;
+      }
+
+      // Anti-regresion: el bucle salio sin tramo apto; la ultima reescritura no fue
+      // re-juzgada. Restaura la MEJOR version conocida antes del fail-safe.
+      if (bestSnapshot) {
+        await restoreSnapshot(bestSnapshot);
+        act2 = await loadAct2();
+        if (act2.length === 0) return;
+      }
+
+      // ── Fail-safe determinista (sin humano): si tras MAX_PASSES el acto 2 no
+      // quedo apto y aun queda cupo de reescrituras, fuerza UNA reescritura mas del
+      // peor capitulo. NUNCA bloquea.
+      let mandatoAplicadoCap: number | null = null;
+      const peor = best?.capitulos_problematicos
+        ?.slice()
+        .sort((a: Act2Problem, b: Act2Problem) => {
+          const rank = (s: string) => (s === "critica" ? 3 : s === "alta" ? 2 : 1);
+          return rank(b.severidad) - rank(a.severidad);
+        })[0];
+      if (peor && rewritesDone < MAX_ACT2_REWRITES) {
+        const target = act2.find((c) => c.chapter.chapterNumber === peor.numero);
+        if (target) {
+          const directiva = `MANDATO FINAL DE RITMO DEL ACTO 2 (vinculante). El tramo central todavia NO escala como debe: ${peor.descripcion}. ${peor.directiva_de_reescritura}\n\n${act2Philosophy}\n\nReescribe este capitulo para que suba la apuesta respecto al capitulo anterior y el avance se pague con un coste irreversible visible en escena.`;
+          await this.rewriteChapterForQA(
+            project,
+            target.chapter,
+            target.section,
+            worldBibleData,
+            fullStyleGuide,
+            "editorial",
+            directiva,
+          );
+          mandatoAplicadoCap = target.chapter.chapterNumber;
+        }
+      }
+
+      // Anti-regresion del fail-safe: revert-by-default. Solo se conserva la
+      // reescritura forzada si hay PRUEBA de mejora (apta o estrictamente mejor).
+      if (mandatoAplicadoCap !== null && best && bestSnapshot) {
+        let mustRevert = true;
+        let postScore: number | null = null;
+        const reloaded = await loadAct2();
+        if (reloaded.length > 0) {
+          const post = await judgeAct2(reloaded);
+          if (post) {
+            postScore = post.puntuacion_acto2;
+            if (esApto(post)) {
+              await storage.createActivityLog({
+                projectId: project.id, level: "info", agentRole: "act2-pacing-editor",
+                message: `[Fix156][Puerta Acto 2] La reescritura forzada del capitulo ${mandatoAplicadoCap} logro ACTO 2 APTO (${post.puntuacion_acto2}/10): ${post.resumen || "el tramo central ya escala hacia el climax."}`,
+              });
+              return;
+            }
+            if (isBetter(post, best)) mustRevert = false;
+          }
+        }
+        if (mustRevert) {
+          await restoreSnapshot(bestSnapshot);
+          await storage.createActivityLog({
+            projectId: project.id, level: "info", agentRole: "act2-pacing-editor",
+            message: `[Fix156][Puerta Acto 2] La reescritura forzada del capitulo ${mandatoAplicadoCap} no mejoro el ritmo (${postScore !== null ? `${postScore}/10` : "sin veredicto del juez"} vs mejor ${best.puntuacion_acto2}/10); se revierte a la mejor version conocida.`,
+          });
+          mandatoAplicadoCap = null;
+        }
+      }
+
+      // Mensaje HONESTO: si `best` es null, el juez nunca devolvio veredicto usable
+      // y la puerta se OMITIO este run (no debe reportarse como "no convergio").
+      const mensajeAct2 = best === null
+        ? `[Fix156][Puerta Acto 2] El Editor de Ritmo del Acto 2 no devolvio un veredicto usable (posible respuesta vacia o timeout del modelo tras sus reintentos internos); la puerta se OMITE este run sin bloquear ni modificar la prosa. El ritmo del acto 2 seguira cubierto por las pasadas Beta/Holistico mid-novela y las puertas finales. Se continua la generacion.`
+        : `[Fix156][Puerta Acto 2] El ritmo del acto 2 no convergio a apto en ${MAX_PASSES} pasadas (mejor ${best.puntuacion_acto2}/10). ${mandatoAplicadoCap !== null ? `Se aplico el mandato final de ritmo al capitulo ${mandatoAplicadoCap} y se conserva la mejor version del resto.` : "Se conserva la mejor version conocida del tramo central."} Se continua la generacion del acto 3 (mejora maxima alcanzable de forma autonoma a mitad de obra; las puertas finales daran otra pasada).`;
+      await storage.createActivityLog({
+        projectId: project.id, level: "warning", agentRole: "act2-pacing-editor",
+        message: mensajeAct2,
+      });
+    } catch (error) {
+      // La puerta es best-effort: un fallo aqui jamas debe abortar la generacion.
+      console.warn(`[Fix156][Puerta Acto 2] runAct2ProseGate fallo (no bloqueante): ${(error as Error).message}`);
     }
   }
 
