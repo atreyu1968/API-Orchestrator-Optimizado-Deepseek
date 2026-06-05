@@ -3,6 +3,10 @@
 Historial detallado de fixes y novedades. Las entradas más recientes están en `replit.md` ("Recent fixes"); cuando se asientan, se trasladan aquí.
 
 
+## v10.0.1 — 2026-06-05
+
+- **[Fix154] Puertas 4 y 5: log HONESTO cuando el juez no devuelve veredicto (fin del engañoso "mejor ?/10")**: el usuario aportó el log del run COMPLETO de "EL GRABADO DE LA LUNA NEGRA" (esta vez la novela terminó 100% autónoma — Revisor Final 9/10 y 10/10 "calidad bestseller confirmada", arcos 4/4 e hilos 3/3 cerrados — confirmando que Fix151 advisory + las puertas semánticas funcionan de extremo a extremo). Pero tanto el Editor de Prosa de Agencia (Puerta 4) como el Lector Final por Ejes (Puerta 5) registraron `mejor ?/10`. **Causa**: en ambos bucles, si el juez (LLM) devuelve `null` en la PRIMERA pasada (respuesta vacía/timeout del modelo tras sus reintentos internos en `generateContent`, o JSON sin score válido), el bucle hace `break` con `best === null`; pero el aviso final estaba hardcodeado a `no convergió a apta en ${MAX_PASSES} pasadas (mejor ${best?.score ?? "?"}/10)`, sugiriendo falsamente que la puerta corrió 3 veces cuando en realidad NO emitió ningún veredicto y se omitió. **Arreglo** (`server/orchestrator.ts`, solo observabilidad): ambas puertas ahora ramifican el mensaje final en `best === null` → texto honesto ("no devolvió un veredicto usable... la puerta se OMITE este run sin bloquear ni modificar la prosa/novela; la calidad ya quedó cubierta por la Puerta 1/Revisor Final/Holístico/verificador de arcos"); el camino con `best` real conserva el mensaje numérico correcto. **No cambia el comportamiento**: ambas siguen advisory/best-effort (nunca bloquean), 0 LLM extra, sin migración. tsc PASS. Footer `v10.0.0`→`v10.0.1`.
+
 ## v10.0.0 — 2026-06-05
 
 > Versión mayor: cierra el rediseño de calidad 100% AUTÓNOMO (puertas P0-P6, todas advisory — nunca bloquean) y los ajustes de los detectores deterministas (Fix145, Fix146, Fix153) que eliminaban el bloqueo/atasco por falsos positivos/negativos.

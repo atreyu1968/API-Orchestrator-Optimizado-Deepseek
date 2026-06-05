@@ -6392,9 +6392,16 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
       }
 
+      // [Fix154] Mensaje HONESTO: si `best` es null, el juez nunca devolvio un
+      // veredicto usable (respuesta vacia/timeout del modelo tras sus reintentos
+      // internos) y la puerta se OMITIO este run; no debe reportarse como "no
+      // convergio en N pasadas (mejor ?/10)", que sugiere falsamente que corrio.
+      const mensajeP4 = best === null
+        ? `[Fix148][Puerta 4] El Editor de Prosa de Agencia no devolvio un veredicto usable (posible respuesta vacia o timeout del modelo tras sus reintentos internos); la puerta se OMITE este run sin bloquear ni modificar la prosa. La agencia del climax ya quedo cubierta por la Puerta 1 (plan) y el Revisor Final. Se continua hacia la finalizacion (sin guia humana).`
+        : `[Fix148][Puerta 4] La agencia de la prosa no convergio a apta en ${MAX_PASSES} pasadas (mejor ${best.puntuacion_agencia_prosa}/10). ${mandatoAplicadoCap !== null ? `Se aplico el mandato final de agencia al capitulo ${mandatoAplicadoCap} y se conserva la mejor version del resto.` : "Se conserva la mejor version conocida de la prosa del climax."} Se continua hacia la finalizacion (calidad maxima alcanzable de forma autonoma; sin guia humana).`;
       await storage.createActivityLog({
         projectId: project.id, level: "warning", agentRole: "prose-agency-editor",
-        message: `[Fix148][Puerta 4] La agencia de la prosa no convergio a apta en ${MAX_PASSES} pasadas (mejor ${best?.puntuacion_agencia_prosa ?? "?"}/10). ${mandatoAplicadoCap !== null ? `Se aplico el mandato final de agencia al capitulo ${mandatoAplicadoCap} y se conserva la mejor version del resto.` : "Se conserva la mejor version conocida de la prosa del climax."} Se continua hacia la finalizacion (calidad maxima alcanzable de forma autonoma; sin guia humana).`,
+        message: mensajeP4,
       });
     } catch (error) {
       // La puerta es best-effort: un fallo aqui jamas debe abortar la finalizacion.
@@ -6644,9 +6651,16 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
       }
 
+      // [Fix154] Mensaje HONESTO: si `best` es null, el juez nunca devolvio un
+      // veredicto usable (respuesta vacia/timeout del modelo tras sus reintentos
+      // internos) y la puerta se OMITIO este run; no debe reportarse como "no
+      // convergio en N pasadas (mejor ?/10)", que sugiere falsamente que corrio.
+      const mensajeP5 = best === null
+        ? `[Fix149][Puerta 5] El Lector Final por Ejes no devolvio un veredicto usable (posible respuesta vacia o timeout del modelo tras sus reintentos internos; la novela completa es un prompt muy grande); la puerta se OMITE este run sin bloquear ni modificar la novela. Los ejes ya quedaron cubiertos por el Revisor Final, el Lector Holistico y el verificador de arcos. Se continua hacia la finalizacion (sin guia humana).`
+        : `[Fix149][Puerta 5] La lectura por ejes no convergio a apta en ${MAX_PASSES} pasadas (mejor ${best.puntuacion_global}/10). ${forzadoCap !== null ? `Se aplico el mandato final al capitulo ${forzadoCap} y se conserva la mejor version del resto.` : "Se conserva la mejor version conocida de la novela."} Se continua hacia la finalizacion (calidad maxima alcanzable de forma autonoma; sin guia humana).`;
       await storage.createActivityLog({
         projectId: project.id, level: "warning", agentRole: "final-axis-reader",
-        message: `[Fix149][Puerta 5] La lectura por ejes no convergio a apta en ${MAX_PASSES} pasadas (mejor ${best?.puntuacion_global ?? "?"}/10). ${forzadoCap !== null ? `Se aplico el mandato final al capitulo ${forzadoCap} y se conserva la mejor version del resto.` : "Se conserva la mejor version conocida de la novela."} Se continua hacia la finalizacion (calidad maxima alcanzable de forma autonoma; sin guia humana).`,
+        message: mensajeP5,
       });
     } catch (error) {
       // La puerta es best-effort: un fallo aqui jamas debe abortar la finalizacion.
