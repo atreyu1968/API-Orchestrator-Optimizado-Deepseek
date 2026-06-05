@@ -101,6 +101,10 @@ interface ParsedWorldBible {
   escaleta_capitulos: any[];
   premisa?: string;
   estructura_tres_actos?: any;
+  // [Fix152][Puerta 2/3] GUÍA VIVA: destilado compacto del concepto rector
+  // (gancho + columna temática + promesas al lector) que el Narrador recibe en
+  // CADA capítulo. Persiste en plotOutline.guia_viva (jsonb) para round-trip en RESUME.
+  guia_viva?: string;
 }
 
 interface SectionData {
@@ -1340,6 +1344,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       // de una serie o si la carga del contexto falla, dando un falso standalone).
       // 100% autónomo, best-effort: si falla, se usa la premisa original.
       let conceptBlock = "";
+      // [Fix152][Puerta 2/3] GUÍA VIVA: destilado COMPACTO del concepto rector que
+      // viajará con CADA capítulo de prosa (no solo al Arquitecto). Se persiste en
+      // plotOutline.guia_viva (jsonb passthrough, sin migración) para que la ruta de
+      // RESUME también lo recupere. Cadena vacía => sin guía (series o concepto fallido).
+      let livingGuidance = "";
       if (!project.seriesId && !this.aborted) {
         try {
           const forged = await this.runConceptForgeGate(project);
@@ -1352,6 +1361,19 @@ ${chapterSummaries || "Sin capítulos disponibles"}
               ? "guía creativa vinculante — construye la novela sobre esto"
               : "guía creativa orientativa — eleva la premisa sin contradecirla";
             conceptBlock = `═══════════════════════════════════════════════════════════════════\nCONCEPTO RECTOR (${headerRole})\n═══════════════════════════════════════════════════════════════════\n${forged.gancho ? `GANCHO: ${forged.gancho}\n\n` : ""}${forged.concepto}\n\n--- PREMISA ORIGINAL DEL AUTOR (respeta su núcleo) ---\n${project.premise || ""}\n═══════════════════════════════════════════════════════════════════\n\n`;
+
+            // Destilado compacto para el Narrador: gancho + columna temática +
+            // promesas al lector. NO se vuelca el concepto completo (250-450
+            // palabras) para no diluir el prompt ni encarecerlo capítulo a capítulo.
+            const promesas = (forged.promesas_al_lector || []).filter((p) => p && p.trim());
+            const lgParts: string[] = [];
+            if (forged.gancho) lgParts.push(`GANCHO (logline): ${forged.gancho}`);
+            if (forged.columna_tematica) lgParts.push(`COLUMNA TEMÁTICA (la pregunta que el libro debate): ${forged.columna_tematica}`);
+            if (promesas.length > 0) lgParts.push(`PROMESAS AL LECTOR (hay que pagarlas a lo largo del libro):\n${promesas.map((p) => `- ${p}`).join("\n")}`);
+            if (lgParts.length > 0) {
+              const lgRole = forged.passedQuality ? "vinculante" : "orientativa";
+              livingGuidance = `${lgRole}\n${lgParts.join("\n")}`;
+            }
           }
         } catch (e) {
           console.warn(`[Fix150][Puerta 0] Forjador de Concepto falló (best-effort): ${(e as Error).message}`);
@@ -4035,6 +4057,13 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
         console.error(`[Orchestrator] Lector Beta de Escaletas falló (no bloqueante): ${(betaErr as Error).message}`);
       }
 
+      // [Fix152][Puerta 2/3] Estampa la GUÍA VIVA en el worldBibleData final ANTES
+      // de persistir, para que viaje a la generación de prosa y a la ruta de RESUME
+      // (via plotOutline.guia_viva). Solo si se forjó un concepto (standalone).
+      if (worldBibleData && livingGuidance) {
+        worldBibleData.guia_viva = livingGuidance;
+      }
+
       const worldBible = await storage.createWorldBible({
         projectId: project.id,
         timeline: this.convertTimeline(worldBibleData),
@@ -4231,6 +4260,9 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
             previousChaptersFullText,
             recentSceneMolds: recentSceneMolds || undefined,
             editorialCritique: this.combinedMidNovelCritique(),
+            // [Fix152][Puerta 2/3] GUÍA VIVA + semillas cross-capítulo a la prosa.
+            guiaViva: (worldBibleData as any)?.guia_viva || undefined,
+            seedGuidance: this.buildLivingSeedGuidance((worldBibleData as any)?.escaleta_capitulos, sectionData.numero, allSections.length) || undefined,
             seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
             seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
@@ -5208,6 +5240,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             previousChapterContent: isStalledResume ? undefined : previousContent,
             previousChaptersFullText: previousChaptersFullTextResume,
             recentSceneMolds: recentSceneMoldsResume || undefined,
+            // [Fix152][Puerta 2/3] GUÍA VIVA + semillas cross-capítulo (round-trip de RESUME).
+            guiaViva: (worldBibleData as any)?.guia_viva || undefined,
+            seedGuidance: this.buildLivingSeedGuidance((worldBibleData as any)?.escaleta_capitulos, sectionData.numero, ((worldBibleData as any)?.escaleta_capitulos?.length || totalChaptersResume)) || undefined,
             seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
             seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
@@ -5898,7 +5933,90 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       },
       escaleta_capitulos,
       premisa: plotOutlineData?.premise || project.premise || "",
+      // [Fix152][Puerta 2/3] Recupera la GUÍA VIVA persistida para que el Narrador
+      // la reciba también al REANUDAR (no solo en la generación fresca).
+      guia_viva: plotOutlineData?.guia_viva || undefined,
     };
+  }
+
+  /**
+   * [Fix152][Puerta 2/3] GUÍA VIVA DE SEMILLAS (advisory, 0 LLM). Construye un
+   * recordatorio compacto por capítulo a partir de los campos `siembra`/`cosecha`
+   * (arrays de IDs cortos) que el Arquitecto ya planificó en la escaleta:
+   *  - SEMBRAR ahora: la `siembra` declarada de ESTE capítulo.
+   *  - PAGAR ahora: la `cosecha` declarada de ESTE capítulo.
+   *  - PROMESAS ABIERTAS: siembras de capítulos ANTERIORES aún sin cosechar (el
+   *    lector las recuerda; deben honrarse antes del final). En el último cuarto
+   *    de la novela se escala el aviso.
+   * El per-capítulo `setup_requerido` ya lo renderiza el Narrador; lo que faltaba
+   * era esta visión CROSS-capítulo de promesas pendientes. Es ADVISORY: nunca
+   * bloquea ni lanza; cadena vacía si no hay nada que recordar.
+   */
+  private buildLivingSeedGuidance(escaleta: any[], currentChapterNumber: number, totalSections: number): string {
+    if (!Array.isArray(escaleta) || escaleta.length === 0) return "";
+    const norm = (v: any): string[] =>
+      Array.isArray(v) ? v.map((x) => String(x).trim()).filter((x) => x) : [];
+    const numOf = (c: any): number | null => {
+      const n = c?.numero ?? c?.number;
+      return typeof n === "number" ? n : null;
+    };
+    const currOrder = narrativeSortOrder(currentChapterNumber);
+    const curr = escaleta.find((c: any) => numOf(c) === currentChapterNumber);
+
+    // IDs cosechados (pagados) hasta este capítulo incluido.
+    const paidSet = new Set<string>();
+    for (const c of escaleta) {
+      const n = numOf(c);
+      if (n === null) continue;
+      if (narrativeSortOrder(n) <= currOrder) {
+        for (const id of norm(c?.cosecha)) paidSet.add(id.toLowerCase());
+      }
+    }
+
+    // Siembras de capítulos ANTERIORES aún sin pagar. Dedup case-insensitive
+    // (alineado con paidSet, que compara en minúsculas) para no repetir un mismo
+    // ID con distinto casing en el bloque advisory.
+    const pending: string[] = [];
+    const pendingSeen = new Set<string>();
+    for (const c of escaleta) {
+      const n = numOf(c);
+      if (n === null) continue;
+      if (narrativeSortOrder(n) >= currOrder) continue;
+      for (const id of norm(c?.siembra)) {
+        const key = id.toLowerCase();
+        if (!paidSet.has(key) && !pendingSeen.has(key)) {
+          pendingSeen.add(key);
+          pending.push(id);
+        }
+      }
+    }
+
+    const plantNow = curr ? norm(curr.siembra) : [];
+    const payNow = curr ? norm(curr.cosecha) : [];
+
+    const parts: string[] = [];
+    if (plantNow.length > 0)
+      parts.push(`SEMBRAR/ESTABLECER en este capítulo (deja la pista viva en la prosa, sin subrayarla): ${plantNow.join("; ")}`);
+    if (payNow.length > 0)
+      parts.push(`PAGAR/COSECHAR en este capítulo (una pista sembrada antes da fruto AQUÍ): ${payNow.join("; ")}`);
+    if (pending.length > 0) {
+      const shown = pending.slice(0, 12);
+      parts.push(
+        `PROMESAS/SEMILLAS ABIERTAS de capítulos anteriores (el lector las recuerda; hónralas o avánzalas cuando corresponda, no las olvides): ${shown.join("; ")}${pending.length > shown.length ? ` (+${pending.length - shown.length} más)` : ""}`,
+      );
+    }
+
+    if (parts.length === 0) return "";
+
+    const isLastQuarter =
+      totalSections > 0 && currentChapterNumber > 0 && currentChapterNumber >= Math.ceil(totalSections * 0.75);
+    if (isLastQuarter && pending.length > 0) {
+      parts.push(
+        `ESTÁS EN EL ÚLTIMO CUARTO DE LA NOVELA: toda promesa abierta debe quedar pagada o claramente avanzada antes del final. No introduzcas elementos decisivos sin haberlos sembrado.`,
+      );
+    }
+
+    return parts.join("\n");
   }
 
   // helper: incluye epoca_id al mapear chapterOutlines en reconstrucción
@@ -5914,10 +6032,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
    */
   private async runConceptForgeGate(
     project: Project,
-  ): Promise<{ concepto: string; gancho: string; passedQuality: boolean } | null> {
+  ): Promise<{ concepto: string; gancho: string; passedQuality: boolean; columna_tematica: string; promesas_al_lector: string[] } | null> {
     const MAX_CONCEPT_ITERATIONS = 3;
     const CONCEPT_THRESHOLD = 8;
-    let best: { concepto: string; gancho: string; score: number; passedQuality: boolean } | null = null;
+    let best: { concepto: string; gancho: string; score: number; passedQuality: boolean; columna_tematica: string; promesas_al_lector: string[] } | null = null;
     let prevScore: number | null = null;
     let prevConcept = "";
     let prevWeaknesses = "";
@@ -5985,7 +6103,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       });
 
       if (!best || res.puntuacion_concepto > best.score) {
-        best = { concepto: res.concepto, gancho: res.gancho, score: res.puntuacion_concepto, passedQuality: passesQuality };
+        best = {
+          concepto: res.concepto,
+          gancho: res.gancho,
+          score: res.puntuacion_concepto,
+          passedQuality: passesQuality,
+          columna_tematica: res.columna_tematica || "",
+          promesas_al_lector: Array.isArray(res.promesas_al_lector) ? res.promesas_al_lector : [],
+        };
       }
 
       if (passesQuality) {
@@ -6001,7 +6126,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
     if (best) {
       console.log(`[Fix150][Puerta 0] Concepto rector forjado (mejor ${best.score}/10, ${best.passedQuality ? "apto" : "orientativo"}). Inyectándolo a la generación.`);
-      return { concepto: best.concepto, gancho: best.gancho, passedQuality: best.passedQuality };
+      return {
+        concepto: best.concepto,
+        gancho: best.gancho,
+        passedQuality: best.passedQuality,
+        columna_tematica: best.columna_tematica,
+        promesas_al_lector: best.promesas_al_lector,
+      };
     }
     return null;
   }
@@ -14361,6 +14492,9 @@ Responde SOLO con un JSON válido con la estructura:
         },
       },
       ...(Array.isArray(subtramas) && subtramas.length > 0 ? { subplots: subtramas } : {}),
+      // [Fix152][Puerta 2/3] Persiste la GUÍA VIVA (jsonb passthrough, sin migración)
+      // para que la ruta de RESUME la recupere en reconstructWorldBibleData.
+      ...((data as any).guia_viva ? { guia_viva: (data as any).guia_viva } : {}),
       lexico_historico: data.world_bible?.lexico_historico || null,
       chapterOutlines: (data.escaleta_capitulos || []).map((c: any) => ({
         number: c.numero,

@@ -10,7 +10,7 @@ Rediseño aprobado por el usuario para subir la CALIDAD FINAL de las novelas (co
 **Why:** las novelas salían con defectos crónicos (sobre todo finales NO ganados: un poder externo/secundario resuelve el conflicto central mientras el protagonista observa pasivo). Las dimensiones DETERMINISTAS del Auditor Estructural miden tokens/etiquetas, no la SEMÁNTICA de quién resuelve el clímax, así que dejan pasar el deus ex machina. La guía manual no servía y atascaba novelas durante horas.
 
 ## Orden de construcción de las 6 puertas (acordado)
-P1 agencia (HECHA) → P4 editor de prosa (HECHA) → P5 lectura final por ejes (HECHA) → P0 concepto (HECHA) → P6 degradar el auditor determinista (HECHA) → P2/P3 semillas + generación con guía viva (PENDIENTE).
+P1 agencia (HECHA) → P4 editor de prosa (HECHA) → P5 lectura final por ejes (HECHA) → P0 concepto (HECHA) → P6 degradar el auditor determinista (HECHA) → P2/P3 semillas + generación con guía viva (HECHA, Fix152).
 
 ## Puerta 6 (degradar el auditor determinista) — ADVISORY
 El Auditor Estructural DETERMINISTA (`runArchitectStructuralAudits`, tokens/etiquetas, no semántica) era el gatekeeper final del diseño y, al no alcanzar `MIN_PUBLISHABLE_SA_SCORE` (7) o quedar una dim crítica de 2ª mitad KO, ponía `status="awaiting_structural_guidance"` + `return` (bloqueaba el Narrador esperando guía MANUAL). **Arreglo**: ese bloque del gate (tras cerrar `outerSALoop` en `_generateNovel`) pasa a ADVISORY — restaura `worldBibleData=bestSAOverall.data` (mejor escaleta), loguea warning y continúa al Beta + Narrador; NUNCA toca el status ni hace `return`. Se conservan el bucle SA + auto-guidance Fix118 (mejora autónoma; ya no bloquea) y `faChronicSoleBlocker`. La calidad real la cubren P1/P4/P5.

@@ -33,6 +33,15 @@ export interface ConceptForgeResult {
   };
   debilidades: string[];
   resumen: string;
+  // [Fix152][Puerta 2/3] Superficie COMPACTA del concepto para la GUÍA VIVA que
+  // acompaña a CADA capítulo de prosa (no solo al Arquitecto). Son destilados de
+  // lo que ya vive dentro de "concepto"; se exponen estructurados para reinyectar
+  // un recordatorio breve y vinculante sin volcar las 250-450 palabras completas.
+  // Una sola frase con la pregunta/columna temática que el libro debate.
+  columna_tematica?: string;
+  // 2-4 promesas concretas al lector (imágenes/escenas/situaciones) que el libro
+  // debe pagar; el Narrador las honra capítulo a capítulo.
+  promesas_al_lector?: string[];
 }
 
 const SYSTEM_PROMPT = `
@@ -96,8 +105,12 @@ FORMATO DE SALIDA (JSON ESTRICTO)
   "veredicto": "apto" | "necesita_revision" | "reescribir",
   "ejes": { "originalidad": 8, "especificidad": 9, "motor_dramatico": 8, "columna_tematica": 7, "gancho": 8 },
   "debilidades": ["..."],
-  "resumen": "Una frase sobre la fuerza del concepto y qué eleva respecto a la premisa cruda."
+  "resumen": "Una frase sobre la fuerza del concepto y qué eleva respecto a la premisa cruda.",
+  "columna_tematica": "UNA frase con la pregunta/columna temática que el libro debate (la misma que integraste en el concepto).",
+  "promesas_al_lector": ["2-4 promesas concretas: imágenes, escenas o situaciones que el concepto promete y el libro debe pagar."]
 }
+
+Los campos "columna_tematica" y "promesas_al_lector" son DESTILADOS COMPACTOS de lo que ya escribiste dentro de "concepto"; sirven para recordárselos al Narrador en cada capítulo. Deben ser coherentes con el concepto, no añadir nada nuevo.
 
 Responde ÚNICAMENTE con el JSON. Escribe SIEMPRE en español.
 `;
@@ -190,6 +203,10 @@ Forja el CONCEPTO RECTOR. Eleva la premisa a un concepto fuerte, específico y �
         ? parsed.debilidades.map((d: any) => String(d)).filter((d: string) => d.trim())
         : [];
       parsed.resumen = typeof parsed.resumen === "string" ? parsed.resumen : "";
+      parsed.columna_tematica = typeof parsed.columna_tematica === "string" ? parsed.columna_tematica.trim() : "";
+      parsed.promesas_al_lector = Array.isArray(parsed.promesas_al_lector)
+        ? parsed.promesas_al_lector.map((p: any) => String(p).trim()).filter((p: string) => p)
+        : [];
 
       return { result: parsed, raw: response };
     } catch (error) {

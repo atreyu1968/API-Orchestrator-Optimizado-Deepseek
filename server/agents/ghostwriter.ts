@@ -108,6 +108,22 @@ interface GhostwriterInput {
    * dejó deliberadamente abierto.
    */
   seriesMilestonesAndThreads?: string;
+  /**
+   * [Fix152][Puerta 2/3] GUÍA VIVA: destilado COMPACTO del concepto rector
+   * (gancho + columna temática + promesas al lector) forjado en la Puerta 0. El
+   * concepto solo llegaba al Arquitecto (diluido en la premisa); aquí viaja
+   * EXPLÍCITO a CADA capítulo de prosa para que el Narrador no pierda el ADN
+   * creativo ni las promesas al lector a mitad de novela. El string empieza por
+   * "vinculante" u "orientativa" (según la calidad autoevaluada del concepto).
+   */
+  guiaViva?: string;
+  /**
+   * [Fix152][Puerta 2/3] Recordatorio ADVISORY de semillas cross-capítulo
+   * derivado de `siembra`/`cosecha` de la escaleta: qué sembrar/pagar en este
+   * capítulo y qué promesas de capítulos anteriores siguen abiertas. Lo construye
+   * el Orquestador con `buildLivingSeedGuidance`. Nunca es vinculante por sí solo.
+   */
+  seedGuidance?: string;
 }
 
 const SYSTEM_PROMPT = `
@@ -1225,6 +1241,41 @@ ${input.seriesMilestonesAndThreads}
        haber una corriente subterránea de conflicto, secreto o amenaza.
     5. PROSA IMPECABLE: Vocabulario preciso, cero muletillas, diálogos con subtexto.
        Este capítulo define la voz de toda la novela.
+    ═══════════════════════════════════════════════════════════════════
+    `;
+    }
+
+    // [Fix152][Puerta 2/3] GUÍA VIVA DE LA NOVELA — el ADN creativo (concepto
+    // rector destilado) viaja a CADA capítulo, no solo al Arquitecto al inicio.
+    if (input.guiaViva && input.guiaViva.trim().length > 0) {
+      const raw = input.guiaViva.trim();
+      const firstNl = raw.indexOf("\n");
+      const role = firstNl > 0 ? raw.slice(0, firstNl).trim().toLowerCase() : "orientativa";
+      const body = firstNl > 0 ? raw.slice(firstNl + 1).trim() : raw;
+      const esVinculante = role.startsWith("vinculante");
+      prompt += `
+    ═══════════════════════════════════════════════════════════════════
+    GUÍA VIVA DE LA NOVELA — CONCEPTO RECTOR (${esVinculante ? "VINCULANTE" : "orientativa"})
+    ═══════════════════════════════════════════════════════════════════
+    Este es el ADN creativo del libro. ${esVinculante ? "Cada capítulo debe servir a este concepto y avanzar sus promesas." : "Úsalo como brújula creativa; eleva el capítulo sin contradecir la historia."} NO lo cites ni lo expliques en la prosa: ENCÁRNALO en escena, voz y subtexto.
+
+    ${body}
+    ═══════════════════════════════════════════════════════════════════
+    `;
+    }
+
+    // [Fix152][Puerta 2/3] SEMILLAS / PROMESAS A HONRAR — recordatorio ADVISORY
+    // cross-capítulo (siembras de capítulos previos aún sin pagar). Mantiene la
+    // continuidad de promesas viva durante toda la novela.
+    if (input.seedGuidance && input.seedGuidance.trim().length > 0) {
+      prompt += `
+    ═══════════════════════════════════════════════════════════════════
+    SEMILLAS / PROMESAS A HONRAR (continuidad — orientativo)
+    ═══════════════════════════════════════════════════════════════════
+    Siembra y cosecha de pistas a lo largo de la novela. Hazlo con sutileza
+    diegética (sin subrayar ni anunciar). No fuerces nada que rompa la escena.
+
+    ${input.seedGuidance.trim()}
     ═══════════════════════════════════════════════════════════════════
     `;
     }
