@@ -19,6 +19,9 @@ import {
   getProtagonistName,
   detectExternalRescueSmell,
   stampAgencyMandate,
+  ProseAgencyEditorAgent,
+  type ProseAgencyEditorResult,
+  type ProseAgencyProblem,
   OutlineBetaReaderAgent,
   PlotIntegrityAuditorAgent,
   computePlotIntegrityMetrics,
@@ -187,6 +190,8 @@ export class Orchestrator {
   private plotIntegrityAuditor = new PlotIntegrityAuditorAgent();
   // [Fix147][Puerta 1] Editor de Desarrollo del plan / Regla de Agencia.
   private agencyCritic = new AgencyCriticAgent();
+  // [Fix148][Puerta 4] Editor de Prosa de Agencia (juez de la PROSA escrita).
+  private proseAgencyEditor = new ProseAgencyEditorAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
@@ -4824,6 +4829,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             message: `[Fix41] Manuscrito APROBADO CON RESERVAS (${finalReviewOutcome.finalScore}/10). ${finalReviewOutcome.reason} El manuscrito es publicable pero no alcanzó la calidad bestseller (9+/10). Revisa el activity log si quieres re-ejecutar más ciclos manualmente.`,
           });
         }
+        // [Fix148][Puerta 4] Verificacion de AGENCIA en la PROSA del climax antes
+        // de finalizar (autonomo, best-effort, nunca bloquea la finalizacion).
+        await this.runProseAgencyGate(project, worldBibleData, fullStyleGuide);
         await this.finalizeCompletedProject(project);
       } else {
         await storage.updateProject(project.id, { status: "failed_final_review" });
@@ -5685,6 +5693,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             message: `[Fix41] Manuscrito APROBADO CON RESERVAS (${finalReviewOutcome.finalScore}/10). ${finalReviewOutcome.reason}`,
           });
         }
+        // [Fix148][Puerta 4] Verificacion de AGENCIA en la PROSA del climax antes
+        // de finalizar (autonomo, best-effort, nunca bloquea la finalizacion).
+        await this.runProseAgencyGate(project, worldBibleData, fullStyleGuide);
         await this.finalizeCompletedProject(project);
       } else {
         await storage.updateProject(project.id, { status: "failed_final_review" });
@@ -5823,6 +5834,271 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   }
 
   // helper: incluye epoca_id al mapear chapterOutlines en reconstrucción
+
+  /**
+   * [Fix148][Puerta 4] EDITOR DE PROSA DE AGENCIA. Espejo en PROSA de la Puerta 1
+   * (que juzga el PLAN). Lee la prosa REAL de los capitulos del climax (ultimo ~30%
+   * + cualquiera con `mandato_agencia` estampado) y verifica que el TEXTO entrega la
+   * regla de oro: el protagonista se gana el desenlace con accion propia sembrada.
+   *
+   * Bucle AUTONOMO (sin humano): sale por CALIDAD (score>=7 Y agente en prosa Y sin
+   * problema critico/alto); ante estancamiento auto-escala la intensidad de la
+   * directiva; fail-safe determinista (reescritura forzada del peor capitulo con
+   * directiva dura redactada por el editor). NUNCA usa `awaiting_structural_guidance`.
+   * Todo best-effort: jamas rompe la finalizacion del proyecto.
+   */
+  private async runProseAgencyGate(
+    project: Project,
+    worldBibleData: ParsedWorldBible,
+    fullStyleGuide: string,
+  ): Promise<void> {
+    const MAX_PASSES = 3;
+    const MIN_PROSE_AGENCY_SCORE = 7;
+    try {
+      const wb = (worldBibleData as any)?.world_bible || {};
+      const protName = getProtagonistName(wb);
+      const goldenRule = `REGLA DE ORO DE AGENCIA: ${protName} debe resolver el conflicto central de este capitulo mediante una ACCION PROPIA, sembrada antes y nacida de su cambio interno. PROHIBIDO que un poder externo (rey, juez, autoridad, ejercito, casualidad, milagro) o un secundario resuelva por ${protName} mientras observa pasiva. Si una figura externa aparece, solo puede ratificar lo que la accion de ${protName} ya hizo inevitable. El cambio debe VERSE en lo que ${protName} hace en escena, no contarse en resumen.`;
+
+      // Carga (recargable) de los capitulos de la zona de climax con su prosa real.
+      const loadClimax = async (): Promise<{ chapter: Chapter; section: SectionData; prosa: string }[]> => {
+        const all = (await storage.getChaptersByProject(project.id))
+          .filter((c) => c.status === "completed" && c.chapterNumber > 0)
+          .sort((a, b) => a.chapterNumber - b.chapterNumber);
+        if (all.length === 0) return [];
+        const total = all.length;
+        const climaxFrom = Math.floor(total * 0.7);
+        const out: { chapter: Chapter; section: SectionData; prosa: string }[] = [];
+        all.forEach((c, idx) => {
+          const section = this.buildSectionDataFromChapter(c, worldBibleData);
+          const prosa = ((c as any).editedContent || c.originalContent || (c as any).content || "") as string;
+          if ((idx >= climaxFrom || !!section.mandato_agencia) && prosa.trim()) {
+            out.push({ chapter: c, section, prosa });
+          }
+        });
+        return out;
+      };
+
+      let climax = await loadClimax();
+      if (climax.length === 0) {
+        return; // proyecto sin prosa de climax (re-edicion, traduccion, etc.)
+      }
+
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "prose-agency-editor",
+        message: `[Fix148][Puerta 4] Editor de Prosa de Agencia: verificando que la PROSA del climax entregue la regla de oro (${protName} se gana el desenlace). Capitulos en revision: ${climax.map((c) => c.chapter.chapterNumber).join(", ")}.`,
+      });
+
+      // Anti-regresion: snapshot de la prosa de los caps del climax para poder
+      // restaurar la MEJOR version conocida si una reescritura posterior la empeora.
+      type ProseSnapshot = { id: number; content: string; wordCount: number }[];
+      const snapshotOf = (cs: typeof climax): ProseSnapshot =>
+        cs.map((c) => ({
+          id: c.chapter.id,
+          content: c.prosa,
+          wordCount: c.chapter.wordCount || c.prosa.split(/\s+/).filter((w) => w.length > 0).length,
+        }));
+      const restoreSnapshot = async (snap: ProseSnapshot): Promise<void> => {
+        for (const s of snap) {
+          // Restaura tambien status "completed" para que el capitulo revertido siga
+          // entrando en loadClimax (no quede fuera de la comparacion final).
+          await storage.updateChapter(s.id, {
+            content: s.content,
+            wordCount: s.wordCount,
+            status: "completed",
+            needsRevision: false,
+            revisionReason: null,
+          });
+        }
+      };
+      // Calidad compuesta para elegir el "mejor": menos problemas criticos/altos,
+      // luego protagonista agente en prosa, luego score numerico (evita un "mejor
+      // score" enganoso con mas problemas graves).
+      const critCount = (r: ProseAgencyEditorResult) =>
+        r.capitulos_problematicos.filter((p) => p.severidad === "critica" || p.severidad === "alta").length;
+      const isBetter = (a: ProseAgencyEditorResult, b: ProseAgencyEditorResult): boolean => {
+        const ca = critCount(a), cb = critCount(b);
+        if (ca !== cb) return ca < cb;
+        const aa = a.protagonista_es_agente_en_prosa ? 1 : 0;
+        const ab = b.protagonista_es_agente_en_prosa ? 1 : 0;
+        if (aa !== ab) return aa > ab;
+        return a.puntuacion_agencia_prosa > b.puntuacion_agencia_prosa;
+      };
+
+      // Juez de la prosa del climax (reutilizable en el bucle y en la re-lectura
+      // post fail-safe).
+      const judgeProse = async (cs: typeof climax): Promise<ProseAgencyEditorResult | null> => {
+        const { result } = await this.proseAgencyEditor.analyze({
+          title: project.title || "Sin titulo",
+          genre: (project as any).genre || "",
+          tone: (project as any).tone || "",
+          protagonista: protName,
+          premise: (project as any).premise || (project as any).description || "",
+          capitulos: cs.map((c) => ({
+            numero: c.chapter.chapterNumber,
+            titulo: c.section.titulo || `Capitulo ${c.chapter.chapterNumber}`,
+            prosa: c.prosa,
+            mandato_agencia: c.section.mandato_agencia,
+          })),
+          projectId: project.id,
+        });
+        return result || null;
+      };
+      const esApto = (r: ProseAgencyEditorResult): boolean =>
+        r.veredicto === "apto"
+        && r.puntuacion_agencia_prosa >= MIN_PROSE_AGENCY_SCORE
+        && r.protagonista_es_agente_en_prosa
+        && critCount(r) === 0;
+
+      let best: ProseAgencyEditorResult | null = null;
+      let bestSnapshot: ProseSnapshot | null = null;
+      let prevScore = -1;
+      let stallCount = 0;
+
+      for (let pass = 0; pass < MAX_PASSES; pass++) {
+        // Snapshot de la prosa que se va a JUZGAR en esta pasada (anti-regresion).
+        const passSnapshot = snapshotOf(climax);
+        const result = await judgeProse(climax);
+
+        if (!result) {
+          console.warn(`[Fix148][Puerta 4] El juez de prosa no devolvio resultado (pasada ${pass + 1}); se continua sin bloquear.`);
+          break; // best-effort: nunca bloquea la finalizacion
+        }
+        if (!best || isBetter(result, best)) {
+          best = result;
+          bestSnapshot = passSnapshot;
+        }
+
+        const criticos = result.capitulos_problematicos.filter(
+          (p) => p.severidad === "critica" || p.severidad === "alta",
+        );
+        const apto = esApto(result);
+
+        if (apto) {
+          await storage.createActivityLog({
+            projectId: project.id, level: "info", agentRole: "prose-agency-editor",
+            message: `[Fix148][Puerta 4] PROSA APTA en agencia (${result.puntuacion_agencia_prosa}/10): ${result.resumen || "el protagonista se gana el desenlace en la pagina."}`,
+          });
+          return;
+        }
+
+        // Estancamiento: el score no mejora respecto a la pasada anterior.
+        if (result.puntuacion_agencia_prosa <= prevScore) stallCount++;
+        prevScore = result.puntuacion_agencia_prosa;
+
+        // Reescribe los capitulos problematicos (criticos/altos; si no hay, los medios).
+        const aReescribir = criticos.length > 0
+          ? criticos
+          : result.capitulos_problematicos.filter((p) => p.severidad === "media");
+        if (aReescribir.length === 0) {
+          // veredicto no apto pero sin problemas accionables: conserva y sale.
+          break;
+        }
+
+        const intensidad = stallCount >= 1
+          ? "REESCRITURA OBLIGATORIA Y RADICAL del momento de resolucion"
+          : "Reescritura dirigida";
+
+        for (const prob of aReescribir) {
+          const target = climax.find((c) => c.chapter.chapterNumber === prob.numero);
+          if (!target) continue;
+          const directiva = `${intensidad} POR FALLO DE AGENCIA EN LA PROSA (${prob.tipo}). ${prob.descripcion}\n\nQUE HACER EN ESTE CAPITULO: ${prob.directiva_de_reescritura}\n\n${goldenRule}${target.section.mandato_agencia ? `\n\nMANDATO DE AGENCIA VINCULANTE: ${target.section.mandato_agencia}` : ""}`;
+          await this.rewriteChapterForQA(
+            project,
+            target.chapter,
+            target.section,
+            worldBibleData,
+            fullStyleGuide,
+            "editorial",
+            directiva,
+          );
+        }
+
+        // Recarga la prosa actualizada para la siguiente pasada / fail-safe.
+        climax = await loadClimax();
+        if (climax.length === 0) break;
+      }
+
+      // Anti-regresion: el bucle salio sin prosa apta; la ULTIMA reescritura no fue
+      // re-juzgada y puede haber empeorado. Restaura la MEJOR prosa conocida antes
+      // de aplicar el fail-safe, para no entregar jamas una version peor.
+      if (bestSnapshot) {
+        await restoreSnapshot(bestSnapshot);
+        climax = await loadClimax();
+        if (climax.length === 0) return;
+      }
+
+      // ── Fail-safe determinista (sin humano): si tras MAX_PASSES la agencia de la
+      // prosa no quedo apta, fuerza UNA reescritura mas del peor capitulo con una
+      // directiva dura redactada por el editor. NUNCA `awaiting_structural_guidance`.
+      const peor = best?.capitulos_problematicos
+        ?.slice()
+        .sort((a: ProseAgencyProblem, b: ProseAgencyProblem) => {
+          const rank = (s: string) => (s === "critica" ? 3 : s === "alta" ? 2 : 1);
+          return rank(b.severidad) - rank(a.severidad);
+        })[0];
+      let mandatoAplicadoCap: number | null = null;
+      if (peor) {
+        const target = climax.find((c) => c.chapter.chapterNumber === peor.numero);
+        if (target) {
+          const directiva = `MANDATO FINAL DE AGENCIA (vinculante, no negociable). La prosa de este capitulo todavia NO entrega la regla de oro: ${peor.descripcion}. ${peor.directiva_de_reescritura}\n\n${goldenRule}\n\nReescribe el momento de resolucion para que ${protName} ejecute en escena la accion decisiva que cierra el conflicto. Si "${best?.quien_resuelve_en_prosa || "una figura externa"}" interviene, reducelo a ratificar lo que ${protName} ya logro.`;
+          await this.rewriteChapterForQA(
+            project,
+            target.chapter,
+            target.section,
+            worldBibleData,
+            fullStyleGuide,
+            "editorial",
+            directiva,
+          );
+          mandatoAplicadoCap = target.chapter.chapterNumber;
+        }
+      }
+
+      // Anti-regresion del propio fail-safe: si la reescritura forzada NO mejoro
+      // respecto a la mejor version conocida, revierte a esa mejor version para no
+      // entregar jamas una prosa peor (cierra la garantia tambien en el ultimo paso).
+      if (mandatoAplicadoCap !== null && best && bestSnapshot) {
+        // Patron conservador: tras una reescritura forzada se REVIERTE por defecto;
+        // solo se conserva si hay PRUEBA de mejora (apta o estrictamente mejor). Asi
+        // cualquier camino limite (climax recargado vacio, juez sin veredicto, etc.)
+        // termina en la mejor version conocida y nunca en una peor.
+        let mustRevert = true;
+        let postScore: number | null = null;
+        const reloaded = await loadClimax();
+        if (reloaded.length > 0) {
+          const post = await judgeProse(reloaded);
+          if (post) {
+            postScore = post.puntuacion_agencia_prosa;
+            if (esApto(post)) {
+              // La reescritura forzada SI logro prosa apta: exito, no revertir.
+              await storage.createActivityLog({
+                projectId: project.id, level: "info", agentRole: "prose-agency-editor",
+                message: `[Fix148][Puerta 4] La reescritura forzada del capitulo ${mandatoAplicadoCap} logro PROSA APTA en agencia (${post.puntuacion_agencia_prosa}/10): ${post.resumen || "el protagonista se gana el desenlace en la pagina."}`,
+              });
+              return;
+            }
+            if (isBetter(post, best)) mustRevert = false;
+          }
+        }
+        if (mustRevert) {
+          await restoreSnapshot(bestSnapshot);
+          await storage.createActivityLog({
+            projectId: project.id, level: "info", agentRole: "prose-agency-editor",
+            message: `[Fix148][Puerta 4] La reescritura forzada del capitulo ${mandatoAplicadoCap} no mejoro la agencia (${postScore !== null ? `${postScore}/10` : "sin veredicto del juez"} vs mejor ${best.puntuacion_agencia_prosa}/10); se revierte a la mejor version conocida.`,
+          });
+          mandatoAplicadoCap = null;
+        }
+      }
+
+      await storage.createActivityLog({
+        projectId: project.id, level: "warning", agentRole: "prose-agency-editor",
+        message: `[Fix148][Puerta 4] La agencia de la prosa no convergio a apta en ${MAX_PASSES} pasadas (mejor ${best?.puntuacion_agencia_prosa ?? "?"}/10). ${mandatoAplicadoCap !== null ? `Se aplico el mandato final de agencia al capitulo ${mandatoAplicadoCap} y se conserva la mejor version del resto.` : "Se conserva la mejor version conocida de la prosa del climax."} Se continua hacia la finalizacion (calidad maxima alcanzable de forma autonoma; sin guia humana).`,
+      });
+    } catch (error) {
+      // La puerta es best-effort: un fallo aqui jamas debe abortar la finalizacion.
+      console.warn(`[Fix148][Puerta 4] runProseAgencyGate fallo (no bloqueante): ${(error as Error).message}`);
+    }
+  }
 
   private buildSectionDataFromChapter(chapter: Chapter, worldBibleData: ParsedWorldBible): SectionData {
     const plotItem = (worldBibleData.escaleta_capitulos as any[])?.find(

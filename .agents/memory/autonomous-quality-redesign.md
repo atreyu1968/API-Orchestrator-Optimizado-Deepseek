@@ -10,7 +10,7 @@ Rediseño aprobado por el usuario para subir la CALIDAD FINAL de las novelas (co
 **Why:** las novelas salían con defectos crónicos (sobre todo finales NO ganados: un poder externo/secundario resuelve el conflicto central mientras el protagonista observa pasivo). Las dimensiones DETERMINISTAS del Auditor Estructural miden tokens/etiquetas, no la SEMÁNTICA de quién resuelve el clímax, así que dejan pasar el deus ex machina. La guía manual no servía y atascaba novelas durante horas.
 
 ## Orden de construcción de las 6 puertas (acordado)
-P1 agencia (HECHA) → P4 editor de prosa → P5 lectura final por ejes → P0 concepto → P2/P3 semillas + generación con guía viva → P6 degradar el auditor determinista (incluye quitar la dependencia de `awaiting_structural_guidance`).
+P1 agencia (HECHA) → P4 editor de prosa (HECHA) → P5 lectura final por ejes → P0 concepto → P2/P3 semillas + generación con guía viva → P6 degradar el auditor determinista (incluye quitar la dependencia de `awaiting_structural_guidance`).
 
 ## Patrón canónico de una puerta (copiar el bucle de Integridad Narrativa del orchestrator)
 1. Agente crítico SEMÁNTICO (LLM) que juzga UNA preocupación y devuelve `veredicto` + `directivas_arquitecto` accionables.
