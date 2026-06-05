@@ -25,6 +25,7 @@ import {
   FinalAxisReaderAgent,
   type FinalAxisReaderResult,
   type FinalAxisProblem,
+  ConceptForgeAgent,
   OutlineBetaReaderAgent,
   PlotIntegrityAuditorAgent,
   computePlotIntegrityMetrics,
@@ -197,6 +198,8 @@ export class Orchestrator {
   // [Fix148][Puerta 4] Editor de Prosa de Agencia (juez de la PROSA escrita).
   private proseAgencyEditor = new ProseAgencyEditorAgent();
   private finalAxisReader = new FinalAxisReaderAgent();
+  // [Fix150][Puerta 0] Director Creativo: forja el concepto rector pre-generación.
+  private conceptForge = new ConceptForgeAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
@@ -1328,9 +1331,36 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       // `extendedGuideContent`) y se renderiza en su propio bloque
       // "MATERIALES DE REFERENCIA DEL AUTOR" — duplicarla en `premise` solo
       // confunde al modelo y le hace ignorar el género real del proyecto.
+      // [Fix150][Puerta 0] Forjador de Concepto: ANTES de diseñar nada, el
+      // Director Creativo eleva la premisa cruda del autor a un CONCEPTO RECTOR
+      // fuerte, específico y único (respetando género/tono/idea). Solo standalone:
+      // en una serie el ADN/concepto se gobierna a nivel de saga, así que se
+      // condiciona a la SEMÁNTICA real de standalone (`!project.seriesId`) y NO a
+      // que `seriesContextContent` esté poblado (que estaría vacío en el volumen 1
+      // de una serie o si la carga del contexto falla, dando un falso standalone).
+      // 100% autónomo, best-effort: si falla, se usa la premisa original.
+      let conceptBlock = "";
+      if (!project.seriesId && !this.aborted) {
+        try {
+          const forged = await this.runConceptForgeGate(project);
+          if (forged && forged.concepto) {
+            // Si el concepto no alcanzó el umbral de calidad, se inyecta igual
+            // (eleva el suelo) pero con wording ADVISORY en vez de "vinculante",
+            // para no forzar un concepto autoevaluado como flojo por encima de la
+            // premisa del autor. La premisa original SIEMPRE se conserva debajo.
+            const headerRole = forged.passedQuality
+              ? "guía creativa vinculante — construye la novela sobre esto"
+              : "guía creativa orientativa — eleva la premisa sin contradecirla";
+            conceptBlock = `═══════════════════════════════════════════════════════════════════\nCONCEPTO RECTOR (${headerRole})\n═══════════════════════════════════════════════════════════════════\n${forged.gancho ? `GANCHO: ${forged.gancho}\n\n` : ""}${forged.concepto}\n\n--- PREMISA ORIGINAL DEL AUTOR (respeta su núcleo) ---\n${project.premise || ""}\n═══════════════════════════════════════════════════════════════════\n\n`;
+          }
+        } catch (e) {
+          console.warn(`[Fix150][Puerta 0] Forjador de Concepto falló (best-effort): ${(e as Error).message}`);
+        }
+      }
+      const basePremise = conceptBlock ? conceptBlock.trimEnd() : (project.premise || "");
       const effectivePremise = seriesContextContent
         ? `${project.premise || ""}${seriesContextContent}`
-        : (project.premise || "");
+        : basePremise;
 
       // 1M de contexto DeepSeek V4 — pasar texto íntegro de volúmenes previos
       // de la serie (T001) y catálogo de OTRAS novelas del mismo pseudónimo (T004).
@@ -5878,6 +5908,109 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   }
 
   // helper: incluye epoca_id al mapear chapterOutlines en reconstrucción
+
+  /**
+   * [Fix150][Puerta 0] FORJADOR DE CONCEPTO. Antes de que el Arquitecto diseñe
+   * nada, el Director Creativo eleva la premisa cruda del autor a un CONCEPTO
+   * RECTOR fuerte, específico y único (respetando género/tono/idea). Bucle de
+   * convergencia 100% AUTÓNOMO: sale por CALIDAD (puntuacion_concepto>=8, apto, sin
+   * eje <6); ante estancamiento auto-escala la audacia; conserva el mejor concepto
+   * visto. Best-effort: si el agente falla, devuelve null y se usa la premisa
+   * original. No hay reescrituras de prosa aquí: solo afila el ADN creativo.
+   */
+  private async runConceptForgeGate(
+    project: Project,
+  ): Promise<{ concepto: string; gancho: string; passedQuality: boolean } | null> {
+    const MAX_CONCEPT_ITERATIONS = 3;
+    const CONCEPT_THRESHOLD = 8;
+    let best: { concepto: string; gancho: string; score: number; passedQuality: boolean } | null = null;
+    let prevScore: number | null = null;
+    let prevConcept = "";
+    let prevWeaknesses = "";
+    let stall = 0;
+
+    for (let iter = 0; iter < MAX_CONCEPT_ITERATIONS; iter++) {
+      if (this.aborted) break;
+      this.callbacks.onAgentStatus(
+        "architect",
+        "thinking",
+        iter === 0
+          ? "El Director Creativo está forjando el concepto rector de la novela..."
+          : `El Director Creativo está afinando el concepto (intento ${iter + 1}/${MAX_CONCEPT_ITERATIONS})...`,
+      );
+
+      const outcome = await this.conceptForge.forge({
+        title: project.title,
+        genre: project.genre,
+        tone: project.tone,
+        premise: project.premise || "",
+        chapterCount: project.chapterCount,
+        projectId: project.id,
+        previousConcept: prevConcept || undefined,
+        previousWeaknesses: prevWeaknesses || undefined,
+        escalate: stall >= 1,
+      });
+
+      if (outcome.raw?.tokenUsage) {
+        await this.trackTokenUsage(
+          project.id,
+          outcome.raw.tokenUsage,
+          "El Director Creativo (Concepto)",
+          "deepseek-v4-flash",
+          undefined,
+          "concept_forge",
+        );
+      }
+
+      const res = outcome.result;
+      if (!res) {
+        console.warn(`[Fix150][Puerta 0] Forjador de Concepto sin resultado válido (iter ${iter + 1}). Usando lo mejor visto.`);
+        break;
+      }
+
+      const minEje = Math.min(
+        res.ejes.originalidad,
+        res.ejes.especificidad,
+        res.ejes.motor_dramatico,
+        res.ejes.columna_tematica,
+        res.ejes.gancho,
+      );
+      const passesQuality =
+        res.puntuacion_concepto >= CONCEPT_THRESHOLD &&
+        res.veredicto === "apto" &&
+        minEje >= 6;
+
+      console.log(`[Fix150][Puerta 0] Concepto — iter ${iter + 1}/${MAX_CONCEPT_ITERATIONS}: ${res.puntuacion_concepto}/10 (${res.veredicto}), eje más bajo ${minEje}. ${res.resumen}`);
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: passesQuality ? "info" : "warn",
+        agentRole: "architect",
+        message: `Director Creativo (Concepto) — iter ${iter + 1}/${MAX_CONCEPT_ITERATIONS} — Concepto ${res.puntuacion_concepto}/10 (${res.veredicto}). ${res.gancho ? `Gancho: ${res.gancho}. ` : ""}${res.resumen}`,
+        metadata: { conceptScore: res.puntuacion_concepto, veredicto: res.veredicto, ejes: res.ejes as any, iteration: iter + 1 },
+      });
+
+      if (!best || res.puntuacion_concepto > best.score) {
+        best = { concepto: res.concepto, gancho: res.gancho, score: res.puntuacion_concepto, passedQuality: passesQuality };
+      }
+
+      if (passesQuality) {
+        console.log(`[Fix150][Puerta 0] Concepto APTO (${res.puntuacion_concepto}/10). Construyendo la novela sobre él.`);
+        break;
+      }
+
+      if (prevScore !== null && res.puntuacion_concepto <= prevScore) stall++;
+      prevScore = res.puntuacion_concepto;
+      prevConcept = res.concepto;
+      prevWeaknesses = res.debilidades.length > 0 ? res.debilidades.map((d, i) => `${i + 1}. ${d}`).join("\n") : res.resumen;
+    }
+
+    if (best) {
+      console.log(`[Fix150][Puerta 0] Concepto rector forjado (mejor ${best.score}/10, ${best.passedQuality ? "apto" : "orientativo"}). Inyectándolo a la generación.`);
+      return { concepto: best.concepto, gancho: best.gancho, passedQuality: best.passedQuality };
+    }
+    return null;
+  }
 
   /**
    * [Fix148][Puerta 4] EDITOR DE PROSA DE AGENCIA. Espejo en PROSA de la Puerta 1
