@@ -16,6 +16,8 @@ export { EditorialNotesParser, type EditorialInstruction, type EditorialNotesPar
 export { SurgicalPatcherAgent, type PatchOperation, type SurgicalPatchResult, type AppliedPatchReport } from "./surgical-patcher";
 export { WorldBibleArbiterAgent, type WorldBiblePatch, type WorldBibleArbiterResult, type WorldBibleSection } from "./world-bible-arbiter";
 export { OriginalityCriticAgent, type OriginalityCriticResult, type OriginalityCluster, type OriginalityClusterType } from "./originality-critic";
+// [Fix147][Puerta 1] Editor de Desarrollo / Regla de Agencia (juez del PLAN).
+export { AgencyCriticAgent, getProtagonistName, detectExternalRescueSmell, stampAgencyMandate, type AgencyCriticResult, type AgencyProblem, type AgencyProblemType } from "./agency-critic";
 export { HolisticReviewerAgent, type HolisticReviewerResult } from "./holistic-reviewer";
 export { BetaReaderAgent, type BetaReaderResult } from "./beta-reader";
 export { OutlineBetaReaderAgent, type OutlineBetaReaderResult, type OutlineBetaProblem, type OutlineBetaProblemType } from "./outline-beta-reader";

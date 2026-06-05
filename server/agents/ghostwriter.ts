@@ -18,6 +18,7 @@ interface GhostwriterInput {
     funcion_estructural?: string;
     informacion_nueva?: string;
     pregunta_dramatica?: string;
+    mandato_agencia?: string;
     conflicto_central?: {
       tipo?: string;
       descripcion?: string;
@@ -1122,6 +1123,29 @@ ${input.seriesMilestonesAndThreads}
 
     Esta crítica NO es opcional: es feedback real del lector objetivo de esta
     novela. Aplícala con criterio editorial, sin contradecir el outline.
+    ═══════════════════════════════════════════════════════════════════
+    `;
+    }
+
+    if (input.chapterData.mandato_agencia && input.chapterData.mandato_agencia.trim().length > 0) {
+      prompt += `
+
+    ═══════════════════════════════════════════════════════════════════
+    MANDATO DE AGENCIA — REGLA DE ORO DEL CLÍMAX (PRIORIDAD MÁXIMA, Fix147)
+    ═══════════════════════════════════════════════════════════════════
+    El Editor de Desarrollo del plan ha estampado un mandato VINCULANTE para
+    este capítulo del clímax. Es OBLIGATORIO y tiene prioridad sobre cualquier
+    otra instrucción salvo la coherencia básica del outline:
+
+    ${input.chapterData.mandato_agencia}
+
+    REGLA DE ORO INNEGOCIABLE: el conflicto central debe resolverse por una
+    ACCIÓN PROPIA del protagonista, sembrada antes, que triunfa PORQUE el
+    protagonista ha cambiado. PROHIBIDO que un poder externo (rey, juez,
+    autoridad, ejército, casualidad, milagro) o un secundario resuelva el
+    conflicto central mientras el protagonista observa pasivo. El protagonista
+    debe estar presente en la escena, decidir y ejecutar la acción decisiva con
+    sus propios medios. Materialízalo en la PROSA, no solo lo declares.
     ═══════════════════════════════════════════════════════════════════
     `;
     }

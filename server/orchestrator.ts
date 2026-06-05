@@ -15,6 +15,10 @@ import {
   SurgicalPatcherAgent,
   WorldBibleArbiterAgent,
   OriginalityCriticAgent,
+  AgencyCriticAgent,
+  getProtagonistName,
+  detectExternalRescueSmell,
+  stampAgencyMandate,
   OutlineBetaReaderAgent,
   PlotIntegrityAuditorAgent,
   computePlotIntegrityMetrics,
@@ -105,6 +109,7 @@ interface SectionData {
   funcion_estructural?: string;
   informacion_nueva?: string;
   pregunta_dramatica?: string;
+  mandato_agencia?: string;
   conflicto_central?: {
     tipo?: string;
     descripcion?: string;
@@ -180,6 +185,8 @@ export class Orchestrator {
   private betaReader = new BetaReaderAgent();
   private outlineBetaReader = new OutlineBetaReaderAgent();
   private plotIntegrityAuditor = new PlotIntegrityAuditorAgent();
+  // [Fix147][Puerta 1] Editor de Desarrollo del plan / Regla de Agencia.
+  private agencyCritic = new AgencyCriticAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
@@ -2486,6 +2493,217 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
         }
       } catch (piErr) {
         console.error(`[Orchestrator] Auditor de Integridad Narrativa falló (no bloqueante): ${(piErr as Error).message}`);
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      // [Fix147][PUERTA 1] EDITOR DE DESARROLLO — REGLA DE AGENCIA.
+      // Juez del PLAN especializado en una sola cosa: que el protagonista se
+      // GANE su clímax por una acción propia sembrada (no deus ex machina /
+      // rescate externo) y que los 5 hitos del Plan Maestro cumplan su función
+      // (incidente incitador, primer giro, punto medio pasiva->activa, momento
+      // oscuro, clímax que se gana por el cambio). Bucle de convergencia 100%
+      // AUTÓNOMO (sin guía humana): sale por CALIDAD, no por contador; ante
+      // estancamiento auto-escala la intensidad (directiva más dura -> el juez
+      // redacta el arreglo del clímax); red dura determinista = restaurar la
+      // mejor escaleta + estampar un mandato de agencia vinculante en los caps
+      // del clímax. NUNCA usa awaiting_structural_guidance. Best-effort.
+      // ═══════════════════════════════════════════════════════════════
+      try {
+        if (!this.aborted) {
+          const MAX_AGENCY_ITERATIONS = 4;
+          const AGENCY_THRESHOLD = 7;
+          let bestAgency: { data: ParsedWorldBible; score: number; summary: string } | null = null;
+          let lastSeenScoreAg = 0;
+          let prevScoreAg: number | null = null;
+          let prevProblemsSummaryAg = "";
+          let stallCount = 0;
+          let agencyPassed = false;
+
+          for (let agIter = 0; agIter < MAX_AGENCY_ITERATIONS; agIter++) {
+            if (this.aborted) break;
+            this.callbacks.onAgentStatus("architect", "thinking", "El Editor de Desarrollo está comprobando que el protagonista se gane su clímax...");
+
+            const agOutcome = await this.agencyCritic.analyze({
+              title: project.title,
+              genre: project.genre,
+              tone: project.tone,
+              premise: effectivePremise,
+              chapterCount: project.chapterCount,
+              worldBible: worldBibleData.world_bible,
+              escaletaCapitulos: worldBibleData.escaleta_capitulos as any[],
+              estructuraTresActos: (worldBibleData as any).estructura_tres_actos,
+              matrizArcos: (worldBibleData as any).matriz_arcos,
+              projectId: project.id,
+            });
+
+            if (agOutcome.raw?.tokenUsage) {
+              await this.trackTokenUsage(project.id, agOutcome.raw.tokenUsage, "El Editor de Desarrollo (Agencia)", "deepseek-v4-flash", undefined, "agency_check");
+            }
+
+            const audit = agOutcome.result;
+            if (!audit) {
+              console.warn(`[Orchestrator] Editor de Desarrollo no devolvió resultado válido (iter ${agIter + 1}). Continuando con la mejor escaleta vista.`);
+              break;
+            }
+
+            const criticasRescate = audit.problemas.filter(p => p.tipo === "rescate_externo" && (p.severidad === "critica" || p.severidad === "alta")).length;
+            const problemsSummaryAg = audit.problemas.slice(0, 10)
+              .map((p, i) => `${i + 1}. [${p.severidad}] (${p.tipo}, caps ${(p.capitulos_afectados || []).join(",") || "?"}) ${p.descripcion}`)
+              .join("\n");
+
+            const passesQuality = audit.puntuacion_agencia >= AGENCY_THRESHOLD
+              && audit.veredicto === "apto"
+              && audit.protagonista_es_agente_del_climax === true
+              && criticasRescate === 0;
+
+            console.log(`[Orchestrator] Editor de Desarrollo — iter ${agIter + 1}/${MAX_AGENCY_ITERATIONS}: agencia ${audit.puntuacion_agencia}/10, veredicto "${audit.veredicto}", protagonista agente del clímax: ${audit.protagonista_es_agente_del_climax}, resuelve el clímax: "${audit.quien_resuelve_el_climax}". ${audit.resumen}`);
+
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: passesQuality ? "info" : "warn",
+              agentRole: "architect",
+              message: `Editor de Desarrollo (Agencia) — iter ${agIter + 1}/${MAX_AGENCY_ITERATIONS} — Agencia ${audit.puntuacion_agencia}/10 (${audit.veredicto}). Resuelve el clímax: ${audit.quien_resuelve_el_climax || "?"}. ${criticasRescate} rescate(s) externo(s) grave(s). ${audit.resumen}`,
+              metadata: { agencyScore: audit.puntuacion_agencia, veredicto: audit.veredicto, protagonistaEsAgente: audit.protagonista_es_agente_del_climax, problemas: audit.problemas as any, iteration: agIter + 1 },
+            });
+
+            lastSeenScoreAg = audit.puntuacion_agencia;
+            if (!bestAgency || audit.puntuacion_agencia > bestAgency.score) {
+              bestAgency = { data: worldBibleData, score: audit.puntuacion_agencia, summary: problemsSummaryAg };
+            }
+
+            if (passesQuality) {
+              agencyPassed = true;
+              console.log(`[Orchestrator] Editor de Desarrollo: agencia APTA (${audit.puntuacion_agencia}/10). El protagonista se gana su clímax. Continuando.`);
+              break;
+            }
+
+            const lastIter = agIter === MAX_AGENCY_ITERATIONS - 1;
+            if (lastIter) break; // fail-safe determinista fuera del bucle
+
+            // Anti-estancamiento: si el reintento no mejoró, sube la intensidad.
+            if (prevScoreAg !== null && audit.puntuacion_agencia <= prevScoreAg) stallCount++;
+            prevScoreAg = audit.puntuacion_agencia;
+            prevProblemsSummaryAg = problemsSummaryAg;
+
+            // Auto-escalado de la directiva (sin consultar a un humano).
+            const protName = getProtagonistName(worldBibleData.world_bible);
+            let escalationHeader = "";
+            let forcedClimaxRewrite = "";
+            if (stallCount >= 2) {
+              // Nivel 3: el juez redacta el arreglo concreto del clímax.
+              const climaxCap = audit.hitos?.climax?.capitulo ?? null;
+              escalationHeader = `ESTANCAMIENTO DETECTADO (intento ${agIter + 1}). Tus dos pasadas anteriores NO corrigieron la agencia. Esta vez es OBLIGATORIO y no negociable.\n`;
+              forcedClimaxRewrite = `\nREESCRITURA FORZADA DEL CLÍMAX${climaxCap ? ` (cap ${climaxCap})` : ""}: ${protName} debe ejecutar la acción decisiva que resuelve el conflicto central, usando algo sembrado en capítulos previos. ELIMINA a "${audit.quien_resuelve_el_climax || "cualquier figura externa"}" como agente de la resolución; si esa figura aparece, solo puede ratificar lo que la acción de ${protName} ya hizo inevitable. ${protName} triunfa PORQUE HA CAMBIADO a lo largo de la novela.\n`;
+            } else if (stallCount >= 1) {
+              // Nivel 2: directiva más enfática.
+              escalationHeader = `El intento anterior no resolvió el problema de agencia. Aplica las correcciones de forma estricta y literal; no introduzcas un rescate externo distinto.\n`;
+            }
+
+            const historyBlockAg = `═══════════════════════════════════════════════════════════════════
+CONTEXTO DE TU INTENTO ANTERIOR (Puerta 1 — AGENCIA) — ANTI-REGRESIÓN
+═══════════════════════════════════════════════════════════════════
+Tu pasada anterior obtuvo ${audit.puntuacion_agencia}/10 de agencia. Quién resuelve el clímax ahora mismo: "${audit.quien_resuelve_el_climax || "(no declarado)"}". Problemas detectados (corrígelos sin romper lo que ya funcionaba):
+
+${prevProblemsSummaryAg || "(ver directivas abajo)"}
+
+REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. El objetivo es que el PROTAGONISTA sea el agente de su propio clímax. Progreso monotónico, no rediseño desde cero.
+═══════════════════════════════════════════════════════════════════
+
+`;
+            const agencyFeedbackFull = escalationHeader + historyBlockAg + (audit.directivas_arquitecto || problemsSummaryAg) + forcedClimaxRewrite;
+
+            console.log(`[Orchestrator] Editor de Desarrollo pidió revisión (stall=${stallCount}). Re-ejecutando Arquitecto con agencyFeedback...`);
+            this.callbacks.onAgentStatus("architect", "thinking", `Agencia baja (${audit.puntuacion_agencia}/10). El Arquitecto está rediseñando el clímax para que lo gane el protagonista...`);
+
+            try {
+              const retryResult = await this.architect.execute({
+                title: project.title,
+                premise: effectivePremise,
+                genre: project.genre,
+                tone: project.tone,
+                chapterCount: project.chapterCount,
+                minChapterCount: (project as any).minChapterCount ?? null,
+                maxChapterCount: (project as any).maxChapterCount ?? null,
+                hasPrologue: project.hasPrologue,
+                hasEpilogue: project.hasEpilogue,
+                hasAuthorNote: project.hasAuthorNote,
+                architectInstructions: project.architectInstructions || undefined,
+                agencyFeedback: agencyFeedbackFull,
+                // [Fix147] Reusa la Fase 1 (personajes/mundo) estable y solo rehace
+                // la escaleta (Fase 2): abarata el retry y estabiliza la convergencia
+                // (el feedback de agencia solo toca el desenlace, no las entidades base).
+                reusePhase1Json: worldBibleData || undefined,
+                seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+                seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
+                kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+                forbiddenNames,
+                projectId: project.id,
+                previousVolumesFullText,
+                pseudonymCatalog,
+                extendedGuideContent: extendedGuideContent || undefined,
+              });
+
+              if (retryResult.tokenUsage) {
+                await this.trackTokenUsage(project.id, retryResult.tokenUsage, "El Arquitecto (revisión agencia)", "deepseek-v4-flash", undefined, "world_bible");
+              }
+
+              if (!retryResult.error && !retryResult.timedOut && retryResult.content?.trim()) {
+                const reviewedData = this.parseArchitectOutput(retryResult.content);
+                const reviewedLen = reviewedData?.escaleta_capitulos?.length || 0;
+                const acceptCount = this.isAcceptableEscaletaCount(project, reviewedLen);
+                if (reviewedData && reviewedData.world_bible?.personajes?.length && acceptCount) {
+                  console.log(`[Orchestrator] Arquitecto rediseñó tras Editor de Desarrollo: ${reviewedLen} caps. Sustituyendo y re-juzgando agencia.`);
+                  worldBibleData = reviewedData;
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "info",
+                    agentRole: "architect",
+                    message: `El Arquitecto rediseñó el desenlace aplicando las correcciones de agencia del Editor de Desarrollo.`,
+                  });
+                  continue;
+                } else {
+                  const rangeLabel = this.formatAcceptableEscaletaRange(project);
+                  console.warn(`[Orchestrator] Revisión por Editor de Desarrollo RECHAZADA: ${reviewedLen} caps fuera del rango ${rangeLabel} (o sin personajes). Manteniendo mejor visto.`);
+                  break;
+                }
+              } else {
+                console.warn(`[Orchestrator] Revisión por Editor de Desarrollo falló: ${retryResult.error || "vacío/timeout"}. Manteniendo mejor visto.`);
+                break;
+              }
+            } catch (retryErr) {
+              console.error(`[Orchestrator] Excepción en revisión por Editor de Desarrollo: ${(retryErr as Error).message}. Manteniendo mejor visto.`);
+              break;
+            }
+          }
+
+          // Restaurar la mejor escaleta vista si la última es peor.
+          if (bestAgency && bestAgency.data !== worldBibleData && bestAgency.score > lastSeenScoreAg) {
+            console.log(`[Orchestrator] Recuperando mejor escaleta vista por el Editor de Desarrollo (${bestAgency.score} > ${lastSeenScoreAg}).`);
+            worldBibleData = bestAgency.data;
+          }
+
+          // ───────────────────────────────────────────────────────────
+          // RED DURA DETERMINISTA (fail-safe, sin humano). Si la agencia no
+          // quedó apta de forma autónoma, o si el detector determinista huele
+          // un rescate externo en la zona de clímax, estampa un MANDATO DE
+          // AGENCIA vinculante en los caps del clímax. El mandato viaja en la
+          // escaleta y lo honran las puertas de generación y prosa.
+          // ───────────────────────────────────────────────────────────
+          if (!agencyPassed) {
+            const smell = detectExternalRescueSmell(worldBibleData.escaleta_capitulos as any[], worldBibleData.world_bible);
+            const stamped = stampAgencyMandate(worldBibleData as any, worldBibleData.world_bible);
+            console.warn(`[Orchestrator] Editor de Desarrollo: agencia no apta de forma autónoma tras ${MAX_AGENCY_ITERATIONS} pasadas. Red dura: mandato de agencia estampado en ${stamped.length} caps del clímax.${smell.smell ? ` Olor determinista a rescate externo: ${smell.evidencia}.` : ""}`);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              agentRole: "architect",
+              message: `[Fix147] Red dura de agencia: se estampó un mandato vinculante en ${stamped.length} capítulos del clímax para que el protagonista resuelva por su propia acción (sin guía humana, generación continúa).${smell.smell ? ` Detector determinista marcó rescate externo en: ${smell.evidencia}.` : ""}`,
+              metadata: { fix: "Fix147", stampedChapters: stamped, deterministicSmell: smell.smell, evidencia: smell.evidencia, bestScore: bestAgency?.score ?? lastSeenScoreAg },
+            });
+          }
+        }
+      } catch (agErr) {
+        console.error(`[Orchestrator] Editor de Desarrollo (Agencia) falló (no bloqueante): ${(agErr as Error).message}`);
       }
 
       // ═══════════════════════════════════════════════════════════════
@@ -5626,6 +5844,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         : "chapter",
       funcion_estructural: plotItem?.funcion_estructural,
       informacion_nueva: plotItem?.informacion_nueva,
+      mandato_agencia: plotItem?.mandato_agencia,
       conflicto_central: plotItem?.conflicto_central,
       giro_emocional: plotItem?.giro_emocional,
       riesgos_de_verosimilitud: plotItem?.riesgos_de_verosimilitud,
@@ -12717,6 +12936,7 @@ Responde SOLO con un JSON válido con la estructura:
         tipo,
         funcion_estructural: chapterData.funcion_estructural,
         informacion_nueva: chapterData.informacion_nueva,
+        mandato_agencia: chapterData.mandato_agencia,
         conflicto_central: chapterData.conflicto_central,
         giro_emocional: chapterData.giro_emocional,
         riesgos_de_verosimilitud: chapterData.riesgos_de_verosimilitud,
@@ -12954,6 +13174,7 @@ Responde SOLO con un JSON válido con la estructura:
         funcion_estructural: chapterData.funcion_estructural,
         informacion_nueva: chapterData.informacion_nueva,
         pregunta_dramatica: chapterData.pregunta_dramatica,
+        mandato_agencia: chapterData.mandato_agencia,
         conflicto_central: chapterData.conflicto_central,
         giro_emocional: chapterData.giro_emocional,
         recursos_literarios_sugeridos: chapterData.recursos_literarios_sugeridos,

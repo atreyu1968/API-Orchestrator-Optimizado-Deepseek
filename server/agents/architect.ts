@@ -71,6 +71,14 @@ interface ArchitectInput {
   // correcciones literales.
   structuralAuditFeedback?: string;
 
+  // [Fix147][Puerta 1] Feedback del Editor de Desarrollo (Regla de Agencia). Se
+  // inyecta cuando el clímax NO lo gana el protagonista por su propia acción
+  // sembrada (deus ex machina / rescate externo) o cuando faltan los hitos
+  // dramáticos (incidente incitador, primer giro, punto medio pasiva->activa,
+  // momento oscuro, clímax ganado por el cambio). El Arquitecto DEBE rediseñar el
+  // desenlace para que la agencia recaiga en el protagonista, sin romper lo aprobado.
+  agencyFeedback?: string;
+
   // [Fix106] World Bible reutilizable (Fase 1 ya generada en un intento previo).
   // Cuando el orquestador re-ejecuta al Arquitecto tras un auditor (Estructural/
   // Integridad/Beta), pasa aquí el outline anterior PARSEADO (objeto con
@@ -917,6 +925,23 @@ export class ArchitectAgent extends BaseAgent {
     "revelaciones_dosificadas" (este último solo en caps con revelación importante).
 
     ${input.structuralAuditFeedback}
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.agencyFeedback ? `
+    ═══════════════════════════════════════════════════════════════════
+    FEEDBACK DEL EDITOR DE DESARROLLO — REGLA DE AGENCIA (PRIORIDAD MÁXIMA)
+    ═══════════════════════════════════════════════════════════════════
+    Tu escaleta anterior falla en lo más importante: el protagonista NO se gana su
+    clímax por una acción propia sembrada, o faltan/fallan los hitos dramáticos. El
+    conflicto central DEBE resolverse en el clímax por una decisión y acción del
+    protagonista (sembradas en capítulos previos), y este triunfa PORQUE HA CAMBIADO.
+    Está PROHIBIDO un deus ex machina: que un rey, juez, autoridad, ejército,
+    casualidad, milagro o un secundario resuelvan por el protagonista mientras este
+    observa pasivo. Si una figura externa aparece, solo puede ratificar lo que la
+    acción del protagonista ya hizo inevitable. Aplica LITERALMENTE las correcciones,
+    conservando lo aprobado por críticas previas.
+
+    ${input.agencyFeedback}
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     ${input.betaReaderFeedback ? `
