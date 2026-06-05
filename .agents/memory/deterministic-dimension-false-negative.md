@@ -37,3 +37,32 @@ exigir que TODOS los problemas de esa área sean del tipo benigno, que el score 
 esa penalización alcance el mínimo, y que no haya KO de dimensión crítica de segunda
 mitad. La dimensión sigue contribuyendo al agregado (no se desactiva), solo deja de
 ser bloqueante en exclusiva.
+
+## El patrón se repite en VARIAS dimensiones a la vez
+
+Un atasco crónico de la auditoría estructural casi nunca es de UNA sola dimensión:
+tratar la dimensión señalada en el log más reciente (p.ej. `falso_aliado`) suele dejar
+la novela todavía <7 por otras deterministas (`arco_secreto`, `escalada_acto2`,
+`dosificación`) que fallan en paralelo. Cuando aparezca un atasco crónico, NO asumir
+que basta con la dimensión del último log; revisar TODAS las deterministas con el mismo
+escrutinio (¿siembra real que el patrón no casa? ¿denominador de cobertura inflado?).
+
+**Dos sabores de error a vigilar:**
+1. **Falso negativo por siembra exacta (mismo arreglo que `falso_aliado`):** la siembra
+   estricta exige tokens largos del hecho en caps previos; el Arquitecto siembra con
+   sinónimos/tokens cortos (señal: el autopatch de sincronización mueve 5-10 revelaciones
+   por iteración → la siembra EXISTE). Solución: pasada relajada parametrizando la
+   longitud mínima de token, y confiar en un `setup_capitulo` DECLARADO si tiene ≥1 traza
+   textual. Degradar severidad (alta→media) cuando hay traza débil; control negativo
+   (0 trazas) mantiene "alta".
+2. **Falso POSITIVO por denominador de cobertura inflado:** una métrica "X% de caps que
+   deberían tener Y lo declaran" se hunde si el denominador cuenta caps que NO deberían
+   tener Y. Caso `dosificación`: contaba tipo J (confrontación) y todo cap con
+   `eventos_pivotales>0` (casi todos). Acotar el denominador a señales inequívocas
+   (tipo exacto, array ya declarado, o keywords FUERTES de corpus — nunca palabras
+   comunes como "verdad"/"descubre" que reinflan). Garantizar `withY ⊆ expectsY` para
+   que la cobertura quede ≤1.
+
+**Why:** estos detectores son deterministas (coste 0 LLM) pero su precisión depende de
+patrones sintácticos frágiles; un patrón demasiado estricto en la siembra o demasiado
+laxo en el denominador convierte una novela publicable en un bucle de horas.

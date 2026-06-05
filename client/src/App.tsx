@@ -131,7 +131,7 @@ function AuthenticatedApp() {
               <img src={asdLogo} alt="ASD" className="h-4 w-auto" />
               <span>&copy; {new Date().getFullYear()} Atreyu Servicios Digitales</span>
               <span className="text-muted-foreground/50">|</span>
-              <span className="text-muted-foreground/50" data-testid="text-app-version">v9.3.9</span>
+              <span className="text-muted-foreground/50" data-testid="text-app-version">v9.4.0</span>
             </footer>
           </div>
         </div>

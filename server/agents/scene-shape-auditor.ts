@@ -390,12 +390,44 @@ function auditDosificacion(
   const withRev = all.filter(
     (c: any) => Array.isArray(c.revelaciones_dosificadas) && c.revelaciones_dosificadas.length > 0
   );
-  // Cobertura medida solo sobre caps que "deberían" llevar revelación: tipo M
-  // (revelacion), J (confrontacion) o con eventos_pivotales declarados.
+  // Cobertura medida solo sobre caps que "deberían" llevar revelación.
+  // [Fix146] Antes el denominador contaba tipo J (confrontación, que puede ser
+  // pura acción sin revelación) y CUALQUIER cap con eventos_pivotales>0 (casi
+  // todos los caps los tienen) -> inflaba el denominador, hundía la cobertura
+  // (15-47% en runs reales) y disparaba un FALSO POSITIVO "dosificacion_no_
+  // declarada" (media, -0.7) iteración tras iteración. Denominador más preciso:
+  // un cap "espera" una revelación dosificable solo si es tipo M (revelación),
+  // si ya DECLARA revelaciones_dosificadas, o si su corpus contiene lenguaje de
+  // revelación inequívoco (no "verdad"/"descubre" sueltos, que son demasiado
+  // comunes y volverían a inflar). Como withRev ⊆ expectsRev, la cobertura
+  // queda acotada a ≤1. Control negativo: un tipo M sin array declarado sigue
+  // contando como no-cubierto.
+  const STRONG_REVELATION_HINTS = [
+    "revela ",
+    "revelacion",
+    "confiesa",
+    "confesion",
+    "desenmascara",
+    "sale a la luz",
+    "se descubre que",
+    "identidad real",
+    "es el traidor",
+    "era el traidor",
+    "oculta la verdad",
+  ];
+  const corpusHasRevelation = (c: any): boolean => {
+    const norm = capCorpus(c)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+    return STRONG_REVELATION_HINTS.some((k) => norm.includes(k));
+  };
   const expectsRev = all.filter((c: any) => {
     const tipo = String(c.tipo_capitulo || "").toUpperCase();
-    const pivotes = Array.isArray(c.eventos_pivotales) ? c.eventos_pivotales.length : 0;
-    return tipo === "M" || tipo === "J" || pivotes > 0;
+    const hasRevDeclared =
+      Array.isArray(c.revelaciones_dosificadas) &&
+      c.revelaciones_dosificadas.length > 0;
+    return tipo === "M" || hasRevDeclared || corpusHasRevelation(c);
   });
   const coverage =
     expectsRev.length > 0 ? withRev.length / Math.max(expectsRev.length, 1) : (withRev.length > 0 ? 1 : 0);
@@ -563,7 +595,7 @@ const STOPWORDS_ES = new Set([
   "cap", "capitulo", "capitulos",
 ]);
 
-function extractSiembraTokens(text: string): string[] {
+function extractSiembraTokens(text: string, minLen = 4): string[] {
   if (!text || typeof text !== "string") return [];
   const t = text
     .normalize("NFD")
@@ -576,8 +608,11 @@ function extractSiembraTokens(text: string): string[] {
   // narrativamente críticas y cortas (topo, robo, arma, caso, dato, ruta,
   // amor, odio, celos, pacto, lazo) que antes se descartaban como ruido y
   // generaban falsos positivos de "siembra insuficiente".
+  // [Fix146] minLen parametrizable: el fallback tolerante de arco_secreto usa
+  // minLen=3 para capturar tokens cortos del hecho (ley, rey, mar, fe) que la
+  // siembra estricta descarta y que provocan falsos negativos de siembra.
   const tokens = t.split(/\s+/).filter((tok) => {
-    if (tok.length < 4) return false;
+    if (tok.length < minLen) return false;
     if (STOPWORDS_ES.has(tok)) return false;
     if (/^\d+$/.test(tok)) return false;
     return true;
@@ -720,13 +755,52 @@ function auditArcoSecreto(
         continue;
       }
 
+      // [Fix146] Fallback TOLERANTE antes de penalizar (espejo de Fix145 para
+      // falso_aliado). La siembra estricta exige tokens ≥4 chars del hecho en
+      // caps previos; cuando el Arquitecto SÍ siembra pero con vocabulario o
+      // sinónimos distintos al "hecho_revelado" (o con tokens cortos), da un
+      // falso negativo. Caso real: el Arquitecto declara setup_capitulos y
+      // Fix117 "auto-sincroniza" 5-10 revelaciones por iteración, señal de que
+      // la siembra existe pero no casa token a token. Segunda pasada relajada:
+      //   - tokens ≥3 chars (captura ley/rey/mar/fe y cortos del hecho),
+      //   - un cap cuenta si tiene ≥1 token FUERTE (no nombre propio), o ≥2
+      //     hits cualesquiera, o es un setup_capitulo DECLARADO con ≥1 hit de
+      //     cualquier tipo (confiamos en la declaración explícita del Arquitecto
+      //     respaldada por al menos una traza textual).
+      // Si la pasada relajada alcanza minSiembra -> concede cobertura.
+      // Control negativo: un hecho SIN ninguna traza textual en caps previos
+      // (relaxedCount === 0) sigue penalizando, y en alto sigue siendo "alta".
+      const relaxedTokens = extractSiembraTokens(hecho, 3);
+      let relaxedCount = 0;
+      for (const prev of priorCaps) {
+        const capTokens = tokensByCap[capNum(prev)];
+        if (!capTokens || capTokens.size === 0) continue;
+        const hitTokens = relaxedTokens.filter((t) => capTokens.has(t));
+        if (hitTokens.length === 0) continue;
+        const fuertes = hitTokens.filter((t) => !nombrePropioTokens.has(t));
+        const isDeclared = declarados.includes(capNum(prev));
+        if (fuertes.length >= 1 || hitTokens.length >= 2 || isDeclared) {
+          relaxedCount += 1;
+        }
+      }
+      const relaxedEffective = Math.max(efectivamenteSembrados, relaxedCount);
+      if (relaxedEffective >= minSiembra) {
+        sembradas += 1;
+        continue;
+      }
+
       // [Fix96 v2] Severidad "alta" si NO hay respaldo textual real
       // (siembraCount === 0) para dificultad "alto", aunque haya
       // setup_capitulos declarados sin hit (array decorativo sin prosa que
       // construya el suspense). Si hubo siembra parcial (1-2 caps con hit
       // real), bajamos a "media" — el suspense existe aunque sea frágil.
+      // [Fix146] La pasada relajada también degrada de "alta" a "media": si
+      // existe AL MENOS una traza textual (relaxedEffective >= 1) el suspense
+      // existe aunque sea frágil; solo la ausencia total de traza mantiene "alta".
       const sevSiembra =
-        dificultad === "alto" && siembraCount === 0 ? "alta" : "media";
+        dificultad === "alto" && siembraCount === 0 && relaxedEffective === 0
+          ? "alta"
+          : "media";
       problemas.push({
         area: "arco_secreto",
         tipo:
