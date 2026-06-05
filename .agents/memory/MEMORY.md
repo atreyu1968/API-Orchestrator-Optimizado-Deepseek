@@ -7,3 +7,4 @@
 - [Dimensión determinista con falso negativo crónico](deterministic-dimension-false-negative.md) — un detector determinista propenso a falso negativo no debe atascar la novela; atacar con detector tolerante + red de seguridad en el gate.
 - [Autonomous quality redesign](autonomous-quality-redesign.md) — rediseño de calidad 100% autónomo (sin humano, sin awaiting_structural_guidance); patrón de puerta y orden de las 6.
 - [Structural generation gates](structural-generation-gates.md) — variedad por ETIQUETA se salta (dos set-pieces igual etiquetados distinto); pauta para añadir dim determinista al gate SA (conservadora, series-safe, 5 mapas, no a CRITICAL_SECOND_HALF_DIMS).
+- [DeepSeek thinking + techo de salida](deepseek-thinking-output-budget.md) — un juez con thinking + entrada grande devuelve null (JSON vacío/cortado) si maxOutputTokens es bajo; el techo es COMBINADO razonamiento+contenido, súbelo a >=16384.

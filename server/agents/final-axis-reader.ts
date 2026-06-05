@@ -123,7 +123,15 @@ export class FinalAxisReaderAgent extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 8192,
-      maxOutputTokens: 8192,
+      // [Fix155] CAUSA RAIZ del `null` de Fix154: esta puerta lee la NOVELA
+      // COMPLETA, la entrada mas grande del sistema. Con thinking en esfuerzo
+      // "max", el razonamiento consumia casi todo el presupuesto COMBINADO de
+      // salida (8192 incluye razonamiento + contenido en DeepSeek V4), dejando el
+      // JSON vacio o cortado a la mitad -> sin puntuacion valida -> null. Subimos
+      // el techo a 16384 (como el Revisor Holistico, que tambien lee mucho) para
+      // que quepan razonamiento Y veredicto. No cambia el juicio; solo deja sitio
+      // para escribir la respuesta. Solo se factura lo realmente usado.
+      maxOutputTokens: 16384,
       includeThoughts: false,
     });
     this.timeoutMs = 10 * 60 * 1000;
