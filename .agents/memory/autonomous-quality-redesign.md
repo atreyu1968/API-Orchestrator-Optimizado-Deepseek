@@ -10,7 +10,7 @@ Rediseño aprobado por el usuario para subir la CALIDAD FINAL de las novelas (co
 **Why:** las novelas salían con defectos crónicos (sobre todo finales NO ganados: un poder externo/secundario resuelve el conflicto central mientras el protagonista observa pasivo). Las dimensiones DETERMINISTAS del Auditor Estructural miden tokens/etiquetas, no la SEMÁNTICA de quién resuelve el clímax, así que dejan pasar el deus ex machina. La guía manual no servía y atascaba novelas durante horas.
 
 ## Orden de construcción de las 6 puertas (acordado)
-P1 agencia (HECHA) → P4 editor de prosa (HECHA) → P5 lectura final por ejes → P0 concepto → P2/P3 semillas + generación con guía viva → P6 degradar el auditor determinista (incluye quitar la dependencia de `awaiting_structural_guidance`).
+P1 agencia (HECHA) → P4 editor de prosa (HECHA) → P5 lectura final por ejes (HECHA) → P0 concepto → P2/P3 semillas + generación con guía viva → P6 degradar el auditor determinista (incluye quitar la dependencia de `awaiting_structural_guidance`).
 
 ## Patrón canónico de una puerta (copiar el bucle de Integridad Narrativa del orchestrator)
 1. Agente crítico SEMÁNTICO (LLM) que juzga UNA preocupación y devuelve `veredicto` + `directivas_arquitecto` accionables.
@@ -23,3 +23,8 @@ P1 agencia (HECHA) → P4 editor de prosa (HECHA) → P5 lectura final por ejes 
 Regla de oro: el conflicto central se resuelve en el clímax por una acción PROPIA del protagonista, sembrada antes; triunfa PORQUE HA CAMBIADO. Columna estructural = los 5 hitos del "Plan Maestro" del usuario: Incidente Incitador, Primer Giro, Punto Medio (vira pasiva→activa), Momento Oscuro, Clímax ganado por el cambio.
 
 **How to apply:** al construir P4/P5, reusar este patrón exacto. El fail-safe de P1 estampa `mandato_agencia` en los caps del clímax; las puertas de generación/prosa (P3/P4) deben CONSUMIR ese campo para materializar la agencia en la prosa.
+
+## Puerta 5 (lectura final por ejes) — rúbrica
+Lee la novela COMPLETA ya escrita (no el plan) y la audita por 4 ejes ortogonales que ningún lector previo vigilaba de forma vinculante: promesa→pago (cabos sueltos/Chéjov), coherencia causal global (giros sembrados, sin conveniencias), consistencia de personaje (MOTIVACIONAL, no física), cierre temático. Mismo patrón canónico que P4 (snapshot/restore `isBetter`, fail-safe del peor cap, re-lectura "revertir por defecto" `mustRevert`, `restoreSnapshot` fuerza `status:"completed"`, todo best-effort, NUNCA `awaiting_structural_guidance`). Reescribe por capítulo vía `rewriteChapterForQA(..., "editorial", directiva)`.
+
+**Lección (series-awareness de auditorías de cierre):** cualquier auditoría que exija "cierre/pago de un arco DENTRO del volumen" (p.ej. `auditArcoSecundario`: arco abandonado, cierre fantasma) da FALSOS POSITIVOS en sagas, donde el arco continúa en el siguiente libro. Patrón de arreglo: tipo opcional `SeriesAuditContext {isSeriesVolume,isFinalVolume}` threadeado por `runArchitectStructuralAudits` (ausente = standalone, comportamiento intacto); relajar SOLO las señales basadas en cierre en volumen NO final; conservar las independientes del cierre (no aparece nunca, brecha larga) como aviso. Calcular el contexto UNA vez (un solo `getSeries`); total desconocido → conservador NO final (filosofía anti-falso-positivo del auditor; el cierre real lo cubren P5 y los lectores).

@@ -22,12 +22,16 @@ import {
   ProseAgencyEditorAgent,
   type ProseAgencyEditorResult,
   type ProseAgencyProblem,
+  FinalAxisReaderAgent,
+  type FinalAxisReaderResult,
+  type FinalAxisProblem,
   OutlineBetaReaderAgent,
   PlotIntegrityAuditorAgent,
   computePlotIntegrityMetrics,
   WorldBibleAuditorAgent,
   type WorldBibleAuditResult,
   runArchitectStructuralAudits,
+  type SeriesAuditContext,
   autopatchDecorativeSetupCapitulos,
   type StructuralAuditProblem,
   HolisticReviewerAgent,
@@ -192,6 +196,7 @@ export class Orchestrator {
   private agencyCritic = new AgencyCriticAgent();
   // [Fix148][Puerta 4] Editor de Prosa de Agencia (juez de la PROSA escrita).
   private proseAgencyEditor = new ProseAgencyEditorAgent();
+  private finalAxisReader = new FinalAxisReaderAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 4;
   private maxFinalReviewCycles = 10;
@@ -1390,6 +1395,35 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           }
         } catch (e) {
           console.warn(`[Fix80] buildSeriesMilestonesAndThreadsBlock falló: ${(e as Error).message}`);
+        }
+      }
+      // [Fix149] Contexto de serie para las auditorías estructurales sensibles
+      // al cierre dentro del volumen (arcos de secundarios). En un volumen de
+      // serie NO final, un arco puede continuar legítimamente en el siguiente
+      // libro: relajar las penalizaciones por "cierre fantasma"/"arco abandonado"
+      // para no atascar el bucle SA con falsos positivos en sagas. Standalone y
+      // volumen FINAL exigen cierre (sin relajación). Se computa UNA vez aquí
+      // (un solo getSeries) y se pasa a las 4 llamadas de runArchitectStructuralAudits.
+      let seriesAuditContext: SeriesAuditContext | undefined;
+      if (project.seriesId) {
+        try {
+          const isPrequelVol =
+            (project as any).projectSubtype === "prequel" || project.seriesOrder === 0;
+          const seriesRec = await storage.getSeries(project.seriesId);
+          const totalVols = seriesRec?.totalPlannedBooks || 0;
+          const order =
+            typeof project.seriesOrder === "number" ? project.seriesOrder : null;
+          // FINAL solo si conocemos el total y este volumen es el último; los
+          // prequels (order 0) nunca son finales. Si el total es desconocido
+          // somos conservadores: tratamos el volumen como NO final (relajamos),
+          // alineado con la filosofía anti-falso-positivo del auditor; el cierre
+          // de arcos a nivel de prosa lo cubren la Puerta 5 y los lectores.
+          const isFinalVolume =
+            !isPrequelVol && totalVols > 0 && order !== null && order === totalVols;
+          seriesAuditContext = { isSeriesVolume: true, isFinalVolume };
+        } catch (e) {
+          // Ante cualquier fallo, conservador: serie no-final (relaja cierre).
+          seriesAuditContext = { isSeriesVolume: true, isFinalVolume: false };
         }
       }
       let pseudonymCatalog = "";
@@ -2874,7 +2908,8 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
 
             const sa = runArchitectStructuralAudits(
               worldBibleData.escaleta_capitulos as any[],
-              (worldBibleData as any).world_bible
+              (worldBibleData as any).world_bible,
+              seriesAuditContext
             );
 
             const altas = sa.problemas.filter(p => p.severidad === "alta").length;
@@ -3520,7 +3555,8 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
             try {
               const auditForKO = runArchitectStructuralAudits(
                 bestSAOverall.data.escaleta_capitulos as any[],
-                (bestSAOverall.data as any).world_bible
+                (bestSAOverall.data as any).world_bible,
+                seriesAuditContext
               );
               bestCriticalKODimsLoop = this.criticalSecondHalfKODims(auditForKO.problemas);
             } catch {}
@@ -3533,7 +3569,8 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
           try {
             const finalAuditForGuidance = runArchitectStructuralAudits(
               bestSAOverall.data.escaleta_capitulos as any[],
-              (bestSAOverall.data as any).world_bible
+              (bestSAOverall.data as any).world_bible,
+              seriesAuditContext
             );
             if (!finalAuditForGuidance.problemas.length) break outerSALoop;
             // [Fix143-B] Si el agregado SÍ pasa el umbral pero hay KO crítico, el
@@ -3596,7 +3633,8 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
           const finalAudit = bestSAOverall
             ? runArchitectStructuralAudits(
                 bestSAOverall.data.escaleta_capitulos as any[],
-                (bestSAOverall.data as any).world_bible
+                (bestSAOverall.data as any).world_bible,
+                seriesAuditContext
               )
             : null;
           const gateCriticalKODims = finalAudit ? this.criticalSecondHalfKODims(finalAudit.problemas) : [];
@@ -4832,6 +4870,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         // [Fix148][Puerta 4] Verificacion de AGENCIA en la PROSA del climax antes
         // de finalizar (autonomo, best-effort, nunca bloquea la finalizacion).
         await this.runProseAgencyGate(project, worldBibleData, fullStyleGuide);
+        // [Fix149][Puerta 5] Lectura Final por Ejes sobre la novela COMPLETA antes
+        // de finalizar (autonomo, best-effort, nunca bloquea la finalizacion).
+        await this.runFinalAxisReadGate(project, worldBibleData, fullStyleGuide);
         await this.finalizeCompletedProject(project);
       } else {
         await storage.updateProject(project.id, { status: "failed_final_review" });
@@ -5696,6 +5737,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         // [Fix148][Puerta 4] Verificacion de AGENCIA en la PROSA del climax antes
         // de finalizar (autonomo, best-effort, nunca bloquea la finalizacion).
         await this.runProseAgencyGate(project, worldBibleData, fullStyleGuide);
+        // [Fix149][Puerta 5] Lectura Final por Ejes sobre la novela COMPLETA antes
+        // de finalizar (autonomo, best-effort, nunca bloquea la finalizacion).
+        await this.runFinalAxisReadGate(project, worldBibleData, fullStyleGuide);
         await this.finalizeCompletedProject(project);
       } else {
         await storage.updateProject(project.id, { status: "failed_final_review" });
@@ -6097,6 +6141,258 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     } catch (error) {
       // La puerta es best-effort: un fallo aqui jamas debe abortar la finalizacion.
       console.warn(`[Fix148][Puerta 4] runProseAgencyGate fallo (no bloqueante): ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * [Fix149][Puerta 5] LECTURA FINAL POR EJES. Quinta puerta del rediseno de
+   * calidad 100% autonomo. A diferencia de la Puerta 4 (que audita la agencia
+   * en la PROSA del CLIMAX), esta lee la novela COMPLETA terminada y la juzga
+   * por EJES ortogonales que los lectores existentes no auditan de forma
+   * sistematica y vinculante: promesa->pago (cabos sueltos/Chejov), coherencia
+   * causal global (giros sembrados, sin conveniencias), consistencia de
+   * personaje (motivacional, no fisica) y cierre tematico.
+   *
+   * Bucle AUTONOMO (sin humano): sale por CALIDAD (puntuacion_global>=7 Y sin
+   * problema critico/alto); ante estancamiento auto-escala la intensidad de la
+   * directiva; fail-safe determinista (reescritura forzada del peor capitulo).
+   * NUNCA usa `awaiting_structural_guidance`. Todo best-effort: jamas rompe la
+   * finalizacion del proyecto. Anti-regresion espejo de la Puerta 4
+   * (snapshot/restore con criterio compuesto `isBetter`, re-lectura post
+   * fail-safe con patron "revertir por defecto").
+   */
+  private async runFinalAxisReadGate(
+    project: Project,
+    worldBibleData: ParsedWorldBible,
+    fullStyleGuide: string,
+  ): Promise<void> {
+    const MAX_PASSES = 3;
+    const MIN_AXIS_SCORE = 7;
+    try {
+      const wb = (worldBibleData as any)?.world_bible || {};
+      const protName = getProtagonistName(wb);
+
+      // Carga (recargable) de TODA la novela con su prosa real.
+      const loadNovela = async (): Promise<{ chapter: Chapter; section: SectionData; prosa: string }[]> => {
+        const all = (await storage.getChaptersByProject(project.id))
+          .filter((c) => c.status === "completed" && c.chapterNumber > 0)
+          .sort((a, b) => a.chapterNumber - b.chapterNumber);
+        if (all.length === 0) return [];
+        const out: { chapter: Chapter; section: SectionData; prosa: string }[] = [];
+        all.forEach((c) => {
+          const section = this.buildSectionDataFromChapter(c, worldBibleData);
+          const prosa = ((c as any).editedContent || c.originalContent || (c as any).content || "") as string;
+          if (prosa.trim()) {
+            out.push({ chapter: c, section, prosa });
+          }
+        });
+        return out;
+      };
+
+      let novela = await loadNovela();
+      // Necesitamos un libro razonablemente completo para una lectura por ejes;
+      // con muy pocos capitulos no hay estructura global que auditar.
+      if (novela.length < 5) {
+        return;
+      }
+
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "final-axis-reader",
+        message: `[Fix149][Puerta 5] Lectura Final por Ejes: leyendo la novela completa (${novela.length} capitulos) para auditar promesa->pago, coherencia causal, consistencia de personaje y cierre tematico.`,
+      });
+
+      // Anti-regresion: snapshot de la prosa de TODOS los caps para restaurar la
+      // MEJOR version conocida si una reescritura posterior la empeora.
+      type ProseSnapshot = { id: number; content: string; wordCount: number }[];
+      const snapshotOf = (cs: typeof novela): ProseSnapshot =>
+        cs.map((c) => ({
+          id: c.chapter.id,
+          content: c.prosa,
+          wordCount: c.chapter.wordCount || c.prosa.split(/\s+/).filter((w) => w.length > 0).length,
+        }));
+      const restoreSnapshot = async (snap: ProseSnapshot): Promise<void> => {
+        for (const s of snap) {
+          await storage.updateChapter(s.id, {
+            content: s.content,
+            wordCount: s.wordCount,
+            status: "completed",
+            needsRevision: false,
+            revisionReason: null,
+          });
+        }
+      };
+      const critCount = (r: FinalAxisReaderResult) =>
+        r.problemas.filter((p) => p.severidad === "critica" || p.severidad === "alta").length;
+      const isBetter = (a: FinalAxisReaderResult, b: FinalAxisReaderResult): boolean => {
+        const ca = critCount(a), cb = critCount(b);
+        if (ca !== cb) return ca < cb;
+        return a.puntuacion_global > b.puntuacion_global;
+      };
+
+      const judgeNovela = async (cs: typeof novela): Promise<FinalAxisReaderResult | null> => {
+        const { result } = await this.finalAxisReader.analyze({
+          title: project.title || "Sin titulo",
+          genre: (project as any).genre || "",
+          tone: (project as any).tone || "",
+          protagonista: protName,
+          premise: (project as any).premise || (project as any).description || "",
+          capitulos: cs.map((c) => ({
+            numero: c.chapter.chapterNumber,
+            titulo: c.section.titulo || `Capitulo ${c.chapter.chapterNumber}`,
+            prosa: c.prosa,
+          })),
+          projectId: project.id,
+        });
+        return result || null;
+      };
+      const esApto = (r: FinalAxisReaderResult): boolean =>
+        r.veredicto === "apto"
+        && r.puntuacion_global >= MIN_AXIS_SCORE
+        && critCount(r) === 0;
+
+      const ejeLabel = (e: FinalAxisProblem["eje"]): string =>
+        e === "promesa_pago" ? "PROMESA SIN PAGO / CABO SUELTO"
+        : e === "coherencia_causal" ? "INCOHERENCIA CAUSAL / CONVENIENCIA"
+        : e === "consistencia_personaje" ? "INCONSISTENCIA DE PERSONAJE"
+        : "CIERRE TEMATICO PENDIENTE";
+
+      let best: FinalAxisReaderResult | null = null;
+      let bestSnapshot: ProseSnapshot | null = null;
+      let prevScore = -1;
+      let stallCount = 0;
+
+      for (let pass = 0; pass < MAX_PASSES; pass++) {
+        const passSnapshot = snapshotOf(novela);
+        const result = await judgeNovela(novela);
+
+        if (!result) {
+          console.warn(`[Fix149][Puerta 5] El lector por ejes no devolvio resultado (pasada ${pass + 1}); se continua sin bloquear.`);
+          break;
+        }
+        if (!best || isBetter(result, best)) {
+          best = result;
+          bestSnapshot = passSnapshot;
+        }
+
+        const criticos = result.problemas.filter(
+          (p) => p.severidad === "critica" || p.severidad === "alta",
+        );
+        if (esApto(result)) {
+          await storage.createActivityLog({
+            projectId: project.id, level: "info", agentRole: "final-axis-reader",
+            message: `[Fix149][Puerta 5] NOVELA APTA por ejes (${result.puntuacion_global}/10; promesa_pago ${result.ejes.promesa_pago}, causal ${result.ejes.coherencia_causal}, personaje ${result.ejes.consistencia_personaje}, tematico ${result.ejes.cierre_tematico}). ${result.resumen || "estructura solida de principio a fin."}`,
+          });
+          return;
+        }
+
+        if (result.puntuacion_global <= prevScore) stallCount++;
+        prevScore = result.puntuacion_global;
+
+        // Reescribe los capitulos problematicos (criticos/altos; si no, medios).
+        // Acotamos a un maximo por pasada para no encarecer en exceso.
+        const candidatos = criticos.length > 0
+          ? criticos
+          : result.problemas.filter((p) => p.severidad === "media");
+        const aReescribir = candidatos.slice(0, 4);
+        if (aReescribir.length === 0) {
+          break;
+        }
+
+        const intensidad = stallCount >= 1
+          ? "REESCRITURA OBLIGATORIA Y RADICAL"
+          : "Reescritura dirigida";
+
+        for (const prob of aReescribir) {
+          const target = novela.find((c) => c.chapter.chapterNumber === prob.numero);
+          if (!target) continue;
+          const directiva = `${intensidad} POR FALLO ESTRUCTURAL DETECTADO EN LA LECTURA FINAL (${ejeLabel(prob.eje)}). ${prob.descripcion}\n\nQUE HACER EN ESTE CAPITULO: ${prob.directiva_de_reescritura}\n\nMantén la coherencia con el resto del libro: integra el cambio de forma natural sin contradecir lo ya escrito ni introducir nuevos cabos sueltos.`;
+          await this.rewriteChapterForQA(
+            project,
+            target.chapter,
+            target.section,
+            worldBibleData,
+            fullStyleGuide,
+            "editorial",
+            directiva,
+          );
+        }
+
+        novela = await loadNovela();
+        if (novela.length === 0) break;
+      }
+
+      // Anti-regresion: el bucle salio sin novela apta; la ULTIMA reescritura no
+      // fue re-juzgada y puede haber empeorado. Restaura la MEJOR version conocida
+      // antes del fail-safe, para no entregar jamas una version peor.
+      if (bestSnapshot) {
+        await restoreSnapshot(bestSnapshot);
+        novela = await loadNovela();
+        if (novela.length === 0) return;
+      }
+
+      // Fail-safe determinista (sin humano): fuerza UNA reescritura mas del peor
+      // capitulo con una directiva dura. NUNCA `awaiting_structural_guidance`.
+      const peor = best?.problemas
+        ?.slice()
+        .sort((a: FinalAxisProblem, b: FinalAxisProblem) => {
+          const rank = (s: string) => (s === "critica" ? 3 : s === "alta" ? 2 : 1);
+          return rank(b.severidad) - rank(a.severidad);
+        })[0];
+      let forzadoCap: number | null = null;
+      if (peor) {
+        const target = novela.find((c) => c.chapter.chapterNumber === peor.numero);
+        if (target) {
+          const directiva = `MANDATO FINAL DE LECTURA POR EJES (vinculante, no negociable). La novela todavia arrastra un fallo estructural sin resolver (${ejeLabel(peor.eje)}): ${peor.descripcion}. ${peor.directiva_de_reescritura}\n\nReescribe este capitulo para CERRAR ese defecto de raiz (paga la promesa, siembra/justifica el giro, corrige la conducta o cierra el tema segun corresponda), sin contradecir el resto del libro ni abrir nuevos cabos sueltos.`;
+          await this.rewriteChapterForQA(
+            project,
+            target.chapter,
+            target.section,
+            worldBibleData,
+            fullStyleGuide,
+            "editorial",
+            directiva,
+          );
+          forzadoCap = target.chapter.chapterNumber;
+        }
+      }
+
+      // Anti-regresion del fail-safe: se REVIERTE por defecto; solo se conserva la
+      // reescritura forzada si hay PRUEBA de mejora (apta o estrictamente mejor).
+      if (forzadoCap !== null && best && bestSnapshot) {
+        let mustRevert = true;
+        let postScore: number | null = null;
+        const reloaded = await loadNovela();
+        if (reloaded.length > 0) {
+          const post = await judgeNovela(reloaded);
+          if (post) {
+            postScore = post.puntuacion_global;
+            if (esApto(post)) {
+              await storage.createActivityLog({
+                projectId: project.id, level: "info", agentRole: "final-axis-reader",
+                message: `[Fix149][Puerta 5] La reescritura forzada del capitulo ${forzadoCap} logro NOVELA APTA por ejes (${post.puntuacion_global}/10): ${post.resumen || "estructura solida."}`,
+              });
+              return;
+            }
+            if (isBetter(post, best)) mustRevert = false;
+          }
+        }
+        if (mustRevert) {
+          await restoreSnapshot(bestSnapshot);
+          await storage.createActivityLog({
+            projectId: project.id, level: "info", agentRole: "final-axis-reader",
+            message: `[Fix149][Puerta 5] La reescritura forzada del capitulo ${forzadoCap} no mejoro los ejes (${postScore !== null ? `${postScore}/10` : "sin veredicto del juez"} vs mejor ${best.puntuacion_global}/10); se revierte a la mejor version conocida.`,
+          });
+          forzadoCap = null;
+        }
+      }
+
+      await storage.createActivityLog({
+        projectId: project.id, level: "warning", agentRole: "final-axis-reader",
+        message: `[Fix149][Puerta 5] La lectura por ejes no convergio a apta en ${MAX_PASSES} pasadas (mejor ${best?.puntuacion_global ?? "?"}/10). ${forzadoCap !== null ? `Se aplico el mandato final al capitulo ${forzadoCap} y se conserva la mejor version del resto.` : "Se conserva la mejor version conocida de la novela."} Se continua hacia la finalizacion (calidad maxima alcanzable de forma autonoma; sin guia humana).`,
+      });
+    } catch (error) {
+      // La puerta es best-effort: un fallo aqui jamas debe abortar la finalizacion.
+      console.warn(`[Fix149][Puerta 5] runFinalAxisReadGate fallo (no bloqueante): ${(error as Error).message}`);
     }
   }
 

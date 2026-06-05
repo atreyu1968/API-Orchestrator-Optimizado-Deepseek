@@ -161,6 +161,15 @@ export interface StructuralAuditResult {
   instrucciones_revision: string;
 }
 
+// [Fix149] Contexto de serie para las auditorías sensibles al cierre dentro
+// del volumen (p.ej. arcos de secundarios). En un volumen de serie NO final un
+// arco puede continuar legítimamente en el siguiente libro; standalone y
+// volumen final exigen cierre. Opcional: ausente = standalone (sin relajación).
+export interface SeriesAuditContext {
+  isSeriesVolume: boolean;
+  isFinalVolume: boolean;
+}
+
 // Frases que indican "informacion_nueva" de relleno. Detectadas en el informe
 // del Beta sobre "El eco del asfalto" caps 8-17.
 const FRASES_RELLENO_INFO = [
@@ -1785,12 +1794,27 @@ function arcTransformacionDeclarado(arc: any): boolean {
 
 function auditArcoSecundario(
   escaleta: any[],
-  worldBible: any
+  worldBible: any,
+  seriesContext?: SeriesAuditContext
 ): { problemas: StructuralAuditProblem[]; coverage: number } {
   const { all, total } = getActSlices(escaleta);
   const problemas: StructuralAuditProblem[] = [];
   // [Fix142-A] En libros cortos la heurística de brechas no es fiable.
   if (total < 10) return { problemas, coverage: 1 };
+
+  // [Fix149] Series-awareness para volúmenes NO finales: en una saga, el arco
+  // de un secundario puede CONTINUAR en el siguiente volumen y, por tanto, NO
+  // cerrarse ni mantener presencia en el tramo final de ESTE libro sin que sea
+  // un defecto. Las penalizaciones basadas en cierre/pago dentro del volumen
+  // (arco abandonado, cierre fantasma, reaparición tardía "no ganada") darían
+  // falsos positivos que atascan el bucle SA en sagas legítimas. Cuando el
+  // volumen es de serie y NO es el final, relajamos esas señales. En el volumen
+  // FINAL (o en standalone) se mantienen a plena fuerza: ahí los arcos SÍ deben
+  // cerrarse. Las señales independientes del cierre (no aparece nunca, brecha
+  // larga dentro del volumen) se conservan como aviso (media).
+  const relaxSeriesClosure = !!(
+    seriesContext?.isSeriesVolume && !seriesContext?.isFinalVolume
+  );
 
   const personajes: any[] =
     worldBible?.personajes || worldBible?.world_bible?.personajes || [];
@@ -1894,7 +1918,9 @@ function auditArcoSecundario(
 
     // (a) ARCO ABANDONADO: presentado pronto pero ausente del tramo final del
     // libro. El lector esperaba el pago del arco y el personaje se evaporó.
-    if (introducedEarly && !reachesFinalStretch) {
+    // [Fix149] En un volumen de serie NO final, la ausencia del tramo final es
+    // legítima (el arco continúa en el siguiente volumen): no penalizar.
+    if (introducedEarly && !reachesFinalStretch && !relaxSeriesClosure) {
       const gapToEnd = total - lastApp;
       // Severidad alta solo en un caso INEQUÍVOCO: hilo sustancial (≥4
       // apariciones tempranas) que desaparece todo el tercio final (≥40%).
@@ -1916,7 +1942,9 @@ function auditArcoSecundario(
     // Es el defecto inequívoco que el usuario reportó: el cierre NO está ganado
     // porque el arco avanzó fuera de cámara. Severidad ALTA: fuerza retry del
     // bucle SA aunque el agregado cruce el umbral.
-    if (introducedEarly && reachesFinalStretch && middleAppearances.length === 0) {
+    // [Fix149] En un volumen de serie NO final no exigimos cierre ganado del
+    // arco dentro de ESTE libro (puede cerrarse en el siguiente): no penalizar.
+    if (introducedEarly && reachesFinalStretch && middleAppearances.length === 0 && !relaxSeriesClosure) {
       problemas.push({
         area: "arco_secundario",
         tipo: "cierre_fantasma_secundario",
@@ -1934,8 +1962,11 @@ function auditArcoSecundario(
     // patrón de cierre no ganado aunque haya alguna escena central suelta → ALTA.
     const gapUmbral = Math.max(5, Math.floor(total * 0.45));
     if (maxGap >= gapUmbral) {
+      // [Fix149] La subida a "alta" asume que el cierre debe estar GANADO dentro
+      // de este volumen; en una serie NO final eso no aplica (puede cerrarse en
+      // el siguiente). La brecha en sí se conserva como aviso (media).
       const reaparicionTardiaNoGanada =
-        introducedEarly && gapHasta >= finalStretchStart;
+        introducedEarly && gapHasta >= finalStretchStart && !relaxSeriesClosure;
       problemas.push({
         area: "arco_secundario",
         tipo: "desaparicion_prolongada",
@@ -2374,7 +2405,8 @@ function auditSetPiecesClonados(
 // ────────────────────────────────────────────────────────────────────
 export function runArchitectStructuralAudits(
   escaleta: any[],
-  worldBible: any
+  worldBible: any,
+  seriesContext?: SeriesAuditContext
 ): StructuralAuditResult {
   const forma = auditFormaEscena(escaleta);
   const ledger = auditLedgerInfo(escaleta);
@@ -2384,7 +2416,7 @@ export function runArchitectStructuralAudits(
   const esc = auditEscaladaActo2(escaleta);
   const dem = auditDeusExMachina(escaleta, worldBible);
   const trauma = auditTraumaProtagonista(escaleta, worldBible);
-  const arcoSec = auditArcoSecundario(escaleta, worldBible);
+  const arcoSec = auditArcoSecundario(escaleta, worldBible, seriesContext);
   const setPiece = auditSetPiecesClonados(escaleta);
 
   const problemas = [

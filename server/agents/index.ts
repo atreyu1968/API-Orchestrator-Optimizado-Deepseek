@@ -20,6 +20,7 @@ export { OriginalityCriticAgent, type OriginalityCriticResult, type OriginalityC
 export { AgencyCriticAgent, getProtagonistName, detectExternalRescueSmell, stampAgencyMandate, type AgencyCriticResult, type AgencyProblem, type AgencyProblemType } from "./agency-critic";
 // [Fix148][Puerta 4] Editor de Prosa de Agencia (juez de la PROSA escrita).
 export { ProseAgencyEditorAgent, type ProseAgencyEditorResult, type ProseAgencyProblem, type ProseAgencyProblemType } from "./prose-agency-editor";
+export { FinalAxisReaderAgent, type FinalAxisReaderResult, type FinalAxisProblem, type FinalAxisEje, type FinalAxisEjes } from "./final-axis-reader";
 export { HolisticReviewerAgent, type HolisticReviewerResult } from "./holistic-reviewer";
 export { BetaReaderAgent, type BetaReaderResult } from "./beta-reader";
 export { OutlineBetaReaderAgent, type OutlineBetaReaderResult, type OutlineBetaProblem, type OutlineBetaProblemType } from "./outline-beta-reader";
@@ -27,4 +28,4 @@ export { PlotIntegrityAuditorAgent, computePlotIntegrityMetrics, type PlotIntegr
 // [Fix110] Auditor de World Bible entre Fase 1 y Fase 2 del Arquitecto.
 export { WorldBibleAuditorAgent, type WorldBibleAuditResult, type WorldBibleAuditProblem, type WorldBibleAuditArea, type WorldBibleAuditInput } from "./world-bible-auditor";
 // [Fix92] Auditor estructural determinista (forma/ledger/dosificación).
-export { runArchitectStructuralAudits, autopatchDecorativeSetupCapitulos, FORMA_ESCENA_VALORES, CATEGORIA_INFO_VALORES, MODO_EXTRACCION_VALORES, type StructuralAuditResult, type StructuralAuditProblem, type StructuralAuditCoverage, type FormaEscena, type CategoriaInfoNueva, type ModoExtraccion } from "./scene-shape-auditor";
+export { runArchitectStructuralAudits, autopatchDecorativeSetupCapitulos, FORMA_ESCENA_VALORES, CATEGORIA_INFO_VALORES, MODO_EXTRACCION_VALORES, type StructuralAuditResult, type StructuralAuditProblem, type StructuralAuditCoverage, type SeriesAuditContext, type FormaEscena, type CategoriaInfoNueva, type ModoExtraccion } from "./scene-shape-auditor";
