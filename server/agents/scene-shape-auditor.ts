@@ -1386,6 +1386,17 @@ function auditEscaladaActo2(
 
   // (b) Bucle: secuencias de ≥3 caps consecutivos no crecientes.
   // Recorremos act2; agrupamos cada vez que rank[i+1] <= rank[i].
+  // [Fix153] Solo es un bucle REAL si el tramo se estanca en niveles BAJOS
+  // (rank máximo del tramo <= "media"/2): ahí el lector siente "presión sin
+  // escalada" ("ya entendí que está acorralado"). Un tramo no creciente que
+  // TOCA "alta"/"critica" es tensión alta SOSTENIDA, o un descenso deliberado
+  // desde el pico (respiro antes del clímax): craft legítimo y, además, no se
+  // puede escalar por encima de "critica" — exigir subir un escalón cada 3
+  // caps en un acto 2 de ~18 caps con solo 4 niveles es matemáticamente
+  // imposible y generaba un falso positivo crónico que atascaba el bucle SA.
+  // La escalada global REAL la garantizan el pico mínimo (c) y, sobre todo,
+  // las puertas semánticas posteriores (agencia + lectura final por ejes).
+  // Control negativo: un acto 2 plano en "baja"/"media" sigue penalizando.
   const ranked = act2.map((c: any) => ({ cap: capNum(c), r: rankOf(c) }));
   let i = 0;
   const bucles: number[][] = [];
@@ -1396,11 +1407,13 @@ function auditEscaladaActo2(
     }
     let j = i;
     const runCaps: number[] = [ranked[i].cap];
+    let runMaxRank = ranked[i].r as number;
     while (j + 1 < ranked.length && ranked[j + 1].r !== null && (ranked[j + 1].r as number) <= (ranked[j].r as number)) {
       runCaps.push(ranked[j + 1].cap);
+      runMaxRank = Math.max(runMaxRank, ranked[j + 1].r as number);
       j++;
     }
-    if (runCaps.length >= 3) bucles.push(runCaps);
+    if (runCaps.length >= 3 && runMaxRank <= 2) bucles.push(runCaps);
     i = j + 1;
   }
   for (const caps of bucles) {
@@ -1409,8 +1422,8 @@ function auditEscaladaActo2(
       tipo: "bucle_sin_escalada",
       severidad: "media",
       capitulos: caps,
-      descripcion: `Caps ${caps.join(", ")} del acto 2 tienen "apuesta_dramatica" IGUAL o DECRECIENTE (${caps.length} caps consecutivos). El lector percibe un bucle de presión sin escalada: "ya entendí en el cap anterior que el protagonista está aislado / acorralado / sin pistas; no necesito leerlo otra vez".`,
-      sugerencia: `Sube la apuesta de al menos uno de los caps del medio del bucle: convierte una "media" en "alta" añadiendo una pérdida irreversible (un aliado herido, una identidad expuesta, una orden de detención), o una "alta" en "critica" añadiendo un punto sin retorno (el protagonista se la juega solo, queda inhabilitado, traiciona una norma propia). La regla universal: si dos caps consecutivos tienen la misma apuesta, el tercero DEBE subir un escalón. No basta con cambiar la forma_dominante; tiene que doler MÁS.`,
+      descripcion: `Caps ${caps.join(", ")} del acto 2 se estancan en apuesta BAJA ("baja"/"media") IGUAL o DECRECIENTE (${caps.length} caps consecutivos), sin tocar nunca "alta"/"critica". El lector percibe un bucle de presión sin escalada: "ya entendí en el cap anterior que el protagonista está aislado / acorralado / sin pistas; no necesito leerlo otra vez".`,
+      sugerencia: `Sube la apuesta de al menos uno de los caps del tramo: convierte una "media" en "alta" añadiendo una pérdida irreversible (un aliado herido, una identidad expuesta, una orden de detención). La regla: un tramo de 3+ caps consecutivos atascado en niveles bajos debe romper hacia "alta" en al menos uno. (Sostener "alta"/"critica" varios caps cerca del clímax NO es bucle: es tensión alta sostenida y es válido.) No basta con cambiar la forma_dominante; tiene que doler MÁS.`,
     });
   }
 
@@ -2028,7 +2041,7 @@ function buildInstructions(problemas: StructuralAuditProblem[]): string {
     `- "revelaciones_dosificadas" (array). Toda revelación con dificultad "alto" debe traer modo_extraccion != "sin_resistencia" y al menos 1 cap en setup_capitulos. Ningún cap puede acumular ≥3 revelaciones de dificultad alta. Ningún personaje antagonista/cómplice puede revelar ≥3 hechos en un único capítulo.`
   );
   lines.push(
-    `- "apuesta_dramatica" (1 valor de: ${APUESTA_VALORES.join(", ")}). En el acto 2 no puede haber 3+ caps consecutivos con apuesta IGUAL o DECRECIENTE; al menos 1 cap del acto 2 debe ser "alta" o "critica" (punto de no retorno antes del clímax).`
+    `- "apuesta_dramatica" (1 valor de: ${APUESTA_VALORES.join(", ")}). En el acto 2 evita 3+ caps consecutivos ESTANCADOS en niveles bajos ("baja"/"media") sin subir (produce sensación de bucle); sostener "alta"/"critica" varios caps cerca del clímax SÍ es válido (tensión alta sostenida). Al menos 1 cap del acto 2 debe ser "alta" o "critica" (punto de no retorno antes del clímax).`
   );
   lines.push(
     `- Para cada revelación "alto" en el último 25% de la novela, su "personaje_revelador" (si no es el protagonista) debe haber aparecido en ≥2 caps anteriores (elenco_presente o mención textual con beat propio). Personajes nuevos en el último cuarto = deus ex machina.`

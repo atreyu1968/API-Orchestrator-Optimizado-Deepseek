@@ -66,3 +66,24 @@ escrutinio (¿siembra real que el patrón no casa? ¿denominador de cobertura in
 **Why:** estos detectores son deterministas (coste 0 LLM) pero su precisión depende de
 patrones sintácticos frágiles; un patrón demasiado estricto en la siembra o demasiado
 laxo en el denominador convierte una novela publicable en un bucle de horas.
+
+3. **Falso POSITIVO por umbral matemáticamente imposible sobre una escala discreta corta:**
+   una métrica "debe CRECER cada N capítulos" sobre una escala de pocos niveles (apuesta:
+   baja=1<media=2<alta=3<critica=4) es imposible de cumplir en un tramo largo (acto 2 de
+   ~18 caps): no hay suficientes escalones para subir uno cada 3 caps. Caso `escalada_acto2`:
+   marcaba `bucle_sin_escalada` en CUALQUIER tramo de 3+ caps no creciente, así que sostener
+   "alta"/"critica" cerca del clímax (tensión alta sostenida = BUENA escritura) o descender
+   desde el pico (respiro deliberado) daba falso positivo crónico — 3-4 problemas por
+   iteración que nunca bajaban, ~70 min de bucle re-corriendo al Arquitecto. Solución: penalizar
+   un tramo no creciente SOLO si su rank MÁXIMO es bajo (<= "media"): el lector solo siente
+   "presión sin escalada" cuando se estanca en niveles BAJOS; tolerar tramos que tocan
+   "alta"/"critica". La escalada global real la garantiza el pico mínimo (`acto2_plano`: un
+   acto 2 sin ningún "alta"/"critica" sí penaliza) + las puertas SEMÁNTICAS. Control negativo:
+   meseta/descenso en "baja"/"media" sigue marcando bucle.
+
+**Regla transversal (post-Fix151):** una vez que el gate determinista es ADVISORY (no bloquea),
+estos falsos positivos ya no atascan la PUBLICACIÓN, pero SÍ malgastan tiempo/coste en el bucle
+de mejora previo (re-correr al Arquitecto 8+ veces buscando bajar una métrica que es imposible
+de bajar). Aflojar el detector sigue mereciendo la pena por COSTE, no solo por desbloqueo. Y al
+aflojar, distinguir falso negativo (relajar reconocimiento de la señal real) de falso positivo
+por umbral imposible (corregir el umbral), porque el arreglo es distinto.
