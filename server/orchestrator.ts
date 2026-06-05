@@ -2814,12 +2814,13 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
           const MIN_PUBLISHABLE_SA_SCORE = 7;
           const lastMaxSAIterations = MAX_SA_ITERATIONS;
           outerSALoop: for (let outerSAAttempt = 0; outerSAAttempt < 2; outerSAAttempt++) {
-          // [Fix115] Gate de publicabilidad: si tras todos los reintentos
-          // (incluyendo audit on-demand de WB) el mejor score sigue por
-          // debajo de esto, NO se escribe la novela. El proyecto pasa a
-          // status="awaiting_structural_guidance" y el usuario decide.
-          // Igual al threshold actual para coherencia: si pidieron 7/10
-          // para reintentar, exigimos 7/10 para escribir.
+          // [Fix151][Puerta 6] Umbral ADVISORY: si tras todos los reintentos
+          // (incluyendo audit on-demand de WB) el mejor score sigue por debajo
+          // de esto, ya NO se pausa la novela — el Auditor Estructural es advisory
+          // y se continúa con la mejor escaleta vista (las puertas semánticas
+          // garantizan la calidad). El umbral se mantiene para el criterio de
+          // SALIDA del bucle (seguir reintentando mientras no se alcance) y para
+          // el aviso informativo. Igual al threshold de reintento (7/10).
           // [Fix118] MIN_PUBLISHABLE_SA_SCORE declarado fuera del outer for.
           let bestSA: { data: ParsedWorldBible; score: number; problemsSummary: string; problemas: any[] } | null = null;
           let lastSeenScoreSA = 0;
@@ -3409,7 +3410,7 @@ ${instruccionFinal}
                       projectId: project.id,
                       level: "warning",
                       agentRole: "world-bible-auditor",
-                      message: `[${isChronic ? "Fix116" : "Fix115"}] Audit on-demand ${wbaExternalCount}/${MAX_WBA_EXTERNAL} para "${triggerLabel}" corrió pero NO devolvió feedback_para_arquitecto accionable. Score WB=${wbaR?.puntuacion_global ?? "n/a"}/10. El Arquitecto NO recibirá guidance del WBA para esta dimensión; el bucle SA seguirá con la misma base. Si el bottleneck persiste, considera enriquecer la WB manualmente al final del bucle (gate awaiting_structural_guidance).`,
+                      message: `[${isChronic ? "Fix116" : "Fix115"}] Audit on-demand ${wbaExternalCount}/${MAX_WBA_EXTERNAL} para "${triggerLabel}" corrió pero NO devolvió feedback_para_arquitecto accionable. Score WB=${wbaR?.puntuacion_global ?? "n/a"}/10. El Arquitecto NO recibirá guidance del WBA para esta dimensión; el bucle SA seguirá con la misma base. Si el bottleneck persiste, el Auditor Estructural (advisory desde Fix151) continuará igualmente a la escritura y las puertas semánticas auditarán la calidad real.`,
                       metadata: { fix: isChronic ? "Fix116" : "Fix115", area: triggerArea, auditIndex: wbaExternalCount, auditMax: MAX_WBA_EXTERNAL, wbaScore: wbaR?.puntuacion_global ?? null, reason: "no_actionable_feedback" },
                     });
                   } catch {}
@@ -3623,7 +3624,7 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
               projectId: project.id,
               level: "info",
               agentRole: "architect",
-              message: `[Fix118${scoreOkButCriticalKO ? "/Fix143-B" : ""}] Auto-guidance mecánica generada desde los ${finalAuditForGuidance.problemas.length} problemas residuales (best ${bestSAOverall.score}/10 ${scoreOkButCriticalKO ? `≥ ${MIN_PUBLISHABLE_SA_SCORE}/10 pero con dimensión crítica de segunda mitad KO: ${bestCriticalKODimsLoop.join(", ")}` : `< ${MIN_PUBLISHABLE_SA_SCORE}/10`}). Reintentando el bucle SA UNA vez más con las correcciones mecánicas inyectadas en architectInstructions antes de activar el gate human-in-the-loop.`,
+              message: `[Fix118${scoreOkButCriticalKO ? "/Fix143-B" : ""}] Auto-guidance mecánica generada desde los ${finalAuditForGuidance.problemas.length} problemas residuales (best ${bestSAOverall.score}/10 ${scoreOkButCriticalKO ? `≥ ${MIN_PUBLISHABLE_SA_SCORE}/10 pero con dimensión crítica de segunda mitad KO: ${bestCriticalKODimsLoop.join(", ")}` : `< ${MIN_PUBLISHABLE_SA_SCORE}/10`}). Reintentando el bucle SA UNA vez más con las correcciones mecánicas inyectadas en architectInstructions antes de pasar el Auditor Estructural a modo advisory (Fix151).`,
               metadata: {
                 fix: "Fix118",
                 bestScore: bestSAOverall.score,
@@ -3640,20 +3641,23 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
           } // ← cierre del outer for [Fix118]
 
           // ═══════════════════════════════════════════════════════════════
-          // [Fix115] GATE DE PUBLICABILIDAD ESTRUCTURAL — human-in-the-loop
+          // [Fix151][Puerta 6] GATE ESTRUCTURAL DEGRADADO A ADVISORY (autónomo)
           // ═══════════════════════════════════════════════════════════════
-          // Si tras todo el bucle SA (incluyendo audit on-demand de WB) el
-          // mejor score sigue por debajo del mínimo publicable, NO escribimos
-          // la novela sobre una escaleta defectuosa. En vez de abortar
-          // (status="error" deja al usuario sin novela y sin recurso), el
-          // proyecto pasa a "awaiting_structural_guidance": persistimos el
-          // snapshot del bestSA + los problemas residuales en
-          // `pendingStructuralGuidance` y la UI muestra un panel con
-          // textarea donde el usuario da guidance manual al Arquitecto
-          // ("mueve el reveal del traidor al cap 18", "elimina el subplot
-          // de X"). El endpoint POST /api/projects/:id/structural-guidance
-          // reanuda la generación reusando el snapshot vía Fix106 y pasando
-          // la guidance del usuario al Arquitecto.
+          // Cierre del rediseño de calidad 100% AUTÓNOMO. Antes (Fix115), si tras
+          // todo el bucle SA el mejor score seguía por debajo del mínimo publicable
+          // (o una dimensión crítica de segunda mitad quedaba KO), el proyecto se
+          // pausaba en "awaiting_structural_guidance" esperando guidance MANUAL del
+          // usuario desde un panel de la UI. Eso contradice el objetivo del rediseño
+          // (el usuario NO técnico no lee ni corrige escaletas internas) y causaba
+          // atascos de horas por FALSOS negativos del detector determinista (mide
+          // tokens/etiquetas, no la SEMÁNTICA de la historia). Ahora la CALIDAD REAL
+          // la garantizan las puertas SEMÁNTICAS: P1 (agencia del plan, durante la
+          // escaleta), P4 (agencia en la prosa escrita) y P5 (lectura final por ejes
+          // de la novela completa). El Auditor Estructural pasa a ADVISORY: sigue
+          // eligiendo su MEJOR escaleta e informa los problemas residuales, pero
+          // NUNCA bloquea ni espera a un humano. (La ruta de resume del endpoint
+          // POST /api/projects/:id/structural-guidance se conserva por compatibilidad
+          // para proyectos que ya quedaron atascados antes de este cambio.)
           const finalSAScore = bestSAOverall?.score ?? lastSeenScoreSAOverall;
           // [Fix143-B] Auditamos el best UNA vez y comprobamos también el KO de
           // dimensión crítica de segunda mitad: el gate dispara si el agregado no
@@ -3710,45 +3714,27 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
             });
           }
           if (bestSAOverall && finalAudit && (finalSAScore < MIN_PUBLISHABLE_SA_SCORE || gateCriticalKO) && !faChronicSoleBlocker) {
-            // [Fix118] Si ya generamos auto-guidance en la pasada previa y
-            // los problemas siguen, refrescamos la auto-guidance contra los
-            // problemas RESIDUALES de esta última pasada (no los originales).
-            const autoGuidanceForPanel = autoMechanicalGuidanceApplied
-              ? generateMechanicalGuidanceFromProblems(
-                  finalAudit.problemas,
-                  finalSAScore,
-                  MIN_PUBLISHABLE_SA_SCORE,
-                  gateByCriticalKOOnly
-                    ? `La estructura alcanzó ${finalSAScore}/10 en el agregado pero una dimensión CRÍTICA de la segunda mitad sigue KO (${gateCriticalKODims.join(", ")}).`
-                    : undefined,
-                )
-              : "";
-            const pendingPayload = {
-              bestScore: finalSAScore,
-              threshold: MIN_PUBLISHABLE_SA_SCORE,
-              problemas: finalAudit.problemas,
-              resumenAuditor: finalAudit.resumen,
-              worldBibleSnapshot: bestSAOverall.data,
-              savedAt: new Date().toISOString(),
-              iterations: lastMaxSAIterations,
-              wbaExternalRan: lastWbaExternalCount > 0,
-              wbaExternalCount: lastWbaExternalCount,
-              wbaExternalAreas: lastWbaExternalAreas,
-              // [Fix118] auto-guidance pre-rellenada en el panel
-              autoMechanicalGuidance: autoGuidanceForPanel,
-              autoMechanicalGuidanceApplied,
-            };
-            await storage.updateProject(project.id, {
-              status: "awaiting_structural_guidance" as any,
-              pendingStructuralGuidance: pendingPayload as any,
-            } as any);
+            // [Fix151][Puerta 6] Continuamos con la MEJOR escaleta vista
+            // (best-effort anti-regresion). El Auditor Estructural es ADVISORY:
+            // aporta su mejor estructura y un aviso con los problemas residuales,
+            // pero NUNCA bloquea ni espera a un humano (ver bloque de comentario
+            // arriba). La calidad real la garantizan las puertas semanticas.
+            worldBibleData = bestSAOverall.data;
+            const advisoryReason = gateByCriticalKOOnly
+              ? `La estructura alcanzó el mínimo agregado (${finalSAScore}/10 ≥ ${MIN_PUBLISHABLE_SA_SCORE}/10) pero una dimensión crítica de la segunda mitad sigue marcada KO por el detector determinista (${gateCriticalKODims.join(", ")}: acto 2 plano o clímax sin sembrar).`
+              : `La estructura quedó en ${finalSAScore}/10 (< ${MIN_PUBLISHABLE_SA_SCORE}/10 según el detector determinista) tras ${lastMaxSAIterations} iteraciones${lastWbaExternalCount > 0 ? ` + ${lastWbaExternalCount} audit(s) on-demand del Auditor de World Bible` : ""}${autoMechanicalGuidanceApplied ? " + 1 pasada extra con auto-guidance mecánica" : ""}.`;
+            console.warn(
+              `[Orchestrator] [Fix151][Puerta 6] Gate estructural ADVISORY (no bloqueante): ${advisoryReason} Continuamos a generación; las puertas semánticas (agencia del clímax en plan y prosa, y lectura final por ejes) garantizan la calidad real.`
+            );
             await storage.createActivityLog({
               projectId: project.id,
               level: "warning",
               agentRole: "architect",
-              message: `[Fix115${gateByCriticalKOOnly ? "/Fix143-B" : ""}] ${gateByCriticalKOOnly ? `La estructura alcanzó el mínimo agregado (${finalSAScore}/10 ≥ ${MIN_PUBLISHABLE_SA_SCORE}/10) pero una dimensión CRÍTICA de la segunda mitad sigue KO (${gateCriticalKODims.join(", ")}): acto 2 plano o clímax sin sembrar` : `La estructura no alcanzó el mínimo publicable (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10)`} tras ${lastMaxSAIterations} iteraciones${lastWbaExternalCount > 0 ? ` + ${lastWbaExternalCount} audit(s) on-demand del Auditor de World Bible (Fix115/Fix116)` : ""}${autoMechanicalGuidanceApplied ? " + 1 pasada extra con auto-guidance mecánica (Fix118)" : ""}. NO se escribe la novela sobre una escaleta defectuosa. El proyecto queda pausado en "awaiting_structural_guidance" — abre el panel desde el dashboard para revisar los problemas residuales y dar guidance manual al Arquitecto${autoMechanicalGuidanceApplied ? " (ya hay una propuesta auto-generada pre-rellenada que puedes editar o enviar tal cual)" : ""}.`,
+              message: `[Fix151][Puerta 6] El Auditor Estructural (determinista) dejó la estructura por debajo de su umbral, pero la novela ya NO se pausa esperando guía manual. ${advisoryReason} Se continúa con la mejor escaleta vista; las puertas semánticas posteriores (agencia del clímax en el plan y en la prosa, y lectura final por ejes de la novela completa) auditan y corrigen la calidad real de forma autónoma. Problemas residuales (informativos): ${finalAudit.problemas.length}.`,
               metadata: {
-                fix: gateByCriticalKOOnly ? "Fix143-B" : "Fix115",
+                fix: "Fix151",
+                puerta: 6,
+                advisory: true,
                 finalScore: finalSAScore,
                 threshold: MIN_PUBLISHABLE_SA_SCORE,
                 criticalKODims: gateCriticalKODims,
@@ -3758,13 +3744,21 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
                 wbaExternalAreas: lastWbaExternalAreas,
                 problemasCount: finalAudit.problemas.length,
                 autoMechanicalGuidanceApplied,
-                autoMechanicalGuidanceLength: autoGuidanceForPanel.length,
               },
             });
             try {
-              this.callbacks.onAgentStatus("architect", "idle", gateByCriticalKOOnly ? `Pausado: una dimensión crítica de la segunda mitad sigue KO (${gateCriticalKODims.join(", ")}) pese a un agregado de ${finalSAScore}/10.` : `Pausado: la estructura necesita tu guidance manual (${finalSAScore}/10 < ${MIN_PUBLISHABLE_SA_SCORE}/10).`);
+              this.callbacks.onAgentStatus("architect", "thinking", "Estructura por debajo del umbral del auditor determinista; continuamos (las puertas semánticas garantizan la calidad). Escribiendo la novela...");
             } catch {}
-            return; // NO continuamos al Narrador.
+            // [Fix151][Puerta 6] NO se pausa: seguimos al Lector Beta y al Narrador.
+          } else if (!bestSAOverall) {
+            // [Fix151][Puerta 6] Borde sin "best snapshot": el bucle SA no logró
+            // capturar una mejor escaleta (p. ej. todas las auditorías fallaron o
+            // se abortó). Continuamos con el worldBibleData actual (última salida
+            // válida del Arquitecto) — advisory, nunca bloqueante — y lo dejamos
+            // trazado para diagnóstico.
+            console.warn(
+              `[Orchestrator] [Fix151][Puerta 6] El bucle SA terminó sin "best snapshot" (bestSAOverall=null). Continuamos con la última escaleta válida del Arquitecto; el Auditor Estructural es advisory y las puertas semánticas garantizan la calidad.`
+            );
           }
         }
       } catch (saErr) {
