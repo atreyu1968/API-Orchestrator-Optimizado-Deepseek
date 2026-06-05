@@ -10931,6 +10931,106 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     return rewritten;
   }
 
+  // [Fix158] Brazo de PROSA ultima-milla para el Beta: cuando el editor quirurgico
+  // cap-a-cap toca techo (Beta estancado por debajo de su meta, p.ej. 8/9, mientras
+  // el Holistico YA esta en su meta) y solo regresa, parchear no basta. Aqui se
+  // REESCRIBE la prosa de los capitulos peor valorados por el Beta, atacando lo que
+  // un lector objetivo puntua (voz, inmersion, ritmo de escena, dialogo natural,
+  // mostrar en vez de contar, detalle sensorial, resonancia emocional, quitar
+  // relleno/repeticion) SIN cambiar hechos, trama ni canon. Reutiliza el pipeline
+  // verificado rewriteChapterForQA (cirugia -> Narrador + verificacion + revert por
+  // capitulo). One-shot, acotado. Devuelve cuantos capitulos toco.
+  private async runBetaProseLastMileRewrite(
+    project: Project,
+    betaNotes: string,
+    holisticNotes: string,
+  ): Promise<number> {
+    // 1) Solo actuamos sobre capitulos que el Beta ancla explicitamente. Sin
+    //    capitulos anclados no hay objetivo fiable de prosa -> no-op (seguro).
+    const flaggedSet = extractFlaggedChapters(betaNotes);
+    if (flaggedSet.size === 0) return 0;
+
+    const worldBible = await storage.getWorldBibleByProject(project.id);
+    if (!worldBible) return 0;
+    const worldBibleData = this.reconstructWorldBibleData(worldBible, project);
+    const allChapters = await storage.getChaptersByProject(project.id);
+    const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
+
+    let styleGuideContent = "";
+    if (project.styleGuideId) {
+      const sg = await storage.getStyleGuide(project.styleGuideId);
+      if (sg) styleGuideContent = sg.content;
+    }
+    const guiaEstilo = styleGuideContent
+      ? `Genero: ${project.genre}, Tono: ${project.tone}\n\n--- GUIA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+      : `Genero: ${project.genre}, Tono: ${project.tone}`;
+
+    // 2) Objetivos: capitulos positivos anclados por el Beta, con contenido real.
+    const validTargets = Array.from(flaggedSet)
+      .filter(n => n > 0)
+      .filter(n => {
+        const c = allChapters.find(ch => ch.chapterNumber === n);
+        return !!(c && c.content && c.content.trim().length > 100);
+      })
+      .sort((a, b) => a - b);
+    // Acotar coste: como mucho MAX caps (mas ligero que la puerta estructural).
+    const MAX_BETA_REWRITES = 5;
+    const targets = validTargets.slice(0, MAX_BETA_REWRITES);
+    if (targets.length === 0) return 0;
+
+    await storage.createActivityLog({
+      projectId: project.id,
+      level: "info",
+      agentRole: "editor",
+      message: `[Fix158] Brazo de prosa ultima-milla activado: el Lector Beta sigue por debajo de su meta y el cirujano cap-a-cap toco techo. Reescritura de prosa dirigida de ${targets.length} capitulo(s) peor valorados: ${targets.join(", ")}. Solo cambia el CRAFT (no hechos ni canon).`,
+      metadata: { fix: "Fix158", targets },
+    });
+
+    const betaExcerpt = betaNotes.trim().slice(0, 6000);
+    let rewritten = 0;
+    for (const chapterNum of targets) {
+      if (this.aborted) break;
+      const chapter = allChapters.find(c => c.chapterNumber === chapterNum);
+      const sectionData = allSections.find(s => s.numero === chapterNum);
+      if (!chapter || !sectionData || !chapter.content) continue;
+
+      const instruction = [
+        `REESCRITURA DE PROSA ULTIMA-MILLA — ELEVAR LA CALIDAD QUE PUNTUA EL LECTOR BETA.`,
+        `El Lector Beta valora este capitulo (${this.getSectionLabel(sectionData)}) por debajo de la excelencia. Reescribe la PROSA para que un lector objetivo lo disfrute mas, SIN cambiar los hechos, la trama, las revelaciones ni el World Bible:`,
+        `1. VOZ E INMERSION: profundiza el punto de vista, mete al lector dentro de la escena con percepcion concreta del personaje.`,
+        `2. MOSTRAR EN VEZ DE CONTAR: convierte el resumen y la emocion declarada en accion, gesto, subtexto y detalle sensorial especifico.`,
+        `3. DIALOGO: hazlo natural, con subtexto y voz propia de cada personaje; quita lo expositivo o teatral.`,
+        `4. RITMO DE ESCENA: varia la longitud de frase, tensa los momentos clave y poda el relleno, la repeticion y los adverbios/adjetivos vacios.`,
+        `5. RESONANCIA EMOCIONAL: asegura que la escena deje huella acorde a lo que esta en juego.`,
+        `PROHIBIDO cambiar que pasa, el orden de los hechos, los nombres o el canon: cambia COMO esta contado, no QUE se cuenta. Conserva la longitud aproximada del capitulo.`,
+        ``,
+        `CRITICA DEL LECTOR BETA (contexto del problema):`,
+        betaExcerpt,
+      ].join("\n");
+
+      await this.rewriteChapterForQA(
+        project,
+        chapter,
+        sectionData,
+        worldBibleData,
+        guiaEstilo,
+        "editorial",
+        instruction,
+      );
+      rewritten++;
+    }
+
+    if (rewritten > 0) {
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "success",
+        agentRole: "editor",
+        message: `[Fix158] Reescritura de prosa ultima-milla completada: ${rewritten} capitulo(s). Se vuelve a leer Holistico+Beta; si el combinado empeora, el snapshot del bucle restaura la mejor version (revert por defecto).`,
+      });
+    }
+    return rewritten;
+  }
+
   private async runAutoHolisticReviewLoop(project: Project): Promise<void> {
     // [Fix81] Bucle iterativo Holístico + Beta con TARGET DUAL ESTRICTO:
     //   Beta ≥ 9/10 AND Holístico ≥ 8/10
@@ -10958,6 +11058,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // relectura -> reescritura en cadena. Si tras el rescate sigue sin converger,
     // se acepta la salida normal (convergencia/persistencia para revision manual).
     let structuralRescueDone = false;
+    // [Fix158] One-shot por bucle del brazo de PROSA ultima-milla (Beta). Se dispara
+    // como mucho una vez por run cuando el Beta se atasca por debajo de su meta y el
+    // cirujano cap-a-cap solo regresa; reescribe la prosa de los caps peor valorados.
+    let betaLastMileDone = false;
     // [Fix140] Aviso de regresión para los lectores: si una ronda de correcciones
     // BAJA la nota, restauramos la mejor versión y REINTENTAMOS desde ahí avisando
     // a los lectores (Holístico+Beta) para que sean conservadores y no vuelvan a
@@ -11046,12 +11150,24 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       currentScores: { beta: number | null; holistic: number | null },
       reason: string,
     ): Promise<boolean> => {
-      if (initialHolisticScore === null) return false;
       if (currentScores.beta === null || currentScores.holistic === null) return false;
-      const holisticDelta = currentScores.holistic - initialHolisticScore;
       const betaOk = currentScores.beta >= (TARGET_BETA_SCORE - 1);
-      const holisticImproved = holisticDelta >= 2;
-      if (!betaOk || !holisticImproved) return false;
+      if (!betaOk) return false;
+      // [Fix158] Criterio ABSOLUTO: el Holistico ya esta en su meta absoluta y el
+      // Beta a un punto del target. Antes SOLO se aceptaba por DELTA (Holistico debia
+      // subir +2 desde el inicio), lo que marcaba falsamente como "no convergida" una
+      // novela con el Holistico EN su meta que solo habia subido +1 (p.ej. 6->7 con
+      // meta 7). Lo que importa es el valor absoluto del Holistico, no cuanto subio.
+      const absoluteOk = currentScores.holistic >= TARGET_HOLISTIC_SCORE;
+      // Criterio por DELTA (mejora grande aunque no llegue al absoluto del Holistico).
+      const holisticDelta = initialHolisticScore !== null
+        ? currentScores.holistic - initialHolisticScore
+        : 0;
+      const deltaOk = initialHolisticScore !== null && holisticDelta >= 2;
+      if (!absoluteOk && !deltaOk) return false;
+      const criterionNote = absoluteOk
+        ? `El Holistico alcanzo su meta absoluta (${currentScores.holistic} >= ${TARGET_HOLISTIC_SCORE}) y el Beta esta a un punto del target (${currentScores.beta} >= ${TARGET_BETA_SCORE - 1}).`
+        : `El Holistico subio de ${initialHolisticScore} -> ${currentScores.holistic} (+${holisticDelta}) y el Beta esta a un punto del target (${currentScores.beta} >= ${TARGET_BETA_SCORE - 1}).`;
       // Restaurar el mejor snapshot si lo tenemos y es ≥ la versión actual
       // por combined score (Fix81 ya garantiza que bestSnapshot es la mejor
       // combinación vista; restaurar es no-op si la iter actual ES la mejor).
@@ -11067,13 +11183,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       await storage.createActivityLog({
         projectId: project.id,
         level: "success",
-        message: `[Fix89] CONVERGENCIA ACEPTABLE en iter ${iter} (${reason}). Holístico subió de ${initialHolisticScore} → ${currentScores.holistic} (+${holisticDelta}) y Beta=${currentScores.beta} (≥${TARGET_BETA_SCORE - 1}). El target dual estricto (Beta≥${TARGET_BETA_SCORE} AND Holístico≥${TARGET_HOLISTIC_SCORE}) no se alcanzó porque las críticas restantes son estructurales no aplicables por el cirujano cap-a-cap (ver acciones administrativas pendientes).${restoreNote} Ejecutando corrección ortotipográfica final sobre la mejor versión.`,
+        message: `[Fix89/Fix158] METAS DE PULIDO ALCANZADAS (criterio aceptable) en iter ${iter} (${reason}). ${criterionNote} La novela ya fue aprobada por el Revisor Final (9+/10); el loop Holistico+Beta es el pulido final y queda cerrado con exito sobre la mejor version.${restoreNote} Ejecutando correccion ortotipografica final.`,
         agentRole: "editor",
       });
       await this.runOrthotypographicPassAndUpdate(currentProject);
       this.callbacks.onAutoReviewReady?.({
         count: 0,
-        resumen: `Convergencia aceptable: Beta=${currentScores.beta}, Holístico=${currentScores.holistic} (Δ+${holisticDelta} desde inicio).`,
+        resumen: `Metas de pulido alcanzadas: Beta=${currentScores.beta}, Holistico=${currentScores.holistic}.`,
       });
       return true;
     };
@@ -11116,7 +11232,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     try {
       await storage.createActivityLog({
         projectId: project.id, level: "info",
-        message: `[Fix81] Auto-revisión Holístico+Beta iniciada (target DUAL: Beta ≥ ${TARGET_BETA_SCORE}/10 AND Holístico ≥ ${TARGET_HOLISTIC_SCORE}/10, máx ${MAX_ITERATIONS} iteraciones). [Fix89] Salida adicional por convergencia aceptable si Holístico sube ≥+2 desde inicio y Beta≥${TARGET_BETA_SCORE - 1}.`,
+        message: `[Fix81] Auto-revisión Holístico+Beta iniciada (target DUAL: Beta ≥ ${TARGET_BETA_SCORE}/10 AND Holístico ≥ ${TARGET_HOLISTIC_SCORE}/10, máx ${MAX_ITERATIONS} iteraciones). [Fix89/Fix158] Metas aceptables si el Holistico alcanza su meta ABSOLUTA (>=${TARGET_HOLISTIC_SCORE}) O sube >=+2 desde inicio, con Beta>=${TARGET_BETA_SCORE - 1}; + brazo de reescritura de PROSA ultima-milla para empujar el Beta cuando el cirujano cap-a-cap toca techo.`,
         agentRole: "editor",
       });
 
@@ -11288,6 +11404,43 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               });
               continue;
             }
+            // [Fix158] Antes de rendirse: si seguimos atascados con el Holistico EN
+            // su meta absoluta pero el Beta corto, el cirujano cap-a-cap toco techo
+            // (es el patron exacto del run de luna: Beta=8/Holistico=7 oscilando).
+            // Intentamos UNA reescritura de PROSA ultima-milla desde la MEJOR version
+            // (lo unico que sube el Beta de verdad; parchear solo regresa).
+            if (
+              !betaLastMileDone &&
+              bestSnapshot.beta < TARGET_BETA_SCORE &&
+              bestSnapshot.holistic >= TARGET_HOLISTIC_SCORE &&
+              iter < MAX_ITERATIONS
+            ) {
+              betaLastMileDone = true;
+              // Trabajar desde la MEJOR version completa, no desde la regresion actual.
+              await restoreSnapshot(bestSnapshot.chapters);
+              await this.syncHolisticBetaPersistenceToSnapshot(project.id, bestSnapshot);
+              currentProject = (await storage.getProject(project.id)) ?? currentProject;
+              const rewritten = await this.runBetaProseLastMileRewrite(
+                currentProject, bestSnapshot.betaNotes, bestSnapshot.holisticNotes,
+              );
+              if (rewritten > 0 && !this.aborted) {
+                consecutiveNonImproving = 0;
+                prevBetaScore = bestSnapshot.beta;
+                prevHolisticScore = bestSnapshot.holistic;
+                regressionAwareness = `Tras varias rondas de parcheo cap-a-cap sin superar la mejor version (Beta=${bestSnapshot.beta}/Holistico=${bestSnapshot.holistic}), se reescribio la PROSA de los capitulos peor valorados por el Beta para empujar la calidad. La estas releyendo ahora.`;
+                currentProject = (await storage.getProject(project.id)) ?? currentProject;
+                continue;
+              }
+            }
+            // [Fix158] Si en valor ABSOLUTO las metas ya estan (Holistico>=meta y
+            // Beta>=meta-1), cerrar como METAS ALCANZADAS (exito) sobre la mejor
+            // version, no como "no alcanzado". Pasamos los scores del mejor snapshot.
+            if (await tryAcceptableConvergenceExit(
+              { beta: bestSnapshot.beta, holistic: bestSnapshot.holistic },
+              "el cirujano cap-a-cap toco techo; mejor version estable",
+            )) {
+              return;
+            }
             // [Fix157] Agotado el presupuesto (iteraciones o rondas sin avance):
             // cerramos en modo ADVISORY ejecutando la ortotipografica sobre la mejor
             // version, sin dejar el manuscrito "no aprobado" (antes solo se persistia).
@@ -11436,6 +11589,16 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               continue;
             }
           }
+          // [Fix158] Si el Beta sigue por debajo de su meta, reescribimos la PROSA
+          // de los capitulos peor valorados (lo que el parcheo cap-a-cap no logra).
+          if (!betaLastMileDone && betaScore !== null && betaScore < TARGET_BETA_SCORE) {
+            betaLastMileDone = true;
+            const rewritten = await this.runBetaProseLastMileRewrite(currentProject, betaNotes, holisticNotes);
+            if (rewritten > 0 && !this.aborted) {
+              currentProject = (await storage.getProject(project.id)) ?? currentProject;
+              continue;
+            }
+          }
           // [Fix89] Antes de salir como "sin target alcanzado", probamos la
           // salida por convergencia aceptable. Es el caso típico tras Fix87:
           // el Holístico solo emite estructurales no aplicables que se rutan
@@ -11477,6 +11640,17 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             structuralRescueDone = true;
             const rescued = await this.runStructuralSecondHalfRescue(currentProject, holisticNotes, betaNotes);
             if (rescued > 0 && !this.aborted) {
+              stalledIterations = 0;
+              currentProject = (await storage.getProject(project.id)) ?? currentProject;
+              continue;
+            }
+          }
+          // [Fix158] Estancamiento con el Beta corto: el cirujano toco techo.
+          // Reescribimos la PROSA de los caps peor valorados por el Beta.
+          if (!betaLastMileDone && betaScore !== null && betaScore < TARGET_BETA_SCORE) {
+            betaLastMileDone = true;
+            const rewritten = await this.runBetaProseLastMileRewrite(currentProject, betaNotes, holisticNotes);
+            if (rewritten > 0 && !this.aborted) {
               stalledIterations = 0;
               currentProject = (await storage.getProject(project.id)) ?? currentProject;
               continue;
