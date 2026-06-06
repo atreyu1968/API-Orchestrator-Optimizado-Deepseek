@@ -11150,6 +11150,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       currentScores: { beta: number | null; holistic: number | null },
       reason: string,
     ): Promise<boolean> => {
+      // [Fix158] Guard advisory: no cerrar (ni ejecutar ortho) si fuimos abortados.
+      if (this.aborted) return false;
       if (currentScores.beta === null || currentScores.holistic === null) return false;
       const betaOk = currentScores.beta >= (TARGET_BETA_SCORE - 1);
       if (!betaOk) return false;
@@ -11208,6 +11210,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       source: string,
       reason: string,
     ): Promise<void> => {
+      // [Fix158] Guard advisory: si el orquestador fue abortado (proceso reemplazado/
+      // matado), NO escribimos nada tardio (restore/persist/ortho). El cierre limpio
+      // ya quedo cubierto; cualquier write post-abort seria una escritura huerfana.
+      if (this.aborted) return;
       let restoreNote = "";
       if (bestSnapshot) {
         const r = await restoreSnapshot(bestSnapshot.chapters);
@@ -11237,6 +11243,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       });
 
       while (iter < MAX_ITERATIONS) {
+        // [Fix158] Checkpoint duro: si el orquestador fue abortado, salimos limpio
+        // sin disparar mas lecturas/reescrituras ni cierres con escritura.
+        if (this.aborted) return;
         iter++;
 
         // Chequeo de cancelación entre iteraciones — si el usuario archivó/canceló
@@ -11413,23 +11422,31 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               !betaLastMileDone &&
               bestSnapshot.beta < TARGET_BETA_SCORE &&
               bestSnapshot.holistic >= TARGET_HOLISTIC_SCORE &&
-              iter < MAX_ITERATIONS
+              iter < MAX_ITERATIONS &&
+              !this.aborted
             ) {
               betaLastMileDone = true;
-              // Trabajar desde la MEJOR version completa, no desde la regresion actual.
-              await restoreSnapshot(bestSnapshot.chapters);
-              await this.syncHolisticBetaPersistenceToSnapshot(project.id, bestSnapshot);
-              currentProject = (await storage.getProject(project.id)) ?? currentProject;
-              const rewritten = await this.runBetaProseLastMileRewrite(
-                currentProject, bestSnapshot.betaNotes, bestSnapshot.holisticNotes,
-              );
-              if (rewritten > 0 && !this.aborted) {
-                consecutiveNonImproving = 0;
-                prevBetaScore = bestSnapshot.beta;
-                prevHolisticScore = bestSnapshot.holistic;
-                regressionAwareness = `Tras varias rondas de parcheo cap-a-cap sin superar la mejor version (Beta=${bestSnapshot.beta}/Holistico=${bestSnapshot.holistic}), se reescribio la PROSA de los capitulos peor valorados por el Beta para empujar la calidad. La estas releyendo ahora.`;
+              // [Fix158] try/catch local: si restore/reescritura lanza, degradamos al
+              // cierre advisory de ESTA rama (finalizeAdvisoryWithOrtho mas abajo) en
+              // vez de caer al catch global, que solo loguea y rompe el cierre advisory.
+              try {
+                // Trabajar desde la MEJOR version completa, no desde la regresion actual.
+                await restoreSnapshot(bestSnapshot.chapters);
+                await this.syncHolisticBetaPersistenceToSnapshot(project.id, bestSnapshot);
                 currentProject = (await storage.getProject(project.id)) ?? currentProject;
-                continue;
+                const rewritten = await this.runBetaProseLastMileRewrite(
+                  currentProject, bestSnapshot.betaNotes, bestSnapshot.holisticNotes,
+                );
+                if (rewritten > 0 && !this.aborted) {
+                  consecutiveNonImproving = 0;
+                  prevBetaScore = bestSnapshot.beta;
+                  prevHolisticScore = bestSnapshot.holistic;
+                  regressionAwareness = `Tras varias rondas de parcheo cap-a-cap sin superar la mejor version (Beta=${bestSnapshot.beta}/Holistico=${bestSnapshot.holistic}), se reescribio la PROSA de los capitulos peor valorados por el Beta para empujar la calidad. La estas releyendo ahora.`;
+                  currentProject = (await storage.getProject(project.id)) ?? currentProject;
+                  continue;
+                }
+              } catch (lastMileErr) {
+                console.warn(`[Fix158] Brazo de prosa ultima-milla (rama regresion) fallo; se cierra en modo advisory sobre el mejor snapshot. ${lastMileErr instanceof Error ? lastMileErr.message : String(lastMileErr)}`);
               }
             }
             // [Fix158] Si en valor ABSOLUTO las metas ya estan (Holistico>=meta y

@@ -37,3 +37,29 @@ consecutivas sin avance (`consecutiveNonImproving` + tope), resetear el contador
 al guardar un nuevo mejor snapshot, y cerrar advisory cuando lo agota. El contador de
 estancamiento normal (`stalledIterations`) NO cubre la regresión porque la regresión
 hace `continue` antes de llegar a él.
+
+## Aceptación ABSOLUTA vs DELTA + brazo de PROSA última-milla
+
+**Why:** el target dual del pulido (Beta≥9 AND Holístico≥7) casi nunca se clava al
+100%, pero el caso REAL típico es "Holístico EN su meta absoluta y Beta a un punto"
+(p.ej. Beta=8/Holístico=7). Un criterio de salida que solo mira el DELTA del Holístico
+(debe SUBIR ≥+2 desde el inicio) marca falsamente "no convergida" una novela que
+empezó alta y solo subió +1 pero YA está en meta. Lo que importa es el VALOR ABSOLUTO,
+no cuánto subió.
+
+**How to apply:** la salida aceptable debe disparar con `absoluteOk` (cada lector ≥ su
+meta, con tolerancia -1 al Beta) **O** el delta histórico — no solo el delta. El criterio
+absoluto NO debe exigir `initialHolisticScore` (puede no existir si la 1.ª lectura
+falló).
+
+**Why (brazo última-milla):** el cirujano cap-a-cap PARCHEA, no reescribe prosa; cuando
+toca techo con el Beta solo regresa (oscila) y nunca lo sube. Subir el Beta de verdad
+exige REESCRIBIR la prosa (craft) de los capítulos peor valorados.
+
+**How to apply:** brazo `runBetaProseLastMileRewrite` que reescribe SOLO craft
+(voz/ritmo/diálogo/mostrar-no-contar), PROHIBIDO tocar hechos/canon/longitud; objetivos
+= capítulos anclados por el Beta con contenido real; one-shot por run; tope de caps;
+revert-by-default vía el `bestSnapshot` del bucle. Engánchalo en las ramas de ABANDONO
+(sin-instrucciones, estancamiento, regresión-rendición), nunca en el flujo normal, para
+acotar coste. En la rama de regresión, reescribe desde el MEJOR snapshot, no desde la
+versión regresada.
