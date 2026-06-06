@@ -59,7 +59,27 @@ exige REESCRIBIR la prosa (craft) de los capítulos peor valorados.
 **How to apply:** brazo `runBetaProseLastMileRewrite` que reescribe SOLO craft
 (voz/ritmo/diálogo/mostrar-no-contar), PROHIBIDO tocar hechos/canon/longitud; objetivos
 = capítulos anclados por el Beta con contenido real; one-shot por run; tope de caps;
-revert-by-default vía el `bestSnapshot` del bucle. Engánchalo en las ramas de ABANDONO
-(sin-instrucciones, estancamiento, regresión-rendición), nunca en el flujo normal, para
-acotar coste. En la rama de regresión, reescribe desde el MEJOR snapshot, no desde la
-versión regresada.
+revert-by-default vía el `bestSnapshot` del bucle. En la rama de regresión, reescribe
+desde el MEJOR snapshot, no desde la versión regresada.
+
+## Los brazos de reescritura deben alcanzarse desde TODA salida terminal
+
+**Why:** enganchar los brazos de reescritura SOLO en algunas ramas de abandono
+(sin-instrucciones, estancamiento, regresión-rendición) dejó un punto ciego: un run que
+OSCILA (mejora/regresa alternando) resetea `stalledIterations` (al guardar nuevo-best) y
+nunca llega al tope anti-paliza `consecutiveNonImproving`, así que termina saliendo por
+la ruta de "máximo de iteraciones" — que NO tenía gancho — y los brazos NUNCA se
+disparan pese a que un lector seguía corto. (Run real: Holístico tope 6/meta 7, Beta
+tope 8/meta 9, cerrado sin que ningún brazo corriera.)
+
+**How to apply:** centraliza los brazos en un helper único (`tryFinalRescueArms`) que
+dispare el estructural si el Holístico < meta Y/O la prosa si el Beta < meta, y úsalo en
+CADA cierre terminal del bucle, incluido el de máximo de iteraciones — no solo en las
+ramas de abandono. Para poder RE-leer tras reescribir en el cierre por máximo, concede
+una relectura extra ACOTADA más allá de `MAX_ITERATIONS` (var `rescueReadsRemaining` +
+`while (iter < MAX || rescueReadsRemaining > 0)`), pero cierra a la fuerza en esa pasada
+extra (guarda `if (rescueReadsRemaining > 0)` → finalize) y mantén los flags one-shot
+para no re-disparar. No gates artificiales (p.ej. brazo Beta gated a `holistic>=meta`):
+si el cuello de botella es el Holístico, querrás el brazo estructural, no bloquear el de
+prosa. Sin riesgo de bucle infinito: en la pasada extra (iter ya = MAX) todos los
+`continue` internos siguen gateados por `iter<MAX`.

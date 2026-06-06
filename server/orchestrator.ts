@@ -11062,6 +11062,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // como mucho una vez por run cuando el Beta se atasca por debajo de su meta y el
     // cirujano cap-a-cap solo regresa; reescribe la prosa de los caps peor valorados.
     let betaLastMileDone = false;
+    // [Fix159] Relecturas-rescate concedidas mas alla de MAX_ITERATIONS. Cuando el
+    // bucle se agota por maximo de iteraciones (o se rinde por anti-paliza) con un
+    // lector aun corto, disparamos los brazos de REESCRITURA one-shot y concedemos
+    // UNA relectura extra para evaluarlos antes de cerrar. Acotado: como los brazos
+    // son one-shot, a lo sumo añade un par de pasadas extra por run.
+    let rescueReadsRemaining = 0;
     // [Fix140] Aviso de regresión para los lectores: si una ronda de correcciones
     // BAJA la nota, restauramos la mejor versión y REINTENTAMOS desde ahí avisando
     // a los lectores (Holístico+Beta) para que sean conservadores y no vuelvan a
@@ -11235,6 +11241,52 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       await this.runOrthotypographicPassAndUpdate(currentProject);
     };
 
+    // [Fix159] Ultimo recurso de REESCRITURA antes de cerrar el bucle. Cuando el
+    // cirujano cap-a-cap toca techo (parchea pero no sube la nota), los unicos
+    // brazos que mueven a los lectores son los de REESCRITURA. Dispara, one-shot,
+    // el rescate estructural (si el Holistico sigue corto) y/o la prosa ultima-milla
+    // (si el Beta sigue corto) sobre la version vigente. Devuelve true si reescribio
+    // algo. Todo best-effort: jamas lanza (cada brazo en su try/catch); el revert-by-
+    // default lo respalda el snapshot del bucle si el combinado empeora en la relectura.
+    const tryFinalRescueArms = async (
+      scores: { beta: number | null; holistic: number | null },
+      betaNotesSrc: string,
+      holisticNotesSrc: string,
+    ): Promise<boolean> => {
+      if (this.aborted) return false;
+      let fired = false;
+      // Estructural: el Holistico (lector macro) sigue corto -> reescribir el tramo
+      // flojo. El cirujano cap-a-cap no puede tocar problemas estructurales.
+      if (!structuralRescueDone && scores.holistic !== null && scores.holistic < TARGET_HOLISTIC_SCORE) {
+        structuralRescueDone = true;
+        try {
+          const rescued = await this.runStructuralSecondHalfRescue(currentProject, holisticNotesSrc, betaNotesSrc);
+          if (rescued > 0 && !this.aborted) {
+            fired = true;
+            currentProject = (await storage.getProject(project.id)) ?? currentProject;
+          }
+        } catch (e) {
+          console.warn(`[Fix159] rescate estructural fallo: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      // Prosa ultima-milla: el Beta (lector objetivo) sigue corto -> reescribir la
+      // prosa (craft) de los caps peor valorados. Se aplica SOBRE lo que dejo el
+      // brazo estructural (sin restaurar de nuevo), para que ambos sumen.
+      if (!betaLastMileDone && scores.beta !== null && scores.beta < TARGET_BETA_SCORE && !this.aborted) {
+        betaLastMileDone = true;
+        try {
+          const rewritten = await this.runBetaProseLastMileRewrite(currentProject, betaNotesSrc, holisticNotesSrc);
+          if (rewritten > 0 && !this.aborted) {
+            fired = true;
+            currentProject = (await storage.getProject(project.id)) ?? currentProject;
+          }
+        } catch (e) {
+          console.warn(`[Fix159] brazo de prosa ultima-milla fallo: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return fired;
+    };
+
     try {
       await storage.createActivityLog({
         projectId: project.id, level: "info",
@@ -11242,7 +11294,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         agentRole: "editor",
       });
 
-      while (iter < MAX_ITERATIONS) {
+      while (iter < MAX_ITERATIONS || rescueReadsRemaining > 0) {
         // [Fix158] Checkpoint duro: si el orquestador fue abortado, salimos limpio
         // sin disparar mas lecturas/reescrituras ni cierres con escritura.
         if (this.aborted) return;
@@ -11413,40 +11465,37 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               });
               continue;
             }
-            // [Fix158] Antes de rendirse: si seguimos atascados con el Holistico EN
-            // su meta absoluta pero el Beta corto, el cirujano cap-a-cap toco techo
-            // (es el patron exacto del run de luna: Beta=8/Holistico=7 oscilando).
-            // Intentamos UNA reescritura de PROSA ultima-milla desde la MEJOR version
-            // (lo unico que sube el Beta de verdad; parchear solo regresa).
-            if (
-              !betaLastMileDone &&
-              bestSnapshot.beta < TARGET_BETA_SCORE &&
-              bestSnapshot.holistic >= TARGET_HOLISTIC_SCORE &&
-              iter < MAX_ITERATIONS &&
-              !this.aborted
-            ) {
-              betaLastMileDone = true;
-              // [Fix158] try/catch local: si restore/reescritura lanza, degradamos al
-              // cierre advisory de ESTA rama (finalizeAdvisoryWithOrtho mas abajo) en
-              // vez de caer al catch global, que solo loguea y rompe el cierre advisory.
+            // [Fix158/Fix159] Antes de rendirse por anti-paliza: el cirujano cap-a-cap
+            // toco techo (solo oscila). Disparamos los brazos de REESCRITURA one-shot
+            // (estructural si el Holistico < meta, prosa si el Beta < meta) sobre la
+            // MEJOR version y concedemos UNA relectura extra para evaluarlos. Es lo
+            // unico que mueve a los lectores cuando parchear ya no sube la nota. Fix159
+            // amplia el viejo brazo solo-Beta (gated holistic>=meta) a AMBOS brazos sin
+            // ese gate, porque el cuello de botella real del run de luna fue el Holistico.
+            if (rescueReadsRemaining <= 0 && !this.aborted) {
               try {
                 // Trabajar desde la MEJOR version completa, no desde la regresion actual.
                 await restoreSnapshot(bestSnapshot.chapters);
                 await this.syncHolisticBetaPersistenceToSnapshot(project.id, bestSnapshot);
                 currentProject = (await storage.getProject(project.id)) ?? currentProject;
-                const rewritten = await this.runBetaProseLastMileRewrite(
-                  currentProject, bestSnapshot.betaNotes, bestSnapshot.holisticNotes,
+                const fired = await tryFinalRescueArms(
+                  { beta: bestSnapshot.beta, holistic: bestSnapshot.holistic },
+                  bestSnapshot.betaNotes, bestSnapshot.holisticNotes,
                 );
-                if (rewritten > 0 && !this.aborted) {
+                if (fired && !this.aborted) {
+                  rescueReadsRemaining = 1;
                   consecutiveNonImproving = 0;
                   prevBetaScore = bestSnapshot.beta;
                   prevHolisticScore = bestSnapshot.holistic;
-                  regressionAwareness = `Tras varias rondas de parcheo cap-a-cap sin superar la mejor version (Beta=${bestSnapshot.beta}/Holistico=${bestSnapshot.holistic}), se reescribio la PROSA de los capitulos peor valorados por el Beta para empujar la calidad. La estas releyendo ahora.`;
-                  currentProject = (await storage.getProject(project.id)) ?? currentProject;
+                  regressionAwareness = `Tras varias rondas de parcheo cap-a-cap sin superar la mejor version (Beta=${bestSnapshot.beta}/Holistico=${bestSnapshot.holistic}), se REESCRIBIO prosa/estructura de los capitulos peor valorados. La estas releyendo ahora; se conservadora para no romperla.`;
+                  await storage.createActivityLog({
+                    projectId: project.id, level: "info", agentRole: "editor",
+                    message: `[Fix159] Anti-paliza: el parcheo cap-a-cap toco techo (mejor version Beta=${bestSnapshot.beta}/Holistico=${bestSnapshot.holistic}). Se dispararon los brazos de REESCRITURA (estructural si Holistico<${TARGET_HOLISTIC_SCORE} / prosa si Beta<${TARGET_BETA_SCORE}) y se concede UNA relectura extra. Revert-by-default: si empeora, se restaura la mejor version.`,
+                  });
                   continue;
                 }
-              } catch (lastMileErr) {
-                console.warn(`[Fix158] Brazo de prosa ultima-milla (rama regresion) fallo; se cierra en modo advisory sobre el mejor snapshot. ${lastMileErr instanceof Error ? lastMileErr.message : String(lastMileErr)}`);
+              } catch (rescueErr) {
+                console.warn(`[Fix159] Brazos de rescate (rama regresion) fallaron; se cierra advisory sobre el mejor snapshot. ${rescueErr instanceof Error ? rescueErr.message : String(rescueErr)}`);
               }
             }
             // [Fix158] Si en valor ABSOLUTO las metas ya estan (Holistico>=meta y
@@ -11603,6 +11652,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             const rescued = await this.runStructuralSecondHalfRescue(currentProject, holisticNotes, betaNotes);
             if (rescued > 0 && !this.aborted) {
               currentProject = (await storage.getProject(project.id)) ?? currentProject;
+              // [Fix159] Si ya estamos en el maximo, concedemos la relectura-rescate
+              // acotada para no salir del while sin cierre advisory (el bloque max-iter
+              // la consume y cierra). Sin esto, este continue saldria silenciosamente.
+              if (iter >= MAX_ITERATIONS) rescueReadsRemaining = 1;
               continue;
             }
           }
@@ -11613,6 +11666,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             const rewritten = await this.runBetaProseLastMileRewrite(currentProject, betaNotes, holisticNotes);
             if (rewritten > 0 && !this.aborted) {
               currentProject = (await storage.getProject(project.id)) ?? currentProject;
+              // [Fix159] Concede la relectura-rescate acotada si ya estamos en el maximo.
+              if (iter >= MAX_ITERATIONS) rescueReadsRemaining = 1;
               continue;
             }
           }
@@ -11659,6 +11714,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             if (rescued > 0 && !this.aborted) {
               stalledIterations = 0;
               currentProject = (await storage.getProject(project.id)) ?? currentProject;
+              // [Fix159] Concede la relectura-rescate acotada si ya estamos en el maximo.
+              if (iter >= MAX_ITERATIONS) rescueReadsRemaining = 1;
               continue;
             }
           }
@@ -11670,6 +11727,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             if (rewritten > 0 && !this.aborted) {
               stalledIterations = 0;
               currentProject = (await storage.getProject(project.id)) ?? currentProject;
+              // [Fix159] Concede la relectura-rescate acotada si ya estamos en el maximo.
+              if (iter >= MAX_ITERATIONS) rescueReadsRemaining = 1;
               continue;
             }
           }
@@ -11693,14 +11752,63 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         prevBetaScore = betaScore;
         prevHolisticScore = holisticScore;
 
-        // Última iteración: persistimos para revisión manual sin aplicar más.
+        // Última iteración: último recurso de REESCRITURA antes de cerrar.
         if (iter >= MAX_ITERATIONS) {
           // [Fix89] Antes de cerrar por máximo, intentamos convergencia aceptable.
           if (await tryAcceptableConvergenceExit({ beta: betaScore, holistic: holisticScore }, `máximo de iteraciones (${MAX_ITERATIONS}) alcanzado`)) {
             return;
           }
-          // [Fix157] Maximo de iteraciones sin clavar el target de pulido: cerramos
-          // ADVISORY con ortotipografica sobre la mejor version, sin dejarlo "no aprobado".
+          // [Fix159] Si ya gastamos la relectura-rescate concedida, cerramos: los
+          // brazos de reescritura ya se intentaron y no clavaron el target de pulido.
+          if (rescueReadsRemaining > 0) {
+            rescueReadsRemaining = 0;
+            await finalizeAdvisoryWithOrtho(
+              parsed,
+              "auto_holistic_max_iter",
+              `Maximo de iteraciones de pulido alcanzado (${MAX_ITERATIONS}) tras el rescate final de reescritura con ${scoreLabel}; ${instructions.length} sugerencia(s) restante(s).`,
+            );
+            return;
+          }
+          // [Fix159] Primer cruce de max-iter con un lector aun corto: el cirujano
+          // cap-a-cap toco techo sin clavar el target. Trabajamos desde la MEJOR
+          // version y disparamos los brazos de REESCRITURA one-shot (estructural si el
+          // Holistico < meta, prosa si el Beta < meta) y concedemos UNA relectura extra
+          // para evaluarlos antes de cerrar. Es lo unico que mueve a los lectores
+          // cuando parchear ya no sube la nota (este era el GAP del run de luna: el
+          // bucle salia por aqui sin que ningun brazo de reescritura llegara a dispararse).
+          if (!this.aborted) {
+            let baseBeta = betaScore;
+            let baseHolistic = holisticScore;
+            let baseBetaNotes = betaNotes;
+            let baseHolisticNotes = holisticNotes;
+            if (bestSnapshot) {
+              await restoreSnapshot(bestSnapshot.chapters);
+              await this.syncHolisticBetaPersistenceToSnapshot(project.id, bestSnapshot);
+              currentProject = (await storage.getProject(project.id)) ?? currentProject;
+              baseBeta = bestSnapshot.beta;
+              baseHolistic = bestSnapshot.holistic;
+              baseBetaNotes = bestSnapshot.betaNotes;
+              baseHolisticNotes = bestSnapshot.holisticNotes;
+            }
+            const fired = await tryFinalRescueArms(
+              { beta: baseBeta, holistic: baseHolistic },
+              baseBetaNotes,
+              baseHolisticNotes,
+            );
+            if (fired && !this.aborted) {
+              rescueReadsRemaining = 1;
+              prevBetaScore = baseBeta;
+              prevHolisticScore = baseHolistic;
+              regressionAwareness = `Tras agotar el parcheo cap-a-cap sin clavar el target (mejor version Beta=${baseBeta ?? "?"}/Holistico=${baseHolistic ?? "?"}), se REESCRIBIO prosa/estructura de los capitulos peor valorados. La estas releyendo ahora; se conservadora para no romperla.`;
+              await storage.createActivityLog({
+                projectId: project.id, level: "info", agentRole: "editor",
+                message: `[Fix159] Maximo de iteraciones alcanzado con un lector aun corto (${scoreLabel}). Antes de cerrar, se dispararon los brazos de REESCRITURA (estructural si Holistico<${TARGET_HOLISTIC_SCORE} / prosa si Beta<${TARGET_BETA_SCORE}) sobre la mejor version y se concede UNA relectura extra para evaluarlos. Revert-by-default: si el combinado empeora, se restaura la mejor version.`,
+              });
+              continue;
+            }
+          }
+          // [Fix157] Sin rescate efectivo (o abortado): cerramos ADVISORY con
+          // ortotipografica sobre la mejor version, sin dejarlo "no aprobado".
           await finalizeAdvisoryWithOrtho(
             parsed,
             "auto_holistic_max_iter",
@@ -11751,6 +11859,19 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         // Re-cargamos el proyecto para la siguiente iteración.
         const reloaded = await storage.getProject(project.id);
         if (reloaded) currentProject = reloaded;
+      }
+      // [Fix159] Red de seguridad: todos los caminos validos del bucle cierran con
+      // return, asi que llegar aqui (condicion del while agotada) solo puede pasar si
+      // algun continue salio en la ultima iteracion sin conceder relectura-rescate.
+      // Cerramos ADVISORY sobre la mejor version para no dejar el manuscrito sin
+      // ortotipografica ni "no aprobado". Es defensa en profundidad: con los gates
+      // Fix159 anteriores no deberia dispararse nunca.
+      if (!this.aborted) {
+        await finalizeAdvisoryWithOrtho(
+          { resumen_general: "Pulido cerrado por red de seguridad tras agotar el bucle.", instrucciones: [] },
+          "auto_holistic_loop_exhausted",
+          "El bucle de pulido termino sin cierre explicito; se cierra ADVISORY sobre la mejor version.",
+        );
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
