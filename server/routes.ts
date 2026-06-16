@@ -11653,16 +11653,19 @@ CRITERIOS:
     text = text.replace(/^\s*[\*\-–—•·]{3,}\s*$/gm, '');
     text = text.replace(/^\s*(?:[\*\-–—•·]\s*){3,}$/gm, '');
 
-    text = text.replace(/«\s*/g, '"').replace(/\s*»/g, '"');
-    text = text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+    // Remove quotation marks entirely so the voice never reads "comillas".
+    // Keep an apostrophe only when it is glued between two letters.
+    text = text.replace(/[«»“”„‟"]/g, '');
+    text = text.replace(/[‘’]/g, "'");
+    text = text.replace(/'(?![a-zA-ZáéíóúñüÁÉÍÓÚÑÜ])/g, '');
+    text = text.replace(/(?<![a-zA-ZáéíóúñüÁÉÍÓÚÑÜ])'/g, '');
 
-    text = text.replace(/\.{3,}/g, '…');
+    // Suspension points become a short pause, never the lone glyph that some
+    // voices vocalize.
+    text = text.replace(/\s*(?:\.{2,}|…)\s*/g, ', ');
     text = text.replace(/!{2,}/g, '!');
     text = text.replace(/\?{2,}/g, '?');
     text = text.replace(/!\?|\?!/g, '?');
-
-    text = text.replace(/\s*[—–]\s*/g, ', ');
-    text = text.replace(/(\S)\s-\s(\S)/g, '$1, $2');
 
     const abbreviations: Array<[RegExp, string]> = [
       [/\bSr\.\s*/g, 'Señor '],
@@ -11694,19 +11697,51 @@ CRITERIOS:
       text = text.replace(pattern, replacement);
     }
 
+    // All-caps runs (shouting, emphasis, ALL-CAPS chapter titles) make the
+    // model spell them letter by letter. Normalize any run of 2+ uppercase
+    // letters that is not glued to lowercase letters to initial-capital form
+    // (identical pronunciation, no spelling). Runs after the abbreviation pass,
+    // which relies on the original uppercase letters.
+    text = text.replace(
+      /(^|[^A-Za-zÁÉÍÓÚÑÜáéíóúñü])([A-ZÁÉÍÓÚÑÜ]{2,})(?![a-záéíóúñü])/g,
+      (_m, pre: string, word: string) => `${pre}${word.charAt(0)}${word.slice(1).toLowerCase()}`
+    );
+
+    // Spanish dialogue dashes (raya): the opening dash marks a speaker and is
+    // silent; a dash glued to punctuation is dropped; any remaining interrupting
+    // dash becomes a natural comma pause instead of a vocalized symbol.
+    text = text.replace(/^\s*[—–]\s*/gm, '');
+    text = text.replace(/\s*[—–]\s*([.,;:!?])/g, '$1');
+    text = text.replace(/\s*[—–]\s*/g, ', ');
+    text = text.replace(/(\S)\s-\s(\S)/g, '$1, $2');
+
     text = text.replace(/\s*\(\s*/g, ', ').replace(/\s*\)\s*/g, ', ');
     text = text.replace(/\s*\[\s*/g, ', ').replace(/\s*\]\s*/g, ', ');
 
+    // Colons and semicolons are voiced as "dos puntos"/"punto y coma" by some
+    // voices; render them as a comma pause instead (covers the chapter-title
+    // colon, e.g. "Capitulo 1: El inicio"). A colon kept between two digits is
+    // preserved so clock/ratio formats like "10:30" stay intact.
+    text = text.replace(/\s*;\s*/g, ', ');
+    text = text.replace(/\s*:\s*/g, (m, offset: number, str: string) => {
+      const prev = str[offset - 1] || '';
+      const next = str[offset + m.length] || '';
+      if (/\d/.test(prev) && /\d/.test(next)) return m;
+      return ', ';
+    });
+
     text = text.replace(/,\s*,+/g, ',');
-    text = text.replace(/,\s*\./g, '.');
-    text = text.replace(/\s+([,.;:!?…])/g, '$1');
-    text = text.replace(/([.!?…])\s*([a-záéíóúñü])/g, (_m, p, c) => `${p} ${c}`);
+    text = text.replace(/,\s*([.;:!?])/g, '$1');
+    text = text.replace(/([.;:!?])\s*,/g, '$1');
+    text = text.replace(/\s+([,.;:!?])/g, '$1');
+    text = text.replace(/([.!?])\s*([a-záéíóúñü])/gi, (_m, p, c) => `${p} ${c}`);
 
     const paragraphs = text.split(/\n\s*\n/);
     const processed = paragraphs.map(para => {
       let p = para.replace(/[ \t]+/g, ' ').replace(/\n+/g, ' ').trim();
+      p = p.replace(/^[,;:\s]+/, '').replace(/[,;:\s]+$/, '').trim();
       if (!p) return '';
-      if (!/[.!?…"']$/.test(p)) p += '.';
+      if (!/[.!?]$/.test(p)) p += '.';
       return p;
     }).filter(p => p.length > 0);
 
