@@ -11755,6 +11755,128 @@ CRITERIOS:
     fs.mkdirSync(AUDIOBOOKS_DIR, { recursive: true });
   }
 
+  // [Fix161] Helpers compartidos del generador de audiolibros: chunking, llamada a
+  // Fish Audio S2 (s2-pro) con reintentos, y anotacion de expresividad en linea.
+  function chunkTtsText(textContent: string): string[] {
+    const MAX_CHARS = 9500;
+    const textChunks: string[] = [];
+    if (textContent.length <= MAX_CHARS) {
+      textChunks.push(textContent);
+      return textChunks;
+    }
+    const paragraphs = textContent.split(/\n\n+/);
+    let currentChunk = "";
+    for (const para of paragraphs) {
+      const sentences = para.match(/[^.!?]+[.!?]+/g) || [para];
+      for (const sentence of sentences) {
+        if ((currentChunk + sentence).length > MAX_CHARS && currentChunk.length > 0) {
+          textChunks.push(currentChunk.trim());
+          currentChunk = sentence;
+        } else {
+          currentChunk += sentence;
+        }
+      }
+      currentChunk += "\n\n";
+    }
+    if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+    return textChunks;
+  }
+
+  // [Fix161] Umbral minimo de bytes para considerar un audio valido (no truncado/corrupto),
+  // escalado a la longitud del texto: secciones muy cortas (p.ej. "Nota del Autor")
+  // producen audios legitimamente pequenos que el viejo fijo <10000 marcaba como error.
+  function minValidAudioBytes(textLen: number): number {
+    return Math.min(10000, Math.max(1500, textLen * 80));
+  }
+
+  // [Fix161] Genera un chunk de audio con Fish Audio S2 (modelo "s2-pro", seleccionado
+  // por cabecera y cuerpo). Reintenta con backoff+jitter ante fallos transitorios
+  // (red, 429, 5xx, o respuesta de audio sospechosamente pequena). NO reintenta ante
+  // abort ni ante errores no recuperables (4xx distintos de 429).
+  async function fishAudioTtsChunk(opts: {
+    apiKey: string;
+    text: string;
+    voiceId: string;
+    format: string;
+    bitrate: number;
+    speed: number;
+    signal?: AbortSignal;
+  }): Promise<Buffer> {
+    const MAX_ATTEMPTS = 4;
+    const BASE_DELAY_MS = 2000;
+    let lastErr: Error | null = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (opts.signal?.aborted) throw new Error("Generation cancelled");
+      try {
+        const ttsResponse = await fetch("https://api.fish.audio/v1/tts", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${opts.apiKey}`,
+            "Content-Type": "application/json",
+            "model": "s2-pro",
+          },
+          body: JSON.stringify({
+            text: opts.text,
+            reference_id: opts.voiceId,
+            model: "s2-pro",
+            format: opts.format || "mp3",
+            mp3_bitrate: opts.bitrate || 128,
+            prosody: { speed: opts.speed || 1.0, volume: 0 },
+            chunk_length: 200,
+            top_p: 0.7,
+            temperature: 0.65,
+            repetition_penalty: 1.2,
+            latency: "normal",
+          }),
+          signal: opts.signal,
+        });
+
+        if (!ttsResponse.ok) {
+          const errorText = await ttsResponse.text();
+          const retryable = ttsResponse.status === 429 || ttsResponse.status >= 500;
+          const err: any = new Error(`Fish Audio API error (${ttsResponse.status}): ${errorText}`);
+          if (!retryable) err.noRetry = true;
+          throw err;
+        }
+
+        const chunkBuffer = Buffer.from(await ttsResponse.arrayBuffer());
+        if (chunkBuffer.length < 1000) {
+          const possibleError = chunkBuffer.toString("utf-8").substring(0, 200);
+          throw new Error(`Fish Audio returned invalid audio (${chunkBuffer.length} bytes). Response: ${possibleError}`);
+        }
+        return chunkBuffer;
+      } catch (error: any) {
+        if (opts.signal?.aborted || error?.name === "AbortError" || error?.message === "Generation cancelled") {
+          throw error;
+        }
+        if (error?.noRetry) throw error;
+        lastErr = error as Error;
+        if (attempt >= MAX_ATTEMPTS) throw lastErr;
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 500);
+        console.log(`[Audiobook] TTS chunk transient failure (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${delay}ms: ${lastErr?.message || "unknown"}`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    throw lastErr || new Error("Fish Audio TTS failed after retries");
+  }
+
+  // [Fix161] Anotacion de expresividad en linea para S2: inserta etiquetas [..] sin
+  // alterar la prosa. Corre DESPUES de prepareTtsText (sobre texto ya limpio), de modo
+  // que la limpieza no destruye los corchetes. Si el agente falla, devuelve el texto
+  // limpio sin etiquetas (advisory: nunca bloquea ni cambia las palabras del autor).
+  async function annotateTtsExpression(cleanText: string, projectId: number): Promise<{ text: string; applied: number }> {
+    try {
+      const { TtsExpressionTaggerAgent } = await import("./agents/tts-expression-tagger");
+      const tagger = new TtsExpressionTaggerAgent();
+      const result = await tagger.tag({ text: cleanText, projectId });
+      const text = result.taggedText && result.taggedText.trim() ? result.taggedText : cleanText;
+      return { text, applied: result.tagsApplied || 0 };
+    } catch (error: any) {
+      console.error(`[Audiobook] Expression tagging failed (using plain text): ${error?.message || error}`);
+      return { text: cleanText, applied: 0 };
+    }
+  }
+
   app.get("/api/audiobooks", async (_req: Request, res: Response) => {
     try {
       const projects = await storage.getAllAudiobookProjects();
@@ -12030,7 +12152,7 @@ CRITERIOS:
           const audioPath = path.join(projectDir, chapter.audioFileName);
           if (fs.existsSync(audioPath)) {
             const fileStats = fs.statSync(audioPath);
-            if (fileStats.size > 10000) {
+            if (fileStats.size >= minValidAudioBytes((chapter.textContent || "").length)) {
               return "skipped";
             }
             console.log(`[Audiobook] Project ${projectId}: Chapter ${chapter.chapterNumber} has tiny audio (${fileStats.size} bytes), regenerating...`);
@@ -12053,68 +12175,33 @@ CRITERIOS:
         }
 
         const rawText = `${chapterAnnouncement}\n\n\n${chapter.textContent}`;
-        const textContent = prepareTtsText(rawText);
-        const MAX_CHARS = 9500;
-        const textChunks: string[] = [];
-        if (textContent.length <= MAX_CHARS) {
-          textChunks.push(textContent);
-        } else {
-          const paragraphs = textContent.split(/\n\n+/);
-          let currentChunk = '';
-          for (const para of paragraphs) {
-            const sentences = para.match(/[^.!?]+[.!?]+/g) || [para];
-            for (const sentence of sentences) {
-              if ((currentChunk + sentence).length > MAX_CHARS && currentChunk.length > 0) {
-                textChunks.push(currentChunk.trim());
-                currentChunk = sentence;
-              } else {
-                currentChunk += sentence;
-              }
-            }
-            currentChunk += "\n\n";
-          }
-          if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+        const cleanText = prepareTtsText(rawText);
+        const annotated = await annotateTtsExpression(cleanText, projectId);
+        const textForTts = annotated.text;
+        if (annotated.applied > 0) {
+          console.log(`[Audiobook] Project ${projectId}: Chapter ${chapter.chapterNumber} S2 expressive tags applied: ${annotated.applied}`);
         }
+        const textChunks = chunkTtsText(textForTts);
 
         const audioBuffers: Buffer[] = [];
         for (const chunk of textChunks) {
           if (ctrl.signal.aborted) throw new Error("Generation cancelled");
-          const ttsResponse = await fetch("https://api.fish.audio/v1/tts", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              text: chunk,
-              reference_id: proj.voiceId,
-              model: "speech-1.6",
-              format: proj.format || "mp3",
-              mp3_bitrate: proj.bitrate || 128,
-              prosody: { speed: proj.speed || 1.0, volume: 0 },
-              chunk_length: 200,
-              top_p: 0.7,
-              temperature: 0.65,
-              repetition_penalty: 1.2,
-              latency: "normal",
-            }),
+          const chunkBuffer = await fishAudioTtsChunk({
+            apiKey: apiKey!,
+            text: chunk,
+            voiceId: proj.voiceId,
+            format: proj.format || "mp3",
+            bitrate: proj.bitrate || 128,
+            speed: proj.speed || 1.0,
             signal: ctrl.signal,
           });
-          if (!ttsResponse.ok) {
-            const errorText = await ttsResponse.text();
-            throw new Error(`Fish Audio API error (${ttsResponse.status}): ${errorText}`);
-          }
-          const chunkBuffer = Buffer.from(await ttsResponse.arrayBuffer());
-          if (chunkBuffer.length < 1000) {
-            const possibleError = chunkBuffer.toString('utf-8').substring(0, 200);
-            throw new Error(`Fish Audio returned invalid audio (${chunkBuffer.length} bytes). Response: ${possibleError}`);
-          }
           audioBuffers.push(chunkBuffer);
         }
 
         const finalAudio = Buffer.concat(audioBuffers);
-        if (finalAudio.length < 10000) {
-          throw new Error(`Generated audio too small (${finalAudio.length} bytes) — likely invalid. Expected at least 10KB for a chapter.`);
+        const minBytes = minValidAudioBytes(textForTts.length);
+        if (finalAudio.length < minBytes) {
+          throw new Error(`Generated audio too small (${finalAudio.length} bytes, expected >= ${minBytes}) — likely invalid.`);
         }
         const audioFilename = `chapter_${String(chapter.chapterNumber).padStart(3, '0')}.${proj.format || 'mp3'}`;
         fs.writeFileSync(path.join(projectDir, audioFilename), finalAudio);
@@ -12265,29 +12352,13 @@ CRITERIOS:
           }
 
           const rawText = `${chapterAnnouncement}\n\n\n${chapter.textContent}`;
-          const textContent = prepareTtsText(rawText);
-
-          const MAX_CHARS = 9500;
-          const textChunks: string[] = [];
-          if (textContent.length <= MAX_CHARS) {
-            textChunks.push(textContent);
-          } else {
-            const paragraphs = textContent.split(/\n\n+/);
-            let currentChunk = '';
-            for (const para of paragraphs) {
-              const sentences = para.match(/[^.!?]+[.!?]+/g) || [para];
-              for (const sentence of sentences) {
-                if ((currentChunk + sentence).length > MAX_CHARS && currentChunk.length > 0) {
-                  textChunks.push(currentChunk.trim());
-                  currentChunk = sentence;
-                } else {
-                  currentChunk += sentence;
-                }
-              }
-              currentChunk += "\n\n";
-            }
-            if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+          const cleanText = prepareTtsText(rawText);
+          const annotated = await annotateTtsExpression(cleanText, projectId);
+          const textForTts = annotated.text;
+          if (annotated.applied > 0) {
+            console.log(`[Audiobook] Project ${projectId}: Chapter ${chapter.chapterNumber} S2 expressive tags applied: ${annotated.applied}`);
           }
+          const textChunks = chunkTtsText(textForTts);
 
           console.log(`[Audiobook] Project ${projectId}: Generating chapter ${chapter.chapterNumber} (${textChunks.length} chunks)...`);
 
@@ -12295,43 +12366,21 @@ CRITERIOS:
           for (let ci = 0; ci < textChunks.length; ci++) {
             const chunk = textChunks[ci];
             console.log(`[Audiobook] Project ${projectId}: Chapter ${chapter.chapterNumber} — chunk ${ci + 1}/${textChunks.length}`);
-            const ttsResponse = await fetch("https://api.fish.audio/v1/tts", {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                text: chunk,
-                reference_id: project.voiceId,
-                model: "speech-1.6",
-                format: project.format || "mp3",
-                mp3_bitrate: project.bitrate || 128,
-                prosody: { speed: project.speed || 1.0, volume: 0 },
-                chunk_length: 200,
-                top_p: 0.7,
-                temperature: 0.65,
-                repetition_penalty: 1.2,
-                latency: "normal",
-              }),
+            const chunkBuffer = await fishAudioTtsChunk({
+              apiKey: apiKey!,
+              text: chunk,
+              voiceId: project.voiceId,
+              format: project.format || "mp3",
+              bitrate: project.bitrate || 128,
+              speed: project.speed || 1.0,
             });
-
-            if (!ttsResponse.ok) {
-              const errorText = await ttsResponse.text();
-              throw new Error(`Fish Audio API error (${ttsResponse.status}): ${errorText}`);
-            }
-
-            const chunkBuffer = Buffer.from(await ttsResponse.arrayBuffer());
-            if (chunkBuffer.length < 1000) {
-              const possibleError = chunkBuffer.toString('utf-8').substring(0, 200);
-              throw new Error(`Fish Audio returned invalid audio (${chunkBuffer.length} bytes). Response: ${possibleError}`);
-            }
             audioBuffers.push(chunkBuffer);
           }
 
           const finalAudio = Buffer.concat(audioBuffers);
-          if (finalAudio.length < 10000) {
-            throw new Error(`Generated audio too small (${finalAudio.length} bytes) — likely invalid. Expected at least 10KB for a chapter.`);
+          const minBytes = minValidAudioBytes(textForTts.length);
+          if (finalAudio.length < minBytes) {
+            throw new Error(`Generated audio too small (${finalAudio.length} bytes, expected >= ${minBytes}) — likely invalid.`);
           }
           const projectDir = path.join(AUDIOBOOKS_DIR, `project_${projectId}`);
           if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
@@ -12346,7 +12395,7 @@ CRITERIOS:
           });
 
           const allChapters = await storage.getAudiobookChaptersByProject(projectId);
-          const completed = allChapters.filter(c => c.status === "completed" && (c.audioSizeBytes ?? 0) > 10000).length;
+          const completed = allChapters.filter(c => c.status === "completed" && (c.audioSizeBytes ?? 0) >= minValidAudioBytes((c.textContent || "").length)).length;
           const hasErrors = allChapters.some(c => c.status === "error");
           const allDone = allChapters.every(c => c.status === "completed" || c.status === "error");
           const projectStatus = allDone

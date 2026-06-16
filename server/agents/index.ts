@@ -25,6 +25,8 @@ export { FinalAxisReaderAgent, type FinalAxisReaderResult, type FinalAxisProblem
 export { Act2PacingEditorAgent, type Act2PacingEditorResult, type Act2Problem, type Act2ProblemType } from "./act2-pacing-editor";
 // [Fix150][Puerta 0] Director Creativo: forja el concepto rector antes de generar.
 export { ConceptForgeAgent, type ConceptForgeResult, type ConceptForgeInput } from "./concept-forge";
+// [Fix161] Director de Doblaje: anota expresividad en linea (Fish Audio S2) para audiolibros.
+export { TtsExpressionTaggerAgent, type ExpressionTagEntry, type ExpressionTaggerInput, type ExpressionTaggerOutput } from "./tts-expression-tagger";
 export { HolisticReviewerAgent, type HolisticReviewerResult } from "./holistic-reviewer";
 export { BetaReaderAgent, type BetaReaderResult } from "./beta-reader";
 export { OutlineBetaReaderAgent, type OutlineBetaReaderResult, type OutlineBetaProblem, type OutlineBetaProblemType } from "./outline-beta-reader";
