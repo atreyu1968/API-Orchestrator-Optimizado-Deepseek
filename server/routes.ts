@@ -11789,6 +11789,18 @@ CRITERIOS:
     return Math.min(10000, Math.max(1500, textLen * 80));
   }
 
+  // [Fix162] Narra el titulo del capitulo COMO titulo, no como texto corrido. El
+  // anuncio se construye con punto (no dos puntos) entre la clase ("Capitulo N",
+  // "Prologo"...) y el titulo, de modo que prepareTtsText los deja como DOS frases
+  // (entonacion de titulo) en vez de fundirlos con una coma. Ademas se anade una
+  // pausa S2 ([pausa larga]) DESPUES de limpiar (prepareTtsText convierte los
+  // corchetes en comas) para separar el titulo de la prosa. "" si no hay anuncio.
+  function buildSpokenChapterTitle(announcement: string): string {
+    const cleaned = prepareTtsText(announcement);
+    if (!cleaned) return "";
+    return `${cleaned} [pausa larga]`;
+  }
+
   // [Fix161] Genera un chunk de audio con Fish Audio S2 (modelo "s2-pro", seleccionado
   // por cabecera y cuerpo). Reintenta con backoff+jitter ante fallos transitorios
   // (red, 429, 5xx, o respuesta de audio sospechosamente pequena). NO reintenta ante
@@ -12163,21 +12175,21 @@ CRITERIOS:
 
         let chapterAnnouncement = "";
         if (chapter.chapterNumber === 0) {
-          chapterAnnouncement = chapter.chapterTitle ? `Prólogo: ${chapter.chapterTitle}` : "Prólogo";
+          chapterAnnouncement = chapter.chapterTitle ? `Prólogo. ${chapter.chapterTitle}` : "Prólogo";
         } else if (chapter.chapterNumber === -1) {
-          chapterAnnouncement = chapter.chapterTitle ? `Epílogo: ${chapter.chapterTitle}` : "Epílogo";
+          chapterAnnouncement = chapter.chapterTitle ? `Epílogo. ${chapter.chapterTitle}` : "Epílogo";
         } else if (chapter.chapterNumber === -2) {
-          chapterAnnouncement = chapter.chapterTitle ? `Nota del Autor: ${chapter.chapterTitle}` : "Nota del Autor";
+          chapterAnnouncement = chapter.chapterTitle ? `Nota del Autor. ${chapter.chapterTitle}` : "Nota del Autor";
         } else {
           chapterAnnouncement = chapter.chapterTitle
-            ? `Capítulo ${chapter.chapterNumber}: ${chapter.chapterTitle}`
+            ? `Capítulo ${chapter.chapterNumber}. ${chapter.chapterTitle}`
             : `Capítulo ${chapter.chapterNumber}`;
         }
 
-        const rawText = `${chapterAnnouncement}\n\n\n${chapter.textContent}`;
-        const cleanText = prepareTtsText(rawText);
-        const annotated = await annotateTtsExpression(cleanText, projectId);
-        const textForTts = annotated.text;
+        const spokenTitle = buildSpokenChapterTitle(chapterAnnouncement);
+        const cleanBody = prepareTtsText(chapter.textContent);
+        const annotated = await annotateTtsExpression(cleanBody, projectId);
+        const textForTts = spokenTitle ? `${spokenTitle}\n\n${annotated.text}` : annotated.text;
         if (annotated.applied > 0) {
           console.log(`[Audiobook] Project ${projectId}: Chapter ${chapter.chapterNumber} S2 expressive tags applied: ${annotated.applied}`);
         }
@@ -12340,21 +12352,21 @@ CRITERIOS:
         try {
           let chapterAnnouncement = "";
           if (chapter.chapterNumber === 0) {
-            chapterAnnouncement = chapter.chapterTitle ? `Prólogo: ${chapter.chapterTitle}` : "Prólogo";
+            chapterAnnouncement = chapter.chapterTitle ? `Prólogo. ${chapter.chapterTitle}` : "Prólogo";
           } else if (chapter.chapterNumber === -1) {
-            chapterAnnouncement = chapter.chapterTitle ? `Epílogo: ${chapter.chapterTitle}` : "Epílogo";
+            chapterAnnouncement = chapter.chapterTitle ? `Epílogo. ${chapter.chapterTitle}` : "Epílogo";
           } else if (chapter.chapterNumber === -2) {
-            chapterAnnouncement = chapter.chapterTitle ? `Nota del Autor: ${chapter.chapterTitle}` : "Nota del Autor";
+            chapterAnnouncement = chapter.chapterTitle ? `Nota del Autor. ${chapter.chapterTitle}` : "Nota del Autor";
           } else {
             chapterAnnouncement = chapter.chapterTitle
-              ? `Capítulo ${chapter.chapterNumber}: ${chapter.chapterTitle}`
+              ? `Capítulo ${chapter.chapterNumber}. ${chapter.chapterTitle}`
               : `Capítulo ${chapter.chapterNumber}`;
           }
 
-          const rawText = `${chapterAnnouncement}\n\n\n${chapter.textContent}`;
-          const cleanText = prepareTtsText(rawText);
-          const annotated = await annotateTtsExpression(cleanText, projectId);
-          const textForTts = annotated.text;
+          const spokenTitle = buildSpokenChapterTitle(chapterAnnouncement);
+          const cleanBody = prepareTtsText(chapter.textContent);
+          const annotated = await annotateTtsExpression(cleanBody, projectId);
+          const textForTts = spokenTitle ? `${spokenTitle}\n\n${annotated.text}` : annotated.text;
           if (annotated.applied > 0) {
             console.log(`[Audiobook] Project ${projectId}: Chapter ${chapter.chapterNumber} S2 expressive tags applied: ${annotated.applied}`);
           }
