@@ -1957,7 +1957,7 @@ export default function Dashboard() {
                     </>
                   )}
 
-                  {["paused", "cancelled", "error", "failed_final_review"].includes(currentProject.status) && (
+                  {["paused", "cancelled", "error", "failed", "failed_final_review"].includes(currentProject.status) && (
                     <Button
                       variant="default"
                       size="sm"
@@ -2022,7 +2022,11 @@ export default function Dashboard() {
                 <p className="text-xs text-muted-foreground">
                   {currentProject.title} - {currentProject.status === "completed" ? "Completado" : 
                    currentProject.status === "archived" ? "Archivado" :
-                   currentProject.status === "generating" ? "Generando" : "Pendiente"}
+                   currentProject.status === "generating" ? "Generando" :
+                   currentProject.status === "failed" || currentProject.status === "failed_final_review" ? "Fallido" :
+                   currentProject.status === "error" ? "Error" :
+                   currentProject.status === "paused" ? "Pausado" :
+                   currentProject.status === "cancelled" ? "Cancelado" : "Pendiente"}
                 </p>
               </CardContent>
             </Card>

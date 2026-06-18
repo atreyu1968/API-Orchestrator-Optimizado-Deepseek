@@ -1019,11 +1019,15 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project is already generating" });
       }
 
-      const validStatuses = ["paused", "cancelled", "error", "failed_final_review"];
+      // [Fix163] "failed" incluido: el orquestador marca el proyecto como "failed"
+      // cuando el Arquitecto agota reintentos o la auto-recuperacion se rinde, y el
+      // propio mensaje de error invita a "reanudarlo manualmente desde el dashboard".
+      // Sin "failed" aqui, esa reanudacion manual era imposible (callejon sin salida).
+      const validStatuses = ["paused", "cancelled", "error", "failed", "failed_final_review"];
       if (!validStatuses.includes(project.status)) {
         console.log(`[Resume] Project ${id} has invalid status: ${project.status}`);
         return res.status(400).json({ 
-          error: `Cannot resume project with status "${project.status}". Only paused, cancelled, or error projects can be resumed.` 
+          error: `Cannot resume project with status "${project.status}". Only paused, cancelled, error, or failed projects can be resumed.` 
         });
       }
 
