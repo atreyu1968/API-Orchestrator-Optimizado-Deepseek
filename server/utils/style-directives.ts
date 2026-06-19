@@ -22,6 +22,13 @@ export interface StyleDirectives {
   povCharacters?: string[];
   narratorType?: NarratorType;
   tense?: Tense;
+  // [Fix165] Origen del tiempo verbal detectado:
+  // - "canonical": proviene del canon EXPLICITO del usuario (bloque Fix108
+  //   sintetizado por synthesizeVoiceBlock). Es FUERTE y se puede confiar.
+  // - "inferred": deducido por regex sobre el texto libre de la guia. Es DEBIL
+  //   y puede ser un falso positivo (p.ej. "presente narrativo" / "avanza en
+  //   presente" hablan de CRONOLOGIA, no de tiempo verbal).
+  tenseSource?: "canonical" | "inferred";
   humanText?: string;
 }
 
@@ -72,11 +79,28 @@ export function extractStyleDirectives(rawGuide: string | undefined | null): Sty
     }
   }
 
+  // [Fix165] CAUSA RAIZ del falso positivo de tiempo verbal: los patrones sueltos
+  // "\ben presente\b" / "\ben pasado\b" cazaban frases de CRONOLOGIA o AMBIENTACION
+  // ("la investigacion avanza en presente con flashbacks", "ambientada en pasado",
+  // "el presente narrativo") y las confundian con TIEMPO VERBAL gramatical. Eso
+  // fabricaba un canon "presente" fantasma que el Revisor Final marcaba como
+  // CRITICO contra un manuscrito (correctamente) en pasado. Ahora el tiempo solo
+  // se detecta con una pista GRAMATICAL explicita: "tiempo/verbo(s) presente",
+  // "tiempo verbal: presente", "narrado/a en presente", "preterito ...".
   let tense: Tense | undefined;
-  if (/\b(tiempo|verbo|verbos?)\s+(en\s+)?presente\b|\btiempo\s+verbal\s*:\s*presente\b|\ben\s+presente\b|\bnarrad[oa]\s+en\s+presente\b/.test(text)) {
+  if (/\b(tiempo|verbo|verbos?)\s+(en\s+)?presente\b|\btiempo\s+verbal\s*:?\s*presente\b|\bnarrad[oa]\s+en\s+presente\b/.test(text)) {
     tense = "present";
-  } else if (/\b(tiempo|verbo|verbos?)\s+(en\s+)?pasado\b|\btiempo\s+verbal\s*:\s*pasado\b|\ben\s+pasado\b|\bpret[eé]rito\s+(perfecto|imperfecto|indefinido)?\b|\bnarrad[oa]\s+en\s+pasado\b/.test(text)) {
+  } else if (/\b(tiempo|verbo|verbos?)\s+(en\s+)?pasado\b|\btiempo\s+verbal\s*:?\s*pasado\b|\bpret[eé]rito\s+(perfecto|imperfecto|indefinido)?\b|\bnarrad[oa]\s+en\s+pasado\b/.test(text)) {
     tense = "past";
+  }
+
+  // [Fix165] Marca el ORIGEN del tiempo verbal. El bloque canonico explicito
+  // (synthesizeVoiceBlock, Fix108) lleva este marcador inconfundible; si esta
+  // presente, la voz la fijo el usuario (fuerte). Si no, es inferencia debil.
+  let tenseSource: "canonical" | "inferred" | undefined;
+  if (tense) {
+    const hasCanonicalVoiceBlock = /voz\s+narrativa\s+can[oó]nica\s+del\s+proyecto\s+\(fijada\s+por\s+el\s+usuario/.test(text);
+    tenseSource = hasCanonicalVoiceBlock ? "canonical" : "inferred";
   }
 
   let pov: Pov | undefined;
@@ -119,6 +143,7 @@ export function extractStyleDirectives(rawGuide: string | undefined | null): Sty
     povCharacters: povCharacters.length ? povCharacters : undefined,
     narratorType,
     tense,
+    tenseSource,
     humanText: parts.join(". "),
   };
 }
@@ -206,6 +231,21 @@ export function buildGhostwriterDirectiveBlock(d: StyleDirectives): string {
 /** Bloque listo para prepender al prompt del Final Reviewer. */
 export function buildFinalReviewerDirectiveBlock(d: StyleDirectives): string {
   if (!d.detected || !d.humanText) return "";
+  // [Fix165] Salvaguarda: si el TIEMPO VERBAL proviene de inferencia debil (regex
+  // sobre el texto libre de la guia, no del canon explicito del usuario), un
+  // desajuste GLOBAL de tiempo verbal NO debe elevarse a CRITICO: la inferencia
+  // puede ser un falso positivo (p.ej. "presente narrativo" / "avanza en presente"
+  // hablan de CRONOLOGIA, no de gramatica). La PERSONA/POV, mucho mas fiable,
+  // conserva su criterio CRITICO intacto.
+  const tenseWeaklyInferred = !!d.tense && d.tenseSource === "inferred";
+  const tenseCaveat = tenseWeaklyInferred
+    ? `
+
+    ⚠️ EXCEPCIÓN SOBRE EL TIEMPO VERBAL (lee con atención):
+    - El tiempo verbal de esta directiva ("${d.tense === "present" ? "PRESENTE" : "PASADO"}") NO lo fijó el usuario: se dedujo automáticamente del texto de la guía y PUEDE SER UN FALSO POSITIVO (frases como "presente narrativo" o "avanza en presente" describen la CRONOLOGÍA de la historia, no su gramática).
+    - Por tanto, la regla CRÍTICA de arriba NO se aplica al tiempo verbal: si TODO el manuscrito está en un tiempo verbal distinto al indicado, lo más probable es que el manuscrito esté BIEN y la inferencia se equivocara. NO lo marques como CRÍTICO. A lo sumo, emite UN ÚNICO issue de severidad MENOR sugiriendo al usuario que confirme el tiempo verbal deseado.
+    - Esta excepción afecta SOLO al tiempo verbal. La PERSONA/POV sigue gobernada por las reglas de arriba.`
+    : "";
   return `
     ═══════════════════════════════════════════════════════════════════
     🎯 VOZ NARRATIVA CANÓNICA DEL PROYECTO 🎯
@@ -213,9 +253,9 @@ export function buildFinalReviewerDirectiveBlock(d: StyleDirectives): string {
     ${d.humanText}.
 
     USO COMO REFERENCIA DE REVISIÓN:
-    - Si TODOS los capítulos están en una voz DIFERENTE a la canónica → emite UN ÚNICO issue de severidad CRÍTICA con categoría "trama" describiendo el problema globalmente. NO pidas conversión cap-a-cap (la cirugía no puede arreglar eso y queda PROHIBIDO solicitarla).
+    - Si TODOS los capítulos están en una voz (persona/POV o tiempo verbal) DIFERENTE a la canónica → emite UN ÚNICO issue de severidad CRÍTICA con categoría "trama" describiendo el problema globalmente. NO pidas conversión cap-a-cap (la cirugía no puede arreglar eso y queda PROHIBIDO solicitarla).
     - Si UN capítulo concreto se desvía aisladamente de la voz canónica → repórtalo como issue de severidad MAYOR con observación textual de que el usuario debería regenerar ese capítulo manualmente. NUNCA pidas reescritura quirúrgica del capítulo entero.
-    - Si la voz se respeta → no inventes problemas de POV.
+    - Si la voz se respeta → no inventes problemas de POV.${tenseCaveat}
     ═══════════════════════════════════════════════════════════════════
 `;
 }
