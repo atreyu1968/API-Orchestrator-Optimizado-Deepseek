@@ -8636,7 +8636,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // directamente, saltándonos el parser LLM (que perdía la mitad porque trabajaba
     // sobre texto libre). El refiner sigue corriendo después para anclar contra
     // canon y descartar incompatibilidades, pero con fallback protegido.
-    const autoInstructions = this.extractAutoInstructionsFromReview(notesText, chapterIndex);
+    const autoInstructions = this.extractAutoInstructionsFromReview(notesText, chapterIndex, fromAutoLoop);
     const isSystemReview = autoInstructions !== null;
 
     let draftInstructions: EditorialInstruction[];
@@ -8658,7 +8658,64 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // la novela y necesitan revisión humana. El usuario las puede ejecutar desde
       // chat editorial o desde un futuro botón "operaciones administrativas".
       if (autoInstructions.pendingAdministrative.length > 0) {
-        const lines = autoInstructions.pendingAdministrative.map(p => {
+        // [Fix164] Separamos los borrados de capitulo del auto-loop (delete_chapter)
+        // del resto de operaciones administrativas: los primeros se persisten como
+        // pendingAdminActions para pasar por unanimidad Holistico+Beta (con tope por
+        // novela); los segundos conservan su tratamiento previo (log / tarjeta).
+        const deleteActions = autoInstructions.pendingAdministrative.filter(p => p.tipo === "delete_chapter");
+        const otherAdmin = autoInstructions.pendingAdministrative.filter(p => p.tipo !== "delete_chapter");
+
+        if (deleteActions.length > 0) {
+          try {
+            const fresh = await storage.getProject(project.id);
+            const existing = Array.isArray((fresh as any)?.pendingAdminActions) ? (fresh as any).pendingAdminActions : [];
+            // Dedup: no creamos una segunda tarjeta delete_chapter para un capitulo
+            // que ya tiene una pendiente (el parser re-emite el mismo "eliminar"
+            // cada iteracion del bucle hasta que se resuelve).
+            const alreadyPendingDelete = new Set<number>(
+              existing
+                .filter((a: any) => String(a?.type) === "delete_chapter")
+                .map((a: any) => Number(a?.targetChapter))
+                .filter((n: number) => Number.isFinite(n))
+            );
+            let nextId = existing.reduce((max: number, a: any) => Math.max(max, Number(a?.id) || 0), 0) + 1;
+            const toAdd: any[] = [];
+            for (const p of deleteActions) {
+              for (const ch of ((p as any).targetChapters || [])) {
+                const chNum = Number(ch);
+                if (!Number.isFinite(chNum) || chNum <= 0) continue;
+                if (alreadyPendingDelete.has(chNum)) continue;
+                alreadyPendingDelete.add(chNum);
+                toAdd.push({
+                  id: nextId++,
+                  type: "delete_chapter",
+                  targetChapter: chNum,
+                  targetLabel: `Capítulo ${chNum}`,
+                  secondaryChapter: null,
+                  reason: p.motivo,
+                  source: "auto-review-loop",
+                  createdAt: new Date().toISOString(),
+                });
+              }
+            }
+            if (toAdd.length > 0) {
+              await storage.updateProject(project.id, { pendingAdminActions: [...existing, ...toAdd] } as any);
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "info",
+                message: `[Fix164] ${toAdd.length} borrado(s) de capítulo sugerido(s) por los lectores se han derivado a verificación por UNANIMIDAD (Holístico+Beta) en vez de ejecutarse al instante. Solo se aplicarán si AMBOS lectores los aprueban en la siguiente lectura y bajo el tope de muy pocos borrados por novela. Esto evita el borrado desmedido e irreversible.`,
+                agentRole: "editor",
+              });
+            }
+          } catch (persistErr: any) {
+            console.error("[Fix164] Failed to persist delete_chapter admin actions:", persistErr?.message || persistErr);
+          }
+        }
+
+        if (otherAdmin.length === 0) {
+          // Solo habia borrados (ya tratados arriba): no hay nada mas que loguear.
+        } else {
+        const lines = otherAdmin.map(p => {
           const tipoLabel = p.tipo === "fusionar"
             ? "FUSIÓN DE CAPÍTULOS"
             : p.tipo === "structural_restructure"
@@ -8727,6 +8784,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               console.error("[Fix87] Failed to persist structural_restructure admin actions:", persistErr?.message || persistErr);
             }
           }
+        }
         }
       }
 
@@ -9375,7 +9433,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   private extractAutoInstructionsFromReview(
     notesText: string,
     chapterIndex: Array<{ numero: number; titulo: string }>,
-  ): { valid: EditorialInstruction[]; pendingAdministrative: Array<{ tipo: string; descripcion: string; motivo: string }>; degradedMultiCap: string[] } | null {
+    // [Fix164] En los bucles automaticos (fromAutoLoop) los borrados de capitulo
+    // (tipo "eliminar") NO se ejecutan al instante via FASE 0 (irreversible). Se
+    // enrutan a pendingAdministrative como "delete_chapter" para pasar por la
+    // verificacion de UNANIMIDAD Holistico+Beta (applyConfirmedAdminActions) con
+    // tope por novela. En el flujo MANUAL (false) el borrado sigue su curso normal.
+    routeDeletesToPending: boolean = false,
+  ): { valid: EditorialInstruction[]; pendingAdministrative: Array<{ tipo: string; descripcion: string; motivo: string; targetChapters?: number[] }>; degradedMultiCap: string[] } | null {
     const startMarker = "<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->";
     const endMarker = "<!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->";
     // [Fix25-followup] Extraer TODOS los bloques de marcadores. El auto-loop
@@ -9430,7 +9494,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     const validChapterNumbers = new Set(chapterIndex.map(c => c.numero));
 
     const valid: EditorialInstruction[] = [];
-    const pendingAdministrative: Array<{ tipo: string; descripcion: string; motivo: string }> = [];
+    const pendingAdministrative: Array<{ tipo: string; descripcion: string; motivo: string; targetChapters?: number[] }> = [];
 
     for (const raw of parsed.instrucciones) {
       if (!raw || typeof raw !== "object") continue;
@@ -9511,6 +9575,28 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
         }
         if (Object.keys(plan_por_capitulo).length === 0) plan_por_capitulo = undefined;
+      }
+
+      // ── [Fix164] Borrado de capitulo en bucles automaticos:
+      //    En fromAutoLoop, el "eliminar" NO entra en el array de instrucciones
+      //    aplicables (que lo borraria al instante en FASE 0, de forma
+      //    irreversible). Lo enrutamos a pendingAdministrative como
+      //    "delete_chapter" llevando los capitulos POSITIVOS objetivo, para que
+      //    el caller lo persista en pendingAdminActions y pase por la
+      //    verificacion de unanimidad Holistico+Beta (con tope por novela). En
+      //    el flujo MANUAL (routeDeletesToPending=false) NO entra aqui y el
+      //    borrado conserva su comportamiento directo de siempre.
+      if (tipo === "eliminar" && routeDeletesToPending) {
+        const positiveCaps = caps.filter(n => n > 0);
+        if (positiveCaps.length > 0) {
+          pendingAdministrative.push({
+            tipo: "delete_chapter",
+            descripcion: descripcion || `Eliminar capítulo(s) ${positiveCaps.sort((a, b) => a - b).join(", ")}`,
+            motivo: instrucciones_correccion || descripcion,
+            targetChapters: positiveCaps,
+          });
+        }
+        continue; // NO entra en el array de instrucciones aplicables.
       }
 
       // ── Tipos NO aplicables automáticamente (Fix 14):
@@ -11043,6 +11129,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     const TARGET_HOLISTIC_SCORE = 7;
     const MAX_ITERATIONS = 8;
     const REGRESSION_THRESHOLD = 1.0;
+    // [Fix164] Tope de borrados de capitulo automaticos por novela. El borrado
+    // sigue permitido (Opcion B del usuario) PERO solo con unanimidad de ambos
+    // lectores Y como mucho este numero de capitulos en TODO el run. Evita el
+    // borrado desmedido e irreversible que el usuario reporto. Los borrados se
+    // ejecutan via applyConfirmedAdminActions (los "eliminar" del parser ya se
+    // enrutaron a pendingAdminActions delete_chapter por [Fix164]).
+    const MAX_AUTO_CHAPTER_DELETIONS_PER_RUN = 2;
+    let deletionsThisRun = 0;
     let iter = 0;
     let currentProject: Project = project;
     let prevBetaScore: number | null = null;
@@ -11356,12 +11450,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         const betaSucceeded = betaOutcome.status === "fulfilled";
         if (holisticSucceeded || betaSucceeded) {
           try {
-            await this.applyConfirmedAdminActions(
+            // [Fix164] Pasamos el presupuesto de borrados RESTANTE de la novela.
+            const adminResult = await this.applyConfirmedAdminActions(
               project.id,
               holisticVerdicts,
               betaVerdicts,
-              { holisticSucceeded, betaSucceeded }
+              { holisticSucceeded, betaSucceeded },
+              Math.max(0, MAX_AUTO_CHAPTER_DELETIONS_PER_RUN - deletionsThisRun),
             );
+            deletionsThisRun += adminResult.chaptersDeleted;
           } catch (e) {
             console.error("[Fix76] applyConfirmedAdminActions falló:", e);
             await storage.createActivityLog({
@@ -11948,14 +12045,20 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     reviewerStatus: { holisticSucceeded: boolean; betaSucceeded: boolean } = {
       holisticSucceeded: true,
       betaSucceeded: true,
-    }
-  ): Promise<{ applied: number; discarded: number; keptPending: number }> {
+    },
+    // [Fix164] Tope de borrados de capitulo que esta llamada puede EJECUTAR. El
+    // bucle automatico pasa el presupuesto RESTANTE de la novela (MAX por novela
+    // menos lo ya borrado en este run). Al agotarse, las acciones delete_chapter
+    // aprobadas por unanimidad se MANTIENEN pendientes (no se ejecutan) con log.
+    // Por defecto Infinity = sin tope (compatibilidad con cualquier otro caller).
+    deletionBudget: number = Infinity,
+  ): Promise<{ applied: number; discarded: number; keptPending: number; chaptersDeleted: number }> {
     const fresh = await storage.getProject(projectId);
-    if (!fresh) return { applied: 0, discarded: 0, keptPending: 0 };
+    if (!fresh) return { applied: 0, discarded: 0, keptPending: 0, chaptersDeleted: 0 };
     const existing: any[] = Array.isArray((fresh as any).pendingAdminActions)
       ? (fresh as any).pendingAdminActions
       : [];
-    if (existing.length === 0) return { applied: 0, discarded: 0, keptPending: 0 };
+    if (existing.length === 0) return { applied: 0, discarded: 0, keptPending: 0, chaptersDeleted: 0 };
 
     const hMap = new Map<number, AdminActionVerdict>();
     for (const v of holisticVerdicts) hMap.set(v.id, v);
@@ -11972,6 +12075,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     let applied = 0;
     let discarded = 0;
     let keptPending = 0;
+    // [Fix164] Borrados REALES ejecutados en esta llamada (storage.deleteChapter).
+    // Solo cuenta hacia el tope los borrados efectivos, no los "cap ya ausente".
+    let chaptersDeleted = 0;
 
     for (const action of existing) {
       const id = Number(action?.id);
@@ -12054,6 +12160,21 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           keptPending++;
           continue;
         }
+        // [Fix164] Tope por novela: aunque AMBOS lectores aprueben el borrado, si
+        // ya agotamos el presupuesto de borrados de este run, la accion se
+        // MANTIENE pendiente (no se ejecuta). Asi el borrado automatico nunca es
+        // desmedido: como mucho unos pocos capitulos por novela.
+        if (chaptersDeleted >= deletionBudget) {
+          survivors.push(action);
+          keptPending++;
+          await storage.createActivityLog({
+            projectId,
+            level: "info",
+            message: `[Fix164] acción admin id=${id} (delete_chapter sobre cap ${targetChapter}) aprobada por ambos lectores PERO se mantiene pendiente: se alcanzó el tope de borrados automáticos por novela. Si realmente quieres borrarla, hazlo manualmente desde la lista de capítulos.`,
+            agentRole: "editor",
+          });
+          continue;
+        }
         try {
           const allChapters = await storage.getChaptersByProject(projectId);
           const target = allChapters.find(c => Number(c.chapterNumber) === targetChapter);
@@ -12072,6 +12193,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
           await storage.deleteChapter(target.id);
           applied++;
+          chaptersDeleted++; // [Fix164] cuenta hacia el tope por novela
           processedAppliedOrDiscarded.add(id);
           await storage.createActivityLog({
             projectId,
@@ -12146,7 +12268,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       });
     }
 
-    return { applied, discarded, keptPending };
+    return { applied, discarded, keptPending, chaptersDeleted };
   }
 
   /**
@@ -12626,9 +12748,25 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // (a) es muchísimo más barato que reescribirlo, (b) modifica la numeración
       // del resto de capítulos, así que las instrucciones posteriores tienen que
       // remapearse antes de entrar al loop principal.
-      const deletionInstructions = instructions.filter(ins => ins.tipo === "eliminar");
+      let deletionInstructions = instructions.filter(ins => ins.tipo === "eliminar");
       let nonDeletionInstructions = instructions.filter(ins => ins.tipo !== "eliminar");
       let totalDeleted = 0;
+
+      // [Fix164] Defensa: en los bucles automaticos (fromAutoLoop) el borrado de
+      // capitulos NO se ejecuta en FASE 0 (que es irreversible y la red de
+      // seguridad revert-on-regression no puede deshacer). Los "eliminar" ya se
+      // enrutaron a pendingAdminActions (delete_chapter) en parseEditorialNotesOnly
+      // para pasar por unanimidad Holistico+Beta con tope por novela. Si alguno se
+      // colara hasta aqui (p.ej. via groundEditorialInstructions), lo ignoramos.
+      if (options?.fromAutoLoop === true && deletionInstructions.length > 0) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `[Fix164] ${deletionInstructions.length} instrucción(es) de borrado de capítulo NO se ejecutan en el bucle automático: se gestionan por verificación de unanimidad (Holístico+Beta) con tope por novela para evitar borrados desmedidos e irreversibles.`,
+          agentRole: "editor",
+        });
+        deletionInstructions = [];
+      }
 
       if (deletionInstructions.length > 0) {
         this.callbacks.onAgentStatus("editor", "thinking",
