@@ -23,6 +23,7 @@ export { ProseAgencyEditorAgent, type ProseAgencyEditorResult, type ProseAgencyP
 export { FinalAxisReaderAgent, type FinalAxisReaderResult, type FinalAxisProblem, type FinalAxisEje, type FinalAxisEjes } from "./final-axis-reader";
 // [Fix156][Puerta Acto 2] Editor de Ritmo del Acto 2 (juez de la PROSA del tramo central, mid-novela).
 export { Act2PacingEditorAgent, type Act2PacingEditorResult, type Act2Problem, type Act2ProblemType } from "./act2-pacing-editor";
+export { TenseConsistencyJudgeAgent, type TenseConsistencyResult, type TenseChapterVerdict, type DeviatedChapter, type DetectedTense } from "./tense-consistency-judge";
 // [Fix150][Puerta 0] Director Creativo: forja el concepto rector antes de generar.
 export { ConceptForgeAgent, type ConceptForgeResult, type ConceptForgeInput } from "./concept-forge";
 // [Fix161] Director de Doblaje: anota expresividad en linea (Fish Audio S2) para audiolibros.

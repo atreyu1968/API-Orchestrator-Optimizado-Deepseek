@@ -124,6 +124,15 @@ interface GhostwriterInput {
    * el Orquestador con `buildLivingSeedGuidance`. Nunca es vinculante por sí solo.
    */
   seedGuidance?: string;
+  /**
+   * [Fix166][Puerta Tiempo Verbal Temprano] Tiempo verbal CANONICO de la
+   * narracion ("pasado" o "presente") establecido por la puerta temprana a
+   * partir del tiempo REAL de los primeros capitulos (o del canon explicito del
+   * autor). Bloquea el tiempo para los capitulos FUTUROS para que la novela no
+   * derive a otro tiempo a mitad de obra. Persiste en plotOutline para honrarse
+   * tambien al REANUDAR.
+   */
+  tiempoVerbalCanonico?: string;
 }
 
 const SYSTEM_PROMPT = `
@@ -1260,6 +1269,26 @@ ${input.seriesMilestonesAndThreads}
     Este es el ADN creativo del libro. ${esVinculante ? "Cada capítulo debe servir a este concepto y avanzar sus promesas." : "Úsalo como brújula creativa; eleva el capítulo sin contradecir la historia."} NO lo cites ni lo expliques en la prosa: ENCÁRNALO en escena, voz y subtexto.
 
     ${body}
+    ═══════════════════════════════════════════════════════════════════
+    `;
+    }
+
+    // [Fix166][Puerta Tiempo Verbal Temprano] TIEMPO VERBAL CANONICO de la
+    // narracion. La puerta temprana detecto/fijo el tiempo real de los primeros
+    // capitulos y lo bloquea para los siguientes, de modo que la novela no derive
+    // de pasado a presente (o viceversa) a mitad de obra. Es VINCULANTE para la
+    // voz narrativa, pero NO toca dialogos ni pensamientos en presente.
+    if (input.tiempoVerbalCanonico && input.tiempoVerbalCanonico.trim().length > 0) {
+      const t = input.tiempoVerbalCanonico.trim().toLowerCase();
+      const tDisplay = t === "presente" ? "PRESENTE" : "PASADO";
+      const ejemplo = t === "presente"
+        ? `"camina", "mira", "ha llegado"`
+        : `"caminaba"/"caminó", "miraba"/"miró", "había llegado"`;
+      prompt += `
+    ═══════════════════════════════════════════════════════════════════
+    TIEMPO VERBAL DE LA NARRACIÓN (VINCULANTE): ${tDisplay}
+    ═══════════════════════════════════════════════════════════════════
+    Narra TODO este capítulo en tiempo ${tDisplay} (${ejemplo}), igual que los capítulos anteriores, para mantener la coherencia del libro. Esto aplica SOLO a la voz que narra: los DIÁLOGOS de los personajes y los pensamientos en presente conservan su tiempo natural. NO cambies a otro tiempo verbal en la narración bajo ningún concepto.
     ═══════════════════════════════════════════════════════════════════
     `;
     }

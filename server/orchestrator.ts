@@ -26,6 +26,9 @@ import {
   type FinalAxisReaderResult,
   type FinalAxisProblem,
   Act2PacingEditorAgent,
+  TenseConsistencyJudgeAgent,
+  type TenseConsistencyResult,
+  type TenseChapterVerdict,
   type Act2PacingEditorResult,
   type Act2Problem,
   ConceptForgeAgent,
@@ -108,6 +111,12 @@ interface ParsedWorldBible {
   // (gancho + columna temática + promesas al lector) que el Narrador recibe en
   // CADA capítulo. Persiste en plotOutline.guia_viva (jsonb) para round-trip en RESUME.
   guia_viva?: string;
+  // [Fix166][Puerta Tiempo Verbal Temprano] Tiempo verbal CANONICO de la
+  // narracion ("pasado" o "presente") que la puerta temprana fijo a partir del
+  // tiempo REAL de los primeros capitulos. Bloquea el tiempo para los capitulos
+  // FUTUROS. Persiste en plotOutline.tiempo_verbal_establecido (jsonb) para
+  // honrarse tambien al REANUDAR.
+  tiempo_verbal_establecido?: string;
 }
 
 interface SectionData {
@@ -207,6 +216,8 @@ export class Orchestrator {
   private finalAxisReader = new FinalAxisReaderAgent();
   // [Fix156][Puerta Acto 2] Editor de Ritmo del Acto 2 (juez de la PROSA del tramo central, mid-novela).
   private act2PacingEditor = new Act2PacingEditorAgent();
+  // [Fix166][Puerta Tiempo Verbal Temprano] Juez del tiempo verbal real de los primeros capitulos.
+  private tenseConsistencyJudge = new TenseConsistencyJudgeAgent();
   // [Fix150][Puerta 0] Director Creativo: forja el concepto rector pre-generación.
   private conceptForge = new ConceptForgeAgent();
   private callbacks: OrchestratorCallbacks;
@@ -264,6 +275,14 @@ export class Orchestrator {
   // (acto 3) por escribir, para reescribir el tramo central flojo ANTES de
   // construir el climax encima. One-shot; flag reseteado en generateNovel.
   private act2GateAttempted: boolean = false;
+
+  // [Fix166][Puerta Tiempo Verbal Temprano] Puerta que detecta el tiempo verbal
+  // REAL de los primeros capitulos y, si hay desviacion, los reescribe ANTES de
+  // que el resto del libro se escriba en otro tiempo. One-shot por generacion.
+  // `establishedTense` es el tiempo fijado ("pasado"|"presente") que se inyecta a
+  // los capitulos FUTUROS (y se persiste para honrarse al reanudar).
+  private earlyTenseGateAttempted: boolean = false;
+  private establishedTense: string | null = null;
 
   // [Fix29] Issues estructurales detectados por el Holístico antes del
   // primer ciclo del Final Reviewer. Se inyectan en `issuesPreviosCorregidos`
@@ -1096,6 +1115,10 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
     this.midNovelHolisticThirdAttempted = false;
     // [Fix156][Puerta Acto 2] Resetear el flag one-shot de la puerta del acto 2.
     this.act2GateAttempted = false;
+    // [Fix166][Puerta Tiempo Verbal Temprano] Resetear el flag one-shot y el
+    // tiempo establecido de la puerta de tiempo verbal.
+    this.earlyTenseGateAttempted = false;
+    this.establishedTense = null;
     try {
       // Check if chapters already exist (recovery after crash)
       const existingChapters = await storage.getChaptersByProject(project.id);
@@ -4275,6 +4298,10 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
             editorialCritique: this.combinedMidNovelCritique(),
             // [Fix152][Puerta 2/3] GUÍA VIVA + semillas cross-capítulo a la prosa.
             guiaViva: (worldBibleData as any)?.guia_viva || undefined,
+            // [Fix166][Puerta Tiempo Verbal Temprano] Tiempo verbal fijado por la
+            // puerta temprana (o el persistido) para que los capitulos FUTUROS no
+            // deriven a otro tiempo a mitad de obra.
+            tiempoVerbalCanonico: this.establishedTense || (worldBibleData as any)?.tiempo_verbal_establecido || undefined,
             seedGuidance: this.buildLivingSeedGuidance((worldBibleData as any)?.escaleta_capitulos, sectionData.numero, allSections.length) || undefined,
             seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
             seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
@@ -4617,6 +4644,29 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         const secondBetaMark = Math.floor(totalChaptersForBeta * 0.70);
         const remainingAfter = totalChaptersForBeta - completedSoFar;
         const betaEligible = totalChaptersForBeta >= 6 && remainingAfter >= 2 && !this.aborted;
+
+        // [Fix166][Puerta Tiempo Verbal Temprano] Puerta del tiempo verbal: corre
+        // UNA vez, lo antes posible (en cuanto hay >=3 capitulos escritos), para
+        // detectar el tiempo verbal real de los primeros capitulos y, si hay
+        // desviacion, reescribirlos y FIJAR el tiempo para los siguientes ANTES de
+        // que el resto del libro se escriba en otro tiempo. Requiere que aun
+        // queden >=2 capitulos por escribir para que el bloqueo valga la pena.
+        // One-shot: flag puesto ANTES de la llamada (no reintentar cada capitulo).
+        if (
+          !this.earlyTenseGateAttempted &&
+          totalChaptersForBeta >= 6 &&
+          remainingAfter >= 2 &&
+          completedSoFar >= 3 &&
+          !this.aborted
+        ) {
+          this.earlyTenseGateAttempted = true;
+          await this.runEarlyTenseGate(project, worldBibleData, fullStyleGuide);
+          if (this.aborted) {
+            console.log(`[Orchestrator] [Fix166][Puerta Tiempo Verbal] Aborted tras la puerta de tiempo verbal. Saliendo silenciosamente.`);
+            return;
+          }
+        }
+
         if (betaEligible && !this.midNovelBetaAttempted && completedSoFar >= firstBetaMark) {
           // [Fix30 — code review #1] Marcar attempted ANTES de la llamada para
           // garantizar one-shot por pasada incluso si runMidNovelBetaReview falla
@@ -5283,6 +5333,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             recentSceneMolds: recentSceneMoldsResume || undefined,
             // [Fix152][Puerta 2/3] GUÍA VIVA + semillas cross-capítulo (round-trip de RESUME).
             guiaViva: (worldBibleData as any)?.guia_viva || undefined,
+            // [Fix166][Puerta Tiempo Verbal Temprano] Tiempo verbal fijado (round-trip
+            // de RESUME): aunque la puerta no corre al reanudar, el tiempo persistido
+            // se honra para que los capitulos restantes mantengan el mismo tiempo.
+            tiempoVerbalCanonico: (worldBibleData as any)?.tiempo_verbal_establecido || this.establishedTense || undefined,
             seedGuidance: this.buildLivingSeedGuidance((worldBibleData as any)?.escaleta_capitulos, sectionData.numero, ((worldBibleData as any)?.escaleta_capitulos?.length || totalChaptersResume)) || undefined,
             seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
             seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
@@ -5977,6 +6031,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // [Fix152][Puerta 2/3] Recupera la GUÍA VIVA persistida para que el Narrador
       // la reciba también al REANUDAR (no solo en la generación fresca).
       guia_viva: plotOutlineData?.guia_viva || undefined,
+      // [Fix166][Puerta Tiempo Verbal Temprano] Recupera el tiempo verbal fijado
+      // para que el Narrador lo honre también al REANUDAR.
+      tiempo_verbal_establecido: plotOutlineData?.tiempo_verbal_establecido || undefined,
     };
   }
 
@@ -6714,6 +6771,248 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     } catch (error) {
       // La puerta es best-effort: un fallo aqui jamas debe abortar la generacion.
       console.warn(`[Fix156][Puerta Acto 2] runAct2ProseGate fallo (no bloqueante): ${(error as Error).message}`);
+    }
+  }
+
+  // [Fix166][Puerta Tiempo Verbal Temprano] Fija el tiempo verbal establecido en
+  // memoria (para el resto de ESTE run) y lo persiste en plotOutline (jsonb
+  // passthrough, sin migracion) para honrarse tambien al REANUDAR. Best-effort:
+  // un fallo de persistencia no debe abortar la generacion.
+  private async establishNarrativeTense(
+    project: Project,
+    worldBibleData: ParsedWorldBible,
+    tense: "pasado" | "presente",
+  ): Promise<void> {
+    this.establishedTense = tense;
+    (worldBibleData as any).tiempo_verbal_establecido = tense;
+    try {
+      const wb = await storage.getWorldBibleByProject(project.id);
+      if (wb) {
+        const plotOutline = { ...((wb.plotOutline as any) || {}), tiempo_verbal_establecido: tense };
+        await storage.updateWorldBible(wb.id, { plotOutline });
+      }
+    } catch (error) {
+      console.warn(`[Fix166][Puerta Tiempo Verbal] No se pudo persistir el tiempo establecido (no bloqueante): ${(error as Error).message}`);
+    }
+  }
+
+  // [Fix166][Puerta Tiempo Verbal Temprano] Puerta SEMANTICA del tiempo verbal a
+  // mid-novela TEMPRANA. Lee la PROSA REAL de los primeros capitulos, detecta su
+  // tiempo verbal GRAMATICAL (fiable, a diferencia del tiempo "deseado" inferido
+  // de la guia — leccion Fix165) y:
+  //  - si el autor fijo un canon EXPLICITO -> objetivo = ese tiempo.
+  //  - si no -> objetivo = tiempo DOMINANTE real de los primeros capitulos
+  //    (consistencia interna; nunca pelear contra el tiempo natural del manuscrito).
+  // Reescribe SOLO los capitulos desviados y BLOQUEA el tiempo para los futuros
+  // capitulos (propagacion). Espejo de runAct2ProseGate pero adelantado: ataja la
+  // desviacion de tiempo verbal EN CUANTO aparece, no al final (donde el Revisor
+  // Final ya no puede corregirla cap-a-cap). One-shot, advisory, jamas bloquea.
+  private async runEarlyTenseGate(
+    project: Project,
+    worldBibleData: ParsedWorldBible,
+    fullStyleGuide: string,
+  ): Promise<void> {
+    const MAX_PASSES = 2;
+    const MAX_TENSE_REWRITES = 4;
+    const EARLY_WINDOW = 4;
+    try {
+      const wb = (worldBibleData as any)?.world_bible || {};
+      const protName = getProtagonistName(wb);
+
+      // Objetivo: si el autor fijo un tiempo canonico EXPLICITO (bloque de voz),
+      // ese es el objetivo. Si no, el objetivo lo decide el tiempo DOMINANTE real
+      // de los primeros capitulos (Fix165: no imponer un tiempo inferido de la
+      // guia, que es poco fiable). extractStyleDirectives devuelve el tiempo en
+      // ingles ("present"/"past"); lo mapeamos al espanol del juez.
+      const directives = extractStyleDirectives(fullStyleGuide);
+      const canonicalTense: "pasado" | "presente" | undefined =
+        directives.tenseSource === "canonical" && directives.tense
+          ? (directives.tense === "present" ? "presente" : "pasado")
+          : undefined;
+
+      // Ventana: los primeros EARLY_WINDOW capitulos completados (incluido el
+      // prologo si existe), ordenados por numero.
+      const loadEarly = async (): Promise<{ chapter: Chapter; section: SectionData; prosa: string }[]> => {
+        const all = (await storage.getChaptersByProject(project.id))
+          .filter((c) => c.status === "completed")
+          .sort((a, b) => a.chapterNumber - b.chapterNumber)
+          .slice(0, EARLY_WINDOW);
+        const out: { chapter: Chapter; section: SectionData; prosa: string }[] = [];
+        for (const c of all) {
+          const section = this.buildSectionDataFromChapter(c, worldBibleData);
+          const prosa = ((c as any).editedContent || c.originalContent || (c as any).content || "") as string;
+          if (prosa.trim()) out.push({ chapter: c, section, prosa });
+        }
+        return out;
+      };
+
+      let early = await loadEarly();
+      if (early.length < 2) {
+        // Muy pocos capitulos para juzgar consistencia de tiempo: omite.
+        return;
+      }
+
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "tense-consistency-judge",
+        message: `[Fix166][Puerta Tiempo Verbal] Juez de Tiempo Verbal: detectando el tiempo de la narracion en los primeros capitulos para fijarlo antes de que se propague al resto. Capitulos en revision: ${early.map((c) => c.chapter.chapterNumber).join(", ")}.${canonicalTense ? ` Canon explicito del autor: ${canonicalTense}.` : ""}`,
+      });
+
+      // Anti-regresion: snapshot de la prosa para restaurar la MEJOR version
+      // conocida (la de menos capitulos desviados) si una reescritura la empeora.
+      type ProseSnapshot = { id: number; content: string; wordCount: number }[];
+      const snapshotOf = (cs: typeof early): ProseSnapshot =>
+        cs.map((c) => ({
+          id: c.chapter.id,
+          content: c.prosa,
+          wordCount: c.chapter.wordCount || c.prosa.split(/\s+/).filter((w) => w.length > 0).length,
+        }));
+      const restoreSnapshot = async (snap: ProseSnapshot): Promise<void> => {
+        for (const s of snap) {
+          await storage.updateChapter(s.id, {
+            content: s.content,
+            wordCount: s.wordCount,
+            status: "completed",
+            needsRevision: false,
+            revisionReason: null,
+          });
+        }
+      };
+
+      const judgeTense = async (cs: typeof early): Promise<TenseConsistencyResult | null> => {
+        const { result } = await this.tenseConsistencyJudge.analyze({
+          title: project.title || "Sin titulo",
+          genre: (project as any).genre || "",
+          protagonista: protName,
+          tiempoCanonico: canonicalTense,
+          capitulos: cs.map((c) => ({
+            numero: c.chapter.chapterNumber,
+            titulo: c.section.titulo || `Capitulo ${c.chapter.chapterNumber}`,
+            prosa: c.prosa,
+          })),
+          projectId: project.id,
+        });
+        return result || null;
+      };
+
+      // Objetivo a partir del veredicto: canon si existe; si no, el dominante real
+      // (solo si es pasado/presente; "mixto" sin canon = no hay objetivo fiable).
+      const targetFrom = (r: TenseConsistencyResult): "pasado" | "presente" | null => {
+        if (canonicalTense) return canonicalTense;
+        if (r.tiempo_dominante === "pasado" || r.tiempo_dominante === "presente") return r.tiempo_dominante;
+        return null;
+      };
+      const deviatedFrom = (r: TenseConsistencyResult, target: "pasado" | "presente"): TenseChapterVerdict[] =>
+        r.capitulos.filter((c) => c.tiempo !== target);
+
+      let best: TenseConsistencyResult | null = null;
+      let bestSnapshot: ProseSnapshot | null = null;
+      let bestTarget: "pasado" | "presente" | null = null;
+      let bestDeviated = Number.POSITIVE_INFINITY;
+      let rewritesDone = 0;
+
+      for (let pass = 0; pass < MAX_PASSES; pass++) {
+        const passSnapshot = snapshotOf(early);
+        const result = await judgeTense(early);
+        if (!result) {
+          console.warn(`[Fix166][Puerta Tiempo Verbal] El juez no devolvio resultado (pasada ${pass + 1}); se continua sin bloquear.`);
+          break;
+        }
+
+        const target = targetFrom(result);
+        if (!target) {
+          // Dominante "mixto" sin canon: no hay objetivo fiable. Registra `best`
+          // para un mensaje honesto y sale sin tocar la prosa.
+          if (!best) best = result;
+          break;
+        }
+
+        const deviated = deviatedFrom(result, target);
+        if (deviated.length < bestDeviated) {
+          best = result;
+          bestSnapshot = passSnapshot;
+          bestTarget = target;
+          bestDeviated = deviated.length;
+        }
+
+        if (deviated.length === 0) {
+          // Ya consistente: fija el tiempo para los futuros capitulos y sale.
+          await this.establishNarrativeTense(project, worldBibleData, target);
+          await storage.createActivityLog({
+            projectId: project.id, level: "info", agentRole: "tense-consistency-judge",
+            message: `[Fix166][Puerta Tiempo Verbal] TIEMPO VERBAL CONSISTENTE en los primeros capitulos (${target}). Se fija ${target} como tiempo de la narracion para el resto del libro. ${result.resumen || ""}`.trim(),
+          });
+          return;
+        }
+
+        // Si ya no queda presupuesto de reescritura, NO reescribimos mas: el estado
+        // actual (ya juzgado y registrado arriba como mejor candidato si procede)
+        // es lo mejor alcanzable. Salir aqui evita reescribir SIN volver a juzgar
+        // (lo que provocaria un revert ciego de toda la pasada al restaurar el
+        // snapshot pre-reescritura). [code review #1]
+        if (rewritesDone >= MAX_TENSE_REWRITES) break;
+
+        // Reescribe los capitulos desviados convirtiendo SOLO su tiempo verbal de
+        // narracion al objetivo, conservando hechos, dialogo, estilo y longitud.
+        let rewroteAny = false;
+        for (const dev of deviated) {
+          if (rewritesDone >= MAX_TENSE_REWRITES) break;
+          const targetChap = early.find((c) => c.chapter.chapterNumber === dev.numero);
+          if (!targetChap) continue;
+          const judgeDirectiva = result.capitulos_desviados.find((d) => d.numero === dev.numero)?.directiva_de_reescritura || "";
+          const directiva = `CORRECCION DE TIEMPO VERBAL (no negociable). La narracion de este capitulo esta en ${dev.tiempo === "mixto" ? "tiempo MIXTO (alterna pasado y presente)" : `tiempo ${dev.tiempo}`}, pero el resto de "${project.title || "la novela"}" se narra en tiempo ${target}. Reescribe el capitulo COMPLETO convirtiendo TODA la voz narrativa al tiempo ${target}.\n\nQUE CONSERVAR INTACTO: los hechos, los personajes, los nombres, el orden de las escenas, el estilo, el dialogo de los personajes y la longitud aproximada. SOLO cambia la conjugacion de los verbos de NARRACION (no toques los dialogos ni los pensamientos en presente).${judgeDirectiva ? `\n\nNOTA DEL JUEZ: ${judgeDirectiva}` : ""}`;
+          await this.rewriteChapterForQA(
+            project,
+            targetChap.chapter,
+            targetChap.section,
+            worldBibleData,
+            fullStyleGuide,
+            "editorial",
+            directiva,
+          );
+          rewritesDone++;
+          rewroteAny = true;
+        }
+
+        // Si no se reescribio nada (p.ej. ningun cap desviado mapea a la ventana),
+        // no tiene sentido seguir iterando: el estado no cambiara.
+        if (!rewroteAny) break;
+
+        // Recarga la prosa reescrita. La siguiente pasada del bucle la VOLVERA a
+        // juzgar y, si mejora, la registrara como nuevo mejor snapshot (asi las
+        // reescrituras buenas se conservan en vez de revertirse). Si empeora, el
+        // snapshot previo —de menos capitulos desviados— prevalece (revert-by-default).
+        early = await loadEarly();
+        if (early.length === 0) break;
+      }
+
+      // Anti-regresion revert-by-default: restaura la version con MENOS capitulos
+      // desviados (puede ser la original si las reescrituras empeoraron). Aun asi
+      // se FIJA el tiempo objetivo para que los capitulos futuros no deriven.
+      if (bestSnapshot && bestTarget) {
+        await restoreSnapshot(bestSnapshot);
+        await this.establishNarrativeTense(project, worldBibleData, bestTarget);
+        const restantes = best ? deviatedFrom(best, bestTarget).length : bestDeviated;
+        await storage.createActivityLog({
+          projectId: project.id, level: restantes > 0 ? "warning" : "info", agentRole: "tense-consistency-judge",
+          message: restantes > 0
+            ? `[Fix166][Puerta Tiempo Verbal] Tras ${MAX_PASSES} pasadas quedan ${restantes} capitulo(s) cuya narracion no convergio a ${bestTarget}; se conserva la mejor version conocida y se FIJA ${bestTarget} para el resto del libro (los capitulos futuros se narraran en ${bestTarget}; las puertas finales daran otra pasada). Se continua la generacion.`
+            : `[Fix166][Puerta Tiempo Verbal] Tiempo verbal unificado a ${bestTarget} en los primeros capitulos. Se fija ${bestTarget} para el resto del libro. Se continua la generacion.`,
+        });
+        return;
+      }
+
+      // Mensaje HONESTO: el juez nunca devolvio veredicto usable, o el dominante
+      // fue "mixto" sin canon (no hay objetivo fiable). La puerta se OMITE sin
+      // tocar la prosa ni bloquear.
+      await storage.createActivityLog({
+        projectId: project.id, level: "warning", agentRole: "tense-consistency-judge",
+        message: best === null
+          ? `[Fix166][Puerta Tiempo Verbal] El Juez de Tiempo Verbal no devolvio un veredicto usable (posible respuesta vacia o timeout del modelo tras sus reintentos internos); la puerta se OMITE este run sin bloquear ni modificar la prosa. La coherencia de tiempo verbal seguira cubierta por el detector de voz y el Revisor Final. Se continua la generacion.`
+          : `[Fix166][Puerta Tiempo Verbal] El tiempo dominante de los primeros capitulos resulto MIXTO y no hay canon explicito del autor, asi que no hay un objetivo fiable que imponer; la puerta NO modifica la prosa (Fix165: no fabricar un canon dudoso). La coherencia de tiempo verbal seguira cubierta por el Revisor Final. Se continua la generacion.`,
+      });
+    } catch (error) {
+      // La puerta es best-effort: un fallo aqui jamas debe abortar la generacion.
+      console.warn(`[Fix166][Puerta Tiempo Verbal] runEarlyTenseGate fallo (no bloqueante): ${(error as Error).message}`);
     }
   }
 
@@ -15339,6 +15638,10 @@ Responde SOLO con un JSON válido con la estructura:
       // [Fix152][Puerta 2/3] Persiste la GUÍA VIVA (jsonb passthrough, sin migración)
       // para que la ruta de RESUME la recupere en reconstructWorldBibleData.
       ...((data as any).guia_viva ? { guia_viva: (data as any).guia_viva } : {}),
+      // [Fix166][Puerta Tiempo Verbal Temprano] Persiste el tiempo verbal fijado
+      // por la puerta temprana (jsonb passthrough, sin migracion) para que la
+      // ruta de RESUME lo recupere en reconstructWorldBibleData.
+      ...((data as any).tiempo_verbal_establecido ? { tiempo_verbal_establecido: (data as any).tiempo_verbal_establecido } : {}),
       lexico_historico: data.world_bible?.lexico_historico || null,
       chapterOutlines: (data.escaleta_capitulos || []).map((c: any) => ({
         number: c.numero,
