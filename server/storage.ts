@@ -177,6 +177,7 @@ export interface IStorage {
   createReeditProject(data: InsertReeditProject): Promise<ReeditProject>;
   getReeditProject(id: number): Promise<ReeditProject | undefined>;
   getAllReeditProjects(): Promise<ReeditProject[]>;
+  getReeditProjectsBySeries(seriesId: number): Promise<ReeditProject[]>;
   updateReeditProject(id: number, data: Partial<ReeditProject>): Promise<ReeditProject | undefined>;
   deleteReeditProject(id: number): Promise<void>;
 
@@ -1064,6 +1065,12 @@ export class DatabaseStorage implements IStorage {
 
   async getAllReeditProjects(): Promise<ReeditProject[]> {
     return db.select().from(reeditProjects).orderBy(desc(reeditProjects.createdAt));
+  }
+
+  async getReeditProjectsBySeries(seriesId: number): Promise<ReeditProject[]> {
+    return db.select().from(reeditProjects)
+      .where(eq(reeditProjects.seriesId, seriesId))
+      .orderBy(reeditProjects.seriesOrder);
   }
 
   async updateReeditProject(id: number, data: Partial<ReeditProject>): Promise<ReeditProject | undefined> {

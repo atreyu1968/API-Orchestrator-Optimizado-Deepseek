@@ -421,17 +421,36 @@ export async function registerRoutes(
     excludeProjectId?: number,
   ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
     if (!seriesId || !seriesOrder || seriesOrder <= 1) return { ok: true };
+    // [Fix168] El guard de orden de serie ignoraba los volumenes que NO son
+    // proyectos de generacion: en las series creadas DESDE IMPORTADOS los
+    // volumenes anteriores viven en `imported_manuscripts` (libros importados)
+    // y/o `reedit_projects` (libros reeditados), nunca en `projects`. Al pulsar
+    // "Generar" en un volumen nuevo (vol N>1), el gate solo miraba `projects`,
+    // no encontraba el volumen 1 y abortaba con "el volumen 1 todavia no existe"
+    // -> el frontend mostraba "No se puede iniciar la generacion". Por eso el
+    // fallo aparecia SOLO en series creadas desde importados. Aqui sumamos las
+    // tres fuentes: un libro importado o reeditado es un volumen YA escrito, asi
+    // que cuenta como existente Y completado para el modo "completed".
     const siblings = await storage.getProjectsBySeries(seriesId);
+    const importedVolumes = await storage.getImportedManuscriptsBySeries(seriesId);
+    const reeditVolumes = await storage.getReeditProjectsBySeries(seriesId);
     for (let order = 1; order < seriesOrder; order++) {
       const sib = siblings.find(p => p.seriesOrder === order && p.id !== excludeProjectId);
-      if (!sib) {
+      const importedAtOrder = importedVolumes.find(m => m.seriesOrder === order);
+      const reeditAtOrder = reeditVolumes.find(r => r.seriesOrder === order);
+      // Un libro importado o reeditado es prosa ya escrita: cuenta como volumen
+      // existente Y completado (el Ghostwriter puede leer su texto de continuidad).
+      const finishedExternalVolume = !!importedAtOrder || !!reeditAtOrder;
+      if (!sib && !finishedExternalVolume) {
         return {
           ok: false,
           status: 409,
           message: `No puedes ${mode === "completed" ? "generar" : "crear"} el volumen ${seriesOrder} de la serie porque el volumen ${order} todavía no existe. Crea los volúmenes anteriores antes de continuar.`,
         };
       }
-      if (mode === "completed" && sib.status !== "completed") {
+      // Solo exigimos status "completed" a los volumenes que son proyectos de
+      // generacion. Los importados/reeditados ya estan escritos, no aplican.
+      if (mode === "completed" && sib && !finishedExternalVolume && sib.status !== "completed") {
         return {
           ok: false,
           status: 409,

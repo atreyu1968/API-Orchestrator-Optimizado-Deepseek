@@ -1,3 +1,4 @@
+- [Fuentes de volumenes de una serie](series-volume-sources.md) — una serie vive en 3 tablas (projects/imported/reedit); todo gate de "volumenes previos" debe unir las tres o falla en series desde importados.
 - [Re-edit coverage & selective reverts](reedit-coverage-and-reverts.md) — cobertura por instrucción exige evidencia por-instrucción, no flag global; reverts selectivos solo en puntos de regresión.
 - [Auto-review readers & version memory](review-readers-version-memory.md) — Holístico lee limpio (sin notas previas); Beta sí arrastra su reacción anterior; aviso de regresión = contexto operativo, NO notas de contenido.
 - [TS circular-inference en bucles](ts-loop-circular-inference.md) — TS7022 en cascada: un const al inicio del bucle que depende de un let mutado al final; cortar con anotaciones explícitas.
