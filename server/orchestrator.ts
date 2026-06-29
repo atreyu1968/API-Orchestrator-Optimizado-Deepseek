@@ -1173,6 +1173,24 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
         }
       }
 
+      // [Fix167] La guía de la serie debe alimentar también el guiaEstilo (Narrador +
+      // pre-flight de voz Fix108), no solo la premisa del Arquitecto. Hasta ahora la
+      // guía de serie viajaba SOLO en effectivePremise (que recibe el Arquitecto), así
+      // que un volumen de serie sin styleGuideId/narrativeVoice propios (caso típico de
+      // las series creadas DESDE IMPORTADOS) abortaba en el pre-flight con "no se ha
+      // podido determinar la voz narrativa canónica" pese a tener guía de serie con su
+      // bloque obligatorio de VOZ NARRATIVA CANÓNICA. La plegamos aquí, ANTES del
+      // pre-flight, para que (a) el pre-flight detecte POV+tiempo verbal del bloque
+      // canónico de la serie y (b) el Narrador herede la voz/estilo de la saga. El
+      // Arquitecto la sigue recibiendo por separado vía seriesContextContent (ningún
+      // agente la ve duplicada: el Arquitecto no recibe guiaEstilo y el Narrador no
+      // recibe la premisa).
+      const seriesStyleBlock = await this.buildSeriesGuideStyleBlock(project.seriesId);
+      if (seriesStyleBlock) {
+        styleGuideContent = styleGuideContent + seriesStyleBlock;
+        console.log(`[Fix167] Guía de serie plegada al guiaEstilo (preflight + Narrador) para el proyecto ${project.id}.`);
+      }
+
       // [Fix108] PRE-FLIGHT GUARD de voz canónica.
       // Antes de Fix108 era posible iniciar una generación sin que el extractor
       // regex pudiera deducir POV o tiempo verbal de la guía. Resultado real:
@@ -5184,6 +5202,17 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       if (voiceBlockResume) {
         styleGuideContent = voiceBlockResume + styleGuideContent;
         console.log(`[Fix108][resume] Voz canónica inyectada al guiaEstilo: pov=${projectVoiceResume?.pov} tense=${projectVoiceResume?.tense}`);
+      }
+
+      // [Fix167] Paridad con _generateNovel: la guía de la serie también alimenta el
+      // guiaEstilo en reanudaciones, para que los capítulos reanudados sigan la voz y
+      // el estilo canónicos de la saga (igual que los generados antes del crash). En
+      // resume no se reconstruye effectivePremise, así que este es el único canal por
+      // el que la guía de serie llega al Narrador de los capítulos reanudados.
+      const seriesStyleBlockResume = await this.buildSeriesGuideStyleBlock(project.seriesId);
+      if (seriesStyleBlockResume) {
+        styleGuideContent = styleGuideContent + seriesStyleBlockResume;
+        console.log(`[Fix167][resume] Guía de serie plegada al guiaEstilo para el proyecto ${project.id}.`);
       }
 
       // [Fix64] Capítulos con status="polishing" tienen contenido aprobado por
@@ -17116,6 +17145,26 @@ Responde SOLO con un JSON válido con la estructura:
       );
       return { chaptersProcessed: 0, totalChanges: 0 };
     }
+  }
+
+  // [Fix167] Devuelve un bloque con la GUIA DE LA SERIE para plegarlo al guiaEstilo
+  // (no solo a la premisa del Arquitecto). Sin esto, un volumen de serie sin
+  // styleGuideId/narrativeVoice propios abortaba en el pre-flight de voz Fix108
+  // ("no se ha podido determinar la voz narrativa canonica") pese a que la guia de
+  // serie SI incluye su bloque obligatorio de VOZ NARRATIVA CANONICA (POV + tiempo
+  // verbal), y ademas el Narrador nunca recibia la voz/estilo de la saga. Best-effort:
+  // jamas lanza; si no hay serie o guia, devuelve "".
+  private async buildSeriesGuideStyleBlock(seriesId: number | null | undefined): Promise<string> {
+    if (!seriesId) return "";
+    try {
+      const seriesData = await storage.getSeries(seriesId);
+      if (seriesData?.seriesGuide && seriesData.seriesGuide.trim()) {
+        return `\n\n--- GUÍA DE LA SERIE "${seriesData.title}" (voz y estilo canónicos de la saga) ---\n${seriesData.seriesGuide}`;
+      }
+    } catch (e) {
+      console.warn(`[Fix167] No se pudo cargar la guía de serie para el guiaEstilo: ${(e as Error).message}`);
+    }
+    return "";
   }
 
   private async loadSeriesThreadsAndEvents(project: Project): Promise<{ threads: string[]; events: string[] }> {
