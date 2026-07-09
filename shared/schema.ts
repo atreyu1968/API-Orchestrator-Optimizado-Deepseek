@@ -616,6 +616,9 @@ export const queueState = pgTable("queue_state", {
   autoAdvance: boolean("auto_advance").notNull().default(true),
   skipOnError: boolean("skip_on_error").notNull().default(true),
   pauseAfterEach: boolean("pause_after_each").notNull().default(false),
+  // [Fix172] Suspender el trabajo LLM en horas PICO de DeepSeek (tarifa x2:
+  // 9-12 y 14-18 hora de Pekin = 01-04 y 06-10 UTC) y reanudar en valle.
+  pauseOnPeakHours: boolean("pause_on_peak_hours").notNull().default(false),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

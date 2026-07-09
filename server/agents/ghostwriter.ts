@@ -82,6 +82,16 @@ interface GhostwriterInput {
    */
   previousChaptersFullText?: string;
   /**
+   * [Fix170] Texto COMPLETO de los capitulos POSTERIORES al que se esta
+   * editando (solo en modo quirurgico/QA-rewrite sobre novela terminada).
+   * Permite que la correccion no contradiga hechos, dialogos o revelaciones
+   * que ocurren DESPUES del capitulo intervenido — antes el fallback del
+   * Narrador editaba ciego hacia adelante y podia romper continuidad
+   * posterior. Lo construye el Orquestador con buildFollowingChaptersFullText.
+   * Cadena vacia si no hay capitulos posteriores o fuera del modo QA.
+   */
+  followingChaptersFullText?: string;
+  /**
    * [Fix70-B] Vista compacta del MOLDE ESCÉNICO de los últimos 5 caps ya
    * escritos: tipo_capitulo, funcion_estructural, tipo_cierre + primera y
    * última línea. NO incluye prosa completa (eso ya viaja en
@@ -970,6 +980,7 @@ ${input.seriesMilestonesAndThreads}
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     ${input.previousChaptersFullText ? input.previousChaptersFullText : ""}
+    ${input.followingChaptersFullText ? input.followingChaptersFullText : ""}
     `;
 
     const minWords = input.minWordCount || 2500;

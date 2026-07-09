@@ -49,6 +49,7 @@ import {
   type EditorialNotesParseResult,
   type WorldBiblePatch,
   isProjectCancelledFromDb,
+  isProjectCancelled,
   registerProjectAbortController,
   clearProjectAbortController,
   type EditorResult, 
@@ -65,6 +66,8 @@ import { extractStyleDirectives, synthesizeVoiceBlock, type NarrativeVoiceConfig
 import { repairJson } from "./utils/json-repair";
 import { groundInstructionInChapter, extractFlaggedChapters } from "./utils/instruction-grounding";
 import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper } from "./utils/series-context-builder";
+import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
+import { recordRawAiUsage } from "./utils/ai-usage";
 import { calculateRealCost } from "./cost-calculator";
 import { runWithProjectContext } from "./utils/agent-context";
 import type { AdminActionVerdict } from "./utils/review-score";
@@ -301,6 +304,14 @@ export class Orchestrator {
   // structural-translator. Cuando true, no se crean tarjetas que requieran
   // confirmación humana — el loop automático es desatendido por diseño.
   private _fromAutoLoop: boolean = false;
+
+  // [Fix170] Extracto acotado de la prosa del informe global (Holistico/Beta)
+  // que origino el pase de correcciones en curso. Set por _applyEditorialNotes
+  // (try/finally, mismo patron que _fromAutoLoop) y leido por
+  // rewriteChapterForQA para que el Cirujano y el Narrador-fallback entiendan
+  // el DIAGNOSTICO GLOBAL detras de cada instruccion por-capitulo, en vez de
+  // operar solo con la orden local descontextualizada.
+  private _qaGlobalReportExcerpt: string = "";
 
   // Cancellation flag set by the queue manager when this orchestrator instance is
   // being abandoned (e.g. heartbeat auto-recovery is starting a fresh one).
@@ -925,6 +936,168 @@ CANON IRREVOCABLE — no contradigas ningún detalle ni reescribas el pasado.${h
     const footer = `\n\n═══════════════════════════════════════════════════════════════════\nFIN DE CAPÍTULOS ANTERIORES — Continúa la novela respetando todo lo anterior\n═══════════════════════════════════════════════════════════════════\n`;
 
     return header + body + footer;
+  }
+
+  /**
+   * [Fix170] Espejo de buildPreviousChaptersFullText pero hacia ADELANTE:
+   * texto completo de los capitulos POSTERIORES al actual. Se usa SOLO en
+   * reescrituras QA sobre novela ya terminada, para que el Narrador-fallback
+   * no contradiga hechos, dialogos o revelaciones que ocurren DESPUES del
+   * capitulo intervenido. Presupuesto por defecto mas corto (250k) porque
+   * este bloque viaja ADEMAS del de capitulos previos.
+   * Recorre desde el mas CERCANO al actual hacia adelante para preservar los
+   * inmediatamente posteriores (los criticos para continuidad) si el
+   * presupuesto se agota.
+   */
+  static buildFollowingChaptersFullText(
+    completedChapters: Chapter[],
+    currentChapterNumber: number,
+    budgetTokens: number = 250_000
+  ): string {
+    const getChapterLabel = (raw: number): string => {
+      if (!Number.isFinite(raw)) return `SECCIÓN ${raw}`;
+      if (raw === 0) return "PRÓLOGO";
+      if (raw === -1) return "EPÍLOGO";
+      if (raw === -2) return "NOTA DEL AUTOR";
+      return `CAPÍTULO ${raw}`;
+    };
+    const getChapterSortOrder = (raw: number): number => {
+      if (!Number.isFinite(raw)) return Number.MAX_SAFE_INTEGER;
+      if (raw === 0) return -1000;
+      if (raw === -1) return 1_000_000;
+      if (raw === -2) return 1_000_001;
+      return raw;
+    };
+
+    const currentOrder = getChapterSortOrder(currentChapterNumber);
+
+    const eligible = completedChapters
+      .filter(c => c.status === "completed")
+      .filter(c => {
+        const content = ((c as any).editedContent || c.originalContent || c.content || "") as string;
+        return content.trim().length > 0;
+      })
+      .filter(c => getChapterSortOrder(c.chapterNumber) > currentOrder)
+      .sort((a, b) => getChapterSortOrder(a.chapterNumber) - getChapterSortOrder(b.chapterNumber));
+
+    if (eligible.length === 0) return "";
+
+    const estimateTokens = (text: string): number => Math.ceil(text.length / 4);
+
+    type Block = { num: number; label: string; title: string; content: string; truncated: boolean };
+    const blocks: Block[] = [];
+    let totalTokens = 0;
+
+    // Desde el mas cercano al actual hacia adelante: los inmediatamente
+    // posteriores son los criticos si el presupuesto se agota.
+    for (let i = 0; i < eligible.length; i++) {
+      const ch = eligible[i];
+      const content = ((ch as any).editedContent || ch.originalContent || ch.content || "") as string;
+      const blockTokens = estimateTokens(content);
+
+      if (totalTokens + blockTokens <= budgetTokens) {
+        blocks.push({
+          num: ch.chapterNumber,
+          label: getChapterLabel(ch.chapterNumber),
+          title: ch.title || "",
+          content,
+          truncated: false,
+        });
+        totalTokens += blockTokens;
+      } else {
+        blocks.push({
+          num: ch.chapterNumber,
+          label: getChapterLabel(ch.chapterNumber),
+          title: ch.title || "",
+          content: `[Contenido de este capítulo omitido por presupuesto de contexto. No introduzcas nada que pueda contradecir lo que ocurre en él.]`,
+          truncated: true,
+        });
+      }
+    }
+
+    const truncatedCount = blocks.filter(b => b.truncated).length;
+    const fullCount = blocks.length - truncatedCount;
+    const headerWarning = truncatedCount > 0
+      ? `\n⚠️ Nota: ${truncatedCount} capítulo(s) más lejano(s) están omitidos por presupuesto de contexto. Los ${fullCount} más cercanos están en texto íntegro.`
+      : "";
+
+    const header = `
+
+═══════════════════════════════════════════════════════════════════
+📖 CAPÍTULOS POSTERIORES — TEXTO COMPLETO (CONTINUIDAD HACIA ADELANTE)
+═══════════════════════════════════════════════════════════════════
+Estás corrigiendo un capítulo de una novela YA TERMINADA. A continuación,
+los capítulos que vienen DESPUÉS del que estás editando. Son CANON IRREVOCABLE:
+tu corrección NO puede introducir hechos, muertes, revelaciones, objetos o
+decisiones que contradigan lo que ocurre después, ni resolver antes de tiempo
+algo que estos capítulos resuelven. Úsalos SOLO como contexto de verificación;
+NO los reescribas ni copies su prosa al capítulo actual.${headerWarning}
+═══════════════════════════════════════════════════════════════════
+`;
+
+    const body = blocks.map(b =>
+      `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${b.label}${b.title ? `: ${b.title}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${b.content}`
+    ).join("\n");
+
+    const footer = `\n\n═══════════════════════════════════════════════════════════════════\nFIN DE CAPÍTULOS POSTERIORES — Tu corrección debe encajar con todo lo anterior\n═══════════════════════════════════════════════════════════════════\n`;
+
+    return header + body + footer;
+  }
+
+  /**
+   * [Fix170] Extractos de los capitulos VECINOS (cola del anterior + cabeza
+   * del siguiente) para el Cirujano de Texto via su campo referenceChapters
+   * [Fix129]. El Cirujano opera con find/replace muy localizado: no necesita
+   * la novela entera, pero SI necesita ver como termina el capitulo previo y
+   * como empieza el siguiente para no romper transiciones ni contradecir lo
+   * inmediato. Presupuesto en caracteres por vecino (por defecto ~4000).
+   */
+  static buildNeighborChapterExcerpts(
+    completedChapters: Chapter[],
+    currentChapterNumber: number,
+    charsPerNeighbor: number = 4000
+  ): string {
+    const getChapterLabel = (raw: number): string => {
+      if (!Number.isFinite(raw)) return `SECCIÓN ${raw}`;
+      if (raw === 0) return "PRÓLOGO";
+      if (raw === -1) return "EPÍLOGO";
+      if (raw === -2) return "NOTA DEL AUTOR";
+      return `CAPÍTULO ${raw}`;
+    };
+    const getChapterSortOrder = (raw: number): number => {
+      if (!Number.isFinite(raw)) return Number.MAX_SAFE_INTEGER;
+      if (raw === 0) return -1000;
+      if (raw === -1) return 1_000_000;
+      if (raw === -2) return 1_000_001;
+      return raw;
+    };
+
+    const currentOrder = getChapterSortOrder(currentChapterNumber);
+    const sorted = completedChapters
+      .filter(c => c.status === "completed")
+      .filter(c => {
+        const content = ((c as any).editedContent || c.originalContent || c.content || "") as string;
+        return content.trim().length > 0;
+      })
+      .sort((a, b) => getChapterSortOrder(a.chapterNumber) - getChapterSortOrder(b.chapterNumber));
+
+    const prev = [...sorted].reverse().find(c => getChapterSortOrder(c.chapterNumber) < currentOrder);
+    const next = sorted.find(c => getChapterSortOrder(c.chapterNumber) > currentOrder);
+    if (!prev && !next) return "";
+
+    const parts: string[] = [];
+    if (prev) {
+      const content = (((prev as any).editedContent || prev.originalContent || prev.content || "") as string).trim();
+      const tail = content.length > charsPerNeighbor ? `[...]\n${content.slice(-charsPerNeighbor)}` : content;
+      parts.push(`## FINAL DEL ${getChapterLabel(prev.chapterNumber)}${prev.title ? `: ${prev.title}` : ""} (capítulo INMEDIATAMENTE ANTERIOR)\n\n${tail}`);
+    }
+    if (next) {
+      const content = (((next as any).editedContent || next.originalContent || next.content || "") as string).trim();
+      const head = content.length > charsPerNeighbor ? `${content.slice(0, charsPerNeighbor)}\n[...]` : content;
+      parts.push(`## INICIO DEL ${getChapterLabel(next.chapterNumber)}${next.title ? `: ${next.title}` : ""} (capítulo INMEDIATAMENTE POSTERIOR)\n\n${head}`);
+    }
+
+    return parts.join("\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
   }
 
   /**
@@ -4126,6 +4299,12 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
         plotOutline: this.convertPlotOutline(worldBibleData),
       });
 
+      // [Fix173] Con la escaleta ya definida, dar titulo PROPIO a los volumenes
+      // de serie que nacieron con titulo generico ("Serie — Vol. N"). Best-effort.
+      if (!this.aborted) {
+        await this.maybeRetitleGenericSeriesVolume(project, worldBibleData);
+      }
+
       // Verify World Bible was saved correctly before proceeding
       const MAX_VERIFY_ATTEMPTS = 5;
       let verifyAttempt = 0;
@@ -4238,6 +4417,13 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
           });
           return;
         }
+
+        // [Fix172] Puerta de hora pico: si el flag global esta activo y estamos
+        // en ventana pico de DeepSeek, la generacion espera aqui (progreso ya
+        // persistido cap a cap) y se reanuda sola al entrar en hora valle.
+        await waitForOffPeakIfEnabled(project.id, `generación — capítulo ${i + 1}`,
+          async () => this.aborted || (await isProjectCancelledFromDb(project.id)));
+        if (this.aborted || (await isProjectCancelledFromDb(project.id))) return;
 
         const chapter = chapters[i];
         const sectionData = allSections[i];
@@ -5272,7 +5458,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       );
 
       const worldBibleData = this.reconstructWorldBibleData(worldBible, project);
-      
+
+      // [Fix173] Paridad con _generateNovel: si un volumen de serie llega al
+      // resume aun con titulo generico ("Serie — Vol. N"), lo titulamos aqui
+      // con la escaleta ya reconstruida. Best-effort, no bloquea.
+      if (!this.aborted) {
+        await this.maybeRetitleGenericSeriesVolume(project, worldBibleData);
+      }
+
       let seriesUnresolvedThreadsResume: string[] = [];
       let seriesKeyEventsResume: string[] = [];
       if (project.seriesId) {
@@ -5288,6 +5481,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           console.log(`[Orchestrator] Aborted in resume loop before chapter ${chapter.chapterNumber} (project ${project.id}). Exiting silently.`);
           return;
         }
+        // [Fix172] Puerta de hora pico (mismo comportamiento que en _generateNovel).
+        await waitForOffPeakIfEnabled(project.id, `reanudación — capítulo ${chapter.chapterNumber}`,
+          async () => this.aborted || (await isProjectCancelledFromDb(project.id)));
+        if (this.aborted || (await isProjectCancelledFromDb(project.id))) return;
         const sectionData = this.buildSectionDataFromChapter(chapter, worldBibleData);
         
         await storage.updateChapter(chapter.id, { status: "writing" });
@@ -9053,23 +9250,90 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }).join("\n");
 
         if (fromAutoLoop) {
-          // [Fix111] Dentro del loop automático (Holístico/Beta SA),
-          // NO creamos tarjetas "Acción administrativa pendiente" que
-          // requieran confirmación manual: el usuario tiene razón en
-          // que es inconsistente — el loop está corriendo desatendido
-          // y crear una tarjeta que pide intervención humana rompe la
-          // promesa de "automático". El loop sigue su curso; estas
-          // operaciones estructurales/transversales solo se loguean
-          // como diagnóstico para que el usuario sepa lo que el lector
-          // detectó pero el sistema no puede ejecutar dentro del SA.
-          // Si quiere aplicarlas, puede relanzar el flujo manual de
-          // notas editoriales tras el loop.
-          await storage.createActivityLog({
-            projectId: project.id,
-            level: "warning",
-            message: `[Fix111] El loop automático detectó ${autoInstructions.pendingAdministrative.length} operación(es) que requerirían intervención manual (no se crean tarjetas para no bloquear el flujo desatendido):\n${lines}\n\nEl loop continúa con el resto de instrucciones cap-a-cap. Si quieres aplicar estas operaciones, relanza el flujo de notas editoriales manualmente tras el loop.`,
-            agentRole: "editor",
-          });
+          // [Fix171] Dentro del loop automatico NADA queda como propuesta que
+          // pida intervencion humana (el flujo es 100% desatendido):
+          //   - Fusiones CON datos estructurados (merge_into + merge_sources
+          //     validos) se derivan a tarjetas merge_chapters que pasan por la
+          //     misma verificacion de UNANIMIDAD Holistico+Beta que los
+          //     borrados [Fix164]; si ambos lectores aprueban, el orquestador
+          //     las EJECUTA (integracion del contenido + borrado de la fuente
+          //     dentro del tope de borrados por novela).
+          //   - Fusiones sin datos estructurados, reestructuraciones (Fix87)
+          //     y directivas transversales se DESCARTAN con log honesto: el
+          //     lector las detecto pero el sistema desatendido no puede
+          //     ejecutarlas con seguridad, y dejarlas "pendientes" rompia la
+          //     promesa de flujo automatico [Fix111].
+          const executableMerges = otherAdmin.filter(p =>
+            p.tipo === "fusionar" &&
+            Array.isArray((p as any).targetChapters) && (p as any).targetChapters.length === 1 &&
+            Array.isArray((p as any).mergeSources) && (p as any).mergeSources.length > 0
+          );
+          const discardedAdmin = otherAdmin.filter(p => !executableMerges.includes(p));
+
+          if (executableMerges.length > 0) {
+            try {
+              const fresh = await storage.getProject(project.id);
+              const existing = Array.isArray((fresh as any)?.pendingAdminActions) ? (fresh as any).pendingAdminActions : [];
+              // Dedup: una sola tarjeta merge_chapters por capitulo destino
+              // (el parser re-emite la misma fusion en cada iteracion).
+              const alreadyPendingMergeInto = new Set<number>(
+                existing
+                  .filter((a: any) => String(a?.type) === "merge_chapters")
+                  .map((a: any) => Number(a?.targetChapter))
+                  .filter((n: number) => Number.isFinite(n))
+              );
+              let nextMergeId = existing.reduce((max: number, a: any) => Math.max(max, Number(a?.id) || 0), 0) + 1;
+              const mergesToAdd: any[] = [];
+              for (const p of executableMerges) {
+                const mergeInto = Number((p as any).targetChapters[0]);
+                const sources = ((p as any).mergeSources as any[])
+                  .map(n => Number(n))
+                  .filter(n => Number.isFinite(n) && n > 0 && n !== mergeInto);
+                if (!Number.isFinite(mergeInto) || mergeInto <= 0 || sources.length === 0) continue;
+                if (alreadyPendingMergeInto.has(mergeInto)) continue;
+                alreadyPendingMergeInto.add(mergeInto);
+                mergesToAdd.push({
+                  id: nextMergeId++,
+                  type: "merge_chapters",
+                  targetChapter: mergeInto,
+                  targetLabel: `Capítulo ${mergeInto} (absorbe cap ${sources.join(", ")})`,
+                  secondaryChapter: sources[0],
+                  sourceChapters: sources,
+                  reason: p.motivo,
+                  source: "auto-review-loop",
+                  createdAt: new Date().toISOString(),
+                });
+              }
+              if (mergesToAdd.length > 0) {
+                await storage.updateProject(project.id, { pendingAdminActions: [...existing, ...mergesToAdd] } as any);
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "info",
+                  message: `[Fix171] ${mergesToAdd.length} fusión(es) de capítulos sugerida(s) por los lectores se han derivado a verificación por UNANIMIDAD (Holístico+Beta). Si AMBOS lectores las aprueban en la siguiente lectura, el sistema las ejecutará de forma desatendida (integración del contenido + borrado del capítulo fuente, dentro del tope de borrados por novela). No requieren intervención del usuario.`,
+                  agentRole: "editor",
+                });
+              }
+            } catch (persistErr: any) {
+              console.error("[Fix171] Failed to persist merge_chapters admin actions:", persistErr?.message || persistErr);
+            }
+          }
+
+          if (discardedAdmin.length > 0) {
+            const discardedLines = discardedAdmin.map(p => {
+              const tipoLabel = p.tipo === "fusionar"
+                ? "FUSIÓN SIN DATOS ESTRUCTURADOS"
+                : p.tipo === "structural_restructure"
+                  ? "REESTRUCTURACIÓN ESTRUCTURAL (Fix87)"
+                  : "DIRECTIVA TRANSVERSAL DE ESTILO";
+              return `  • [${tipoLabel}] ${p.descripcion}\n      → Detalle: ${p.motivo.slice(0, 240)}${p.motivo.length > 240 ? "…" : ""}`;
+            }).join("\n");
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              message: `[Fix171] El loop automático DESCARTÓ ${discardedAdmin.length} operación(es) administrativa(s) que el flujo desatendido no puede ejecutar con seguridad (no quedan pendientes ni piden confirmación):\n${discardedLines}\n\nEl loop continúa con el resto de instrucciones cap-a-cap. Si tras el loop quieres realizar alguna de estas operaciones, hazlo desde el chat editorial o el flujo manual de notas.`,
+              agentRole: "editor",
+            });
+          }
         } else {
           await storage.createActivityLog({
             projectId: project.id,
@@ -9767,7 +10031,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // verificacion de UNANIMIDAD Holistico+Beta (applyConfirmedAdminActions) con
     // tope por novela. En el flujo MANUAL (false) el borrado sigue su curso normal.
     routeDeletesToPending: boolean = false,
-  ): { valid: EditorialInstruction[]; pendingAdministrative: Array<{ tipo: string; descripcion: string; motivo: string; targetChapters?: number[] }>; degradedMultiCap: string[] } | null {
+  ): { valid: EditorialInstruction[]; pendingAdministrative: Array<{ tipo: string; descripcion: string; motivo: string; targetChapters?: number[]; mergeSources?: number[] }>; degradedMultiCap: string[] } | null {
     const startMarker = "<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->";
     const endMarker = "<!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->";
     // [Fix25-followup] Extraer TODOS los bloques de marcadores. El auto-loop
@@ -9822,7 +10086,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     const validChapterNumbers = new Set(chapterIndex.map(c => c.numero));
 
     const valid: EditorialInstruction[] = [];
-    const pendingAdministrative: Array<{ tipo: string; descripcion: string; motivo: string; targetChapters?: number[] }> = [];
+    const pendingAdministrative: Array<{ tipo: string; descripcion: string; motivo: string; targetChapters?: number[]; mergeSources?: number[] }> = [];
 
     for (const raw of parsed.instrucciones) {
       if (!raw || typeof raw !== "object") continue;
@@ -9946,6 +10210,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           tipo: "fusionar",
           descripcion: summary,
           motivo: instrucciones_correccion || descripcion,
+          // [Fix171] Datos estructurados de la fusion para que el auto-loop
+          // pueda convertirla en tarjeta merge_chapters ejecutable (unanimidad
+          // Holistico+Beta). Solo se emiten si merge_into/merge_sources son
+          // validos; una fusion sin datos estructurados NO es ejecutable.
+          targetChapters: mergeIntoOk ? [mergeInto] : undefined,
+          mergeSources: mergeIntoOk && mergeSources.length > 0 ? mergeSources : undefined,
         });
         continue; // NO entra en el array de instrucciones aplicables.
       }
@@ -11735,6 +12005,17 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         }
         currentProject = cancelCheck;
 
+        // [Fix172] Puerta de hora pico entre iteraciones del bucle de pulido:
+        // cada lectura Holistico+Beta es de las operaciones mas caras (manuscrito
+        // completo x2 lectores), asi que se suspende en pico y se reanuda en valle.
+        await waitForOffPeakIfEnabled(project.id, `auto-revisión Holístico+Beta — iteración ${iter}`,
+          async () => {
+            if (this.aborted) return true;
+            const p = await storage.getProject(project.id);
+            return !p || p.status === "cancelled" || p.status === "archived";
+          });
+        if (this.aborted) return;
+
         this.callbacks.onAgentStatus("editor", "thinking",
           `Auto-revisión Holístico+Beta iteración ${iter}/${MAX_ITERATIONS} (target Beta≥${TARGET_BETA_SCORE} AND Holístico≥${TARGET_HOLISTIC_SCORE})...`
         );
@@ -12539,11 +12820,130 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             agentRole: "editor",
           });
         }
+      } else if (actionType === "merge_chapters") {
+        // [Fix171] Ejecutor desatendido de fusiones aprobadas por UNANIMIDAD.
+        // Operacion deterministica que NUNCA pierde contenido:
+        //   1. El contenido de cada capitulo fuente se anexa al capitulo
+        //      destino con un separador de escena (* * *).
+        //   2. Los capitulos fuente se borran (cuentan contra el tope de
+        //      borrados por novela [Fix164]).
+        //   3. La costura NO se pule aqui: la siguiente lectura del bucle
+        //      (Holistico+Beta) vera el capitulo fusionado y emitira las
+        //      instrucciones cap-a-cap necesarias para suavizar la transicion
+        //      via el flujo QA existente. Asi no se invoca al Narrador desde
+        //      aqui (sin riesgo de reescritura destructiva) y el bucle
+        //      converge con sus propios mecanismos.
+        const mergeInto = Number(action?.targetChapter);
+        // Dedupe defensivo: merge_sources duplicados no deben provocar doble
+        // borrado ni doble anexado del mismo capitulo.
+        const sourceNums: number[] = Array.from(new Set(
+          ((Array.isArray((action as any)?.sourceChapters)
+            ? (action as any).sourceChapters
+            : (typeof action?.secondaryChapter === "number" ? [action.secondaryChapter] : [])) as any[])
+            .map((n: any) => Number(n))
+            .filter((n: number) => Number.isFinite(n) && n > 0 && n !== mergeInto)
+        ));
+        if (!Number.isFinite(mergeInto) || sourceNums.length === 0) {
+          discarded++;
+          processedAppliedOrDiscarded.add(id);
+          await storage.createActivityLog({
+            projectId,
+            level: "info",
+            message: `[Fix171] acción admin id=${id} (merge_chapters) aprobada pero sin datos válidos (destino=${action?.targetChapter}, fuentes=${JSON.stringify((action as any)?.sourceChapters ?? action?.secondaryChapter)}). DESCARTADA para no dejar propuestas pendientes.`,
+            agentRole: "editor",
+          });
+          continue;
+        }
+        try {
+          const allChapters = await storage.getChaptersByProject(projectId);
+          const dest = allChapters.find(c => Number(c.chapterNumber) === mergeInto);
+          // La existencia de una fuente se decide por el CAPITULO (registro),
+          // NO por su contenido: un capitulo con contenido vacio EXISTE y debe
+          // borrarse igualmente (su "contenido" a anexar es la cadena vacia).
+          // Con el filtro anterior (content truthy) una fuente vacia se
+          // trataba como inexistente y la fusion se retiraba como "aplicada"
+          // dejando el capitulo fuente vivo — estado inconsistente.
+          const sourcesFound = sourceNums
+            .map(n => allChapters.find(c => Number(c.chapterNumber) === n))
+            .filter((c): c is NonNullable<typeof c> => Boolean(c));
+          const missingSources = sourceNums.filter(n => !sourcesFound.some(c => Number(c.chapterNumber) === n));
+          if (!dest || !dest.content) {
+            discarded++;
+            processedAppliedOrDiscarded.add(id);
+            await storage.createActivityLog({
+              projectId,
+              level: "warn",
+              message: `[Fix171] acción admin id=${id} (merge_chapters → cap ${mergeInto}) aprobada pero el capítulo destino ya no existe o está vacío. DESCARTADA.`,
+              agentRole: "editor",
+            });
+            continue;
+          }
+          if (sourcesFound.length === 0) {
+            // Fuentes ya ausentes: el efecto (caps fuente fuera) ya esta
+            // cumplido. Se considera aplicada sin ejecutar nada.
+            applied++;
+            processedAppliedOrDiscarded.add(id);
+            await storage.createActivityLog({
+              projectId,
+              level: "info",
+              message: `[Fix171] acción admin id=${id} (merge_chapters → cap ${mergeInto}) aprobada pero los capítulos fuente ya no existen. Se retira del listado sin ejecutar nada.`,
+              agentRole: "editor",
+            });
+            continue;
+          }
+          // Tope de borrados [Fix164]: cada fuente borrada cuenta. Si no cabe,
+          // se DESCARTA (no se deja pendiente — el bucle desatendido no
+          // acumula propuestas) con log honesto.
+          if (chaptersDeleted + sourcesFound.length > deletionBudget) {
+            discarded++;
+            processedAppliedOrDiscarded.add(id);
+            await storage.createActivityLog({
+              projectId,
+              level: "info",
+              message: `[Fix171] acción admin id=${id} (merge_chapters → cap ${mergeInto}) aprobada por ambos lectores PERO requiere ${sourcesFound.length} borrado(s) y el tope de borrados automáticos por novela ya no lo permite. DESCARTADA con este aviso (el bucle desatendido no deja propuestas pendientes). Si quieres la fusión, hazla manualmente desde el chat editorial.`,
+              agentRole: "editor",
+            });
+            continue;
+          }
+          // Contenido vacio/null de una fuente NO aporta texto (se omite del
+          // join para no anexar separadores huerfanos) pero la fuente se
+          // BORRA igualmente: existe como capitulo y la fusion la elimina.
+          const sourcePieces = sourcesFound
+            .map(s => (typeof s.content === "string" ? s.content.trim() : ""))
+            .filter(piece => piece.length > 0);
+          const mergedContent = [dest.content, ...sourcePieces].join("\n\n* * *\n\n");
+          const mergedWc = mergedContent.split(/\s+/).filter(w => w.length > 0).length;
+          await storage.updateChapter(dest.id, { content: mergedContent, wordCount: mergedWc } as any);
+          for (const src of sourcesFound) {
+            await storage.deleteChapter(src.id);
+            chaptersDeleted++;
+          }
+          applied++;
+          processedAppliedOrDiscarded.add(id);
+          const missingNote = missingSources.length > 0
+            ? ` Nota: los caps fuente ${missingSources.join(", ")} ya no existían (probablemente borrados antes); se fusionaron solo los encontrados.`
+            : "";
+          await storage.createActivityLog({
+            projectId,
+            level: "info",
+            message: `[Fix171] APLICADA acción admin id=${id} — fusión desatendida tras verificación Holístico+Beta: el contenido de cap ${sourcesFound.map(s => s.chapterNumber).join(", ")} se ha integrado al final del cap ${mergeInto} con separador de escena y los capítulos fuente se han eliminado (cuentan contra el tope de borrados por novela). La siguiente lectura del bucle pulirá la transición si hace falta.${missingNote} ${h?.motivo ? `Holístico: ${h.motivo.slice(0, 180)}` : ""}${b?.motivo ? ` | Beta: ${b.motivo.slice(0, 180)}` : ""}`.trim(),
+            agentRole: "editor",
+          });
+        } catch (e) {
+          survivors.push(action);
+          keptPending++;
+          await storage.createActivityLog({
+            projectId,
+            level: "error",
+            message: `[Fix171] acción admin id=${id} (merge_chapters → cap ${mergeInto}) aprobada pero falló al ejecutarse: ${(e as Error).message?.slice(0, 240) || String(e)}. Se mantiene pendiente.`,
+            agentRole: "editor",
+          });
+        }
       } else {
-        // Otros tipos (merge_chapters, split_chapter, etc.) no tienen
-        // ejecutor automático todavía. Se mantienen pendientes con un log
-        // explicativo para que el usuario sepa que los lectores los
-        // aprobaron y solo falta la mecánica de aplicación.
+        // Otros tipos (split_chapter, etc.) no tienen ejecutor automático
+        // todavía. Se mantienen pendientes con un log explicativo para que el
+        // usuario sepa que los lectores los aprobaron y solo falta la
+        // mecánica de aplicación.
         survivors.push(action);
         keptPending++;
         await storage.createActivityLog({
@@ -12597,6 +12997,40 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     }
 
     return { applied, discarded, keptPending, chaptersDeleted };
+  }
+
+  // [Fix171] Limpieza al CERRAR el bucle desatendido: cualquier tarjeta
+  // administrativa creada por el propio bucle (source="auto-review-loop")
+  // que no llego a resolverse (sin unanimidad, veredicto omitido por un
+  // lector, o sin presupuesto de borrados) se DESCARTA con log honesto.
+  // Regla del usuario: el bucle es 100% desatendido y NUNCA deja propuestas
+  // pendientes que pidan intervencion. Las tarjetas creadas por flujos
+  // MANUALES (sin ese source) se conservan intactas.
+  private async discardLeftoverAutoLoopAdminActions(projectId: number): Promise<void> {
+    try {
+      const fresh = await storage.getProject(projectId);
+      if (!fresh) return;
+      const existing: any[] = Array.isArray((fresh as any).pendingAdminActions)
+        ? (fresh as any).pendingAdminActions
+        : [];
+      if (existing.length === 0) return;
+      const keep = existing.filter(a => String(a?.source || "") !== "auto-review-loop");
+      const removedCount = existing.length - keep.length;
+      if (removedCount === 0) return;
+      const removedLines = existing
+        .filter(a => String(a?.source || "") === "auto-review-loop")
+        .map(a => `  • [${a?.type}] ${a?.targetLabel || `cap ${a?.targetChapter}`} — ${String(a?.reason || "").slice(0, 160)}`)
+        .join("\n");
+      await storage.updateProject(projectId, { pendingAdminActions: keep } as any);
+      await storage.createActivityLog({
+        projectId,
+        level: "info",
+        message: `[Fix171] Al cerrar el bucle desatendido se han descartado ${removedCount} acción(es) administrativa(s) que no alcanzaron unanimidad de los lectores o presupuesto de borrados:\n${removedLines}\n\nEl bucle no deja propuestas pendientes. Si quieres realizar alguna de estas operaciones, hazla desde el chat editorial.`,
+        agentRole: "editor",
+      });
+    } catch (e) {
+      console.error("[Fix171] discardLeftoverAutoLoopAdminActions fallo:", e);
+    }
   }
 
   /**
@@ -12963,6 +13397,24 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // sites de rewriteChapterForQA (mucho menos invasivo).
     const prevFromAutoLoop = this._fromAutoLoop;
     this._fromAutoLoop = options?.fromAutoLoop === true;
+    // [Fix170] Extracto acotado de la PROSA del informe global que origino
+    // este pase (la parte anterior al bloque JSON de instrucciones
+    // autoaplicables): da al Cirujano y al Narrador-fallback el diagnostico
+    // global detras de cada orden por-capitulo. Mismo patron try/finally que
+    // _fromAutoLoop.
+    const prevQaGlobalReportExcerpt = this._qaGlobalReportExcerpt;
+    this._qaGlobalReportExcerpt = (() => {
+      const raw = (notesText || "").trim();
+      if (!raw) return "";
+      const markerIdx = raw.indexOf("<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->");
+      // markerIdx >= 0 (no > 0): si el marcador esta en posicion 0 no hay
+      // prosa previa y el extracto debe quedar VACIO — jamas usar el informe
+      // entero, que incluiria el bloque JSON de instrucciones autoaplicables
+      // y contaminaria las instrucciones numeradas del Cirujano [Fix130].
+      const prose = (markerIdx >= 0 ? raw.slice(0, markerIdx) : raw).trim();
+      if (!prose) return "";
+      return prose.length > 2500 ? `${prose.slice(0, 2500)}\n[... informe truncado ...]` : prose;
+    })();
     // Register cancellation controller so the user can abort mid-process.
     registerProjectAbortController(project.id);
 
@@ -13877,6 +14329,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // [Fix111] Restaurar el flag al valor previo (defensa anti re-entrada
       // si applyEditorialNotes se llamara anidado o vuelve a llamarse después).
       this._fromAutoLoop = prevFromAutoLoop;
+      // [Fix170] Restaurar el extracto global por la misma razon.
+      this._qaGlobalReportExcerpt = prevQaGlobalReportExcerpt;
     }
   }
 
@@ -15632,6 +16086,96 @@ Responde SOLO con un JSON válido con la estructura:
     }));
   }
 
+  // [Fix173] Los volumenes de serie creados en lote nacen con titulos genericos
+  // ("NOMBRE SERIE — Vol. N" / "— Libro N"). Cuando el Arquitecto completa la
+  // escaleta ya conocemos la trama REAL del volumen, asi que le damos un titulo
+  // propio con una llamada LLM minima. Best-effort: jamas bloquea la generacion.
+  private isGenericVolumeTitle(title: string, seriesTitle?: string | null): boolean {
+    const t = (title || "").trim();
+    if (!t) return true;
+    if (/[—\-–]\s*(vol\.?|volumen|libro)\s*\d+\s*$/i.test(t)) return true;
+    if (/^(vol\.?|volumen|libro)\s*\d+\b/i.test(t)) return true;
+    if (seriesTitle && t.toLowerCase() === seriesTitle.trim().toLowerCase()) return true;
+    return false;
+  }
+
+  private async maybeRetitleGenericSeriesVolume(project: Project, worldBibleData: ParsedWorldBible): Promise<void> {
+    try {
+      if (!project.seriesId) return;
+      const series = await storage.getSeries(project.seriesId);
+      if (!this.isGenericVolumeTitle(project.title, series?.title)) return;
+
+      const siblings = await storage.getProjectsBySeries(project.seriesId);
+      const siblingTitles = siblings
+        .filter(p => p.id !== project.id && !this.isGenericVolumeTitle(p.title, series?.title))
+        .map(p => `- Vol. ${p.seriesOrder ?? "?"}: "${p.title}"`)
+        .join("\n");
+
+      const escaleta = Array.isArray(worldBibleData.escaleta_capitulos) ? worldBibleData.escaleta_capitulos : [];
+      const capTitles = escaleta
+        .filter((c: any) => typeof c?.numero === "number" && c.numero > 0)
+        .slice(0, 15)
+        .map((c: any) => `${c.numero}. ${c.titulo || ""}`)
+        .join("\n");
+      const premisa = String((worldBibleData as any).premisa || (worldBibleData as any).world_bible?.premisa || project.premise || "").slice(0, 1500);
+
+      const prompt = `Eres un experto en títulos de novelas comerciales. Este es el volumen ${project.seriesOrder ?? "?"} de la serie "${series?.title || "?"}" (género: ${project.genre}, tono: ${project.tone}).
+
+PREMISA DEL VOLUMEN:
+${premisa || "(sin premisa)"}
+
+TÍTULOS DE LOS PRIMEROS CAPÍTULOS (escaleta real):
+${capTitles || "(sin escaleta)"}
+${siblingTitles ? `\nTÍTULOS DE OTROS VOLÚMENES DE LA SERIE (para coherencia de estilo, NO los repitas):\n${siblingTitles}\n` : ""}
+Genera UN título propio y evocador para ESTE volumen. Reglas:
+- En el MISMO idioma que la premisa y la escaleta.
+- Que suene a novela real del género, NO genérico.
+- SIN el nombre de la serie, SIN "Vol." ni numeración.
+- Entre 2 y 8 palabras.
+
+Responde SOLO con un JSON: {"titulo": "..."}`;
+
+      const { default: OpenAI } = await import("openai");
+      const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
+      const resp = await ai.chat.completions.create({
+        model: "deepseek-v4-flash",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.8,
+        max_tokens: 512,
+        ...({ thinking: { type: "disabled" } } as any),
+      });
+      try {
+        await recordRawAiUsage(resp, { agentName: "volume-titler", model: "deepseek-v4-flash", projectId: project.id, operation: "retitle-series-volume" });
+      } catch {}
+
+      const raw = (resp.choices?.[0]?.message?.content || "").replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      let newTitle = "";
+      try {
+        const parsed = JSON.parse(raw);
+        newTitle = String(parsed?.titulo || "").trim();
+      } catch {
+        // Fallback: si respondio texto plano corto, usarlo tal cual
+        if (raw && raw.length <= 120 && !raw.includes("{")) newTitle = raw.replace(/^["«]|["»]$/g, "").trim();
+      }
+
+      if (!newTitle || newTitle.length < 3 || newTitle.length > 120) return;
+      if (this.isGenericVolumeTitle(newTitle, series?.title)) return;
+
+      const oldTitle = project.title;
+      await storage.updateProject(project.id, { title: newTitle });
+      (project as any).title = newTitle; // los prompts posteriores usan project.title en memoria
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "info",
+        message: `📖 [Fix173] Volumen titulado con la escaleta ya definida: "${oldTitle}" → "${newTitle}".`,
+        agentRole: "architect",
+      });
+      console.log(`[Fix173] Volume ${project.id} retitled: "${oldTitle}" -> "${newTitle}"`);
+    } catch (e: any) {
+      console.warn(`[Fix173] Retitle best-effort fallo (proyecto ${project.id}): ${e?.message || e}`);
+    }
+  }
+
   private convertPlotOutline(data: ParsedWorldBible): PlotOutline {
     // Try multiple possible locations for structure (use any for flexible access)
     const d = data as any;
@@ -16159,11 +16703,15 @@ Responde SOLO con un JSON válido con la estructura:
     // defecto, sin necesidad de marcar nada en el proyecto. Solo se omite
     // si el usuario ha activado explícitamente el autoBetaLoop clásico
     // (solo-Beta) que cubre un flujo equivalente con otro criterio.
-    if ((project as any).autoBetaLoop) {
-      void this.runAutoBetaLoop(project);
-    } else {
-      void this.runAutoHolisticReviewLoop(project);
-    }
+    // [Fix171] Al terminar el bucle (converja o no), se descartan las tarjetas
+    // administrativas que el propio bucle dejo sin resolver: el flujo
+    // desatendido no deja propuestas pendientes que pidan intervencion.
+    const loopPromise = (project as any).autoBetaLoop
+      ? this.runAutoBetaLoop(project)
+      : this.runAutoHolisticReviewLoop(project);
+    void loopPromise
+      .catch(e => console.error("[Fix171] auto review loop rechazado:", e))
+      .finally(() => { void this.discardLeftoverAutoLoopAdminActions(project.id); });
   }
 
   /**
@@ -16383,6 +16931,15 @@ Responde SOLO con un JSON válido con la estructura:
           });
           return;
         }
+        // [Fix172] Puerta de hora pico entre iteraciones del auto-loop Beta.
+        await waitForOffPeakIfEnabled(project.id, `auto-loop Beta — iteración ${iter}`,
+          async () => {
+            if (this.aborted) return true;
+            const p = await storage.getProject(project.id);
+            return !p || p.status === "cancelled" || p.status === "archived";
+          });
+        if (this.aborted) return;
+
         this.callbacks.onAgentStatus("editor", "thinking",
           `Auto-loop Beta iteración ${iter}/${maxIterations}: leyendo el manuscrito completo...`
         );
@@ -17072,9 +17629,24 @@ Responde SOLO con un JSON válido con la estructura:
         }
         const chapter = completedChapters[i];
 
-        if (await isProjectCancelledFromDb(project.id)) {
-          console.log(`[Orchestrator] Project ${project.id} cancelled during orthotypographic pass.`);
+        // [Fix169] NO usar isProjectCancelledFromDb aqui: ese helper trata "completed"
+        // (y "paused") como cancelado, y este pase corre LEGITIMAMENTE despues de que
+        // el orquestador marca la novela como completed. Desde mayo el guard rompia en
+        // el primer capitulo y el pase entero era un no-op silencioso ("0 correcciones
+        // en 0/N capitulos" en milisegundos, sin llamar a la IA). Solo abortamos por
+        // cancelacion REAL: abort en memoria o status cancelled/idle en DB.
+        if (isProjectCancelled(project.id)) {
+          console.log(`[Orchestrator] Project ${project.id} aborted during orthotypographic pass.`);
           break;
+        }
+        try {
+          const freshProject = await storage.getProject(project.id);
+          if (freshProject && ["cancelled", "idle"].includes(freshProject.status)) {
+            console.log(`[Orchestrator] Project ${project.id} cancelled (status=${freshProject.status}) during orthotypographic pass.`);
+            break;
+          }
+        } catch (_) {
+          // best-effort: si falla la lectura, seguimos con el pase
         }
 
         const sectionLabel = chapter.chapterNumber === 0 ? "el Prólogo"
@@ -17097,20 +17669,42 @@ Responde SOLO con un JSON válido con la estructura:
           await this.trackTokenUsage(project.id, result.tokenUsage, "Corrector Ortotipográfico", "deepseek-v4-flash", chapter.chapterNumber, "orthotypographic");
 
           if (result.result && result.result.textoCorregido && result.result.textoCorregido.length > 100) {
-            const changes = result.result.totalCambios || 0;
-            totalChanges += changes;
+            const corrected = result.result.textoCorregido;
+            const original = chapter.content!;
+            // [Fix169] Antes solo se aplicaba si totalCambios>0, pero el parser del
+            // proofreader devuelve totalCambios=0 cuando falta el separador o el JSON
+            // de metadatos no parsea, DESCARTANDO el texto corregido en silencio.
+            // Ahora la senal de aplicar es que el texto corregido DIFIERA del original,
+            // con guard de sanidad de longitud (0.85-1.15) para no aplicar respuestas
+            // truncadas o infladas.
+            const reportedChanges = result.result.totalCambios || 0;
+            const differs = corrected !== original;
+            const ratio = corrected.length / Math.max(original.length, 1);
+            const sane = ratio >= 0.85 && ratio <= 1.15;
 
-            if (changes > 0) {
-              const wordCount = result.result.textoCorregido.split(/\s+/).filter(w => w.length > 0).length;
+            if (differs && sane) {
+              const changes = Math.max(reportedChanges, 1);
+              totalChanges += changes;
+              const wordCount = corrected.split(/\s+/).filter(w => w.length > 0).length;
               await storage.updateChapter(chapter.id, {
-                content: result.result.textoCorregido,
+                content: corrected,
                 wordCount,
               });
 
               await storage.createActivityLog({
                 projectId: project.id,
                 level: "info",
-                message: `${sectionLabel}: ${changes} correcciones ortotipográficas aplicadas. Calidad: ${result.result.nivelCalidad || "bueno"}`,
+                message: reportedChanges > 0
+                  ? `${sectionLabel}: ${reportedChanges} correcciones ortotipográficas aplicadas. Calidad: ${result.result.nivelCalidad || "bueno"}`
+                  : `${sectionLabel}: correcciones ortotipográficas aplicadas (recuento no disponible, texto corregido difiere del original).`,
+                agentRole: "proofreader",
+              });
+            } else if (differs && !sane) {
+              console.warn(`[Proofreader] ${sectionLabel}: corrected text length ratio ${ratio.toFixed(2)} fuera de rango seguro, se conserva el original.`);
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warning",
+                message: `${sectionLabel}: la corrección ortotipográfica se descartó por longitud sospechosa (ratio ${ratio.toFixed(2)}). Se conserva el original.`,
                 agentRole: "proofreader",
               });
             }
@@ -18253,13 +18847,32 @@ Responde SOLO con un JSON válido con la estructura:
       }
     }
 
+    // [Fix170] Contexto adicional para el Cirujano:
+    // (a) DIAGNOSTICO GLOBAL: extracto de la prosa del informe editorial que
+    //     origino este pase, para que entienda el porque detras de la orden
+    //     local en vez de operar descontextualizado.
+    // (b) VECINOS: cola del capitulo anterior + cabeza del siguiente via el
+    //     campo referenceChapters ya soportado [Fix129], para no romper
+    //     transiciones ni contradecir lo inmediato.
+    const qaGlobalReportBlock = this._qaGlobalReportExcerpt
+      ? `\n\n═══════════════════════════════════════════════════════════════════\nDIAGNÓSTICO GLOBAL DEL INFORME EDITORIAL (SOLO contexto — NO son instrucciones nuevas; aplica ÚNICAMENTE las instrucciones de arriba):\n═══════════════════════════════════════════════════════════════════\n${this._qaGlobalReportExcerpt}\n═══════════════════════════════════════════════════════════════════`
+      : "";
+    let neighborExcerptsForPatcher = "";
+    try {
+      const allChaptersForNeighbors = await storage.getChaptersByProject(project.id);
+      neighborExcerptsForPatcher = Orchestrator.buildNeighborChapterExcerpts(allChaptersForNeighbors, sectionData.numero);
+    } catch (nbErr) {
+      console.warn(`[Fix170] No se pudieron construir extractos de vecinos para ${sectionLabel}:`, nbErr);
+    }
+
     try {
       const patchResult = await this.surgicalPatcher.execute({
         chapterNumber: sectionData.numero,
         chapterTitle: sectionData.titulo || `Capítulo ${sectionData.numero}`,
         originalContent,
-        instructions: correctionInstructions,
+        instructions: correctionInstructions + qaGlobalReportBlock,
         worldBibleContext: worldBibleContextForPatcher,
+        referenceChapters: neighborExcerptsForPatcher || undefined,
       });
 
       await this.trackTokenUsage(project.id, patchResult.tokenUsage, "Cirujano de Texto", "deepseek-v4-flash", sectionData.numero, `qa_surgical_${qaSource}`);
@@ -18910,6 +19523,7 @@ REGLAS INVIOLABLES:
 
 ISSUES A CORREGIR (origen: ${qaLabels[qaSource]}):
 ${correctionInstructions}
+${qaGlobalReportBlock}
 
 ${lengthContextNote}
 
@@ -18940,6 +19554,13 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       allChaptersForCtxRewrite,
       sectionData.numero
     );
+    // [Fix170] Continuidad hacia ADELANTE: la novela ya esta terminada, asi
+    // que el Narrador tambien debe ver los capitulos POSTERIORES para no
+    // contradecir hechos/revelaciones futuras al corregir este capitulo.
+    const followingChaptersFullTextRewrite = Orchestrator.buildFollowingChaptersFullText(
+      allChaptersForCtxRewrite,
+      sectionData.numero
+    );
 
     let writerResult = await this.ghostwriter.execute({
       chapterNumber: sectionData.numero,
@@ -18950,6 +19571,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       refinementInstructions: surgicalInstructions,
       previousChapterContent: originalContent,
       previousChaptersFullText: previousChaptersFullTextRewrite,
+      followingChaptersFullText: followingChaptersFullTextRewrite || undefined,
       seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
       seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
       minWordCount: surgicalMin,
@@ -18998,6 +19620,7 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
         // Reutilizamos el bloque del primer intento (los caps anteriores no
         // han cambiado entre intento y reintento del mismo capítulo).
         previousChaptersFullText: previousChaptersFullTextRewrite,
+        followingChaptersFullText: followingChaptersFullTextRewrite || undefined,
         seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
         seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
         minWordCount: surgicalMin,

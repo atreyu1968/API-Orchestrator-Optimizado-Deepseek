@@ -227,6 +227,20 @@ export abstract class BaseAgent {
         const content = choice?.message?.content || "";
         const thoughtSignature = choice?.message?.reasoning_content || "";
 
+        // [Fix170] Deteccion de truncado por techo de salida: si el modelo corto
+        // la respuesta por max_tokens (finish_reason "length"), el contenido puede
+        // estar incompleto (JSON cortado, informe a medias). Antes esto pasaba en
+        // silencio y el sintoma visible era "el agente devolvio null/JSON roto".
+        // El techo es COMBINADO razonamiento+contenido en modo thinking.
+        const finishReason = choice?.finish_reason || "";
+        if (finishReason === "length") {
+          console.warn(
+            `[${this.config.name}] ADVERTENCIA: respuesta truncada por techo de salida ` +
+            `(finish_reason=length, max_tokens=${maxOutput}, contenido=${content.length} chars). ` +
+            `El resultado puede estar incompleto; considera subir maxOutputTokens de este agente.`
+          );
+        }
+
         const usage = response.usage || {};
         const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens || 0;
         const tokenUsage: TokenUsage = {

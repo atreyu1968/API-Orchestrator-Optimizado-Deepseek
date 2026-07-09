@@ -41,6 +41,9 @@ const SCHEMA_PATCHES: string[] = [
   // puede pausar para guidance y caería en el comportamiento pre-Fix115
   // de escribir sobre escaleta defectuosa.
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "pending_structural_guidance" jsonb`,
+  // [Fix172] Flag global: suspender trabajo LLM en horas pico de DeepSeek
+  // (tarifa dinamica x2) y reanudar automaticamente en horas valle.
+  `ALTER TABLE "queue_state" ADD COLUMN IF NOT EXISTS "pause_on_peak_hours" boolean NOT NULL DEFAULT false`,
 ];
 
 let schemaEnsured = false;

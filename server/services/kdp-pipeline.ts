@@ -10,6 +10,7 @@ import { kdpSeoGenerator, type SeoMetadata } from "../agents/kdp/seo-generator";
 import { kdpMarketingKitGenerator, type MarketingKit } from "../agents/kdp/marketing-kit";
 import { kdpLandingContentGenerator, type LandingContent } from "../agents/kdp/landing-content";
 import { KDP_MARKETS, findMarket, type KdpMarket } from "../utils/kdp-markets";
+import { waitForOffPeakIfEnabled } from "../utils/peak-hours";
 import { joinChaptersForSampling, sampleManuscript } from "../utils/manuscript-sampler";
 
 export interface MarketEntry {
@@ -149,6 +150,9 @@ async function _runKdpPipeline(params: RunPipelineParams): Promise<void> {
     const marketEntries: MarketEntry[] = [];
     for (let i = 0; i < markets.length; i++) {
       const market = markets[i];
+      // [Fix172] Puerta de hora pico: el pipeline KDP persiste progreso por
+      // mercado, asi que puede suspenderse aqui y reanudarse en hora valle.
+      await waitForOffPeakIfEnabled(projectId ?? null, `pipeline KDP — mercado ${market.name}`);
       await setProgress("metadata", {
         step: "metadata",
         marketsTotal: markets.length,

@@ -331,7 +331,36 @@ export default function QueuePage() {
               />
               <span className="text-sm">Pausar después de cada proyecto</span>
             </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={(queueState as any)?.pauseOnPeakHours ?? false}
+                onChange={(e) => updateQueueStateMutation.mutate({ pauseOnPeakHours: e.target.checked } as any)}
+                className="rounded"
+                data-testid="checkbox-pause-peak-hours"
+              />
+              <span className="text-sm">Suspender en horas pico de DeepSeek</span>
+            </label>
           </div>
+          {Boolean((queueState as any)?.pauseOnPeakHours) && (
+            <div className="mt-2 text-xs text-muted-foreground" data-testid="text-peak-hours-info">
+              {(() => {
+                // Ventanas PICO de DeepSeek (tarifa x2): 01:00-04:00 y 06:00-10:00 UTC
+                // (9-12 y 14-18 hora de Pekín). Se muestran en tu hora local.
+                const fmtLocal = (utcHour: number) => {
+                  const d = new Date();
+                  d.setUTCHours(utcHour, 0, 0, 0);
+                  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                };
+                const h = new Date().getUTCHours();
+                const inPeak = (h >= 1 && h < 4) || (h >= 6 && h < 10);
+                const windows = `${fmtLocal(1)}–${fmtLocal(4)} y ${fmtLocal(6)}–${fmtLocal(10)} (hora local)`;
+                return inPeak
+                  ? `⏸ Ahora es HORA PICO (tarifa x2): el trabajo en curso queda en pausa y se reanudará solo al entrar en hora valle. Ventanas pico: ${windows}.`
+                  : `Las generaciones, bucles de pulido, KDP y traducciones se pausarán automáticamente en las ventanas pico (${windows}) y se reanudarán solas en hora valle. El progreso se conserva.`;
+              })()}
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -25,6 +25,7 @@ import { calculateRealCost, formatCostForStorage } from "./cost-calculator";
 // otros módulos (como `series-milestones-extractor`) puedan registrarse en
 // `ai_usage_events` sin importar de routes.ts (que crearía ciclos).
 import { recordRawAiUsage } from "./utils/ai-usage";
+import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
 import {
   extractMilestonesAndThreadsFromGuide,
 } from "./utils/series-milestones-extractor";
@@ -7255,7 +7256,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         }
         
         console.log(`[Translate] Translating ${chapterLabel}: ${chapter.title}`);
-        
+
+        // [Fix172] Puerta de hora pico: la traduccion persiste progreso por
+        // capitulo, asi que puede suspenderse aqui y reanudarse en hora valle.
+        await waitForOffPeakIfEnabled(null, `traducción — ${chapterLabel}`);
+
         let chapterContent = ((chapter as any).editedContent ?? chapter.content ?? "").trim();
         chapterContent = sanitizeContentForTranslation(chapterContent);
         const result = await translator.execute({
@@ -8098,6 +8103,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         });
 
         console.log(`[Resume] Translating ${chapterLabel}: ${chapter.title}`);
+
+        // [Fix172] Puerta de hora pico (mismo criterio que el flujo de traduccion inicial).
+        await waitForOffPeakIfEnabled(null, `traducción (resume) — ${chapterLabel}`);
 
         let chapterContent = (chapter.editedContent || chapter.originalContent || (chapter as any).content || "").trim();
         chapterContent = sanitizeContentForTranslation(chapterContent);
@@ -10608,7 +10616,10 @@ CRITERIOS:
         let contentToTranslate = (chapter.editedContent || chapter.originalContent || "").trim();
         contentToTranslate = sanitizeContentForTranslation(contentToTranslate);
         console.log(`[Translate-Reedit] Translating ${chapterLabel}: ${chapter.title}`);
-        
+
+        // [Fix172] Puerta de hora pico (traduccion de reediciones).
+        await waitForOffPeakIfEnabled(null, `traducción reedición — ${chapterLabel}`);
+
         const result = await translator.execute({
           content: contentToTranslate,
           sourceLanguage: sourceLanguage as string,

@@ -173,7 +173,8 @@ Después de tus impresiones en lenguaje natural, REPITE los puntos de "## SI FUE
 <!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->
 
 REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
-- **OBLIGATORIO MÍNIMO 3 INSTRUCCIONES**. NUNCA devuelvas \`{"instrucciones": []}\`. Ningún manuscrito es perfecto: aunque pongas un 9 o 10, SIEMPRE hay 3+ retoques que mejorarían la sensación de lectura (un personaje secundario al que dar más espacio, un cap que podaría 200 palabras, un giro que telegrafiaría menos, una escena de transición que aceleraría, etc.). Si tu pundonor te impide quejarte, encuentra mejoras incrementales: oportunidades para subir de un 8 a un 9, o de un 9 a un 10. El target comercial del autor es Beta >= 9, así que tu deber es darle camino para llegar ahí.
+- **CALIDAD SOBRE CANTIDAD — NO HAY MÍNIMO DE INSTRUCCIONES**. Emite SOLO instrucciones respaldadas por algo que de verdad te sacó de la lectura y que puedas anclar en el texto ACTUAL (capítulo + escena/pasaje concreto). Si el manuscrito está sólido, es LEGÍTIMO devolver 1, 2 o incluso \`{"instrucciones": []}\` — una lista vacía honesta vale más que 3 instrucciones de relleno que obligan al cirujano a tocar prosa que funciona y ALARGAN el bucle sin subir la nota. PROHIBIDO inventar pegas para rellenar cuota.
+- **EVIDENCIA OBLIGATORIA en "ritmo"**: toda instrucción con categoria "ritmo" DEBE citar evidencia concreta y verificable del texto actual: capítulo + escena/pasaje identificable (ej: 'cap 12: la conversación del muelle da tres vueltas a la misma información sin avanzar'). Si tu sensación de ritmo es difusa y no puedes señalar el pasaje exacto ("el segundo acto se me hizo lento"), NO la conviertas en instrucción del JSON — recógela SOLO como impresión en la prosa del informe.
 - Un objeto por cada punto que escribiste en "## SI FUERA EL AUTOR, CAMBIARÍA...". Si pusiste 5 puntos arriba, el JSON tiene 5 objetos.
 - **COMILLAS DENTRO DE STRINGS**: NUNCA uses comillas dobles (\`"\`) dentro del valor de un string. Si necesitas citar un diálogo o una frase, usa SIEMPRE comillas simples (\`'\`). Ejemplo correcto: \`"instrucciones_correccion": "Beth se acerca y dice 'Lo siento, debí hablar antes.'"\`. Ejemplo INCORRECTO (rompe el JSON): \`"instrucciones_correccion": "Beth se acerca y dice "Lo siento, debí hablar antes.""\`. Esto incluye TODAS las citas, frases entrecomilladas, títulos, etc., dentro de cualquier campo de tipo string.
 - "capitulos_afectados": array de NÚMEROS (no strings). Prólogo = 0, epílogo = -1, nota del autor = -2. INCLUYE TODOS los capítulos que menciones en la instrucción.
@@ -195,7 +196,6 @@ REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
 - "descripcion": 1 frase que el usuario verá en la previsualización.
 - "instrucciones_correccion": 1-3 frases con la orden concreta al narrador. Si distingues entre capítulos, esa info va en "plan_por_capitulo".
 - COHERENCIA: cualquier número de capítulo mencionado en la prosa debe estar en "capitulos_afectados".
-- **NO existe la opción \`{"instrucciones": []}\`**: si te quedas en blanco, fuérzate a 3 mejoras incrementales (ritmo de un cap concreto, profundidad de un secundario, pulir una transición, podar adjetivación de una escena, etc.). Eres un Beta cualificado, no un sello de aprobación.
 - NO añadas comentarios ni markdown dentro del JSON.
 
 5. **CONTEXTO DE SERIE (CRÍTICO si aplica)**: Si en los datos del manuscrito recibes un bloque "## CONTEXTO DE SERIE", este libro NO es una novela autoconclusiva sino un volumen dentro de una serie planificada. Como lector beta cualificado, ajusta tus expectativas:
@@ -226,7 +226,9 @@ export class BetaReaderAgent extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 8192,
-      maxOutputTokens: 16384,
+      // [Fix170] 16384 -> 32768: el techo es COMBINADO razonamiento+contenido;
+      // con informes largos + thinking el modelo cortaba el JSON final.
+      maxOutputTokens: 32768,
     });
     this.timeoutMs = 18 * 60 * 1000;
   }
@@ -339,16 +341,15 @@ REGLAS DEL VEREDICTO (críticas — el sistema lo parsea automáticamente):
 - Sé CONSERVADOR. Ante la mínima duda → "keep_pending".
 - Tu veredicto es INDEPENDIENTE del Holístico. Solo si AMBOS coincidimos en "apply" la acción se aplica automáticamente.`;
 
-    // [Fix75] Política revisada respecto a Fix38: el Beta SIEMPRE debe emitir
-    // al menos 3 instrucciones en cada lectura. Lo que cambia entre lecturas
-    // NO es "si repito o no repito" sino "cómo evoluciono mi crítica": pegas
-    // viejas que persisten suben de prioridad y reformulan su instrucción;
-    // pegas resueltas se documentan en prosa y dejan hueco para nuevas pegas
-    // o para mejoras incrementales hacia 9+. Sin esto, el Beta se "saciaba"
-    // y devolvía instrucciones vacías tras la primera ronda, dejando al autor
-    // sin guía concreta para subir de un 7-8 a un 9+.
+    // [Fix170] Politica revisada respecto a Fix75/Fix38: YA NO hay minimo
+    // forzado de instrucciones. El minimo de 3 obligaba al Beta a inventar
+    // pegas de relleno cuando el manuscrito estaba solido, el cirujano las
+    // aplicaba sobre prosa que funcionaba y el auto-loop se alargaba sin
+    // subir la nota (visto en vivo: iter 9/8 en el Vol. 1). Ahora la regla
+    // es calidad sobre cantidad: solo instrucciones con evidencia anclada
+    // en el texto actual; lista corta o vacia es legitima.
     const previousNotesBlock = (input.previousBetaNotes && input.previousBetaNotes.trim().length > 200)
-      ? `\n\n═══════════════════════════════════════════════════════════════════\n## NOTAS DE TU LECTURA ANTERIOR (referencia de evolución — versión PASADA, NO actual)\n═══════════════════════════════════════════════════════════════════\n\n${input.previousBetaNotes.slice(0, 24000)}\n\n[Fix133] FUENTE DE VERDAD: el manuscrito que tienes MÁS ABAJO es la ÚNICA versión real y ACTUAL. Las notas de arriba son una lectura PASADA y el autor YA ha podido corregir parte de lo que señalaste, así que NO asumas que ningún problema antiguo sigue existiendo: cada uno hay que RE-COMPROBARLO en el texto de hoy antes de volver a mencionarlo. No mezcles lo que recuerdas de la versión anterior con lo que de verdad lees ahora.\n\nCómo usar esas notas SIN mezclar versiones:\n- Antes de repetir CUALQUIER pega antigua, localízala en el manuscrito ACTUAL y cita el (cap N) concreto donde SIGUE presente HOY. Si la confirmas vigente, REPÍTELA en el JSON con prioridad subida y una instrucción más concreta y accionable que la vez anterior.\n- Si NO la encuentras en el texto actual (porque ya se corrigió), dala por RESUELTA: dilo en una frase de prosa ("la pega del cap 12 ya no está") y NO emitas instrucción para ella. PROHIBIDO emitir una instrucción sobre un problema concreto que no puedas señalar HOY en el texto con su cita de capítulo — eso es referirse a una versión que ya no existe.\n- EXCEPCIÓN para pegas GLOBALES de verdad (ritmo general, tono de conjunto, sensación de relleno difusa) que sigues percibiendo HOY pero que no puedes anclar a UN capítulo concreto: NO la dejes caer en silencio. Recógela como observación en prosa (no como instrucción accionable del JSON) describiéndola como impresión global del manuscrito actual; así el autor la ve sin que el cirujano la aplique a ciegas.\n- El umbral comercial deseable es Beta >= 9. Si vienes de un 7 o un 8, identifica qué cambios REALES sobre el texto actual cerrarían ese gap. Si vienes ya de un 9, identifica qué llevaría la obra al 10.\n- PROHIBIDO devolver \`{"instrucciones": []}\`. El JSON SIEMPRE lleva 3+ entradas, pero TODAS deben ser pegas CONFIRMADAS en el texto actual, evoluciones reales de las viejas, o mejoras incrementales nuevas — nunca recuerdos de una versión que ya no existe.`
+      ? `\n\n═══════════════════════════════════════════════════════════════════\n## NOTAS DE TU LECTURA ANTERIOR (referencia de evolución — versión PASADA, NO actual)\n═══════════════════════════════════════════════════════════════════\n\n${input.previousBetaNotes.slice(0, 24000)}\n\n[Fix133] FUENTE DE VERDAD: el manuscrito que tienes MÁS ABAJO es la ÚNICA versión real y ACTUAL. Las notas de arriba son una lectura PASADA y el autor YA ha podido corregir parte de lo que señalaste, así que NO asumas que ningún problema antiguo sigue existiendo: cada uno hay que RE-COMPROBARLO en el texto de hoy antes de volver a mencionarlo. No mezcles lo que recuerdas de la versión anterior con lo que de verdad lees ahora.\n\nCómo usar esas notas SIN mezclar versiones:\n- Antes de repetir CUALQUIER pega antigua, localízala en el manuscrito ACTUAL y cita el (cap N) concreto donde SIGUE presente HOY. Si la confirmas vigente, REPÍTELA en el JSON con prioridad subida y una instrucción más concreta y accionable que la vez anterior.\n- Si NO la encuentras en el texto actual (porque ya se corrigió), dala por RESUELTA: dilo en una frase de prosa ("la pega del cap 12 ya no está") y NO emitas instrucción para ella. PROHIBIDO emitir una instrucción sobre un problema concreto que no puedas señalar HOY en el texto con su cita de capítulo — eso es referirse a una versión que ya no existe.\n- EXCEPCIÓN para pegas GLOBALES de verdad (ritmo general, tono de conjunto, sensación de relleno difusa) que sigues percibiendo HOY pero que no puedes anclar a UN capítulo concreto: NO la dejes caer en silencio. Recógela como observación en prosa (no como instrucción accionable del JSON) describiéndola como impresión global del manuscrito actual; así el autor la ve sin que el cirujano la aplique a ciegas.\n- El umbral comercial deseable es Beta >= 9. Si vienes de un 7 o un 8, identifica qué cambios REALES sobre el texto actual cerrarían ese gap. Si vienes ya de un 9, identifica qué llevaría la obra al 10.\n- NO hay minimo de instrucciones: TODAS las que emitas deben ser pegas CONFIRMADAS en el texto actual, evoluciones reales de las viejas, o mejoras incrementales nuevas con pasaje concreto — nunca recuerdos de una versión que ya no existe ni relleno para cubrir cuota. Si el texto actual ya está sólido, \`{"instrucciones": []}\` es una respuesta legítima.`
       : "";
 
     const metaBlock = `## DATOS DEL MANUSCRITO
@@ -418,31 +419,12 @@ Acabas de cerrar el libro. Redacta ahora tus IMPRESIONES DE LECTOR BETA siguiend
       throw new Error("BetaReader devolvió un informe vacío.");
     }
 
-    // [Fix75] ENFORCEMENT runtime de "Beta nunca devuelve {instrucciones:[]}".
-    // El prompt ya lo prohibe explícitamente, pero el modelo puede saltárselo
-    // (especialmente en relecturas donde "ya no hay nada que decir"). Si el
-    // bloque INSTRUCCIONES_AUTOAPLICABLES trae menos de 3 entradas, lanzamos
-    // UN único reintento con un recordatorio duro pegado al final del prompt.
-    // Si tras el reintento sigue por debajo de 3 dejamos pasar (best-effort:
-    // mejor 0-2 instrucciones reales que abortar y perder toda la lectura,
-    // pero al menos ya hicimos el intento de cumplimiento).
+    // [Fix170] ELIMINADO el enforcement Fix75 de minimo 3 instrucciones (el
+    // reintento forzado fabricaba pegas de relleno que alargaban el auto-loop
+    // sin subir la nota). Dejamos solo un log informativo del conteo real.
     const initialCount = countAutoInstructions(response.content);
-    if (initialCount !== -1 && initialCount < 3) {
-      const retryPrompt = `${prompt}\n\n═══════════════════════════════════════════════════════════════════\n## ⚠️ REINTENTO OBLIGATORIO ⚠️\n═══════════════════════════════════════════════════════════════════\n\nEn tu respuesta anterior emitiste ${initialCount === 0 ? '\`{"instrucciones": []}\`' : `solo ${initialCount} instrucción(es)`} en el bloque INSTRUCCIONES_AUTOAPLICABLES. Eso está PROHIBIDO por las reglas del informe. NINGÚN manuscrito es perfecto, y tu trabajo no es darle palmaditas en la espalda al autor — es ayudarle a llegar a Beta ≥ 9.\n\nRepite todo el informe entero (impresiones, dudas, ranking, decisión de continuar, MI PUNTUACIÓN COMERCIAL e INSTRUCCIONES_AUTOAPLICABLES) pero con AL MENOS 3 instrucciones en el bloque autoaplicables. Si crees honestamente que no hay errores graves, entonces emite 3 mejoras incrementales hacia la siguiente nota (frases que podrían afilarse, escenas que podrían ganar densidad, transiciones que podrían pulirse, diálogos donde el subtexto podría intensificarse). Pero NO devuelvas el array vacío ni casi vacío.`;
-      try {
-        const retry = await this.generateContent(retryPrompt, projectId, { temperature: 0.85 });
-        if (!retry.error && retry.content && retry.content.trim()) {
-          const retryCount = countAutoInstructions(retry.content);
-          if (retryCount > initialCount) {
-            response = retry;
-            console.log(`[Fix75] BetaReader retry exitoso: ${initialCount} → ${retryCount} instrucciones.`);
-          } else {
-            console.warn(`[Fix75] BetaReader retry no mejoró el conteo (${initialCount} → ${retryCount}). Conservo respuesta original.`);
-          }
-        }
-      } catch (e) {
-        console.warn(`[Fix75] BetaReader retry falló: ${(e as Error).message}. Conservo respuesta original.`);
-      }
+    if (initialCount !== -1) {
+      console.log(`[Fix170] BetaReader emitio ${initialCount} instruccion(es) autoaplicable(s) (sin minimo forzado).`);
     }
 
     return {

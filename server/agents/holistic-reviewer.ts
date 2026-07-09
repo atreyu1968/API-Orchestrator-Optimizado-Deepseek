@@ -182,6 +182,8 @@ REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
 - Cada objeto del array debe corresponder 1-a-1 con un punto de "## SUGERENCIAS CONCRETAS DE CORRECCIÓN". Si pusiste 7 sugerencias arriba, el JSON tiene 7 objetos.
 - "capitulos_afectados": array de NÚMEROS (no strings). Prólogo = 0, epílogo = -1, nota del autor = -2. Capítulos normales = 1, 2, 3... INCLUYE TODOS los capítulos que menciones en "instrucciones_correccion" — si la prosa habla del cap 32, 32 debe estar en capitulos_afectados.
 - "categoria": exactamente una de: "trama", "personaje", "ritmo", "continuidad", "dialogo", "estilo", "descripcion", "otro".
+- **EVIDENCIA OBLIGATORIA en "ritmo"**: toda instrucción con categoria "ritmo" DEBE citar evidencia concreta y verificable del texto actual: capítulo + escena/pasaje identificable (ej: 'cap 12: la conversación del muelle repite tres veces la misma información sin avanzar la trama'). Si tu diagnóstico de ritmo es difuso y no puedes señalar el pasaje exacto ("el segundo acto pierde tensión"), NO lo conviertas en instrucción del JSON — déjalo SOLO como observación en la prosa del informe. Instrucciones de ritmo sin pasaje concreto obligan al cirujano a operar a ciegas y degradan prosa que funciona.
+- **CALIDAD SOBRE CANTIDAD**: emite SOLO instrucciones respaldadas por problemas reales que puedas anclar en el texto. Si el manuscrito está sólido, una lista corta (o vacía) es legítima y preferible a instrucciones de relleno.
 - "tipo" (CRÍTICO — escoge el adecuado, el sistema procesa cada tipo de forma distinta):
   - "puntual": retoque local de 1-2 párrafos sin tocar la estructura del capítulo. Ejemplo: "corregir la mención al frasco roto en cap 23". Es CIRUGÍA find/replace.
   - "estructural": reescribir escenas enteras, reordenar dentro del capítulo, mover una revelación de un cap a otro, expandir un arco, añadir foreshadowing. Reescritura completa del capítulo afectado.
@@ -241,7 +243,9 @@ export class HolisticReviewerAgent extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 8192,
-      maxOutputTokens: 16384,
+      // [Fix170] 16384 -> 32768: el techo es COMBINADO razonamiento+contenido;
+      // con informes largos + thinking el modelo cortaba el JSON final.
+      maxOutputTokens: 32768,
     });
     this.timeoutMs = 18 * 60 * 1000;
   }
