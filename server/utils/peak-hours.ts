@@ -36,6 +36,7 @@ export function nextValleyStartUtc(date: Date = new Date()): Date {
 
 const POLL_MS = 60 * 1000; // re-chequeo cada minuto (flag + reloj)
 const HEARTBEAT_MS = 15 * 60 * 1000; // log-latido cada 15 min (< timeout 22 min del monitor de congelados)
+const EXT_HEARTBEAT_MS = 5 * 60 * 1000; // [Fix176] latido externo cada 5 min (< umbral 8 min del watchdog de reedicion)
 
 async function isPauseEnabled(): Promise<boolean> {
   try {
@@ -55,12 +56,17 @@ async function isPauseEnabled(): Promise<boolean> {
  * @param label      etiqueta de la fase para los logs (p.ej. "capitulo 12")
  * @param shouldAbort callback opcional; si devuelve true, la espera se corta
  *                    (p.ej. proyecto cancelado o orquestador abortado).
+ * @param onHeartbeat [Fix176] callback opcional invocado al iniciar la pausa y
+ *                    en cada latido; permite a pipelines con monitor PROPIO de
+ *                    congelados (p.ej. reedicion, heartbeatAt con umbral 8 min)
+ *                    refrescar su latido para no disparar auto-recovery.
  * @returns true si hubo pausa, false si no hizo falta esperar.
  */
 export async function waitForOffPeakIfEnabled(
   projectId: number | null,
   label: string,
   shouldAbort?: () => boolean | Promise<boolean>,
+  onHeartbeat?: () => void | Promise<void>,
 ): Promise<boolean> {
   if (!isPeakHourUtc() || !(await isPauseEnabled())) return false;
 
@@ -73,8 +79,11 @@ export async function waitForOffPeakIfEnabled(
       await storage.createActivityLog({ projectId, level: "info", message: startMsg, agentRole: "orchestrator" });
     } catch {}
   }
+  // [Fix176] Latido externo al iniciar la pausa (monitores propios, p.ej. reedicion).
+  if (onHeartbeat) { try { await onHeartbeat(); } catch {} }
 
   let lastHeartbeat = Date.now();
+  let lastExternalHeartbeat = Date.now();
   while (isPeakHourUtc()) {
     if (shouldAbort && (await shouldAbort())) {
       console.log(`[Fix172] Espera por hora pico interrumpida (abort) en fase: ${label}.`);
@@ -89,6 +98,12 @@ export async function waitForOffPeakIfEnabled(
       return true;
     }
     await new Promise(r => setTimeout(r, POLL_MS));
+    // [Fix176] Latido externo mas frecuente (cada 5 min): el watchdog de
+    // reedicion considera congelado un proyecto sin heartbeatAt en 8 min.
+    if (onHeartbeat && Date.now() - lastExternalHeartbeat >= EXT_HEARTBEAT_MS) {
+      lastExternalHeartbeat = Date.now();
+      try { await onHeartbeat(); } catch {}
+    }
     // Latido: mantiene "actividad significativa" fresca para que el monitor
     // de congelados (timeout 22 min) no dispare auto-recovery durante una
     // espera legitima de hasta 4 h.

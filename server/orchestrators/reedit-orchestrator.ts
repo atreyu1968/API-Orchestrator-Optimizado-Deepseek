@@ -29,6 +29,7 @@ import { groundInstructionInChapter } from "../utils/instruction-grounding";
 import { parseHolisticBetaForReedit, type ReeditPendingEditorialParse, type ReeditEditorialInstruction } from "../utils/reedit-editorial-parser";
 // [Fix33] Logger persistente por proyecto.
 import { logReeditEvent } from "../utils/reedit-logger";
+import { waitForOffPeakIfEnabled } from "../utils/peak-hours";
 import { buildSeriesContextForReviewers } from "../utils/series-context-builder";
 
 // [Fix44] Convención unificada de capítulos especiales (igual al pipeline
@@ -1934,6 +1935,25 @@ export class ReeditOrchestrator {
   }
 
   private async checkCancellation(projectId: number): Promise<boolean> {
+    // [Fix176] Puerta de horas PICO de DeepSeek para el pipeline de reedicion.
+    // checkCancellation se invoca entre capitulos/etapas en todo el pipeline,
+    // asi que es el punto seguro natural para suspender en hora pico (paridad
+    // con [Fix172] en generacion/KDP/traducciones). projectId de reedicion NO
+    // casa con la FK de activity_logs → se pasa null (solo consola) y el
+    // latido va a heartbeatAt via updateHeartbeat (watchdog propio, umbral 8 min).
+    try {
+      await waitForOffPeakIfEnabled(
+        null,
+        `reedicion proyecto ${projectId}`,
+        async () => {
+          const p = await storage.getReeditProject(projectId).catch(() => null);
+          return Boolean(p?.cancelRequested) || p?.status === "paused" || p?.status === "error";
+        },
+        async () => { await this.updateHeartbeat(projectId); },
+      );
+    } catch (e) {
+      console.warn(`[Fix176] Puerta de horas pico fallo (se continua sin pausa): ${(e as Error).message}`);
+    }
     const project = await storage.getReeditProject(projectId);
     if (project?.cancelRequested) {
       console.log(`[ReeditOrchestrator] Cancellation requested for project ${projectId}`);
@@ -5109,6 +5129,18 @@ export class ReeditOrchestrator {
         return;
       }
 
+      // [Fix176] Puerta de horas pico antes de las lecturas de manuscrito completo
+      // (Holistico + Beta), lo mas caro de esta etapa.
+      await waitForOffPeakIfEnabled(
+        null,
+        `reedicion proyecto ${projectId} — lecturas Stage 8 (Holistico+Beta)`,
+        async () => {
+          const p = await storage.getReeditProject(projectId).catch(() => null);
+          return !p || Boolean(p.cancelRequested) || p.status === "paused" || p.status === "error";
+        },
+        async () => { await this.updateHeartbeat(projectId); },
+      );
+
       const reviewerChapters = validChapters.map(c => ({
         numero: c.chapterNumber,
         titulo: c.title || "",
@@ -5380,6 +5412,16 @@ export class ReeditOrchestrator {
       `[Fix52] Auto-loop Beta (traducción → ${targetLanguage}) iniciado (máx ${maxIterations} iteraciones).`, {});
 
     for (let iter = 1; iter <= maxIterations; iter++) {
+      // [Fix176] Puerta de horas pico antes de cada iteracion (lectura completa Beta).
+      await waitForOffPeakIfEnabled(
+        null,
+        `reedicion proyecto ${projectId} — auto-loop Beta traduccion (iteracion ${iter})`,
+        async () => {
+          const p = await storage.getReeditProject(projectId).catch(() => null);
+          return !p || Boolean(p.cancelRequested) || p.status === "paused" || p.status === "error";
+        },
+        async () => { await this.updateHeartbeat(projectId); },
+      );
       const cancelCheck = await storage.getReeditProject(projectId);
       if (!cancelCheck || cancelCheck.cancelRequested) {
         await logReeditEvent(projectId, "info", "auto_beta_loop_translation",
