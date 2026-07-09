@@ -1056,7 +1056,7 @@ NO los reescribas ni copies su prosa al capítulo actual.${headerWarning}
     completedChapters: Chapter[],
     currentChapterNumber: number,
     charsPerNeighbor: number = 4000
-  ): string {
+  ): { text: string; includedNumbers: number[] } {
     const getChapterLabel = (raw: number): string => {
       if (!Number.isFinite(raw)) return `SECCIÓN ${raw}`;
       if (raw === 0) return "PRÓLOGO";
@@ -1083,18 +1083,76 @@ NO los reescribas ni copies su prosa al capítulo actual.${headerWarning}
 
     const prev = [...sorted].reverse().find(c => getChapterSortOrder(c.chapterNumber) < currentOrder);
     const next = sorted.find(c => getChapterSortOrder(c.chapterNumber) > currentOrder);
-    if (!prev && !next) return "";
+    if (!prev && !next) return { text: "", includedNumbers: [] };
 
     const parts: string[] = [];
+    const includedNumbers: number[] = [];
     if (prev) {
       const content = (((prev as any).editedContent || prev.originalContent || prev.content || "") as string).trim();
       const tail = content.length > charsPerNeighbor ? `[...]\n${content.slice(-charsPerNeighbor)}` : content;
       parts.push(`## FINAL DEL ${getChapterLabel(prev.chapterNumber)}${prev.title ? `: ${prev.title}` : ""} (capítulo INMEDIATAMENTE ANTERIOR)\n\n${tail}`);
+      includedNumbers.push(prev.chapterNumber);
     }
     if (next) {
       const content = (((next as any).editedContent || next.originalContent || next.content || "") as string).trim();
       const head = content.length > charsPerNeighbor ? `${content.slice(0, charsPerNeighbor)}\n[...]` : content;
       parts.push(`## INICIO DEL ${getChapterLabel(next.chapterNumber)}${next.title ? `: ${next.title}` : ""} (capítulo INMEDIATAMENTE POSTERIOR)\n\n${head}`);
+      includedNumbers.push(next.chapterNumber);
+    }
+
+    return {
+      text: parts.join("\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"),
+      includedNumbers,
+    };
+  }
+
+  /**
+   * [Fix174] Extractos de los capitulos MENCIONADOS explicitamente en las
+   * instrucciones de correccion (p.ej. "contradice lo revelado en el Capitulo 19").
+   * Sin esto, el Cirujano del camino QA solo veia los vecinos inmediatos y
+   * rechazaba cirugias que citaban otros capitulos ("cuyo texto no ha sido
+   * proporcionado"), forzando el fallback caro al Narrador. Devuelve extractos
+   * cabeza+cola por capitulo citado (excluyendo el actual y los que se pasan
+   * en excludeNumbers, tipicamente los vecinos ya incluidos), con tope global.
+   */
+  static buildMentionedChapterExcerpts(
+    completedChapters: Chapter[],
+    currentChapterNumber: number,
+    instructionsText: string,
+    excludeNumbers: Set<number> = new Set(),
+    charsPerSide: number = 1200,
+    maxTotalChars: number = 9000
+  ): string {
+    const mentioned = extractFlaggedChapters(instructionsText || "");
+    if (mentioned.size === 0) return "";
+
+    const labelFor = (raw: number): string => {
+      if (raw === 0) return "PRÓLOGO";
+      if (raw === -1) return "EPÍLOGO";
+      if (raw === -2) return "NOTA DEL AUTOR";
+      return `CAPÍTULO ${raw}`;
+    };
+
+    const parts: string[] = [];
+    let total = 0;
+    const sortedMentions = Array.from(mentioned).sort((a, b) => {
+      const da = Math.abs(a - currentChapterNumber);
+      const db = Math.abs(b - currentChapterNumber);
+      return da - db;
+    });
+    for (const n of sortedMentions) {
+      if (n === currentChapterNumber || excludeNumbers.has(n)) continue;
+      const chap = completedChapters.find(c => c.chapterNumber === n && c.status === "completed");
+      if (!chap) continue;
+      const content = (((chap as any).editedContent || chap.originalContent || chap.content || "") as string).trim();
+      if (!content) continue;
+      const excerpt = content.length <= charsPerSide * 2
+        ? content
+        : `${content.slice(0, charsPerSide)}\n[...]\n${content.slice(-charsPerSide)}`;
+      const block = `## ${labelFor(n)}${chap.title ? `: ${chap.title}` : ""} (citado en las instrucciones — SOLO LECTURA, no lo modifiques)\n\n${excerpt}`;
+      if (total + block.length > maxTotalChars) break;
+      parts.push(block);
+      total += block.length;
     }
 
     return parts.join("\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
@@ -18860,7 +18918,24 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
     let neighborExcerptsForPatcher = "";
     try {
       const allChaptersForNeighbors = await storage.getChaptersByProject(project.id);
-      neighborExcerptsForPatcher = Orchestrator.buildNeighborChapterExcerpts(allChaptersForNeighbors, sectionData.numero);
+      const neighborResult = Orchestrator.buildNeighborChapterExcerpts(allChaptersForNeighbors, sectionData.numero);
+      neighborExcerptsForPatcher = neighborResult.text;
+      // [Fix174] Capitulos CITADOS en las instrucciones (mas alla de los
+      // vecinos): sin ellos el Cirujano rechazaba cirugias que referenciaban
+      // otros capitulos y caia al fallback caro del Narrador. Se excluyen
+      // SOLO los vecinos REALMENTE incluidos (no numero±1 a ciegas: con
+      // huecos por fusion/borrado el vecino real puede no ser adyacente).
+      const mentionedExcerpts = Orchestrator.buildMentionedChapterExcerpts(
+        allChaptersForNeighbors,
+        sectionData.numero,
+        correctionInstructions,
+        new Set(neighborResult.includedNumbers)
+      );
+      if (mentionedExcerpts) {
+        neighborExcerptsForPatcher = neighborExcerptsForPatcher
+          ? `${neighborExcerptsForPatcher}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${mentionedExcerpts}`
+          : mentionedExcerpts;
+      }
     } catch (nbErr) {
       console.warn(`[Fix170] No se pudieron construir extractos de vecinos para ${sectionLabel}:`, nbErr);
     }
