@@ -11,6 +11,15 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Argumentos opcionales (paridad con install.sh)
+for arg in "$@"; do
+    case "$arg" in
+        --cf-token=*)
+            CF_TUNNEL_TOKEN="${arg#*=}"
+            ;;
+    esac
+done
+
 if ! command -v apt-get &> /dev/null; then
     echo "[ERROR] apt-get no encontrado. Este updater requiere un sistema basado en Debian/Ubuntu."
     exit 1
@@ -58,6 +67,58 @@ if [ -z "$FISH_AUDIO_API_KEY" ]; then
     echo ""
 else
     echo "[OK] Fish Audio API key ya configurada"
+fi
+
+# Cloudflare Tunnel (opcional): si cloudflared ya esta activo no se pregunta.
+# Se puede pasar el token sin prompt via variable de entorno CF_TUNNEL_TOKEN.
+if systemctl is-active --quiet cloudflared 2>/dev/null; then
+    echo "[OK] Cloudflare Tunnel ya configurado y activo"
+else
+    CF_TOKEN="${CF_TUNNEL_TOKEN:-}"
+    if [ -z "$CF_TOKEN" ]; then
+        if [ -t 0 ]; then
+            echo ""
+            echo "=== Configuracion de Cloudflare Tunnel (opcional) ==="
+            echo "Permite acceder a la aplicacion desde internet sin abrir puertos."
+            echo "Puedes obtener el token en: https://one.dash.cloudflare.com/"
+            echo "Presiona Enter para omitir."
+            read -p "Token de Cloudflare Tunnel (Enter para omitir): " CF_TOKEN
+        else
+            echo "[INFO] Cloudflare Tunnel omitido (sin TTY y sin CF_TUNNEL_TOKEN)"
+        fi
+    fi
+
+    if [ -n "$CF_TOKEN" ]; then
+        echo "[INFO] Instalando cloudflared..."
+        CF_ARCH=$(dpkg --print-architecture)
+        case "$CF_ARCH" in
+            amd64|arm64) : ;;
+            *) CF_ARCH="amd64" ;;
+        esac
+
+        set +e
+        curl -L -o /tmp/cloudflared.deb \
+            "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CF_ARCH}.deb" 2>/dev/null
+        dpkg -i /tmp/cloudflared.deb > /dev/null 2>&1
+        rm -f /tmp/cloudflared.deb
+
+        systemctl stop cloudflared 2>/dev/null || true
+        cloudflared service install "$CF_TOKEN" 2>/dev/null || true
+        systemctl enable cloudflared > /dev/null 2>&1
+        systemctl start cloudflared 2>/dev/null
+        set -e
+
+        if systemctl is-active --quiet cloudflared; then
+            # Con tunnel, las cookies deben ser seguras (HTTPS extremo a extremo)
+            sed -i 's/^SECURE_COOKIES=false/SECURE_COOKIES=true/' "$CONFIG_FILE" 2>/dev/null || true
+            echo "[OK] Cloudflare Tunnel configurado"
+        else
+            echo "[AVISO] cloudflared instalado pero el servicio no arranco. Revisa: journalctl -u cloudflared -n 30"
+        fi
+    else
+        echo "[INFO] Cloudflare Tunnel omitido"
+    fi
+    echo ""
 fi
 
 mkdir -p "$APP_DIR/audiobooks/covers"
