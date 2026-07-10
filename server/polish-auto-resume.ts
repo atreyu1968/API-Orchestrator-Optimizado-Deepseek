@@ -13,7 +13,14 @@ import { tryMarkPolishActive, clearPolishActive, isPolishActive } from "./utils/
 // busca proyectos con autoPolishPending=true y relanza el bucle, con un tope de
 // reanudaciones para no gastar tokens en bucle si el pulido se cuelga siempre.
 
-const MAX_POLISH_RESUMES = 3;
+// [Fix177] Tope de reanudaciones para no gastar tokens si el pulido se cuelga y
+// crashea SIEMPRE (poison pill). Margen holgado porque en el entorno de dev los
+// checkpoints/merges reinician el server con frecuencia (cada reinicio consume
+// una reanudacion aunque el pulido estuviera progresando bien); en produccion
+// (servicio systemd) los reinicios son raros y 3-4 bastarian. El bucle tiene su
+// propio tope interno de 8 iteraciones, asi que una reanudacion que arranca
+// termina acotada por si misma.
+const MAX_POLISH_RESUMES = 8;
 
 function makeSilentOrchestrator(): Orchestrator {
   // El pulido de resume no tiene cliente SSE conectado; los callbacks solo
@@ -72,8 +79,14 @@ export async function autoResumePendingPolish(): Promise<void> {
   console.log("[PolishAutoResume] Buscando pulidos interrumpidos que reanudar...");
   try {
     const projects = await storage.getAllProjects();
+    // [Fix177] El gate es SOLO autoPolishPending: ese flag se pone unicamente en
+    // finalizeCompletedProject (post-aprobacion del Revisor Final), asi que ya
+    // implica novela terminada. NO exigir status="completed": durante la cirugia
+    // el status pasa temporalmente a "applying_editorial", y un kill a mitad lo
+    // dejaba ahi -> el filtro antiguo se lo saltaba y el pulido NUNCA reanudaba
+    // (el proyecto se quedaba "parado"). runAutoPolishResume restaura el status.
     const pending = projects.filter(
-      (p) => (p as any).autoPolishPending === true && p.status === "completed",
+      (p) => (p as any).autoPolishPending === true,
     );
 
     if (pending.length === 0) {

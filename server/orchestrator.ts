@@ -16801,6 +16801,18 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
    */
   public async runAutoPolishResume(project: Project): Promise<void> {
     try {
+      // [Fix177] Si el server cayo a MITAD de una cirugia, el proyecto quedo con
+      // status="applying_editorial" (lo pone el bucle antes de aplicar notas y lo
+      // devuelve a "completed" al terminar). El bucle exige "completed" para
+      // re-leer, y la UI lo muestra como "aplicando" en vez de terminado.
+      // Restauramos el status limpio antes de reanudar; el manuscrito ya estaba
+      // aprobado por el Revisor Final, asi que "completed" es el estado correcto.
+      if ((project as any).status === "applying_editorial") {
+        try {
+          await storage.updateProject(project.id, { status: "completed" });
+          (project as any).status = "completed";
+        } catch { /* best-effort */ }
+      }
       if ((project as any).autoBetaLoop) {
         await this.runAutoBetaLoop(project);
       } else {

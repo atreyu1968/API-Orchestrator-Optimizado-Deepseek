@@ -109,3 +109,21 @@ caminos (un registro común, no un set privado de cada módulo). En deploy singl
 basta un Set en memoria de proceso; multi-instancia exigiría lock atómico en BD. Marca en
 el registro ANTES de cualquier await y libera en `finally` (y en un `catch` de la
 preparación, para no dejar el id "pegado" si falla antes de enganchar el finally del bucle).
+
+**El gate de reanudación es el FLAG, no el status:** el filtro de auto-resume NO debe
+exigir `status="completed"` además del flag de pulido-pendiente. Durante el pulido el
+status pasa temporalmente a `applying_editorial` (antes de aplicar cirugías; vuelve a
+`completed` al terminar), así que un kill A MITAD de una cirugía deja el proyecto en
+`applying_editorial` → un filtro que exige `completed` se lo salta y el pulido NUNCA
+reanuda (el libro se queda "parado" pese al flag). El flag de pulido-pendiente ya se pone
+únicamente post-finalización, así que por sí solo implica novela terminada: filtra SOLO
+por él y, al reanudar, restaura `status="completed"` si quedó atascado en
+`applying_editorial` (el bucle exige `completed` para re-leer y la UI lo mostraba como
+"aplicando").
+
+**El tope de reanudaciones debe contar con reinicios BENIGNOS:** cada reinicio consume
+una reanudación aunque el pulido estuviera progresando bien. En dev los checkpoints/merges
+reinician el server con frecuencia, así que un tope bajo (p.ej. 3) se agota sin que el
+pulido llegara a colgarse de verdad. Deja margen holgado (p.ej. 8); el bucle interno ya
+está acotado por su propio tope de iteraciones, así que una reanudación que arranca
+termina sola.
