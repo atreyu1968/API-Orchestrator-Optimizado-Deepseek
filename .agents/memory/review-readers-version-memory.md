@@ -32,3 +32,11 @@ Inyectar al Holístico un `regressionWarning` ("la ronda anterior empeoró la no
 **Why:** la regla "lee limpio" existe para que no confunda su lectura anterior con el texto actual; un aviso de que el estado es la mejor versión restaurada no aporta pegas concretas que reabrir, solo calibra cuán agresivo ser. Confundir ambas cosas llevaría o a re-ensuciar (si se le dan notas previas) o a perder la oportunidad de frenar el ping-pong de regresiones (si se le niega todo contexto).
 
 **How to apply:** cuando un auto-loop reintente desde la mejor versión tras una regresión, pásale el aviso a AMBOS lectores como contexto operativo y límpialo (`regressionAwareness=null`) al guardar un nuevo mejor snapshot. Nunca lo uses para colar notas de contenido de lecturas anteriores al Holístico.
+
+## Las citas del revisor deben ser TEXTUALES y por-capítulo o el grounding las descarta
+
+El guardián anti-fantasma (`instruction-grounding.ts`) valida presencia LITERAL de la cita en el capítulo objetivo. Regla durable de PROMPT (Beta y Holístico): cualquier fragmento entre comillas dentro del JSON de instrucciones debe ser copia literal palabra-por-palabra del texto ACTUAL (no paráfrasis) y estar asociado SOLO al capítulo del que procede de verdad; en instrucciones multi-capítulo, cada cita va dentro de su entrada de `plan_por_capitulo`, nunca repetida/compartida entre capítulos.
+
+**Why:** los revisores parafraseaban las citas o las colgaban de todos los capítulos del arco; el grounding no encontraba la frase parafraseada, o la buscaba en un capítulo donde no vive (la frase estaba en otro capítulo del mismo arco) y descartaba correcciones VÁLIDAS antes del cirujano → el Beta se estancaba porque las mejoras nunca llegaban a la prosa. Endurecer el matching por sí solo no basta: si la cita es una paráfrasis inventada NO existe en ningún sitio.
+
+**How to apply:** al tocar los prompts de `beta-reader.ts`/`holistic-reviewer.ts`, conservar las reglas "CITAS TEXTUALES EXACTAS" y "CADA CITA A SU CAPÍTULO REAL" en el bloque de REGLAS DEL JSON. No contradicen "NO citas literales largas >15 palabras" (piden fragmento MÍNIMO) ni "reformula la instrucción como orden ejecutable" (la exigencia de exactitud es condicional: solo SI entrecomillas).
