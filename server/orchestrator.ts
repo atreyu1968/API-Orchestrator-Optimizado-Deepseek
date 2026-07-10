@@ -69,6 +69,7 @@ import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper 
 import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
 import { tryMarkPolishActive, clearPolishActive } from "./utils/polish-registry";
 import { recordRawAiUsage } from "./utils/ai-usage";
+import { renumberChaptersSequential } from "./utils/renumber-chapters";
 import { calculateRealCost } from "./cost-calculator";
 import { runWithProjectContext } from "./utils/agent-context";
 import type { AdminActionVerdict } from "./utils/review-score";
@@ -12863,6 +12864,12 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           applied++;
           chaptersDeleted++; // [Fix164] cuenta hacia el tope por novela
           processedAppliedOrDiscarded.add(id);
+          // [Fix182] NO renumeramos aqui: las acciones pendientes de este mismo
+          // lote referencian el capitulo por NUMERO, asi que renumerar en medio
+          // desplazaria los targets de las acciones siguientes (borrado del cap
+          // equivocado). La renumeracion se hace UNA sola vez al terminar el
+          // bucle (ver despues del for), cuando ya no quedan acciones por
+          // resolver por numero.
           await storage.createActivityLog({
             projectId,
             level: "info",
@@ -12979,6 +12986,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
           applied++;
           processedAppliedOrDiscarded.add(id);
+          // [Fix182] NO renumeramos aqui (ver nota en delete_chapter): la
+          // renumeracion que cierra los huecos de las fuentes borradas se hace
+          // UNA sola vez al terminar el bucle, para no desplazar los targets por
+          // numero de las acciones que aun quedan por resolver.
           const missingNote = missingSources.length > 0
             ? ` Nota: los caps fuente ${missingSources.join(", ")} ya no existían (probablemente borrados antes); se fusionaron solo los encontrados.`
             : "";
@@ -13009,6 +13020,34 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           projectId,
           level: "info",
           message: `Fix76: acción admin id=${id} (${actionType}) aprobada por ambos lectores pero el tipo no tiene ejecutor automático todavía. Se mantiene pendiente para revisión manual.`,
+          agentRole: "editor",
+        });
+      }
+    }
+
+    // [Fix182] Renumeracion UNICA al terminar el lote: si alguna accion borro
+    // o fusiono capitulos (chaptersDeleted > 0), compactamos los positivos a
+    // una secuencia contigua 1..N de una sola vez. Se hace AQUI (fuera del bucle
+    // por-accion) a proposito: dentro del bucle las acciones resuelven su target
+    // por NUMERO, asi que renumerar en medio desplazaria los capitulos y borraria
+    // el equivocado. Especiales (0/-1/-2) intactos. Best-effort: un fallo no
+    // revierte los borrados ya hechos pero se registra.
+    if (chaptersDeleted > 0) {
+      try {
+        const renumbered = await renumberChaptersSequential(projectId);
+        if (renumbered > 0) {
+          await storage.createActivityLog({
+            projectId,
+            level: "info",
+            message: `[Fix182] Renumeración tras el lote: ${renumbered} capítulo(s) recolocado(s) para dejar la secuencia contigua sin huecos.`,
+            agentRole: "editor",
+          });
+        }
+      } catch (e) {
+        await storage.createActivityLog({
+          projectId,
+          level: "error",
+          message: `[Fix182] Fallo al renumerar tras borrar/fusionar capítulos: ${(e as Error).message?.slice(0, 200) || String(e)}. Puede quedar un hueco en la numeración; se corregirá en la siguiente pasada.`,
           agentRole: "editor",
         });
       }

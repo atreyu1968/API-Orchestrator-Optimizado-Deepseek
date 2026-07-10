@@ -26,6 +26,7 @@ import { calculateRealCost, formatCostForStorage } from "./cost-calculator";
 // `ai_usage_events` sin importar de routes.ts (que crearía ciclos).
 import { recordRawAiUsage } from "./utils/ai-usage";
 import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
+import { renumberChaptersSequential } from "./utils/renumber-chapters";
 import { forcePolishResume } from "./polish-auto-resume";
 import {
   extractMilestonesAndThreadsFromGuide,
@@ -9051,19 +9052,10 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
       // 1) Eliminar el capítulo.
       await storage.deleteChapter(target.id);
-      // 2) Renumerar los posteriores -1 para mantener secuencia continua.
-      //    Hacemos los updates en orden ascendente porque chapterNumber tiene
-      //    índice y queremos evitar colisión transitoria (cap N+1 → N choca
-      //    si N todavía existía, pero acabamos de borrar N así que cada hueco
-      //    queda libre antes del UPDATE correspondiente).
-      const subsequent = allChapters
-        .filter(c => Number(c.chapterNumber) > chapterToDelete)
-        .sort((a, b) => Number(a.chapterNumber) - Number(b.chapterNumber));
-      let renumbered = 0;
-      for (const c of subsequent) {
-        await storage.updateChapter(c.id, { chapterNumber: Number(c.chapterNumber) - 1 } as any);
-        renumbered++;
-      }
+      // 2) [Fix182] Renumerar los positivos restantes a una secuencia contigua
+      //    mediante el helper compartido (mismo que usa el bucle autonomo), para
+      //    que borrado manual y borrado desatendido cierren el hueco igual.
+      const renumbered = await renumberChaptersSequential(projectId);
 
       // 3) Eliminar la acción del listado pendiente (releyendo para evitar
       //    pisar acciones nuevas añadidas por otros procesos en paralelo).
