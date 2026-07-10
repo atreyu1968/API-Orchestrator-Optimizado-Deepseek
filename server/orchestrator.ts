@@ -12048,7 +12048,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     try {
       await storage.createActivityLog({
         projectId: project.id, level: "info",
-        message: `[Fix81] Auto-revisión Holístico+Beta iniciada (target DUAL: Beta ≥ ${TARGET_BETA_SCORE}/10 AND Holístico ≥ ${TARGET_HOLISTIC_SCORE}/10, máx ${MAX_ITERATIONS} iteraciones). [Fix89/Fix158] Metas aceptables si el Holistico alcanza su meta ABSOLUTA (>=${TARGET_HOLISTIC_SCORE}) O sube >=+2 desde inicio, con Beta>=${TARGET_BETA_SCORE - 1}; + brazo de reescritura de PROSA ultima-milla para empujar el Beta cuando el cirujano cap-a-cap toca techo.`,
+        message: `[Fix81] Auto-revisión Holístico+Beta iniciada (target DUAL: Beta ≥ ${TARGET_BETA_SCORE}/10 AND Holístico ≥ ${TARGET_HOLISTIC_SCORE}/10, máx ${MAX_ITERATIONS} iteraciones). [Fix89/Fix158] Metas aceptables si el Holistico alcanza su meta ABSOLUTA (>=${TARGET_HOLISTIC_SCORE}) O sube >=+2 desde inicio, con Beta>=${TARGET_BETA_SCORE} ([Fix184]: el Beta ya NO se relaja, exige su target completo); + brazo de reescritura de PROSA ultima-milla para empujar el Beta cuando el cirujano cap-a-cap toca techo.`,
         agentRole: "editor",
       });
 
@@ -12834,6 +12834,31 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
       // decision === "apply"
       const actionType = String(action?.type || "");
+      // [Fix185] El pulido automatico NO ejecuta cirugia ESTRUCTURAL (borrar o
+      // fusionar capitulos), aunque ambos lectores la aprueben en esta lectura.
+      // Motivo (verificado en la novela 42): estas acciones son IRREVERSIBLES
+      // — el revert-by-default restaura el CONTENIDO de los capitulos que
+      // sobreviven pero NO reconstruye la estructura de un capitulo ya borrado
+      // ("DRIFT ESTRUCTURAL"), asi que una mala fusion se cuela pese al revert.
+      // Ademas los veredictos de los lectores FLUCTUAN entre lecturas (una ronda
+      // aprueban "fusionar cap 10", la siguiente dicen "cap 10 tiene la
+      // revelacion crucial"): una aprobacion inconsistente destruia contenido y
+      // hundia la nota (Holistico -2). El pulido corre DESPUES de que el Revisor
+      // Final ya aprobo el libro, asi que la estructura ya estaba validada.
+      // Solo se permiten cambios REVERSIBLES de prosa. La sugerencia queda
+      // registrada en el log; para aplicarla, el usuario usa el flujo editorial
+      // manual (que tiene su propio endpoint y confirmacion).
+      if (actionType === "delete_chapter" || actionType === "merge_chapters") {
+        discarded++;
+        processedAppliedOrDiscarded.add(id);
+        await storage.createActivityLog({
+          projectId,
+          level: "info",
+          message: `[Fix185] accion admin id=${id} (${actionType} sobre ${action?.targetLabel || `cap ${action?.targetChapter}`}) NO ejecutada por el pulido automatico: solo aplica cambios REVERSIBLES de prosa (la cirugia estructural es irreversible y causaba regresiones). Sugerencia registrada; aplicable a mano desde el flujo editorial.`,
+          agentRole: "editor",
+        });
+        continue;
+      }
       if (actionType === "delete_chapter") {
         const targetChapter = Number(action?.targetChapter);
         if (!Number.isFinite(targetChapter)) {

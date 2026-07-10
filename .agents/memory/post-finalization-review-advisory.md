@@ -165,3 +165,26 @@ diferencias inocuas: quita acentos (simétrico cita↔texto) y maneja los puntos
 GENUINO (prosa realmente inexistente) se sigue descartando. Riesgo a vigilar: heurística de
 meta demasiado amplia puede dejar pasar alguna instrucción stale; el bucle tiene revert de
 seguridad, pero si aparece sobre-permisividad, exige 2 señales meta en vez de 1.
+
+## Un advisory loop solo debe hacer cambios REVERSIBLES (nada estructural irreversible)
+
+**Why:** el pulido oscilaba entre 7 y 8 sin subir porque las "mejoras" que lo bajaban
+NO eran ruido de medicion: coincidian con cirugia ESTRUCTURAL (fusionar/borrar
+capitulos). Dos causas se sumaban: (1) los veredictos de los lectores IA FLUCTUAN entre
+lecturas del mismo manuscrito — una ronda ambos aprueban "fusionar cap X", la siguiente
+lo rechazan ("cap X tiene la revelacion crucial") — asi que una aprobacion por unanimidad
+PUNTUAL ejecutaba una fusion que destruia contenido clave; (2) es IRREVERSIBLE: el
+revert-by-default restaura el CONTENIDO de los capitulos supervivientes pero NO reconstruye
+la estructura de un capitulo ya borrado (el snapshot solo guarda contenido → "DRIFT
+ESTRUCTURAL"), asi que el daño se cuela pese al revert. Las ediciones de PROSA si son
+reversibles y funcionaban.
+
+**How to apply:** en un bucle advisory que confia en "prueba-y-revierte", PERMITE solo
+operaciones cuyo revert sea COMPLETO (prosa por-capitulo, restaurable desde snapshot).
+PROHIBE las irreversibles (borrar/fusionar capitulos) aunque los lectores las aprueben:
+intercepta por `actionType` en el ejecutor del auto-loop (`applyConfirmedAdminActions`,
+unico call-site el bucle) ANTES de mutar, marcalas discarded+processed y loguealas como
+sugerencia. El flujo MANUAL (endpoint propio en routes.ts, con confirmacion) conserva la
+cirugia estructural. Regla general: no confies decisiones IRREVERSIBLES a un juez LLM con
+varianza; reservalas a un camino con confirmacion humana o hazlas de verdad reversibles
+(guardar estructura completa) antes de automatizarlas.
