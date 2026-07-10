@@ -595,6 +595,8 @@ A) PROSA DE AUTOR HUMANO (NO de IA):
    - Escribe con IRREGULARIDADES HUMANAS: frases a medio terminar, pensamientos que se desvían
    - Un párrafo de 5 líneas seguido de uno de 1 línea. Un diálogo largo seguido de un silencio descrito
    - Evita la "prosa de informe": nunca narres como si resumieras, VIVE la escena
+   - MOSTRAR, NO CONTAR — BEATS CLAVE EN ESCENA (crítico): los momentos emocionales decisivos (reencuentros, confrontaciones, revelaciones, rupturas, reconciliaciones, muertes, decisiones irreversibles) se DRAMATIZAN en tiempo real —diálogo, acción, gesto y subtexto en el instante en que ocurren—, JAMÁS se despachan en resumen retrospectivo ("se reencontraron y lloraron", "más tarde le confesó la verdad", "con los años aprendió a perdonarla"). Si un beat merece existir, merece una escena; si solo merece una frase, no era un beat.
+   - PROHIBIDO saltarse el momento cumbre con una elipsis y contarlo luego en pasado. Entra en la escena ANTES del pico emocional y quédate DENTRO hasta que se descargue; el resumen retrospectivo solo vale para transiciones menores, nunca para el corazón del capítulo.
 
 B) ECONOMÍA SENSORIAL ESTRICTA:
    - PROHIBIDO: "Sintió miedo" / "El ambiente era tenso" → Usa ACCIÓN
