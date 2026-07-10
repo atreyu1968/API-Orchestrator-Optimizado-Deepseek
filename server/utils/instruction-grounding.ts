@@ -7,13 +7,58 @@
 // instrucción con el texto actual del capítulo.
 
 // Normaliza para comparar: minúsculas, comillas unificadas, espacios colapsados.
+// [Fix179] Ademas quita acentos (NFD + strip diacriticos) para que una cita con
+// tilde distinta ("corazon"/"corazon") empareje. Es simetrico: cita y texto pasan
+// por la misma normalizacion, asi que el matching sigue siendo fiable.
 function normalizeForMatch(s: string): string {
   return (s || "")
     .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[«»“”„‟"]/g, '"')
     .replace(/[‘’‚‛']/g, "'")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// [Fix179] Detecta fragmentos que NO son prosa de la novela sino META-COMENTARIO
+// del revisor colado entre comillas/parentesis (p.ej. "(cap 10, escena de la
+// despensa) desactiva la gravedad..." o ". localizar la linea exacta..."). Estos
+// nunca aparecen en la prosa, asi que si los tratamos como citas empujan la
+// instruccion a "fantasma" y la descartan aunque el arreglo fuese valido. Los
+// excluimos de las citas auditables. Una cita de prosa real de una novela romantica
+// no arranca con puntuacion suelta ni contiene verbos-orden ni referencias a "cap N".
+function isLikelyMetaFragment(frag: string): boolean {
+  const f = (frag || "").trim();
+  if (!f) return true;
+  // Arranca con puntuacion de instruccion troceada: ")", ".", ",", "(", ":", ";"
+  if (/^[)\.\,\(:;]/.test(f)) return true;
+  const low = f.toLowerCase();
+  // Referencia meta a capitulos/escenas/tecnica narrativa.
+  if (/\bcap[íi]tulo?s?\.?\s*#?\s*\d/.test(low)) return true;
+  if (/\b(escena|presente narrativo|punto de vista|voz narrativa|show,?\s*don'?t\s*tell|mostrar\s+en\s+lugar\s+de\s+contar)\b/.test(low)) return true;
+  // Verbos-orden tipicos de una instruccion editorial (no de dialogo/prosa).
+  if (/\b(localizar|localiza|desactiva|desactivar|reescrib|reemplaz|sustituir?|sustituye|insertar?|inserta|eliminar?|elimina|suprimir?|suprime|a[ñn]adir?|a[ñn]ade|modificar?|modifica|convertir?|convierte|dividir?|divide|fusionar?|fusiona|acortar?|acorta|condensar?|condensa)\b/.test(low)) return true;
+  return false;
+}
+
+// [Fix179] Comprueba si una cita aparece en el texto, tolerando puntos suspensivos:
+// los revisores citan "inicio de la frase... final de la frase" omitiendo el centro.
+// Un includes() directo falla; aqui partimos por la elipsis y exigimos que cada
+// fragmento aparezca EN ORDEN (sin solaparse). Solo aplica si hay >=2 partes de
+// longitud suficiente, para no relajar el matching de citas cortas.
+function quotePresent(q: string, haystack: string): boolean {
+  if (haystack.includes(q)) return true;
+  const parts = q.split(/\s*(?:\u2026|\.{3,})\s*/).map(p => p.trim()).filter(p => p.length >= 15);
+  if (parts.length >= 2) {
+    let idx = 0;
+    for (const p of parts) {
+      const found = haystack.indexOf(p, idx);
+      if (found === -1) return false;
+      idx = found + p.length;
+    }
+    return true;
+  }
+  return false;
 }
 
 // Extrae fragmentos citados entre comillas («…», "…", “…”, '…') de longitud
@@ -35,7 +80,11 @@ export function extractLiteralQuotes(instruction: string): string[] {
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
       const frag = (m[1] || "").trim();
-      if (frag.length >= MIN_QUOTE_LEN) out.push(normalizeForMatch(frag));
+      // [Fix179] Descarta el meta-comentario colado entre comillas: no es prosa
+      // auditable, solo generaba falsos "fantasma".
+      if (frag.length >= MIN_QUOTE_LEN && !isLikelyMetaFragment(frag)) {
+        out.push(normalizeForMatch(frag));
+      }
     }
   }
   return out;
@@ -60,7 +109,8 @@ export function groundInstructionInChapter(instruction: string, chapterText: str
     return { grounded: true, quotes, missing: [] };
   }
   const haystack = normalizeForMatch(chapterText);
-  const missing = quotes.filter(q => !haystack.includes(q));
+  // [Fix179] quotePresent tolera puntos suspensivos ("inicio... final").
+  const missing = quotes.filter(q => !quotePresent(q, haystack));
   const anyPresent = missing.length < quotes.length;
   return { grounded: anyPresent, quotes, missing };
 }

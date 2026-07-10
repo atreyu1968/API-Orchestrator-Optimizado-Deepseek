@@ -142,3 +142,26 @@ autonomía total.
 `source`: el GET de listado EXCLUYE `auto-review-loop` (solo muestra las manuales); el
 "descartar todas" PRESERVA `auto-review-loop` (borrarlas a mano deja al bucle en curso sin
 candidatos). El único que puede tocar las internas es el propio bucle.
+
+## El guardián anti-fantasma puede ESTANCAR la calidad si descarta correcciones válidas
+
+**Why:** el pulido no subía el Beta (se plantaba a un punto de la meta) porque iteración
+tras iteración descartaba muchas notas del revisor "ANTES del cirujano — cita un pasaje que
+ya no existe". Las mejoras de craft nunca llegaban a la prosa. El guardián de
+instrucción-fantasma (`instruction-grounding.ts`) extrae las citas literales entre comillas
+y descarta la instrucción si NINGUNA aparece en el texto vigente — pero el extractor tragaba
+como "cita de prosa" el META-COMENTARIO del propio revisor colado entre comillas/paréntesis
+(p.ej. "(cap 10, escena de la despensa) desactiva la gravedad...", ". localizar la línea
+exacta..."). Eso jamás existe en la prosa → falso fantasma → arreglo legítimo tirado. Un
+guardián que confunde la INSTRUCCIÓN con la PROSA citada bloquea la mejora que debía habilitar.
+
+**How to apply:** al auditar citas contra el texto, (1) excluye de las citas auditables los
+fragmentos que son claramente meta-comentario (arrancan con puntuación suelta, referencian
+"cap N"/"escena"/técnica narrativa, o contienen verbos-orden editoriales tipo
+localizar/desactivar/reescribir/eliminar); si tras el filtro no quedan citas, deja PASAR la
+instrucción (no la trates como fantasma). (2) El matching de citas debe ser tolerante a
+diferencias inocuas: quita acentos (simétrico cita↔texto) y maneja los puntos suspensivos
+("inicio... final") partiendo la cita y exigiendo cada fragmento en orden. El fantasma
+GENUINO (prosa realmente inexistente) se sigue descartando. Riesgo a vigilar: heurística de
+meta demasiado amplia puede dejar pasar alguna instrucción stale; el bucle tiene revert de
+seguridad, pero si aparece sobre-permisividad, exige 2 señales meta en vez de 1.
