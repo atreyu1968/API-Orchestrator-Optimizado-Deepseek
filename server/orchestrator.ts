@@ -11890,17 +11890,22 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     };
 
     // [Fix89] Helper de "convergencia aceptable": el loop puede salir como
-    // éxito SIN clavar el target dual estricto (Beta≥9 AND Holístico≥8) si
-    // el manuscrito ha mejorado sustancialmente pero las críticas restantes
-    // del Holístico son estructurales no aplicables (que ahora Fix87 ruta a
-    // pendingAdminActions). En ese caso el cirujano cap-a-cap no puede
-    // avanzar más por sí mismo y bloquear la ortotipográfica final castiga
-    // injustamente al manuscrito.
+    // exito relajando SOLO el eje del HOLISTICO cuando sus criticas restantes
+    // son estructurales no aplicables (que Fix87 ruta a pendingAdminActions) y
+    // el cirujano cap-a-cap no puede avanzar mas por si mismo.
     //
-    // Criterio (todos los tres):
-    //   1. holisticScore − initialHolisticScore ≥ +2  (progreso real y grande)
-    //   2. betaScore ≥ TARGET_BETA_SCORE − 1  (≥8, Beta estable cerca del target)
-    //   3. holisticScore ≥ initialHolisticScore + 2  (redundante con 1; tracking puro)
+    // [Fix184] El eje BETA ya NO se relaja: exige el target COMPLETO
+    // (betaScore >= TARGET_BETA_SCORE, es decir >=9). Antes aceptaba
+    // betaScore >= TARGET_BETA_SCORE - 1 (>=8) y cantaba "METAS ALCANZADAS"
+    // con un Beta de 8, lo que el usuario considera inaceptable tras todo el
+    // pulido. Un Beta<9 ya NO cuenta como pulido logrado: cae al cierre
+    // advisory (honesto, marcado como "por debajo del target"), que conserva
+    // la mejor version y corre ortotipografica igual pero SIN declarar exito.
+    //
+    // Criterio (ambos):
+    //   1. betaScore >= TARGET_BETA_SCORE  (>=9, Beta EN su target, sin rebaja)
+    //   2. holisticScore >= TARGET_HOLISTIC_SCORE  O  holisticScore subio >= +2
+    //      desde el inicio (progreso macro real aunque no llegue al absoluto).
     // Si se cumple, restauramos el bestSnapshot (puede ser el actual o uno
     // previo mejor) y ejecutamos ortotipográfica final. Logueamos como
     // "convergence_accepted" con el delta H/B desde el arranque.
@@ -11911,7 +11916,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // [Fix158] Guard advisory: no cerrar (ni ejecutar ortho) si fuimos abortados.
       if (this.aborted) return false;
       if (currentScores.beta === null || currentScores.holistic === null) return false;
-      const betaOk = currentScores.beta >= (TARGET_BETA_SCORE - 1);
+      // [Fix184] Sin rebaja: el Beta debe estar EN su target completo (>=9).
+      const betaOk = currentScores.beta >= TARGET_BETA_SCORE;
       if (!betaOk) return false;
       // [Fix158] Criterio ABSOLUTO: el Holistico ya esta en su meta absoluta y el
       // Beta a un punto del target. Antes SOLO se aceptaba por DELTA (Holistico debia
@@ -11926,8 +11932,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const deltaOk = initialHolisticScore !== null && holisticDelta >= 2;
       if (!absoluteOk && !deltaOk) return false;
       const criterionNote = absoluteOk
-        ? `El Holistico alcanzo su meta absoluta (${currentScores.holistic} >= ${TARGET_HOLISTIC_SCORE}) y el Beta esta a un punto del target (${currentScores.beta} >= ${TARGET_BETA_SCORE - 1}).`
-        : `El Holistico subio de ${initialHolisticScore} -> ${currentScores.holistic} (+${holisticDelta}) y el Beta esta a un punto del target (${currentScores.beta} >= ${TARGET_BETA_SCORE - 1}).`;
+        ? `El Holistico alcanzo su meta absoluta (${currentScores.holistic} >= ${TARGET_HOLISTIC_SCORE}) y el Beta alcanzo su target (${currentScores.beta} >= ${TARGET_BETA_SCORE}).`
+        : `El Holistico subio de ${initialHolisticScore} -> ${currentScores.holistic} (+${holisticDelta}) y el Beta alcanzo su target (${currentScores.beta} >= ${TARGET_BETA_SCORE}).`;
       // Restaurar el mejor snapshot si lo tenemos y es ≥ la versión actual
       // por combined score (Fix81 ya garantiza que bestSnapshot es la mejor
       // combinación vista; restaurar es no-op si la iter actual ES la mejor).
@@ -12653,12 +12659,18 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
   /**
    * [Fix81] Wrapper sobre runOrthotypographicPass que registra un activity log
-   * de éxito o fallo. Se invoca DESPUÉS de que el manuscrito haya alcanzado el
-   * target dual (Beta≥9 AND Holístico≥8) o tras restaurar un snapshot que ya
-   * lo cumplía. Antes la ortotipográfica corría en finalizeCompletedProject
-   * ANTES del loop holístico+beta, así que cada reescritura posterior la
-   * destruía y el Beta penalizaba prosa todavía sin pulir. Ahora corre sobre
-   * el manuscrito final aprobado, una sola vez, y queda preservada.
+   * de exito o fallo. Se invoca al CERRAR el loop de pulido Holistico+Beta, por
+   * cualquiera de sus vias: target dual estricto (Beta>=9 AND Holistico>=7),
+   * convergencia aceptable (Fix89/Fix158) o cierre advisory (Fix157). Antes la
+   * ortotipografica corria en finalizeCompletedProject ANTES del loop, asi que
+   * cada reescritura posterior la destruia y el Beta penalizaba prosa todavia
+   * sin pulir. Ahora corre sobre el manuscrito final, una sola vez, y queda
+   * preservada.
+   * [Fix184] El log de esta ortotipografica NO afirma la via de cierre: la via
+   * real (target/convergencia/advisory) y las notas constan en el log de cierre
+   * que cada camino emite JUSTO antes de llamar aqui. El mensaje generico
+   * anterior mentia ("tras alcanzar el target dual") cuando el loop cerraba por
+   * convergencia aceptable (p.ej. Beta=8) o advisory.
    */
   private async runOrthotypographicPassAndUpdate(project: Project): Promise<void> {
     try {
@@ -12666,7 +12678,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       await storage.createActivityLog({
         projectId: project.id,
         level: "success",
-        message: `[Fix81] Corrección ortotipográfica final aplicada tras alcanzar el target dual: ${orthoResult.totalChanges} cambios en ${orthoResult.chaptersProcessed} capítulos.`,
+        message: `[Fix184] Correccion ortotipografica final aplicada: ${orthoResult.totalChanges} cambios en ${orthoResult.chaptersProcessed} capitulos. La via de cierre del pulido (target dual / convergencia aceptable / advisory) y sus notas constan en el log inmediatamente anterior.`,
         agentRole: "proofreader",
       });
     } catch (e) {
