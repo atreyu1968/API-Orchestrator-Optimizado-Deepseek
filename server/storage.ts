@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { stripMetaChapterHeader } from "./utils/strip-chapter-header";
 import { 
   projects, chapters, worldBibles, seriesWorldBibles, thoughtLogs, agentStatuses, pseudonyms, publishers, styleGuides,
   series, continuitySnapshots, importedManuscripts, importedChapters, extendedGuides, activityLogs,
@@ -289,6 +290,17 @@ export interface IStorage {
   updateProofreadingChapter(id: number, data: Partial<ProofreadingChapter>): Promise<ProofreadingChapter | undefined>;
 }
 
+// [Fix187] Saneo compartido de contenido de capitulo para create/updateChapter.
+// Devuelve el contenido sin la cabecera meta inicial, o undefined si no hay
+// contenido string que sanear (para que el llamante conserve su valor original).
+// Guarda anti-vaciado: si el capitulo fuese SOLO cabecera (patologico), conserva
+// el original en vez de dejarlo vacio.
+function sanitizeChapterContent(content: unknown): string | undefined {
+  if (typeof content !== "string" || content.length === 0) return undefined;
+  const stripped = stripMetaChapterHeader(content);
+  return stripped.trim().length > 0 ? stripped : content;
+}
+
 export class DatabaseStorage implements IStorage {
   async createPseudonym(data: InsertPseudonym): Promise<Pseudonym> {
     const [pseudonym] = await db.insert(pseudonyms).values(data).returning();
@@ -387,7 +399,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createChapter(data: InsertChapter): Promise<Chapter> {
-    const [chapter] = await db.insert(chapters).values(data).returning();
+    // [Fix187] Saneo centralizado de la cabecera meta ("# Capitulo N: ...") al
+    // INICIO del contenido, ANTES de persistir. Es la raiz del artefacto de
+    // "doble numeracion" que veian los lectores ([Fix186] lo enmascaraba en
+    // lectura; aqui se ataca en la escritura). Antes solo el ghostwriter al nacer
+    // y las rutas manuales saneaban; copyeditor/proofreader/cirugia QA/correcciones
+    // de arco guardaban crudo. Centralizar aqui cubre TODOS los caminos (y los
+    // futuros). Seguro e idempotente: solo quita cabeceras meta iniciales y para
+    // en la primera prosa; el export ya regenera la cabecera desde numero+titulo.
+    const clean = sanitizeChapterContent(data.content);
+    const values = clean !== undefined ? { ...data, content: clean } : data;
+    const [chapter] = await db.insert(chapters).values(values).returning();
     return chapter;
   }
 
@@ -400,7 +422,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateChapter(id: number, data: Partial<Chapter>): Promise<Chapter | undefined> {
-    const [updated] = await db.update(chapters).set(data).where(eq(chapters.id, id)).returning();
+    // [Fix187] Mismo saneo centralizado que createChapter, pero SOLO cuando el
+    // update incluye 'content' (los updates de solo status/numero/etc. no se tocan).
+    const setData = ("content" in data)
+      ? { ...data, content: sanitizeChapterContent(data.content) ?? data.content }
+      : data;
+    const [updated] = await db.update(chapters).set(setData).where(eq(chapters.id, id)).returning();
     return updated;
   }
 
