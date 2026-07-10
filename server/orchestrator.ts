@@ -67,6 +67,7 @@ import { repairJson } from "./utils/json-repair";
 import { groundInstructionInChapter, extractFlaggedChapters } from "./utils/instruction-grounding";
 import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper } from "./utils/series-context-builder";
 import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
+import { tryMarkPolishActive, clearPolishActive } from "./utils/polish-registry";
 import { recordRawAiUsage } from "./utils/ai-usage";
 import { calculateRealCost } from "./cost-calculator";
 import { runWithProjectContext } from "./utils/agent-context";
@@ -16764,12 +16765,51 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
     // [Fix171] Al terminar el bucle (converja o no), se descartan las tarjetas
     // administrativas que el propio bucle dejo sin resolver: el flujo
     // desatendido no deja propuestas pendientes que pidan intervencion.
+    // [Fix177] Marca el pulido como EN CURSO antes de lanzarlo. Si el server
+    // se reinicia/cae durante el bucle, este flag queda en true y el
+    // auto-resume de arranque (autoResumePendingPolish) lo reanuda. Resetea
+    // el contador de reanudaciones para este pulido nuevo.
+    await storage.updateProject(project.id, { autoPolishPending: true, autoPolishResumeCount: 0 }).catch(() => {});
+    // [Fix177] Guard de exclusion COMPARTIDO y ATOMICO (check+set sincrono) con el
+    // auto-resume/rescate manual: si ya hay un pulido en curso para este proyecto
+    // (caso raro), NO lanzamos un segundo bucle. El flag autoPolishPending ya quedo
+    // en true y lo limpiara el finally del bucle ya activo.
+    if (!tryMarkPolishActive(project.id)) {
+      return;
+    }
     const loopPromise = (project as any).autoBetaLoop
       ? this.runAutoBetaLoop(project)
       : this.runAutoHolisticReviewLoop(project);
     void loopPromise
       .catch(e => console.error("[Fix171] auto review loop rechazado:", e))
-      .finally(() => { void this.discardLeftoverAutoLoopAdminActions(project.id); });
+      .finally(() => {
+        void this.discardLeftoverAutoLoopAdminActions(project.id);
+        // [Fix177] Bucle terminado (converja, se estanque o falle): limpiar el
+        // flag para que el arranque no lo reanude. Solo una caida DURA (kill
+        // del proceso) impide llegar aqui -> el flag queda en true -> resume.
+        void storage.updateProject(project.id, { autoPolishPending: false }).catch(() => {});
+        clearPolishActive(project.id);
+      });
+  }
+
+  /**
+   * [Fix177] Punto de entrada PUBLICO para reanudar el pulido advisory
+   * (Holistico+Beta) tras un reinicio del servidor. Ejecuta el mismo bucle que
+   * finalizeCompletedProject y SIEMPRE limpia el flag autoPolishPending al
+   * terminar (converja, se estanque o falle) ademas de descartar tarjetas
+   * administrativas huerfanas, igual que el flujo normal.
+   */
+  public async runAutoPolishResume(project: Project): Promise<void> {
+    try {
+      if ((project as any).autoBetaLoop) {
+        await this.runAutoBetaLoop(project);
+      } else {
+        await this.runAutoHolisticReviewLoop(project);
+      }
+    } finally {
+      try { await this.discardLeftoverAutoLoopAdminActions(project.id); } catch { /* best-effort */ }
+      try { await storage.updateProject(project.id, { autoPolishPending: false }); } catch { /* best-effort */ }
+    }
   }
 
   /**

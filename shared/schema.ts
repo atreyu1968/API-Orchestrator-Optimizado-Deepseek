@@ -205,6 +205,20 @@ export const projects = pgTable("projects", {
   // poder revertir si una iteración degrada la prosa.
   autoBetaLoop: boolean("auto_beta_loop").notNull().default(false),
   autoBetaLoopMaxIterations: integer("auto_beta_loop_max_iterations").notNull().default(3),
+  // [Fix177] El bucle de pulido post-finalizacion (Holistico+Beta) corre en
+  // segundo plano DESPUES de marcar el proyecto como "completed" y NO era
+  // resumible: un reinicio/caida del server durante el bucle lo mataba en
+  // silencio y el libro quedaba con la nota que tuviera y los arreglos sin
+  // aplicar. Estos dos campos hacen el bucle recuperable tras reinicio:
+  //   - autoPolishPending: true mientras el bucle esta en marcha; se limpia
+  //     en el finally (converja, se estanque o falle). Solo una caida DURA
+  //     (kill del proceso) lo deja en true -> el auto-resume de arranque lo
+  //     reanuda.
+  //   - autoPolishResumeCount: cuenta cuantas veces el arranque ha reanudado
+  //     este pulido; topado a un maximo para no gastar tokens en bucle si el
+  //     pulido se cuelga siempre en el mismo punto.
+  autoPolishPending: boolean("auto_polish_pending").notNull().default(false),
+  autoPolishResumeCount: integer("auto_polish_resume_count").notNull().default(0),
   // [Fix108] Voz narrativa canónica del proyecto (POV + tiempo verbal + tipo
   // de narrador opcional). Antes de Fix108 la voz se inferia con regex de
   // `guiaEstilo` (texto libre); si la guía no contenía frases-llave concretas

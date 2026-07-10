@@ -83,3 +83,29 @@ para no re-disparar. No gates artificiales (p.ej. brazo Beta gated a `holistic>=
 si el cuello de botella es el Holístico, querrás el brazo estructural, no bloquear el de
 prosa. Sin riesgo de bucle infinito: en la pasada extra (iter ya = MAX) todos los
 `continue` internos siguen gateados por `iter<MAX`.
+
+## El pulido advisory se lanza fire-and-forget: DEBE ser resumible
+
+**Why:** el bucle de pulido se dispara con `void loopPromise` DESPUÉS de marcar el
+proyecto `status="completed"`. No es un status "processing", así que ni el watchdog de
+reedición ni la reanudación de generación lo cubren: un reinicio/caída del server DURANTE
+el bucle lo mata en silencio y el libro queda con su nota mediocre y los arreglos sin
+aplicar (caso real: un libro de serie murió en la iteración 1 tras DETECTAR sus arreglos
+pero antes de aplicarlos). Un trabajo caro y de larga duración que no está bajo ningún
+status resumible es un punto ciego de recuperación.
+
+**How to apply:** persiste un flag booleano de "pulido en curso" en el proyecto ANTES de
+lanzar el bucle y límpialo en el `finally` (solo una caída DURA impide llegar al finally
+→ el flag queda en true → señal de "hay que reanudar"). En el arranque, escanea proyectos
+`completed` con el flag y relanza, con un TOPE de reanudaciones persistido para no gastar
+tokens si el pulido se cuelga siempre. Ofrece además un disparador manual (endpoint) para
+rescatar libros terminados antes del fix.
+
+**Guard de exclusión compartido (evita doble bucle):** con DOS puntos de entrada al mismo
+bucle (el `finalize` normal y el auto-resume/rescate), un disparo manual concurrente
+mientras ya corre lanzaría un SEGUNDO bucle sobre el mismo libro → doble gasto de tokens +
+escrituras concurrentes de capítulos/scores. El guard debe ser COMPARTIDO entre ambos
+caminos (un registro común, no un set privado de cada módulo). En deploy single-instance
+basta un Set en memoria de proceso; multi-instancia exigiría lock atómico en BD. Marca en
+el registro ANTES de cualquier await y libera en `finally` (y en un `catch` de la
+preparación, para no dejar el id "pegado" si falla antes de enganchar el finally del bucle).

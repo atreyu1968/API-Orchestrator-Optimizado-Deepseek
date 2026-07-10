@@ -26,6 +26,7 @@ import { calculateRealCost, formatCostForStorage } from "./cost-calculator";
 // `ai_usage_events` sin importar de routes.ts (que crearía ciclos).
 import { recordRawAiUsage } from "./utils/ai-usage";
 import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
+import { forcePolishResume } from "./polish-auto-resume";
 import {
   extractMilestonesAndThreadsFromGuide,
 } from "./utils/series-milestones-extractor";
@@ -1520,6 +1521,34 @@ export async function registerRoutes(
   // it through the existing parse → preview → apply flow.
   // Same async pattern as parse-editorial-notes (HTTP 202 + SSE event) because
   // reading 100k+ words with reasoning takes 3-5 minutes.
+  // [Fix177] Relanzar el pulido advisory (Holistico+Beta) de un proyecto ya
+  // completado. Sirve para (a) rescatar libros cuyo pulido murio en un reinicio
+  // (el bucle no era resumible) y (b) dar al usuario un boton para volver a
+  // pulir un libro que quedo por debajo del objetivo. Marca autoPolishPending,
+  // resetea el contador y lanza el bucle en segundo plano (mismo mecanismo que
+  // el auto-resume de arranque).
+  app.post("/api/projects/:id/resume-polish", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProject(id);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      if (project.status !== "completed") {
+        return res.status(400).json({ error: "Solo se puede relanzar el pulido de proyectos completados" });
+      }
+      const result = await forcePolishResume(id);
+      if (!result.success) {
+        return res.status(409).json({ error: result.message });
+      }
+      await persistActivityLog(id, "info", "Pulido relanzado manualmente (Holistico+Beta).", "orchestrator");
+      return res.status(202).json({ accepted: true, projectId: id, message: result.message });
+    } catch (error) {
+      console.error("Error resuming polish:", error);
+      return res.status(500).json({ error: error instanceof Error ? error.message : "Failed to resume polish" });
+    }
+  });
+
   app.post("/api/projects/:id/holistic-review", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);

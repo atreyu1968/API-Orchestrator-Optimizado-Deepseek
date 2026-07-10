@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { queueManager } from "./queue-manager";
 import { autoResumeReeditProjects, startWatchdog } from "./reedit-auto-resume";
+import { autoResumePendingPolish } from "./polish-auto-resume";
 import { setupAuth, authMiddleware, isAuthEnabled } from "./auth";
 import { assertSchemaUpToDate } from "./startup-schema-check";
 import { ensureSchema } from "./db";
@@ -134,6 +135,15 @@ app.use((req, res, next) => {
           // Start the watchdog to detect frozen processes
           startWatchdog();
           log("Reedit watchdog started", "reedit");
+
+          // [Fix177] Auto-resume del pulido advisory (Holistico+Beta) que quedo
+          // a medias por un reinicio: reanuda proyectos con autoPolishPending.
+          try {
+            log("Checking for interrupted polish loops to auto-resume...", "polish");
+            await autoResumePendingPolish();
+          } catch (polishErr) {
+            log(`Polish auto-resume error: ${polishErr}`, "polish");
+          }
         }, 3000); // Wait 3 seconds for server to fully initialize
       } catch (error) {
         log(`Reedit auto-resume error: ${error}`, "reedit");

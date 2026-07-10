@@ -44,6 +44,8 @@ const SCHEMA_PATCHES: string[] = [
   // [Fix172] Flag global: suspender trabajo LLM en horas pico de DeepSeek
   // (tarifa dinamica x2) y reanudar automaticamente en horas valle.
   `ALTER TABLE "queue_state" ADD COLUMN IF NOT EXISTS "pause_on_peak_hours" boolean NOT NULL DEFAULT false`,
+  `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "auto_polish_pending" boolean NOT NULL DEFAULT false`,
+  `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "auto_polish_resume_count" integer NOT NULL DEFAULT 0`,
 ];
 
 let schemaEnsured = false;
