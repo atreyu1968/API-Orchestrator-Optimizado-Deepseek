@@ -8786,13 +8786,23 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   // merge_chapters, etc.) emitidas por el StructuralInstructionTranslator.
   // No se aplican automáticamente; la UI las muestra para que el usuario
   // las revise y las descarte o las ejecute manualmente.
+  // [Fix178] Devuelve SOLO las del flujo MANUAL: excluye las internas del pulido
+  // autonomo (source="auto-review-loop"), que nunca requieren accion del usuario.
   app.get("/api/projects/:id/pending-admin-actions", async (req: Request, res: Response) => {
     try {
       if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "ID inválido" });
       const projectId = parseInt(req.params.id, 10);
       const project = await storage.getProject(projectId);
       if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
-      const actions = Array.isArray((project as any).pendingAdminActions) ? (project as any).pendingAdminActions : [];
+      const all = Array.isArray((project as any).pendingAdminActions) ? (project as any).pendingAdminActions : [];
+      // [Fix178] NO exponer al usuario las acciones creadas por el pulido
+      // AUTONOMO (source="auto-review-loop"). Son memoria INTERNA del bucle para
+      // la verificacion por unanimidad entre iteraciones (Fix164): se aplican
+      // solas si ambos lectores coinciden, o se descartan al cerrar el bucle
+      // (discardLeftoverAutoLoopAdminActions). Nunca requieren accion del usuario;
+      // mostrarlas hacia parecer que el pulido "pedia confirmacion" (rompia la
+      // autonomia total). Solo se muestran las del flujo MANUAL.
+      const actions = all.filter((a: any) => String(a?.source || "") !== "auto-review-loop");
       res.json({ actions, count: actions.length });
     } catch (error) {
       console.error("[Fix40] Error GET pending-admin-actions:", error);
@@ -8814,7 +8824,12 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const actionIdRaw = req.params.actionId;
       let next: any[];
       if (!actionIdRaw) {
-        next = [];
+        // [Fix178] "Descartar todas" solo borra las acciones MANUALES (las que
+        // el usuario ve). PRESERVA las internas del pulido autonomo
+        // (source="auto-review-loop"): son la memoria de unanimidad del bucle en
+        // curso; borrarlas a mano lo dejaria sin candidatos y las gestiona/limpia
+        // el propio bucle (discardLeftoverAutoLoopAdminActions).
+        next = existing.filter((a: any) => String(a?.source || "") === "auto-review-loop");
       } else {
         if (!/^\d+$/.test(actionIdRaw)) return res.status(400).json({ error: "actionId inválido" });
         const actionId = parseInt(actionIdRaw, 10);

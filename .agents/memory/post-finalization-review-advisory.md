@@ -127,3 +127,18 @@ reinician el server con frecuencia, así que un tope bajo (p.ej. 3) se agota sin
 pulido llegara a colgarse de verdad. Deja margen holgado (p.ej. 8); el bucle interno ya
 está acotado por su propio tope de iteraciones, así que una reanudación que arranca
 termina sola.
+
+## Las admin actions del bucle autónomo son MEMORIA INTERNA, nunca user-facing
+
+**Why:** el bucle autónomo persiste sus candidatos de delete/merge de capítulos en el
+MISMO almacén (`projects.pendingAdminActions`) que las acciones del flujo MANUAL, pero con
+`source="auto-review-loop"`. Las usa como memoria de unanimidad cross-iteración (un borrado
+solo se aplica si ambos lectores coinciden; si no, se descartan al cerrar). No son para el
+usuario. Cualquier superficie user-facing que lea ese almacén sin filtrar por `source`
+expone esas acciones internas como si el sistema pidiera confirmación humana — rompe la
+autonomía total.
+
+**How to apply:** toda ruta user-facing sobre `pendingAdminActions` debe discriminar por
+`source`: el GET de listado EXCLUYE `auto-review-loop` (solo muestra las manuales); el
+"descartar todas" PRESERVA `auto-review-loop` (borrarlas a mano deja al bucle en curso sin
+candidatos). El único que puede tocar las internas es el propio bucle.
