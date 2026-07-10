@@ -1,6 +1,7 @@
 import { BaseAgent, AgentResponse, TokenUsage } from "./base-agent";
 import { extractStyleDirectives } from "../utils/style-directives";
 import { extractScoreFromMarkers, extractAdminActionVerdicts, type AdminActionVerdict } from "../utils/review-score";
+import { stripMetaChapterHeader } from "../utils/strip-chapter-header";
 
 // [Fix76] Resumen mínimo de una acción administrativa pendiente que el
 // Holístico debe verificar. Lo construye el orquestador a partir de
@@ -360,8 +361,12 @@ Longitud objetivo: ${input.longitudObjetivo || "(no especificado)"}
 Capítulos entregados: ${sortedChapters.length}
 Palabras totales aproximadas: ${totalWords.toLocaleString("es-ES")}`;
 
+    // [Fix186] Igual que el Beta: saneamos la cabecera meta incrustada en el
+    // contenido crudo (p. ej. "# Capitulo 19" con numero fantasma) antes de que
+    // el revisor lo lea, para que no vea doble numeracion. La etiqueta correcta
+    // ya la antepone este bloque via getChapterLabel.
     const chaptersBlock = sortedChapters
-      .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(sección vacía)"}`)
+      .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${stripMetaChapterHeader(c.contenido || "") || "(sección vacía)"}`)
       .join("");
 
     // [Fix140] Aviso de regresión: la ronda previa empeoró la nota y se revirtió.

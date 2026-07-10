@@ -1,6 +1,7 @@
 import { BaseAgent, AgentResponse, TokenUsage } from "./base-agent";
 import { extractStyleDirectives } from "../utils/style-directives";
 import { extractScoreFromMarkers, countAutoInstructions, extractAdminActionVerdicts, type AdminActionVerdict } from "../utils/review-score";
+import { stripMetaChapterHeader } from "../utils/strip-chapter-header";
 import type { PendingAdminActionForReview } from "./holistic-reviewer";
 
 interface BetaReaderInput {
@@ -361,8 +362,15 @@ Longitud objetivo: ${input.longitudObjetivo || "(no especificado)"}
 Capítulos entregados: ${sortedChapters.length}
 Palabras totales aproximadas: ${totalWords.toLocaleString("es-ES")}`;
 
+    // [Fix186] Saneamos la cabecera meta incrustada en el contenido ANTES de
+    // pasarlo al lector. Este bloque ya antepone su propia etiqueta correcta
+    // (## CAPITULO N: Titulo via getChapterLabel), pero el contenido crudo puede
+    // arrastrar su propio "# Capitulo N: ..." al inicio, a veces con numero
+    // fantasma de un borrador previo (visto en la BD: cap 16 con "# Capitulo 19").
+    // El exportador ya lo limpia con stripMetaChapterHeader; el lector no lo hacia
+    // y veia doble numeracion, lo que le rompia la coherencia y le costaba puntos.
     const chaptersBlock = sortedChapters
-      .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${c.contenido || "(sección vacía)"}`)
+      .map(c => `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n## ${getChapterLabel(c.numero)}${c.titulo ? `: ${c.titulo}` : ""}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n${stripMetaChapterHeader(c.contenido || "") || "(sección vacía)"}`)
       .join("");
 
     // [Fix120] Bloque de notas ya aplicadas por el cirujano en iteraciones
