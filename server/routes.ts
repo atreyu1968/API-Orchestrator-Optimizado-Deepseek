@@ -6605,6 +6605,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         pseudonyms,
         styleGuides,
         extendedGuides,
+        generatedGuides,
         series,
         continuitySnapshots,
         thoughtLogs,
@@ -6615,6 +6616,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         storage.getAllPseudonyms(),
         storage.getAllStyleGuides(),
         storage.getAllExtendedGuides(),
+        storage.getAllGeneratedGuides(),
         storage.getAllSeries(),
         storage.getAllContinuitySnapshots(),
         storage.getAllThoughtLogs(),
@@ -6626,6 +6628,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           pseudonyms,
           styleGuides,
           extendedGuides,
+          generatedGuides,
           series,
           projects,
           chapters,
@@ -6672,13 +6675,66 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const pseudonymIdMap = new Map<number, number>();
       const seriesIdMap = new Map<number, number>();
 
+      // [Fix181] Importacion correcta de guias. Prefetch del estado ACTUAL
+      // (antes de importar) para: (a) reusar seudonimos/series existentes por
+      // nombre en vez de duplicarlos en cada import, y (b) detectar colisiones
+      // de guias (mismo seudonimo o misma novela/serie) y marcarlas como
+      // "(importada)" en vez de perderlas o mezclarlas en silencio.
+      const norm = (s: any) => String(s ?? "").trim().toLowerCase();
+      const IMPORTED_SUFFIX = " (importada)";
+      const markImported = (title: any) => {
+        const t = String(title ?? "").trim();
+        return norm(t).endsWith(norm(IMPORTED_SUFFIX)) ? t : `${t}${IMPORTED_SUFFIX}`;
+      };
+
+      const [
+        existingPseudonymsAll,
+        existingSeriesAll,
+        existingStyleGuidesAll,
+        existingExtendedGuidesAll,
+        existingGeneratedGuidesAll,
+      ] = await Promise.all([
+        storage.getAllPseudonyms(),
+        storage.getAllSeries(),
+        storage.getAllStyleGuides(),
+        storage.getAllExtendedGuides(),
+        storage.getAllGeneratedGuides(),
+      ]);
+
+      const existingPseudonymByName = new Map<string, number>();
+      for (const p of existingPseudonymsAll) {
+        if (!existingPseudonymByName.has(norm(p.name))) existingPseudonymByName.set(norm(p.name), p.id);
+      }
+      const existingSeriesByTitle = new Map<string, number>();
+      for (const s of existingSeriesAll) {
+        if (!existingSeriesByTitle.has(norm(s.title))) existingSeriesByTitle.set(norm(s.title), s.id);
+      }
+
+      // Colisiones de guias contra el estado PRE-import
+      const pseudonymIdsWithStyleGuide = new Set<number>(existingStyleGuidesAll.map(g => g.pseudonymId));
+      const pseudonymIdsWithGeneratedGuide = new Set<number>(
+        existingGeneratedGuidesAll.filter(g => g.pseudonymId != null).map(g => g.pseudonymId as number)
+      );
+      const seriesIdsWithGeneratedGuide = new Set<number>(
+        existingGeneratedGuidesAll.filter(g => g.seriesId != null).map(g => g.seriesId as number)
+      );
+      const existingExtendedGuideTitles = new Set<string>(existingExtendedGuidesAll.map(g => norm(g.title)));
+
       // Import in order of dependencies
       if (importData.pseudonyms?.length) {
         for (const item of importData.pseudonyms) {
           try {
             const oldId = item.id;
+            // Reusar el seudonimo existente si ya hay uno con ese nombre
+            const existingId = existingPseudonymByName.get(norm(item.name));
+            if (existingId != null) {
+              pseudonymIdMap.set(oldId, existingId);
+              results.imported.pseudonymsReused = (results.imported.pseudonymsReused || 0) + 1;
+              continue;
+            }
             const created = await storage.createPseudonym(prepareForInsert(item));
             pseudonymIdMap.set(oldId, created.id);
+            existingPseudonymByName.set(norm(item.name), created.id);
             results.imported.pseudonyms = (results.imported.pseudonyms || 0) + 1;
           } catch (e: any) {
             if (!e.message?.includes('duplicate')) {
@@ -6691,7 +6747,17 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       if (importData.styleGuides?.length) {
         for (const item of importData.styleGuides) {
           try {
-            await storage.createStyleGuide(prepareForInsert(item));
+            const data = prepareForInsert(item);
+            // Mapear el seudonimo (bug previo: no se remapeaba -> FK invalida)
+            if (data.pseudonymId != null && pseudonymIdMap.has(data.pseudonymId)) {
+              data.pseudonymId = pseudonymIdMap.get(data.pseudonymId);
+            }
+            // Marcar como importada si ese seudonimo ya tenia una guia de estilo
+            if (data.pseudonymId != null && pseudonymIdsWithStyleGuide.has(data.pseudonymId)) {
+              data.title = markImported(data.title);
+              results.imported.styleGuidesMarcadas = (results.imported.styleGuidesMarcadas || 0) + 1;
+            }
+            await storage.createStyleGuide(data);
             results.imported.styleGuides = (results.imported.styleGuides || 0) + 1;
           } catch (e: any) {
             if (!e.message?.includes('duplicate')) {
@@ -6705,6 +6771,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         for (const item of importData.extendedGuides) {
           try {
             const rest = prepareForInsert(item);
+            // Guia sin vinculo a seudonimo/novela: colision por titulo repetido
+            if (existingExtendedGuideTitles.has(norm(rest.title))) {
+              rest.title = markImported(rest.title);
+              results.imported.extendedGuidesMarcadas = (results.imported.extendedGuidesMarcadas || 0) + 1;
+            }
             await storage.createExtendedGuide(rest);
             results.imported.extendedGuides = (results.imported.extendedGuides || 0) + 1;
           } catch (e: any) {
@@ -6724,12 +6795,50 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
             if (data.pseudonymId && pseudonymIdMap.has(data.pseudonymId)) {
               data.pseudonymId = pseudonymIdMap.get(data.pseudonymId);
             }
+            // Reusar la serie existente si ya hay una con ese titulo
+            const existingId = existingSeriesByTitle.get(norm(item.title));
+            if (existingId != null) {
+              seriesIdMap.set(oldId, existingId);
+              results.imported.seriesReused = (results.imported.seriesReused || 0) + 1;
+              continue;
+            }
             const created = await storage.createSeries(data);
             seriesIdMap.set(oldId, created.id);
+            existingSeriesByTitle.set(norm(item.title), created.id);
             results.imported.series = (results.imported.series || 0) + 1;
           } catch (e: any) {
             if (!e.message?.includes('duplicate')) {
               results.errors.push({ table: 'series', error: e.message });
+            }
+          }
+        }
+      }
+
+      // [Fix181] Guias generadas (Taller de Guias): faltaban por completo en
+      // la copia. Van despues de series porque referencian pseudonymId y seriesId.
+      if (importData.generatedGuides?.length) {
+        for (const item of importData.generatedGuides) {
+          try {
+            const data = prepareForInsert(item);
+            if (data.pseudonymId != null && pseudonymIdMap.has(data.pseudonymId)) {
+              data.pseudonymId = pseudonymIdMap.get(data.pseudonymId);
+            }
+            if (data.seriesId != null && seriesIdMap.has(data.seriesId)) {
+              data.seriesId = seriesIdMap.get(data.seriesId);
+            }
+            // Marcar como importada si ese seudonimo o esa novela/serie ya
+            // tenian una guia generada
+            const collidesPseudonym = data.pseudonymId != null && pseudonymIdsWithGeneratedGuide.has(data.pseudonymId);
+            const collidesSeries = data.seriesId != null && seriesIdsWithGeneratedGuide.has(data.seriesId);
+            if (collidesPseudonym || collidesSeries) {
+              data.title = markImported(data.title);
+              results.imported.generatedGuidesMarcadas = (results.imported.generatedGuidesMarcadas || 0) + 1;
+            }
+            await storage.createGeneratedGuide(data);
+            results.imported.generatedGuides = (results.imported.generatedGuides || 0) + 1;
+          } catch (e: any) {
+            if (!e.message?.includes('duplicate')) {
+              results.errors.push({ table: 'generatedGuides', error: e.message });
             }
           }
         }

@@ -129,6 +129,8 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/pseudonyms"] });
       queryClient.invalidateQueries({ queryKey: ["/api/style-guides"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/extended-guides"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/guides"] });
       queryClient.invalidateQueries({ queryKey: ["/api/series"] });
       
       toast({ 
