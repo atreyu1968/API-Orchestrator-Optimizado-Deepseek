@@ -1,0 +1,55 @@
+root@escritords:~# # Clonar repositorio
+git clone https://github.com/atreyu1968/API-Orchestrator-Optimizado-Deepseek.git
+cd API-Orchestrator-Optimizado-Deepseek
+
+# Ejecutar instalador (te pedira las configuraciones)
+sudo bash install.sh
+fatal: destination path 'API-Orchestrator-Optimizado-Deepseek' already exists and is not an empty directory.
+
+═══════════════════════════════════════════════════════════════
+ INSTALADOR DE LITAGENTS v6.7 (DeepSeek V4-Flash)
+═══════════════════════════════════════════════════════════════
+
+Este script instalara y configurara la aplicacion completa.
+
+[AVISO] Instalacion existente detectada. Se realizara una ACTUALIZACION.
+[INFO] Las credenciales y configuracion se preservaran.
+
+Continuar con la instalacion? (s/N): s
+
+═══════════════════════════════════════════════════════════════
+ PASO 1: Configuracion de API Keys
+═══════════════════════════════════════════════════════════════
+
+[INFO] Usando credenciales existentes de /etc/litagents/env
+
+═══════════════════════════════════════════════════════════════
+ PASO 2: Instalando dependencias del sistema
+═══════════════════════════════════════════════════════════════
+
+[INFO] Actualizando repositorios...
+W: chown to _apt:root of directory /var/lib/apt/lists/partial failed - SetupAPTPartialDirectory (30: Read-only file system)
+W: chmod 0700 of directory /var/lib/apt/lists/partial failed - SetupAPTPartialDirectory (30: Read-only file system)
+W: chown to _apt:root of directory /var/lib/apt/lists/auxfiles failed - SetupAPTPartialDirectory (30: Read-only file system)
+W: chmod 0755 of directory /var/lib/apt/lists/auxfiles failed - SetupAPTPartialDirectory (30: Read-only file system)
+W: Not using locking for read only lock file /var/lib/apt/lists/lock
+W: chown to _apt:root of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky_InRelease failed - Item::QueueURI (30: Read-only file system)
+W: chmod 0600 of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky_InRelease failed - Item::QueueURI (30: Read-only file system)
+W: chown to root:root of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky_InRelease failed - 201::URIDone (30: Read-only file system)
+W: chmod 0644 of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky_InRelease failed - 201::URIDone (30: Read-only file system)
+W: chown to _apt:root of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky-updates_InRelease failed - Item::QueueURI (30: Read-only file system)
+W: chmod 0600 of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky-updates_InRelease failed - Item::QueueURI (30: Read-only file system)
+W: chown to root:root of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky-updates_InRelease failed - 201::URIDone (30: Read-only file system)
+W: chmod 0644 of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky-updates_InRelease failed - 201::URIDone (30: Read-only file system)
+W: chown to _apt:root of file /var/lib/apt/lists/deb.nodesource.com_node%5f20.x_dists_nodistro_InRelease failed - Item::QueueURI (30: Read-only file system)
+W: chmod 0600 of file /var/lib/apt/lists/deb.nodesource.com_node%5f20.x_dists_nodistro_InRelease failed - Item::QueueURI (30: Read-only file system)
+W: chown to root:root of file /var/lib/apt/lists/deb.nodesource.com_node%5f20.x_dists_nodistro_InRelease failed - 201::URIDone (30: Read-only file system)
+W: chmod 0644 of file /var/lib/apt/lists/deb.nodesource.com_node%5f20.x_dists_nodistro_InRelease failed - 201::URIDone (30: Read-only file system)
+W: chown to _apt:root of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky-security_InRelease failed - Item::QueueURI (30: Read-only file system)
+W: chmod 0600 of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky-security_InRelease failed - Item::QueueURI (30: Read-only file system)
+W: chown to root:root of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky-security_InRelease failed - 201::URIDone (30: Read-only file system)
+W: chmod 0644 of file /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_plucky-security_InRelease failed - 201::URIDone (30: Read-only file system)
+E: The repository 'https://pkg.cloudflare.com/cloudflared any Release' no longer has a Release file.
+W: Problem unlinking the file /var/cache/apt/pkgcache.bin - RemoveCaches (30: Read-only file system)
+W: Problem unlinking the file /var/cache/apt/srcpkgcache.bin - RemoveCaches (30: Read-only file system)
+root@escritords:~/API-Orchestrator-Optimizado-Deepseek# 
