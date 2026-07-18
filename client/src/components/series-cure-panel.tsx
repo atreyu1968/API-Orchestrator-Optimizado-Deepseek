@@ -15,32 +15,58 @@ interface CureVolume {
   volumeId: number;
   title: string;
   seriesOrder: number;
-  steps: { arcVerify: string; corrections: string; deepRewrite: string; polish: string };
+  steps: { arcVerify: string; corrections: string; mdClean?: string; deepRewrite: string; polish: string; issues?: string; seam?: string };
   arcScore?: number;
   arcPassed?: boolean;
   correctionsApplied?: number;
+  markdownCleaned?: number;
   chaptersRewritten?: number;
   betaScore?: number | null;
   holisticScore?: number | null;
+  polishProgress?: {
+    beta: number | null;
+    holistico: number | null;
+    ultimaActividad?: string;
+    ultimaActividadAt?: string;
+    fase?: string;
+  };
+  reviewNotes?: string;
+  issuesResolved?: number;
+  seamSummary?: string;
   verdict?: string;
   suggestions: string[];
   error?: string;
 }
 
+interface SagaVerdict {
+  notaDeSerie: number;
+  promesasSinPago: string[];
+  escaladaEntreVolumenes: string;
+  evolucionPersonajes: string;
+  resumen: string;
+  correccionesAplicadas: number;
+  sugerencias: string[];
+}
+
 interface CureState {
-  status: "idle" | "running" | "completed" | "failed" | "cancelled";
+  status: "idle" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
   startedAt?: string;
   finishedAt?: string;
   currentVolumeIndex?: number;
   volumes?: CureVolume[];
   log?: { at: string; message: string }[];
+  sagaVerdict?: SagaVerdict;
+  sagaStep?: string;
 }
 
 const STEP_LABELS: Record<string, string> = {
   arcVerify: "Arco",
   corrections: "Hitos",
+  mdClean: "Markdown",
   deepRewrite: "Reescritura",
   polish: "Pulido",
+  issues: "Issues",
+  seam: "Costura",
 };
 
 const VERDICT_META: Record<string, { label: string; variant: "default" | "secondary" | "destructive" }> = {
@@ -157,7 +183,7 @@ export function SeriesCurePanel({ seriesId }: { seriesId: number }) {
         )}
         {cure?.status && cure.status !== "idle" && !running && (
           <Badge variant={cure.status === "completed" ? "default" : "secondary"} data-testid="badge-cure-status">
-            {cure.status === "completed" ? "Cura terminada" : cure.status === "cancelled" ? "Cancelada" : "Fallida"}
+            {cure.status === "completed" ? "Cura terminada" : cure.status === "cancelled" ? "Cancelada" : cure.status === "interrupted" ? "Interrumpida (se reanudara sola)" : "Fallida"}
           </Badge>
         )}
       </div>
@@ -188,9 +214,30 @@ export function SeriesCurePanel({ seriesId }: { seriesId: number }) {
                     {v.chaptersRewritten !== undefined && <span>Caps reescritos: {v.chaptersRewritten}</span>}
                     {v.betaScore != null && <span data-testid={`text-cure-beta-${v.volumeId}`}>Beta: {v.betaScore}/10</span>}
                     {v.holisticScore != null && <span>Holistico: {v.holisticScore}/10</span>}
+                    {v.issuesResolved !== undefined && <span>Issues resueltos: {v.issuesResolved}</span>}
                   </div>
+                  {v.steps.polish === "running" && v.polishProgress && (
+                    <p className="text-xs text-muted-foreground" data-testid={`text-cure-polish-progress-${v.volumeId}`}>
+                      Beta {v.polishProgress.beta ?? "?"} / Holistico {v.polishProgress.holistico ?? "?"}
+                      {v.polishProgress.fase ? ` — ${v.polishProgress.fase}` : ""}
+                      {v.polishProgress.ultimaActividadAt
+                        ? ` (${new Date(v.polishProgress.ultimaActividadAt).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })})`
+                        : ""}
+                    </p>
+                  )}
                   {v.steps.polish === "running" && v.volumeType === "project" && (
                     <PolishActivityTicker projectId={v.volumeId} />
+                  )}
+                  {v.seamSummary && (
+                    <p className="text-xs text-muted-foreground" data-testid={`text-cure-seam-${v.volumeId}`}>
+                      Costura: {v.seamSummary}
+                    </p>
+                  )}
+                  {v.reviewNotes && (
+                    <details className="text-xs text-muted-foreground">
+                      <summary className="cursor-pointer" data-testid={`summary-cure-review-${v.volumeId}`}>Notas de lectura (Beta/Holistico)</summary>
+                      <pre className="whitespace-pre-wrap font-sans mt-1 max-h-48 overflow-y-auto">{v.reviewNotes}</pre>
+                    </details>
                   )}
                   {v.suggestions.length > 0 && (
                     <div className="space-y-1">
@@ -208,6 +255,48 @@ export function SeriesCurePanel({ seriesId }: { seriesId: number }) {
             );
           })}
         </div>
+      )}
+
+      {(cure?.sagaVerdict || cure?.sagaStep === "running") && (
+        <Card data-testid="card-saga-verdict">
+          <CardContent className="p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-sm font-medium">Veredicto de saga</span>
+              {cure.sagaStep === "running" ? (
+                <Badge variant="secondary"><Loader2 className="h-3 w-3 mr-1 animate-spin inline" />Leyendo la serie del tiron...</Badge>
+              ) : cure.sagaVerdict ? (
+                <Badge variant={cure.sagaVerdict.notaDeSerie >= 8 ? "default" : "secondary"} data-testid="badge-saga-score">
+                  Nota de serie: {cure.sagaVerdict.notaDeSerie}/10
+                </Badge>
+              ) : null}
+            </div>
+            {cure.sagaVerdict && (
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p data-testid="text-saga-resumen">{cure.sagaVerdict.resumen}</p>
+                {cure.sagaVerdict.escaladaEntreVolumenes && <p><span className="font-medium">Escalada:</span> {cure.sagaVerdict.escaladaEntreVolumenes}</p>}
+                {cure.sagaVerdict.evolucionPersonajes && <p><span className="font-medium">Personajes:</span> {cure.sagaVerdict.evolucionPersonajes}</p>}
+                {cure.sagaVerdict.promesasSinPago.length > 0 && (
+                  <div>
+                    <p className="font-medium text-amber-700 dark:text-amber-400">Promesas sin pago:</p>
+                    {cure.sagaVerdict.promesasSinPago.map((p, i) => (
+                      <p key={i} className="flex items-start gap-1"><AlertTriangle className="h-3 w-3 mt-0.5 shrink-0 text-amber-600" />{p}</p>
+                    ))}
+                  </div>
+                )}
+                <p>Correcciones de saga aplicadas: {cure.sagaVerdict.correccionesAplicadas}</p>
+                {cure.sagaVerdict.sugerencias.length > 0 && (
+                  <div className="space-y-1">
+                    {cure.sagaVerdict.sugerencias.map((s, i) => (
+                      <p key={i} className="flex items-start gap-1 text-amber-700 dark:text-amber-400" data-testid={`text-saga-suggestion-${i}`}>
+                        <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />{s}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );

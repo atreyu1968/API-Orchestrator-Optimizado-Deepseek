@@ -253,6 +253,28 @@ export default function Dashboard() {
     },
   });
 
+  // [Fix196] Detener el pulido automatico (activo o pendiente) desde el dashboard.
+  const stopPolishMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/stop-polish`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Pulido detenido", description: data?.message || "Se ha solicitado la parada del pulido; terminara al cerrar la iteracion en curso." });
+    },
+    onError: (error: any) => {
+      const msg = String(error?.message || "");
+      toast({
+        title: msg.includes("409") ? "Sin pulido activo" : "Error",
+        description: msg.includes("409")
+          ? "No hay ningun pulido activo ni pendiente para este proyecto."
+          : "No se pudo detener el pulido",
+        variant: msg.includes("409") ? "default" : "destructive",
+      });
+    },
+  });
+
   const archiveProjectMutation = useMutation({
     mutationFn: async (id: number) => {
       const response = await apiRequest("POST", `/api/projects/${id}/archive`);
@@ -1310,7 +1332,19 @@ export default function Dashboard() {
                       || ((currentProject as any).lastBetaNotes ?? null)
                       || ((currentProject as any).finalScoreAt ?? null)) && (
                       <div className="mt-4 pt-4 border-t border-border/50">
-                        <p className="text-sm font-medium mb-2">Notas tras la última reedición</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-medium">Notas tras la última reedición</p>
+                          {/* [Fix196] Boton para parar el pulido advisory (activo o pendiente) */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => stopPolishMutation.mutate(currentProject.id)}
+                            disabled={stopPolishMutation.isPending}
+                            data-testid="button-stop-polish"
+                          >
+                            {stopPolishMutation.isPending ? "Deteniendo..." : "Detener pulido"}
+                          </Button>
+                        </div>
                         <p className="text-xs text-muted-foreground mb-3">
                           Tras cada iteración del loop holístico+beta se reevalúa el manuscrito. Las tres notas son independientes y casi nunca coinciden. Target dual: Beta ≥ 9 AND Holístico ≥ 8.
                         </p>

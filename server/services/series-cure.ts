@@ -1,26 +1,50 @@
 import { storage } from "../storage";
 import { forcePolishResume } from "../polish-auto-resume";
 import { isPolishActive, requestPolishStop } from "../utils/polish-registry";
+import { cleanProseMarkdown } from "../utils/prose-markdown-cleaner";
+import { findingLocalizer, seamJudge, type SeamJudgeResult } from "../agents/cure-judges";
+import { sagaReader, FULL_READ_CHAR_BUDGET, type SagaReadResult } from "../agents/saga-reader";
+import { BetaReaderAgent } from "../agents/beta-reader";
+import { HolisticReviewerAgent } from "../agents/holistic-reviewer";
+import { buildSeriesContextForReviewers } from "../utils/series-context-builder";
+import { db } from "../db";
+import { sql } from "drizzle-orm";
 
 // [Fix194] Cura de Serie: pipeline reutilizable a nivel de SERIE que cura cada
 // volumen desde la perspectiva de la saga, en orden y de forma autonoma:
 //   1) Verificacion de arco (ArcValidator via endpoint existente, ramas
 //      project/imported/reedit).
 //   2) Correcciones de hitos no cumplidos (apply-corrections: escenas aditivas).
-//   3) Reescritura profunda de capitulos senalados por hallazgos estructurales
-//      de severidad alta (structural-rewrite: reescribe el capitulo ENTERO).
-//   4) Pulido advisory Holistico+Beta (ya inyecta seriesContext) y espera a que
-//      termine (solo volumenes tipo "project"; imported/reedit no tienen bucle).
-//   5) Veredicto honesto por volumen (publicable / con reservas / cirugia).
+//   3) [Fix198] Limpieza determinista de Markdown residual en la prosa.
+//   4) Reescritura profunda de capitulos senalados por hallazgos estructurales
+//      (structural-rewrite); [Fix210] los hallazgos DIFUSOS (sin capitulo) se
+//      intentan LOCALIZAR con un juez LLM antes de degradarlos a sugerencia.
+//   5) Pulido advisory Holistico+Beta con espera (volumenes nativos); para
+//      volumenes imported/reedit, [Fix211] UNA ronda de lectura Holistico+Beta.
+//   6) [Fix213] Resolucion de issues documentados del Revisor Final (nativos).
+//   7) [Fix209] Revision de la COSTURA con el volumen anterior.
+//   8) Veredicto honesto por volumen.
+//   9) [Fix208] Al final, Lector de Saga: lectura de la serie completa del
+//      tiron con veredicto de saga y correcciones dirigidas o sugerencias.
 // Los hallazgos que pedirian acciones DESTRUCTIVAS o anadir capitulos NUEVOS se
 // registran como SUGERENCIAS para aprobacion manual (nunca se ejecutan solos),
-// coherente con [Fix185]. El estado vive en memoria: si el server se reinicia a
-// mitad, relanzar la cura es seguro (cada paso es idempotente y el pulido tiene
-// su propio auto-resume via autoPolishPending).
+// coherente con [Fix185].
+// [Fix205] El estado ya NO vive solo en memoria: se persiste en la tabla
+// series_cure_runs en cada transicion relevante y, si el server se reinicia a
+// mitad, la cura se AUTO-REANUDA desde el volumen donde iba.
 
 // [Fix195] "validated" = el paso se examino y NO hizo falta tocar nada (todo
 // correcto), distinto de "skipped" (el paso no aplica o no se pudo evaluar).
 export type CureStepStatus = "pending" | "running" | "done" | "validated" | "skipped" | "failed";
+
+// [Fix203] Progresion estructurada del pulido para el panel de la cura.
+export interface PolishProgress {
+  beta: number | null;
+  holistico: number | null;
+  ultimaActividad?: string;
+  ultimaActividadAt?: string;
+  fase?: string;
+}
 
 export interface CureVolumeState {
   volumeType: "project" | "imported" | "reedit";
@@ -30,15 +54,23 @@ export interface CureVolumeState {
   steps: {
     arcVerify: CureStepStatus;
     corrections: CureStepStatus;
+    mdClean: CureStepStatus;
     deepRewrite: CureStepStatus;
     polish: CureStepStatus;
+    issues: CureStepStatus;
+    seam: CureStepStatus;
   };
   arcScore?: number;
   arcPassed?: boolean;
   correctionsApplied?: number;
+  markdownCleaned?: number;
   chaptersRewritten?: number;
   betaScore?: number | null;
   holisticScore?: number | null;
+  polishProgress?: PolishProgress;
+  reviewNotes?: string;
+  issuesResolved?: number;
+  seamSummary?: string;
   verdict?: "publicable" | "publicable_con_reservas" | "necesita_cirugia" | "sin_veredicto";
   suggestions: string[];
   error?: string;
@@ -46,13 +78,17 @@ export interface CureVolumeState {
 
 export interface SeriesCureState {
   seriesId: number;
-  status: "running" | "completed" | "failed" | "cancelled";
+  status: "running" | "completed" | "failed" | "cancelled" | "interrupted";
   startedAt: string;
   finishedAt?: string;
   currentVolumeIndex: number;
   volumes: CureVolumeState[];
   log: { at: string; message: string }[];
   cancelRequested?: boolean;
+  // [Fix208] Veredicto de saga del Lector de Saga (paso final).
+  sagaVerdict?: SagaReadResult & { correccionesAplicadas: number; sugerencias: string[] };
+  sagaStep?: CureStepStatus;
+  resumedAt?: string;
 }
 
 const cureRegistry = new Map<number, SeriesCureState>();
@@ -61,21 +97,106 @@ const cureRegistry = new Map<number, SeriesCureState>();
 // ENTEROS con el Ghostwriter; sin tope un informe verboso podria disparar
 // decenas de reescrituras.
 const MAX_DEEP_REWRITE_CHAPTERS = 4;
+const MAX_SEAM_REWRITE_CHAPTERS = 2;
+const MAX_SAGA_CORRECTIONS = 6;
 const POLISH_POLL_MS = 30_000;
 const POLISH_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6 horas por volumen
+const ISSUES_POLL_MS = 30_000;
+const ISSUES_TIMEOUT_MS = 3 * 60 * 60 * 1000; // 3 horas por volumen
 
 function baseUrl(): string {
   return `http://127.0.0.1:${process.env.PORT || "5000"}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [Fix205] Persistencia del estado en la tabla series_cure_runs.
+// Sin drizzle-kit (convencion del proyecto): CREATE TABLE IF NOT EXISTS lazy.
+// ─────────────────────────────────────────────────────────────────────────────
+let cureTableReady = false;
+async function ensureCureTable(): Promise<void> {
+  if (cureTableReady) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS series_cure_runs (
+      id SERIAL PRIMARY KEY,
+      series_id INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      state JSONB NOT NULL,
+      started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  cureTableReady = true;
+}
+
+const lastPersistAt = new Map<number, number>();
+const PERSIST_THROTTLE_MS = 5_000;
+
+async function persistState(state: SeriesCureState, force = false): Promise<void> {
+  try {
+    const now = Date.now();
+    const last = lastPersistAt.get(state.seriesId) || 0;
+    if (!force && now - last < PERSIST_THROTTLE_MS) return;
+    lastPersistAt.set(state.seriesId, now);
+    await ensureCureTable();
+    // Estado serializable sin funciones; cancelRequested NO se persiste (es
+    // una peticion efimera de la sesion en curso).
+    const { cancelRequested, ...persistable } = state;
+    await db.execute(sql`
+      INSERT INTO series_cure_runs (series_id, status, state, started_at, updated_at)
+      VALUES (${state.seriesId}, ${state.status}, ${JSON.stringify(persistable)}::jsonb, ${state.startedAt}::timestamp, CURRENT_TIMESTAMP)
+      ON CONFLICT DO NOTHING
+    `);
+    // Upsert manual: solo debe existir UNA fila por (series_id, started_at);
+    // si ya existe, se actualiza.
+    await db.execute(sql`
+      UPDATE series_cure_runs
+      SET status = ${state.status}, state = ${JSON.stringify(persistable)}::jsonb, updated_at = CURRENT_TIMESTAMP
+      WHERE series_id = ${state.seriesId} AND started_at = ${state.startedAt}::timestamp
+    `);
+    // Limpieza de duplicados accidentales del mismo run (carrera improbable).
+    await db.execute(sql`
+      DELETE FROM series_cure_runs a
+      USING series_cure_runs b
+      WHERE a.series_id = b.series_id AND a.started_at = b.started_at AND a.id > b.id
+    `);
+  } catch (e) {
+    console.warn(`[SeriesCure ${state.seriesId}] No se pudo persistir el estado: ${(e as Error).message}`);
+  }
 }
 
 function log(state: SeriesCureState, message: string) {
   state.log.push({ at: new Date().toISOString(), message });
   if (state.log.length > 300) state.log.splice(0, state.log.length - 300);
   console.log(`[SeriesCure ${state.seriesId}] ${message}`);
+  void persistState(state);
 }
 
 export function getSeriesCureStatus(seriesId: number): SeriesCureState | undefined {
   return cureRegistry.get(seriesId);
+}
+
+// [Fix205] Si no hay runner en memoria, el status puede leerse del historico
+// persistido (ultima run de la serie).
+export async function getSeriesCureStatusWithHistory(seriesId: number): Promise<SeriesCureState | undefined> {
+  const inMemory = cureRegistry.get(seriesId);
+  if (inMemory) return inMemory;
+  try {
+    await ensureCureTable();
+    const res: any = await db.execute(sql`
+      SELECT state FROM series_cure_runs
+      WHERE series_id = ${seriesId}
+      ORDER BY started_at DESC LIMIT 1
+    `);
+    const row = res?.rows?.[0];
+    if (!row?.state) return undefined;
+    const state = row.state as SeriesCureState;
+    // Un run persistido como "running" sin runner en memoria = interrumpido
+    // por un reinicio (el auto-resume lo retomara; mientras, ser honesto).
+    if (state.status === "running") state.status = "interrupted";
+    return state;
+  } catch {
+    return undefined;
+  }
 }
 
 export function cancelSeriesCure(seriesId: number): boolean {
@@ -101,6 +222,59 @@ async function selfFetch(path: string, body: any): Promise<any> {
   return json;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Acceso uniforme a los capitulos de un volumen (3 tablas distintas).
+// ─────────────────────────────────────────────────────────────────────────────
+interface NormalizedChapter {
+  id: number;
+  chapterNumber: number;
+  title: string;
+  content: string;
+  // Para reedit/imported el contenido vigente es editedContent si existe.
+  contentField: "content" | "editedContent";
+}
+
+async function getVolumeChapters(vol: CureVolumeState): Promise<NormalizedChapter[]> {
+  if (vol.volumeType === "project") {
+    const chs = await storage.getChaptersByProject(vol.volumeId);
+    return chs.map((c) => ({
+      id: c.id,
+      chapterNumber: c.chapterNumber,
+      title: c.title || `Capitulo ${c.chapterNumber}`,
+      content: c.content || "",
+      contentField: "content" as const,
+    }));
+  }
+  if (vol.volumeType === "imported") {
+    const chs = await storage.getImportedChaptersByManuscript(vol.volumeId);
+    return chs.map((c) => ({
+      id: c.id,
+      chapterNumber: c.chapterNumber,
+      title: c.title || `Capitulo ${c.chapterNumber}`,
+      content: (c.editedContent && c.editedContent.trim() ? c.editedContent : c.originalContent) || "",
+      contentField: (c.editedContent && c.editedContent.trim() ? "editedContent" : "editedContent") as "editedContent",
+    }));
+  }
+  const chs = await storage.getReeditChaptersByProject(vol.volumeId);
+  return chs.map((c) => ({
+    id: c.id,
+    chapterNumber: c.chapterNumber,
+    title: c.title || `Capitulo ${c.chapterNumber}`,
+    content: (c.editedContent && c.editedContent.trim() ? c.editedContent : c.originalContent) || "",
+    contentField: "editedContent" as const,
+  }));
+}
+
+async function updateVolumeChapterContent(vol: CureVolumeState, ch: NormalizedChapter, newContent: string): Promise<void> {
+  if (vol.volumeType === "project") {
+    await storage.updateChapter(ch.id, { content: newContent } as any);
+  } else if (vol.volumeType === "imported") {
+    await storage.updateImportedChapter(ch.id, { editedContent: newContent } as any);
+  } else {
+    await storage.updateReeditChapter(ch.id, { editedContent: newContent } as any);
+  }
+}
+
 async function collectVolumes(seriesId: number): Promise<CureVolumeState[]> {
   // Una serie vive en TRES tablas (projects / imported_manuscripts /
   // reedit_projects); hay que unir las tres o la cura se salta volumenes.
@@ -116,7 +290,7 @@ async function collectVolumes(seriesId: number): Promise<CureVolumeState[]> {
     volumeId: id,
     title,
     seriesOrder: subtype === "prequel" || order === 0 ? 0 : (order ?? 999),
-    steps: { arcVerify: "pending", corrections: "pending", deepRewrite: "pending", polish: "pending" },
+    steps: { arcVerify: "pending", corrections: "pending", mdClean: "pending", deepRewrite: "pending", polish: "pending", issues: "pending", seam: "pending" },
     suggestions: [],
   });
 
@@ -191,22 +365,77 @@ async function runCorrections(state: SeriesCureState, vol: CureVolumeState, arcR
   }
 }
 
+// [Fix198] Paso determinista: limpiar Markdown residual (**negrita**, __x__,
+// *cursiva*) de la prosa de TODOS los capitulos del volumen. El exportador NO
+// interpreta esos marcadores: salen literales en el ebook. Conserva
+// separadores de escena ("***") y cabeceras. Idempotente y sin coste LLM.
+async function runMarkdownCleanup(state: SeriesCureState, vol: CureVolumeState): Promise<void> {
+  vol.steps.mdClean = "running";
+  try {
+    const chapters = await getVolumeChapters(vol);
+    let touched = 0;
+    for (const ch of chapters) {
+      if (!ch.content) continue;
+      const cleaned = cleanProseMarkdown(ch.content);
+      if (cleaned !== ch.content) {
+        await updateVolumeChapterContent(vol, ch, cleaned);
+        touched++;
+      }
+    }
+    vol.markdownCleaned = touched;
+    vol.steps.mdClean = touched > 0 ? "done" : "validated";
+    log(state, touched > 0
+      ? `Vol ${vol.seriesOrder}: limpieza Markdown -> ${touched} capitulo(s) saneado(s).`
+      : `Vol ${vol.seriesOrder}: sin Markdown residual en la prosa -> paso VALIDADO.`);
+  } catch (e: any) {
+    vol.steps.mdClean = "failed";
+    log(state, `Vol ${vol.seriesOrder}: limpieza Markdown fallo: ${e?.message || e}`);
+  }
+}
+
 async function runDeepRewrite(state: SeriesCureState, vol: CureVolumeState, arcResult: any): Promise<void> {
   const structural = (arcResult?.classifiedFindings || []).filter(
     (f: any) => f?.type === "structural" && (f?.severity === "high" || f?.severity === "medium"),
   );
 
-  // Hallazgos SIN capitulos concretos (p.ej. "falta un capitulo que dramatice
-  // X entre el 20 y el 21") no se pueden reescribir sobre un capitulo: quedan
-  // como sugerencias para aprobacion manual (reescritura dirigida o
-  // insercion de capitulo nuevo via insert-chapter).
+  // [Fix210] Hallazgos SIN capitulos concretos ("el tramo se aplana") ya no
+  // mueren directamente como sugerencia: un juez LLM ligero intenta
+  // LOCALIZARLOS en capitulos concretos usando el indice del volumen. Solo si
+  // no es localizable (o no describe un problema real) queda como sugerencia.
   const withChapters: { chapters: number[]; text: string }[] = [];
+  const diffuse: any[] = [];
   for (const f of structural) {
     const chapters = (f.affectedChapters || []).filter((n: any) => Number.isFinite(n));
     if (chapters.length > 0) {
       withChapters.push({ chapters, text: f.text });
     } else {
-      vol.suggestions.push(`[estructural sin capitulo] ${f.text}`);
+      diffuse.push(f);
+    }
+  }
+
+  if (diffuse.length > 0) {
+    try {
+      const volChapters = await getVolumeChapters(vol);
+      const index = volChapters
+        .sort((a, b) => a.chapterNumber - b.chapterNumber)
+        .map((c) => ({ numero: c.chapterNumber, titulo: c.title, extracto: c.content.slice(0, 600) }));
+      for (const f of diffuse) {
+        if (state.cancelRequested) break;
+        const loc = await findingLocalizer.localize(f.text, index, vol.volumeType === "project" ? vol.volumeId : undefined);
+        if (loc && !loc.esProblemaReal) {
+          log(state, `Vol ${vol.seriesOrder}: hallazgo difuso descartado (no es problema real): "${String(f.text).slice(0, 80)}..."`);
+          continue;
+        }
+        if (loc && loc.localizable && loc.chapters.length > 0) {
+          withChapters.push({ chapters: loc.chapters.slice(0, 3), text: f.text });
+          log(state, `Vol ${vol.seriesOrder}: hallazgo difuso LOCALIZADO en cap(s) ${loc.chapters.slice(0, 3).join(", ")} (${loc.razon || "sin razon"}).`);
+        } else {
+          vol.suggestions.push(`[estructural sin capitulo, no localizable] ${f.text}`);
+        }
+      }
+    } catch (e: any) {
+      log(state, `Vol ${vol.seriesOrder}: localizacion de hallazgos difusos fallo (${e?.message || e}); quedan como sugerencias.`);
+      for (const f of diffuse) vol.suggestions.push(`[estructural sin capitulo] ${f.text}`);
     }
   }
 
@@ -214,7 +443,7 @@ async function runDeepRewrite(state: SeriesCureState, vol: CureVolumeState, arcR
     if (structural.length > 0) {
       // Hay hallazgos pero ninguno accionable automaticamente: omitido con sugerencias.
       vol.steps.deepRewrite = "skipped";
-      log(state, `Vol ${vol.seriesOrder}: ${vol.suggestions.length} hallazgo(s) estructural(es) sin capitulo concreto -> quedan como sugerencias.`);
+      log(state, `Vol ${vol.seriesOrder}: ${vol.suggestions.length} hallazgo(s) estructural(es) sin capitulo accionable -> quedan como sugerencias.`);
     } else {
       // [Fix195] Sin hallazgos estructurales: el paso queda VALIDADO.
       vol.steps.deepRewrite = "validated";
@@ -269,12 +498,63 @@ async function runDeepRewrite(state: SeriesCureState, vol: CureVolumeState, arcR
   vol.steps.deepRewrite = (vol.chaptersRewritten || 0) > 0 ? "done" : "failed";
 }
 
+// [Fix211] Para volumenes imported/reedit (sin bucle advisory): UNA ronda de
+// lectura Holistico + Beta para obtener notas y puntuaciones frescas, de modo
+// que el veredicto del volumen no salga cojo.
+async function runOneShotReview(state: SeriesCureState, vol: CureVolumeState): Promise<void> {
+  vol.steps.polish = "running";
+  log(state, `Vol ${vol.seriesOrder}: lectura puntual Holistico+Beta (volumen ${vol.volumeType})...`);
+  try {
+    const chapters = await getVolumeChapters(vol);
+    if (chapters.length === 0) {
+      vol.steps.polish = "skipped";
+      log(state, `Vol ${vol.seriesOrder}: sin capitulos legibles; lectura omitida.`);
+      return;
+    }
+    const readerChapters = chapters
+      .sort((a, b) => a.chapterNumber - b.chapterNumber)
+      .map((c) => ({ numero: c.chapterNumber, titulo: c.title, contenido: c.content }));
+
+    const seriesContext = await buildSeriesContextForReviewers({
+      seriesId: state.seriesId,
+      seriesOrder: vol.seriesOrder,
+    }).catch(() => undefined);
+
+    const holistic = new HolisticReviewerAgent();
+    const beta = new BetaReaderAgent();
+    const [holResult, betaResult] = await Promise.all([
+      holistic.runReview({ projectTitle: vol.title, chapters: readerChapters, seriesContext }).catch(() => null),
+      beta.runReview({ projectTitle: vol.title, chapters: readerChapters, seriesContext }).catch(() => null),
+    ]);
+
+    vol.betaScore = betaResult?.score ?? null;
+    vol.holisticScore = holResult?.score ?? null;
+    const notes: string[] = [];
+    if (holResult?.notesText) notes.push(`HOLISTICO (${holResult.score ?? "?"}/10):\n${holResult.notesText.slice(0, 3000)}`);
+    if (betaResult?.notesText) notes.push(`BETA (${betaResult.score ?? "?"}/10):\n${betaResult.notesText.slice(0, 3000)}`);
+    vol.reviewNotes = notes.join("\n\n────────────\n\n") || undefined;
+
+    if (vol.betaScore === null && vol.holisticScore === null) {
+      vol.steps.polish = "failed";
+      log(state, `Vol ${vol.seriesOrder}: la lectura puntual no devolvio puntuaciones.`);
+      return;
+    }
+    vol.steps.polish = "done";
+    if ((vol.betaScore ?? 10) < 8 || (vol.holisticScore ?? 10) < 7) {
+      vol.suggestions.push(`Lectura puntual con notas bajas (Beta ${vol.betaScore ?? "?"}, Holistico ${vol.holisticScore ?? "?"}): revisar las notas de lectura del panel para decidir correcciones manuales.`);
+    }
+    log(state, `Vol ${vol.seriesOrder}: lectura puntual terminada (Beta ${vol.betaScore ?? "?"}/10, Holistico ${vol.holisticScore ?? "?"}/10).`);
+  } catch (e: any) {
+    vol.steps.polish = "failed";
+    log(state, `Vol ${vol.seriesOrder}: lectura puntual fallo: ${e?.message || e}`);
+  }
+}
+
 async function runPolishAndWait(state: SeriesCureState, vol: CureVolumeState): Promise<void> {
   if (vol.volumeType !== "project") {
-    // El bucle de pulido advisory solo existe para proyectos generados; los
-    // volumenes importados/reeditados tienen sus propios flujos de reedicion.
-    vol.steps.polish = "skipped";
-    log(state, `Vol ${vol.seriesOrder}: pulido omitido (volumen ${vol.volumeType}).`);
+    // [Fix211] Antes se omitia; ahora los volumenes imported/reedit reciben
+    // UNA ronda de lectura Holistico+Beta para tener notas y veredicto pleno.
+    await runOneShotReview(state, vol);
     return;
   }
 
@@ -302,6 +582,31 @@ async function runPolishAndWait(state: SeriesCureState, vol: CureVolumeState): P
     await new Promise((r) => setTimeout(r, POLISH_POLL_MS));
     const fresh = await storage.getProject(vol.volumeId).catch(() => undefined);
     if (!fresh) continue;
+
+    // [Fix203] Progresion estructurada del pulido para el panel de la cura:
+    // puntuaciones actuales + ultima actividad relevante del bucle.
+    try {
+      const logs = await storage.getActivityLogsByProject(vol.volumeId, 5);
+      const relevant = (logs || []).find((l: any) =>
+        ["editor", "beta-reader", "holistic-reviewer", "proofreader", "surgical-patcher", "orchestrator"].includes(l.agentRole || ""));
+      const lastMsg = relevant || (logs || [])[0];
+      const msgText = String(lastMsg?.message || "");
+      let fase = "pulido en curso";
+      if (/ortotipograf/i.test(msgText)) fase = "ortotipografica";
+      else if (/revert|regresi/i.test(msgText)) fase = "reversion";
+      else if (/beta/i.test(msgText)) fase = "lectura beta";
+      else if (/holistic|holistico/i.test(msgText)) fase = "lectura holistica";
+      else if (/cirug|quirurg|patch/i.test(msgText)) fase = "cirugia";
+      vol.polishProgress = {
+        beta: (fresh as any).betaScore ?? null,
+        holistico: (fresh as any).holisticScore ?? null,
+        ultimaActividad: msgText.slice(0, 160) || undefined,
+        ultimaActividadAt: lastMsg?.createdAt ? new Date(lastMsg.createdAt).toISOString() : undefined,
+        fase,
+      };
+      void persistState(state);
+    } catch { /* progreso es best-effort */ }
+
     const pending = (fresh as any).autoPolishPending === true || isPolishActive(vol.volumeId);
     if (!pending) {
       vol.betaScore = (fresh as any).betaScore ?? null;
@@ -326,14 +631,266 @@ async function runPolishAndWait(state: SeriesCureState, vol: CureVolumeState): P
   log(state, `Vol ${vol.seriesOrder}: ${vol.error}`);
 }
 
+// [Fix213] Resolver los issues documentados del Revisor Final ANTES del
+// veredicto (solo volumenes nativos; el flujo de resolucion existe pero era
+// manual). Una sola pasada por volumen; si quedan issues -> sugerencias.
+async function runIssuesResolution(state: SeriesCureState, vol: CureVolumeState): Promise<void> {
+  if (vol.volumeType !== "project") {
+    vol.steps.issues = "skipped";
+    return;
+  }
+  try {
+    const project = await storage.getProject(vol.volumeId);
+    const issues = (project as any)?.finalReviewResult?.issues;
+    if (!project || !Array.isArray(issues) || issues.length === 0) {
+      vol.steps.issues = "validated";
+      log(state, `Vol ${vol.seriesOrder}: sin issues documentados del Revisor Final -> paso VALIDADO.`);
+      return;
+    }
+    if ((project as any).status !== "completed") {
+      vol.steps.issues = "skipped";
+      log(state, `Vol ${vol.seriesOrder}: issues no resolubles ahora (status=${(project as any).status}).`);
+      return;
+    }
+
+    vol.steps.issues = "running";
+    log(state, `Vol ${vol.seriesOrder}: resolviendo ${issues.length} issue(s) documentado(s) del Revisor Final...`);
+    await selfFetch(`/api/projects/${vol.volumeId}/resolve-issues`, {});
+
+    const deadline = Date.now() + ISSUES_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, ISSUES_POLL_MS));
+      const fresh = await storage.getProject(vol.volumeId).catch(() => undefined);
+      if (!fresh) continue;
+      if ((fresh as any).status === "completed") {
+        const remaining = (fresh as any)?.finalReviewResult?.issues;
+        const remainingCount = Array.isArray(remaining) ? remaining.length : 0;
+        vol.issuesResolved = Math.max(0, issues.length - remainingCount);
+        vol.steps.issues = "done";
+        if (remainingCount > 0) {
+          vol.suggestions.push(`Tras la resolucion automatica quedan ${remainingCount} issue(s) documentado(s) del Revisor Final (revisar manualmente).`);
+        }
+        log(state, `Vol ${vol.seriesOrder}: resolucion de issues terminada (${vol.issuesResolved}/${issues.length} resueltos).`);
+        return;
+      }
+      if (state.cancelRequested) {
+        vol.steps.issues = "skipped";
+        log(state, `Vol ${vol.seriesOrder}: cura cancelada durante la resolucion de issues; el flujo interno terminara solo.`);
+        return;
+      }
+    }
+    vol.steps.issues = "failed";
+    log(state, `Vol ${vol.seriesOrder}: la resolucion de issues no termino dentro del limite de 3 horas.`);
+  } catch (e: any) {
+    vol.steps.issues = "failed";
+    log(state, `Vol ${vol.seriesOrder}: resolucion de issues fallo: ${e?.message || e}`);
+  }
+}
+
+// [Fix209] Costura entre volumenes: cierre del tomo anterior + arranque de
+// este, juzgados JUNTOS. Hallazgos con capitulo -> reescritura dirigida
+// (tope 2 por costura); el resto -> sugerencias.
+export async function runSeamCheck(
+  state: SeriesCureState | null,
+  prevVol: { volumeType: CureVolumeState["volumeType"]; volumeId: number; title: string; seriesOrder: number },
+  vol: CureVolumeState,
+): Promise<SeamJudgeResult | null> {
+  const logSeam = (msg: string) => {
+    if (state) log(state, msg);
+    else console.log(`[SeriesCure seam] ${msg}`);
+  };
+  const prevAsVol: CureVolumeState = {
+    ...prevVol,
+    steps: { arcVerify: "pending", corrections: "pending", mdClean: "pending", deepRewrite: "pending", polish: "pending", issues: "pending", seam: "pending" },
+    suggestions: [],
+  };
+  const [prevChapters, curChapters] = await Promise.all([
+    getVolumeChapters(prevAsVol),
+    getVolumeChapters(vol),
+  ]);
+  const sortAsc = (a: NormalizedChapter, b: NormalizedChapter) => a.chapterNumber - b.chapterNumber;
+  // Cierre: ultimos 2-3 caps con numero positivo + epilogo (-1) si existe.
+  const prevMain = prevChapters.filter((c) => c.chapterNumber > 0).sort(sortAsc);
+  const prevEpilogue = prevChapters.filter((c) => c.chapterNumber === -1);
+  const closing = [...prevMain.slice(-2), ...prevEpilogue].map((c) => ({ numero: c.chapterNumber, titulo: c.title, contenido: c.content }));
+  // Arranque: prologo (0) si existe + primeros 2 caps.
+  const curMain = curChapters.filter((c) => c.chapterNumber > 0).sort(sortAsc);
+  const curPrologue = curChapters.filter((c) => c.chapterNumber === 0);
+  const opening = [...curPrologue, ...curMain.slice(0, 2)].map((c) => ({ numero: c.chapterNumber, titulo: c.title, contenido: c.content }));
+
+  if (closing.length === 0 || opening.length === 0) {
+    logSeam(`Costura vol ${prevVol.seriesOrder}->${vol.seriesOrder}: sin capitulos suficientes; omitida.`);
+    return null;
+  }
+
+  const result = await seamJudge.judgeSeam(
+    `Vol ${prevVol.seriesOrder}: ${prevVol.title}`, closing,
+    `Vol ${vol.seriesOrder}: ${vol.title}`, opening,
+    vol.volumeType === "project" ? vol.volumeId : undefined,
+  );
+  if (!result) {
+    logSeam(`Costura vol ${prevVol.seriesOrder}->${vol.seriesOrder}: el juez no devolvio veredicto.`);
+    return null;
+  }
+  logSeam(`Costura vol ${prevVol.seriesOrder}->${vol.seriesOrder}: gancho ${result.ganchoScore}/10, recap-infodump=${result.recapInfodump}, continuidad=${result.continuidadEmocional}. ${result.hallazgos.length} hallazgo(s).`);
+  return result;
+}
+
+async function runSeamStep(state: SeriesCureState, vol: CureVolumeState, prevVol: CureVolumeState | null): Promise<void> {
+  if (!prevVol) {
+    vol.steps.seam = "skipped";
+    return;
+  }
+  vol.steps.seam = "running";
+  log(state, `Vol ${vol.seriesOrder}: revisando la costura con el vol ${prevVol.seriesOrder}...`);
+  try {
+    const result = await runSeamCheck(state, prevVol, vol);
+    if (!result) {
+      vol.steps.seam = "skipped";
+      return;
+    }
+    vol.seamSummary = `Gancho ${result.ganchoScore}/10; recap-infodump=${result.recapInfodump ? "SI" : "no"}; continuidad emocional=${result.continuidadEmocional ? "ok" : "ROTA"}. ${result.resumen}`;
+
+    const actionable = result.hallazgos.slice(0, MAX_SEAM_REWRITE_CHAPTERS);
+    const rest = result.hallazgos.slice(MAX_SEAM_REWRITE_CHAPTERS);
+    for (const h of rest) {
+      vol.suggestions.push(`[costura vol ${h.volumen === "N" ? prevVol.seriesOrder : vol.seriesOrder}, cap ${h.capitulo}] ${h.instruccion}`);
+    }
+
+    let applied = 0;
+    for (const h of actionable) {
+      if (state.cancelRequested) break;
+      const target = h.volumen === "N" ? prevVol : vol;
+      try {
+        const json = await selfFetch(`/api/series/${state.seriesId}/structural-rewrite`, {
+          projectId: target.volumeId,
+          volumeType: target.volumeType,
+          chapterNumbers: [h.capitulo],
+          structuralInstructions: `REESCRITURA DE COSTURA ENTRE VOLUMENES (cierre del tomo ${prevVol.seriesOrder} / arranque del tomo ${vol.seriesOrder}). ${h.instruccion}\nManten trama y elenco; corrige SOLO lo que pide la instruccion.`,
+        });
+        const ok = (json?.results || []).some((r: any) => r.success);
+        if (ok) {
+          applied++;
+          log(state, `Costura: capitulo ${h.capitulo} del vol ${target.seriesOrder} reescrito.`);
+        } else {
+          vol.suggestions.push(`[costura vol ${target.seriesOrder}, cap ${h.capitulo}] ${h.instruccion}`);
+        }
+      } catch (e: any) {
+        vol.suggestions.push(`[costura vol ${target.seriesOrder}, cap ${h.capitulo}] ${h.instruccion}`);
+        log(state, `Costura: reescritura del cap ${h.capitulo} (vol ${target.seriesOrder}) fallo: ${e?.message || e}`);
+      }
+    }
+    vol.steps.seam = result.hallazgos.length === 0 ? "validated" : "done";
+    if (result.hallazgos.length === 0) {
+      log(state, `Vol ${vol.seriesOrder}: costura limpia -> paso VALIDADO.`);
+    } else {
+      log(state, `Vol ${vol.seriesOrder}: costura revisada (${applied} correccion(es) aplicada(s), ${result.hallazgos.length - applied} sugerencia(s)).`);
+    }
+  } catch (e: any) {
+    vol.steps.seam = "failed";
+    log(state, `Vol ${vol.seriesOrder}: revision de costura fallo: ${e?.message || e}`);
+  }
+}
+
+// [Fix208] Lector de Saga: al final de la cura, leer la serie completa del
+// tiron y emitir veredicto de saga; hallazgos con volumen+capitulo concreto
+// se corrigen por la via dirigida (tope global), el resto queda en sugerencias.
+async function runSagaRead(state: SeriesCureState): Promise<void> {
+  state.sagaStep = "running";
+  log(state, `Lector de Saga: preparando lectura de la serie completa...`);
+  try {
+    const series = await storage.getSeries(state.seriesId);
+    const seriesTitle = (series as any)?.name || (series as any)?.title || `Serie ${state.seriesId}`;
+
+    const volTexts: Array<{ vol: CureVolumeState; text: string }> = [];
+    for (const vol of state.volumes) {
+      const chapters = (await getVolumeChapters(vol)).sort((a, b) => a.chapterNumber - b.chapterNumber);
+      const text = chapters.map((c) => `### Capitulo ${c.chapterNumber}: ${c.title}\n${c.content}`).join("\n\n");
+      volTexts.push({ vol, text });
+    }
+    const totalChars = volTexts.reduce((acc, v) => acc + v.text.length, 0);
+
+    let volumesInput: Array<{ seriesOrder: number; title: string; fullText?: string; denseSummary?: string }>;
+    if (totalChars <= FULL_READ_CHAR_BUDGET) {
+      volumesInput = volTexts.map((v) => ({ seriesOrder: v.vol.seriesOrder, title: v.vol.title, fullText: v.text }));
+      log(state, `Lector de Saga: la serie cabe integra (${Math.round(totalChars / 1000)}k chars) -> lectura del tiron.`);
+    } else {
+      // No cabe: texto integro del ULTIMO volumen + resumenes densos previos.
+      log(state, `Lector de Saga: la serie excede el presupuesto (${Math.round(totalChars / 1000)}k chars) -> resumenes densos de los previos + ultimo integro.`);
+      volumesInput = [];
+      for (let i = 0; i < volTexts.length; i++) {
+        const v = volTexts[i];
+        if (i === volTexts.length - 1) {
+          volumesInput.push({ seriesOrder: v.vol.seriesOrder, title: v.vol.title, fullText: v.text });
+        } else {
+          if (state.cancelRequested) { state.sagaStep = "skipped"; return; }
+          const chapters = (await getVolumeChapters(v.vol)).sort((a, b) => a.chapterNumber - b.chapterNumber)
+            .map((c) => ({ numero: c.chapterNumber, titulo: c.title, contenido: c.content }));
+          const summary = await sagaReader.summarizeVolume(`Vol ${v.vol.seriesOrder}: ${v.vol.title}`, chapters);
+          volumesInput.push({ seriesOrder: v.vol.seriesOrder, title: v.vol.title, denseSummary: summary || "(resumen no disponible)" });
+          log(state, `Lector de Saga: resumen denso del vol ${v.vol.seriesOrder} ${summary ? "generado" : "FALLO"}.`);
+        }
+      }
+    }
+
+    const result = await sagaReader.readSaga(seriesTitle, volumesInput);
+    if (!result) {
+      state.sagaStep = "failed";
+      log(state, `Lector de Saga: no devolvio veredicto.`);
+      return;
+    }
+
+    const sugerencias: string[] = [];
+    let aplicadas = 0;
+    const actionable = result.hallazgos.filter((h) => h.capitulo !== null).slice(0, MAX_SAGA_CORRECTIONS);
+    const nonActionable = result.hallazgos.filter((h) => h.capitulo === null || !actionable.includes(h));
+    for (const h of nonActionable) {
+      sugerencias.push(`[saga, vol ${h.volumen}${h.capitulo ? `, cap ${h.capitulo}` : ""}] ${h.instruccion}`);
+    }
+    for (const h of actionable) {
+      if (state.cancelRequested) break;
+      const target = state.volumes.find((v) => v.seriesOrder === h.volumen);
+      if (!target) {
+        sugerencias.push(`[saga, vol ${h.volumen}, cap ${h.capitulo}] ${h.instruccion}`);
+        continue;
+      }
+      try {
+        const json = await selfFetch(`/api/series/${state.seriesId}/apply-corrections`, {
+          projectId: target.volumeId,
+          volumeType: target.volumeType,
+          corrections: [{ chapterNumber: h.capitulo, instruction: `HALLAZGO DE SAGA (lectura de la serie completa): ${h.instruccion}` }],
+        });
+        if ((json?.totalCorrected ?? 0) > 0) {
+          aplicadas++;
+          log(state, `Lector de Saga: correccion aplicada en vol ${h.volumen}, cap ${h.capitulo}.`);
+        } else {
+          sugerencias.push(`[saga, vol ${h.volumen}, cap ${h.capitulo}] ${h.instruccion}`);
+        }
+      } catch (e: any) {
+        sugerencias.push(`[saga, vol ${h.volumen}, cap ${h.capitulo}] ${h.instruccion}`);
+        log(state, `Lector de Saga: correccion en vol ${h.volumen} cap ${h.capitulo} fallo: ${e?.message || e}`);
+      }
+    }
+
+    state.sagaVerdict = { ...result, correccionesAplicadas: aplicadas, sugerencias };
+    state.sagaStep = "done";
+    log(state, `Lector de Saga: nota de serie ${result.notaDeSerie}/10; ${aplicadas} correccion(es) aplicada(s), ${sugerencias.length} sugerencia(s).`);
+  } catch (e: any) {
+    state.sagaStep = "failed";
+    log(state, `Lector de Saga fallo: ${e?.message || e}`);
+  }
+}
+
 function computeVerdict(vol: CureVolumeState): void {
-  if (vol.volumeType !== "project" || vol.steps.polish !== "done") {
-    // Sin pulido (importados/reedit o pulido fallido) el veredicto sale solo
-    // del arco: honesto pero parcial.
+  if (vol.steps.polish !== "done") {
+    // Sin pulido ni lectura puntual el veredicto sale solo del arco:
+    // honesto pero parcial.
     if (vol.arcPassed === undefined) { vol.verdict = "sin_veredicto"; return; }
     vol.verdict = vol.arcPassed ? "publicable_con_reservas" : "necesita_cirugia";
     return;
   }
+  // [Fix211] Los volumenes imported/reedit con lectura puntual ya usan
+  // Beta/Holistico como los nativos.
   const beta = vol.betaScore ?? 0;
   const holistic = vol.holisticScore ?? 0;
   if (vol.arcPassed && beta >= 9 && holistic >= 8) vol.verdict = "publicable";
@@ -350,6 +907,11 @@ async function runCure(state: SeriesCureState): Promise<void> {
       }
       state.currentVolumeIndex = i;
       const vol = state.volumes[i];
+      // [Fix205] Reanudacion: un volumen ya cerrado (con veredicto) se respeta.
+      if (vol.verdict) {
+        log(state, `=== Volumen ${vol.seriesOrder}: "${vol.title}" ya curado (veredicto ${vol.verdict}); se omite. ===`);
+        continue;
+      }
       log(state, `=== Volumen ${vol.seriesOrder}: "${vol.title}" (${vol.volumeType}) ===`);
 
       const arcResult = await runArcVerify(state, vol);
@@ -358,17 +920,42 @@ async function runCure(state: SeriesCureState): Promise<void> {
       if (arcResult) {
         await runCorrections(state, vol, arcResult);
         if (state.cancelRequested) { state.status = "cancelled"; break; }
+        await runMarkdownCleanup(state, vol);
+        if (state.cancelRequested) { state.status = "cancelled"; break; }
         await runDeepRewrite(state, vol, arcResult);
         if (state.cancelRequested) { state.status = "cancelled"; break; }
       } else {
         vol.steps.corrections = "skipped";
+        await runMarkdownCleanup(state, vol);
         vol.steps.deepRewrite = "skipped";
       }
 
       await runPolishAndWait(state, vol);
+      if (state.cancelRequested) { state.status = "cancelled"; break; }
+
+      // [Fix213] Issues documentados del Revisor Final antes del veredicto.
+      await runIssuesResolution(state, vol);
+      if (state.cancelRequested) { state.status = "cancelled"; break; }
+
+      // [Fix209] Costura con el volumen anterior (si existe).
+      const prevVol = i > 0 ? state.volumes[i - 1] : null;
+      await runSeamStep(state, vol, prevVol);
+      if (state.cancelRequested) { state.status = "cancelled"; break; }
+
       computeVerdict(vol);
       log(state, `Vol ${vol.seriesOrder}: veredicto = ${vol.verdict}.`);
     }
+
+    // [Fix208] Lectura de saga final (solo si la cura no se cancelo/fallo y
+    // hay mas de un volumen: con uno solo no hay "saga" que juzgar).
+    if (state.status === "running" && !state.cancelRequested) {
+      if (state.volumes.length > 1) {
+        await runSagaRead(state);
+      } else {
+        state.sagaStep = "skipped";
+      }
+    }
+
     if (state.status === "running") state.status = "completed";
   } catch (e: any) {
     state.status = "failed";
@@ -376,6 +963,7 @@ async function runCure(state: SeriesCureState): Promise<void> {
   } finally {
     state.finishedAt = new Date().toISOString();
     log(state, `Cura de serie terminada con estado: ${state.status}.`);
+    await persistState(state, true);
   }
 }
 
@@ -413,11 +1001,61 @@ export async function startSeriesCure(seriesId: number): Promise<{ success: bool
 
     state.volumes = volumes;
     log(state, `Cura de serie iniciada: ${volumes.length} volumen(es) en orden ${volumes.map((v) => v.seriesOrder).join(", ")}.`);
+    await persistState(state, true);
 
     void runCure(state);
     return { success: true, message: `Cura iniciada para ${volumes.length} volumen(es)` };
   } catch (e) {
     cureRegistry.delete(seriesId);
     throw e;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [Fix205] Auto-reanudacion al arrancar el server: runs persistidas como
+// "running" quedaron interrumpidas por un reinicio -> se reanudan desde el
+// volumen donde iban (los volumenes con veredicto se respetan; el volumen en
+// curso se re-ejecuta desde el arco, sus pasos son idempotentes; el pulido
+// tiene ademas su propio auto-resume via autoPolishPending, coordinado porque
+// runPolishAndWait espera por flag, no relanza si ya esta activo).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function autoResumeInterruptedCures(): Promise<void> {
+  try {
+    await ensureCureTable();
+    const res: any = await db.execute(sql`
+      SELECT DISTINCT ON (series_id) series_id, state
+      FROM series_cure_runs
+      WHERE status = 'running'
+      ORDER BY series_id, started_at DESC
+    `);
+    const rows: any[] = res?.rows || [];
+    for (const row of rows) {
+      const seriesId = Number(row.series_id);
+      if (!Number.isFinite(seriesId) || cureRegistry.has(seriesId)) continue;
+      const persisted = row.state as SeriesCureState;
+      if (!persisted || !Array.isArray(persisted.volumes) || persisted.volumes.length === 0) {
+        await db.execute(sql`UPDATE series_cure_runs SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE series_id = ${seriesId} AND status = 'running'`);
+        continue;
+      }
+      const state: SeriesCureState = {
+        ...persisted,
+        status: "running",
+        cancelRequested: false,
+        resumedAt: new Date().toISOString(),
+      };
+      // Pasos que quedaron "running" al morir el proceso vuelven a "pending"
+      // para re-ejecutarse (todos son idempotentes o re-verificables).
+      for (const vol of state.volumes) {
+        for (const key of Object.keys(vol.steps) as Array<keyof CureVolumeState["steps"]>) {
+          if (vol.steps[key] === "running") vol.steps[key] = "pending";
+        }
+      }
+      if (state.sagaStep === "running") state.sagaStep = "pending";
+      cureRegistry.set(seriesId, state);
+      log(state, `[Fix205] Cura reanudada tras reinicio del server (interrumpida en el volumen indice ${state.currentVolumeIndex}).`);
+      void runCure(state);
+    }
+  } catch (e) {
+    console.warn(`[SeriesCure] Auto-reanudacion fallo: ${(e as Error).message}`);
   }
 }

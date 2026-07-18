@@ -16,6 +16,10 @@ function normalizeForMatch(s: string): string {
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[«»“”„‟"]/g, '"')
     .replace(/[‘’‚‛']/g, "'")
+    // [Fix212] Guiones tipograficos a recto y elipsis a tres puntos, coherente
+    // con la normalizacion del anclaje tolerante del cirujano.
+    .replace(/[\u2013\u2014\u2015\u2012]/g, "-")
+    .replace(/\u2026/g, "...")
     .replace(/\s+/g, " ")
     .trim();
 }

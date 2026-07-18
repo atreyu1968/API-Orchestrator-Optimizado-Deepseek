@@ -1700,6 +1700,19 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Solo se pueden aplicar notas editoriales a proyectos completados" });
       }
 
+      // [Fix196] Bloqueo notas-vs-pulido: si el bucle de pulido advisory esta
+      // ACTIVO o PENDIENTE para este proyecto, aplicar notas editoriales en
+      // paralelo pisaria/seria pisado por la cirugia del pulido. 409 con
+      // remision al boton "Detener pulido".
+      {
+        const { isPolishActive } = await import("./utils/polish-registry");
+        if (isPolishActive(id) || project.autoPolishPending === true) {
+          return res.status(409).json({
+            error: "Hay un pulido automatico activo o pendiente para este proyecto. Detenlo primero con el boton \"Detener pulido\" y vuelve a aplicar las notas.",
+          });
+        }
+      }
+
       const usingPreParsed = Array.isArray(instructions) && instructions.length > 0;
 
       if (!usingPreParsed) {
@@ -6586,10 +6599,39 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
   });
 
   app.get("/api/series/:id/cure-status", async (req: Request, res: Response) => {
-    const { getSeriesCureStatus } = await import("./services/series-cure");
-    const state = getSeriesCureStatus(parseInt(req.params.id));
+    // [Fix205] Con runner en memoria se sirve el estado vivo; si no, la ultima
+    // run persistida (historico consultable tras reinicios).
+    const { getSeriesCureStatusWithHistory } = await import("./services/series-cure");
+    const state = await getSeriesCureStatusWithHistory(parseInt(req.params.id));
     if (!state) return res.json({ status: "idle" });
     res.json(state);
+  });
+
+  // [Fix209] Revision SUELTA de una costura (final tomo N vs arranque N+1)
+  // para series ya curadas: no reescribe nada, devuelve el veredicto del juez.
+  app.post("/api/series/:id/seam-check", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const { prevVolume, nextVolume } = req.body || {};
+      if (!prevVolume?.volumeId || !prevVolume?.volumeType || !nextVolume?.volumeId || !nextVolume?.volumeType) {
+        return res.status(400).json({ error: "Se requieren prevVolume y nextVolume con volumeId y volumeType" });
+      }
+      const { runSeamCheck } = await import("./services/series-cure");
+      const result = await runSeamCheck(
+        null,
+        { volumeType: prevVolume.volumeType, volumeId: prevVolume.volumeId, title: prevVolume.title || `Vol ${prevVolume.seriesOrder ?? "?"}`, seriesOrder: prevVolume.seriesOrder ?? 0 },
+        {
+          volumeType: nextVolume.volumeType, volumeId: nextVolume.volumeId, title: nextVolume.title || `Vol ${nextVolume.seriesOrder ?? "?"}`, seriesOrder: nextVolume.seriesOrder ?? 0,
+          steps: { arcVerify: "pending", corrections: "pending", mdClean: "pending", deepRewrite: "pending", polish: "pending", issues: "pending", seam: "pending" },
+          suggestions: [],
+        } as any,
+      );
+      if (!result) return res.status(422).json({ error: "El juez de costuras no devolvio veredicto (capitulos insuficientes o fallo del modelo)" });
+      res.json({ seriesId, result });
+    } catch (error) {
+      console.error("Error en seam-check:", error);
+      res.status(500).json({ error: "Fallo la revision de costura" });
+    }
   });
 
   app.post("/api/series/:id/cure-cancel", async (req: Request, res: Response) => {

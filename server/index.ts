@@ -147,6 +147,15 @@ app.use((req, res, next) => {
           } catch (polishErr) {
             log(`Polish auto-resume error: ${polishErr}`, "polish");
           }
+
+          // [Fix205] Auto-resume de la Cura de Serie interrumpida por un
+          // reinicio: retoma desde el volumen/paso donde iba.
+          try {
+            const { autoResumeInterruptedCures } = await import("./services/series-cure");
+            await autoResumeInterruptedCures();
+          } catch (cureErr) {
+            log(`Series cure auto-resume error: ${cureErr}`, "cure");
+          }
         }, 3000); // Wait 3 seconds for server to fully initialize
       } catch (error) {
         log(`Reedit auto-resume error: ${error}`, "reedit");

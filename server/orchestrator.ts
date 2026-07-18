@@ -14176,10 +14176,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
                   const failedNote = report.failed.length > 0
                     ? ` ${report.failed.length} operación(es) descartada(s) por no encontrar el texto literal.`
                     : "";
+                  // [Fix212] Anclaje tolerante nivel 2 (coincidencia normalizada unica).
+                  const fuzzyNote = (report.fuzzyApplied || 0) > 0
+                    ? ` ${report.fuzzyApplied} ancladas por coincidencia normalizada (tildes/comillas/espacios, Fix212).`
+                    : "";
                   await storage.createActivityLog({
                     projectId: project.id,
                     level: "success",
-                    message: `${sectionLabel}: cirugía aplicada — ${report.applied.length}/${operations.length} operaciones puntuales (${report.originalLength}→${report.finalLength} caracteres, ${((Math.abs(report.finalLength - report.originalLength) / report.originalLength) * 100).toFixed(1)}% de cambio).${failedNote}`,
+                    message: `${sectionLabel}: cirugía aplicada — ${report.applied.length}/${operations.length} operaciones puntuales (${report.originalLength}→${report.finalLength} caracteres, ${((Math.abs(report.finalLength - report.originalLength) / report.originalLength) * 100).toFixed(1)}% de cambio).${failedNote}${fuzzyNote}`,
                     agentRole: "surgical-patcher",
                   });
 
@@ -19015,6 +19019,40 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
       return;
     }
 
+    // [Fix206] PURGA DE INSTRUCCIONES FANTASMA antes de invocar al cirujano:
+    // si TODAS las citas literales de la instruccion apuntan a prosa que ya NO
+    // existe en el texto vigente (fue modificada/eliminada por un ciclo previo),
+    // se descarta aqui con UN log resumen, sin gastar la llamada al cirujano
+    // ni ensuciar los logs con descartes individuales. Misma auditoria que el
+    // flujo de notas editoriales ([Fix128]); si no hay citas auditables, pasa.
+    {
+      const ghostCheck = groundInstructionInChapter(correctionInstructions, originalContent);
+      if (!ghostCheck.grounded) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `${sectionLabel}: instruccion purgada ANTES del cirujano — sus ${ghostCheck.quotes.length} cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "${(ghostCheck.missing[0] || "").slice(0, 70)}…"`,
+          agentRole: "surgical-patcher",
+        });
+        const dedupKey = `${chapter.chapterNumber}::${correctionInstructions.slice(0, 200)}`;
+        const already = this.staleInstructionsForFinalReviewer.some(s => `${s.chapter}::${s.instruction.slice(0, 200)}` === dedupKey);
+        if (!already) {
+          this.staleInstructionsForFinalReviewer.push({
+            chapter: chapter.chapterNumber,
+            instruction: correctionInstructions.slice(0, 500),
+            reason: "Cita prosa inexistente en el texto vigente (fantasma, Fix206).",
+          });
+        }
+        await storage.updateChapter(chapter.id, {
+          status: "completed",
+          needsRevision: false,
+          revisionReason: null,
+        });
+        this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+        return;
+      }
+    }
+
     await storage.updateChapter(chapter.id, { 
       status: "revision",
       needsRevision: true,
@@ -19123,11 +19161,15 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
           const failedNote = report.failed.length > 0
             ? ` ${report.failed.length} operación(es) descartada(s) por no encontrar el texto literal.`
             : "";
+          // [Fix212] Anclaje tolerante nivel 2 (coincidencia normalizada unica).
+          const fuzzyNote = (report.fuzzyApplied || 0) > 0
+            ? ` ${report.fuzzyApplied} ancladas por coincidencia normalizada (tildes/comillas/espacios, Fix212).`
+            : "";
 
           await storage.createActivityLog({
             projectId: project.id,
             level: "success",
-            message: `${sectionLabel}: cirugía aplicada — ${report.applied.length}/${operations.length} operaciones puntuales (${report.originalLength}→${report.finalLength} caracteres, ${pctChange}% de cambio).${failedNote}`,
+            message: `${sectionLabel}: cirugía aplicada — ${report.applied.length}/${operations.length} operaciones puntuales (${report.originalLength}→${report.finalLength} caracteres, ${pctChange}% de cambio).${failedNote}${fuzzyNote}`,
             agentRole: "surgical-patcher",
           });
 

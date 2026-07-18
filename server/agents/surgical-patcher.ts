@@ -36,6 +36,44 @@ export interface AppliedPatchReport {
   finalContent: string;
   originalLength: number;
   finalLength: number;
+  // [Fix212] Cuantas operaciones se anclaron por el nivel 2 (coincidencia
+  // normalizada unica) en vez de por coincidencia literal exacta.
+  fuzzyApplied?: number;
+}
+
+// [Fix212] Normalizacion tolerante para el anclaje de nivel 2: minusculas,
+// sin diacriticos, comillas y guiones tipograficos a rectos, espacios colapsados.
+// Devuelve el texto normalizado Y un mapa indice-normalizado -> indice-original
+// para poder aplicar el parche sobre el TEXTO REAL en la posicion correcta.
+function normalizeWithIndexMap(s: string): { norm: string; map: number[] } {
+  const normChars: string[] = [];
+  const map: number[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const raw = s[i];
+    let ch = raw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    ch = ch
+      .replace(/[«»\u201C\u201D\u201E\u201F]/g, '"')
+      .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+      .replace(/[\u2013\u2014\u2015\u2012]/g, "-")
+      .replace(/\u2026/g, "...");
+    if (/\s/.test(raw)) {
+      // Colapsa cualquier secuencia de espacios/saltos en UN espacio.
+      if (normChars.length > 0 && normChars[normChars.length - 1] === " ") continue;
+      normChars.push(" ");
+      map.push(i);
+      continue;
+    }
+    for (const c of ch) {
+      normChars.push(c);
+      map.push(i);
+    }
+  }
+  return { norm: normChars.join(""), map };
+}
+
+// [Fix212] Normaliza un ancla con las mismas reglas (sin mapa) y recorta extremos.
+function normalizeAnchor(s: string): string {
+  return normalizeWithIndexMap(s).norm.trim();
 }
 
 interface PatcherInput {
@@ -187,20 +225,50 @@ Devuelve ÚNICAMENTE el JSON con las operaciones find/replace que resuelvan esta
     const applied: PatchOperation[] = [];
     const failed: Array<{ op: PatchOperation; reason: string }> = [];
     let working = originalContent;
+    let fuzzyApplied = 0;
 
     for (const op of operations) {
       const idx = working.indexOf(op.find_exact);
-      if (idx === -1) {
+      if (idx !== -1) {
+        const lastIdx = working.lastIndexOf(op.find_exact);
+        if (lastIdx !== idx) {
+          failed.push({ op, reason: "find_exact aparece varias veces (ambiguo)" });
+          continue;
+        }
+        working = working.substring(0, idx) + op.replace_with + working.substring(idx + op.find_exact.length);
+        applied.push(op);
+        continue;
+      }
+
+      // [Fix212] NIVEL 2: el ancla no aparece literal (tildes, comillas
+      // tipograficas, guiones o espacios distintos). Se normalizan ancla y
+      // capitulo con las mismas reglas; si la coincidencia normalizada es
+      // UNICA, se aplica el parche sobre el TEXTO REAL en esa posicion.
+      // 0 o >1 coincidencias -> descartada como antes.
+      const anchor = normalizeAnchor(op.find_exact);
+      if (anchor.length < 8) {
         failed.push({ op, reason: "find_exact no aparece literal en el capítulo" });
         continue;
       }
-      const lastIdx = working.lastIndexOf(op.find_exact);
-      if (lastIdx !== idx) {
-        failed.push({ op, reason: "find_exact aparece varias veces (ambiguo)" });
+      const { norm, map } = normalizeWithIndexMap(working);
+      const nIdx = norm.indexOf(anchor);
+      if (nIdx === -1) {
+        failed.push({ op, reason: "find_exact no aparece literal en el capítulo" });
         continue;
       }
-      working = working.substring(0, idx) + op.replace_with + working.substring(idx + op.find_exact.length);
+      if (norm.indexOf(anchor, nIdx + 1) !== -1) {
+        failed.push({ op, reason: "find_exact aparece varias veces (ambiguo, coincidencia normalizada)" });
+        continue;
+      }
+      const origStart = map[nIdx];
+      const origEnd = map[nIdx + anchor.length - 1] + 1;
+      if (origStart === undefined || map[nIdx + anchor.length - 1] === undefined || origEnd <= origStart) {
+        failed.push({ op, reason: "find_exact no aparece literal en el capítulo" });
+        continue;
+      }
+      working = working.substring(0, origStart) + op.replace_with + working.substring(origEnd);
       applied.push(op);
+      fuzzyApplied++;
     }
 
     return {
@@ -209,6 +277,7 @@ Devuelve ÚNICAMENTE el JSON con las operaciones find/replace que resuelvan esta
       finalContent: working,
       originalLength: originalContent.length,
       finalLength: working.length,
+      fuzzyApplied,
     };
   }
 }
