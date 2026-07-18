@@ -646,6 +646,15 @@ async function runPolishAndWait(state: SeriesCureState, vol: CureVolumeState): P
     if (!pending) {
       vol.betaScore = (fresh as any).betaScore ?? null;
       vol.holisticScore = (fresh as any).holisticScore ?? null;
+      // [Fix219] Copiar las notas de lectura del proyecto al estado de la
+      // cura: sin esto el juez de decisiones ([Fix217]) no tiene material y
+      // sale sin diagnosticar ("sin notas de lectura").
+      const notes: string[] = [];
+      const hol = (fresh as any).lastHolisticNotes;
+      const bet = (fresh as any).lastBetaNotes;
+      if (hol) notes.push(`HOLISTICO (${vol.holisticScore ?? "?"}/10):\n${String(hol).slice(0, 3000)}`);
+      if (bet) notes.push(`BETA (${vol.betaScore ?? "?"}/10):\n${String(bet).slice(0, 3000)}`);
+      if (notes.length > 0) vol.reviewNotes = notes.join("\n\n────────────\n\n");
       vol.steps.polish = "done";
       log(state, `Vol ${vol.seriesOrder}: pulido terminado (Beta ${vol.betaScore ?? "?"}/10, Holistico ${vol.holisticScore ?? "?"}/10).`);
       return;
@@ -994,6 +1003,31 @@ async function runRescueLoop(state: SeriesCureState, vol: CureVolumeState): Prom
 // reanudacion el diagnostico se rehace sobre las notas frescas, pero las ya
 // ejecutadas se conservan como historial).
 async function runDecisionDiagnosis(state: SeriesCureState, vol: CureVolumeState): Promise<void> {
+  if (!vol.reviewNotes && vol.volumeType === "project") {
+    // [Fix219] Curas cerradas antes del fix: recuperar las ultimas notas de
+    // lectura guardadas en el proyecto por el pulido.
+    try {
+      const proj = await storage.getProject(vol.volumeId);
+      const notes: string[] = [];
+      if ((proj as any)?.lastHolisticNotes) notes.push(`HOLISTICO (${vol.holisticScore ?? "?"}/10):\n${String((proj as any).lastHolisticNotes).slice(0, 3000)}`);
+      if ((proj as any)?.lastBetaNotes) notes.push(`BETA (${vol.betaScore ?? "?"}/10):\n${String((proj as any).lastBetaNotes).slice(0, 3000)}`);
+      if (notes.length > 0) {
+        vol.reviewNotes = notes.join("\n\n────────────\n\n");
+        log(state, `Vol ${vol.seriesOrder}: notas de lectura recuperadas del proyecto para el diagnostico.`);
+      }
+    } catch { /* fallback abajo */ }
+  }
+  if (!vol.reviewNotes) {
+    // [Fix219] Ultimo recurso: lectura puntual fresca Holistico+Beta para
+    // tener material de diagnostico (antes salia en silencio y el panel
+    // prometia decisiones que nunca aparecian).
+    log(state, `Vol ${vol.seriesOrder}: sin notas de lectura; se lanza una lectura puntual para poder diagnosticar.`);
+    const prevPolish = vol.steps.polish;
+    await runOneShotReview(state, vol);
+    // Salvaguarda: la lectura es solo material de diagnostico; si el pulido
+    // ya estaba cerrado no se degrada su estado en el panel/historico.
+    if (prevPolish === "done") vol.steps.polish = "done";
+  }
   if (!vol.reviewNotes) {
     log(state, `Vol ${vol.seriesOrder}: sin notas de lectura; no se puede diagnosticar decisiones pendientes.`);
     return;

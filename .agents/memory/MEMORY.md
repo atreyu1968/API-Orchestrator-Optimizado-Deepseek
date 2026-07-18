@@ -21,3 +21,4 @@
 - [Ideas futuras de calidad de serie](series-quality-ideas.md) — el usuario pidio recordar: repeticion semantica ENTRE volumenes y deriva de voz entre tomos (ofrecer cuando pida mas mejoras de series).
 - [Canon de nombres de serie](series-canon-names.md) — hitos/hilos = canon literal en generacion; en texto ya escrito, un nombre divergente puede ser alias/retcon legitimo: auditar contexto antes de corregir.
 - [Capa correcta para guardias de craft](craft-guard-layering.md) — una regla de PROSA (ghostwriter) no recupera un beat que la ESCALETA nunca asigno; los fallos "told-not-shown" de eventos decisivos se guardan en el Arquitecto, no solo en el ghostwriter.
+- [Juez que exige material: nunca no-op silencioso](judge-input-availability.md) — si un juez/diagnostico requiere notas u otro material, recuperarlo de su fuente o generarlo fresco antes de rendirse; un no-op silencioso deja UI prometiendo cosas que no llegan.
