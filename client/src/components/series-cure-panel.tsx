@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -35,8 +37,21 @@ interface CureVolume {
   seamSummary?: string;
   verdict?: string;
   rescueRounds?: number;
+  pendingDecisions?: PendingDecision[];
+  decisionRun?: "running" | "done" | "failed";
   suggestions: string[];
   error?: string;
+}
+
+// [Fix217] Decision editorial diagnosticada al agotar el rescate: el usuario
+// selecciona cuales ejecutar.
+interface PendingDecision {
+  id: string;
+  titulo: string;
+  instruccion: string;
+  capitulos: number[];
+  tipo: "correccion" | "reescritura";
+  status: "pendiente" | "ejecutando" | "ejecutada" | "fallida";
 }
 
 interface SagaVerdict {
@@ -128,12 +143,106 @@ function PolishActivityTicker({ projectId }: { projectId: number }) {
   );
 }
 
+// [Fix217] Bloque de decisiones pendientes: el juez de diagnostico propone
+// cambios concretos cuando el volumen agota el rescate "con reservas"; el
+// usuario marca cuales quiere y la cura los ejecuta (con relectura y nuevo
+// veredicto al terminar).
+function PendingDecisionsBlock({ seriesId, volume }: { seriesId: number; volume: CureVolume }) {
+  const { toast } = useToast();
+  const [selected, setSelected] = useState<string[]>([]);
+  const decisions = volume.pendingDecisions || [];
+  const executing = volume.decisionRun === "running";
+
+  const executeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/series/${seriesId}/cure/execute-decisions`, {
+        volumeType: volume.volumeType,
+        volumeId: volume.volumeId,
+        decisionIds: selected,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setSelected([]);
+      queryClient.invalidateQueries({ queryKey: [`/api/series/${seriesId}/cure-status`] });
+      toast({ title: "Decisiones en ejecucion", description: data.message });
+    },
+    onError: (e: any) => {
+      toast({ title: "No se pudieron ejecutar", description: e?.message || "Puede que la cura este en marcha.", variant: "destructive" });
+    },
+  });
+
+  const toggle = (id: string) => {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  return (
+    <div className="space-y-2 border rounded-md p-2 bg-muted/40">
+      <p className="text-xs font-medium flex items-center gap-1">
+        <ShieldCheck className="h-3.5 w-3.5" />
+        Decisiones pendientes para llegar a "publicable" — marca las que quieras ejecutar
+      </p>
+      <div className="space-y-1.5">
+        {decisions.map((d) => {
+          const selectable = d.status === "pendiente" || d.status === "fallida";
+          return (
+            <label
+              key={d.id}
+              className={`flex items-start gap-2 text-xs rounded p-1.5 ${selectable ? "cursor-pointer hover:bg-muted" : "opacity-70"}`}
+              data-testid={`row-cure-decision-${d.id}`}
+            >
+              <Checkbox
+                checked={selected.includes(d.id)}
+                onCheckedChange={() => toggle(d.id)}
+                disabled={!selectable || executing}
+                className="mt-0.5"
+                data-testid={`checkbox-cure-decision-${d.id}`}
+              />
+              <span className="flex-1">
+                <span className="font-medium">{d.titulo}</span>{" "}
+                <Badge variant="outline" className="text-[10px] px-1 py-0 align-middle">
+                  {d.tipo === "reescritura" ? "reescritura" : "correccion"} · cap {d.capitulos.join(", ")}
+                </Badge>
+                {d.status === "ejecutada" && <Badge variant="default" className="text-[10px] px-1 py-0 ml-1 align-middle">ejecutada</Badge>}
+                {d.status === "ejecutando" && <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1 align-middle">ejecutando...</Badge>}
+                {d.status === "fallida" && <Badge variant="destructive" className="text-[10px] px-1 py-0 ml-1 align-middle">fallida</Badge>}
+                <span className="block text-muted-foreground mt-0.5">{d.instruccion}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => executeMutation.mutate()}
+        disabled={selected.length === 0 || executing || executeMutation.isPending}
+        data-testid={`button-execute-decisions-${volume.volumeId}`}
+      >
+        {executing || executeMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+        {executing ? "Ejecutando decisiones..." : `Ejecutar ${selected.length > 0 ? selected.length : ""} seleccionada(s)`}
+      </Button>
+      {executing && (
+        <p className="text-[11px] text-muted-foreground">
+          Al terminar, el volumen se relee (Holistico+Beta) y se recalcula el veredicto.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function SeriesCurePanel({ seriesId }: { seriesId: number }) {
   const { toast } = useToast();
 
   const { data: cure } = useQuery<CureState>({
     queryKey: [`/api/series/${seriesId}/cure-status`],
-    refetchInterval: (query) => (query.state.data?.status === "running" ? 5000 : false),
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      if (d?.status === "running") return 5000;
+      // [Fix217] Seguir refrescando mientras se ejecutan decisiones aprobadas.
+      if (d?.volumes?.some((v) => v.decisionRun === "running")) return 5000;
+      return false;
+    },
   });
 
   const startMutation = useMutation({
@@ -249,6 +358,9 @@ export function SeriesCurePanel({ seriesId }: { seriesId: number }) {
                         </p>
                       ))}
                     </div>
+                  )}
+                  {(v.pendingDecisions?.length ?? 0) > 0 && (
+                    <PendingDecisionsBlock seriesId={seriesId} volume={v} />
                   )}
                   {v.error && <p className="text-xs text-destructive">{v.error}</p>}
                 </CardContent>

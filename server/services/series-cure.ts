@@ -3,7 +3,7 @@ import { INTERNAL_AUTH_HEADER, INTERNAL_AUTH_TOKEN } from "../auth";
 import { forcePolishResume } from "../polish-auto-resume";
 import { isPolishActive, requestPolishStop } from "../utils/polish-registry";
 import { cleanProseMarkdown } from "../utils/prose-markdown-cleaner";
-import { findingLocalizer, seamJudge, type SeamJudgeResult } from "../agents/cure-judges";
+import { findingLocalizer, seamJudge, decisionDiagnosis, type SeamJudgeResult } from "../agents/cure-judges";
 import { sagaReader, FULL_READ_CHAR_BUDGET, type SagaReadResult } from "../agents/saga-reader";
 import { BetaReaderAgent } from "../agents/beta-reader";
 import { HolisticReviewerAgent } from "../agents/holistic-reviewer";
@@ -76,8 +76,22 @@ export interface CureVolumeState {
   // [Fix216] Rondas extra de rescate ejecutadas para intentar subir el
   // veredicto de "con reservas" a "publicable".
   rescueRounds?: number;
+  // [Fix217] Decisiones editoriales pendientes diagnosticadas al agotar el
+  // rescate: el usuario selecciona cuales ejecutar desde el panel.
+  pendingDecisions?: PendingCureDecision[];
+  decisionRun?: "running" | "done" | "failed";
   suggestions: string[];
   error?: string;
+}
+
+// [Fix217] Decision editorial concreta propuesta por el juez de diagnostico.
+export interface PendingCureDecision {
+  id: string;
+  titulo: string;
+  instruccion: string;
+  capitulos: number[];
+  tipo: "correccion" | "reescritura";
+  status: "pendiente" | "ejecutando" | "ejecutada" | "fallida";
 }
 
 export interface SeriesCureState {
@@ -203,6 +217,17 @@ export async function getSeriesCureStatusWithHistory(seriesId: number): Promise<
     // Un run persistido como "running" sin runner en memoria = interrumpido
     // por un reinicio (el auto-resume lo retomara; mientras, ser honesto).
     if (state.status === "running") state.status = "interrupted";
+    // [Fix217] Sin runner en memoria tampoco existe el worker de decisiones:
+    // normalizar estados huerfanos para que el panel no muestre una ejecucion
+    // eterna y el usuario pueda relanzar.
+    for (const vol of state.volumes || []) {
+      if (vol.decisionRun === "running") {
+        vol.decisionRun = "failed";
+        for (const d of vol.pendingDecisions || []) {
+          if (d.status === "ejecutando") d.status = "pendiente";
+        }
+      }
+    }
     return state;
   } catch {
     return undefined;
@@ -945,8 +970,180 @@ async function runRescueLoop(state: SeriesCureState, vol: CureVolumeState): Prom
     const PREFIX = `El volumen quedo "publicable con reservas"`;
     vol.suggestions = vol.suggestions.filter((s) => !s.startsWith(PREFIX));
     vol.suggestions.push(
-      `${PREFIX} tras ${vol.rescueRounds ?? 0} ronda(s) de rescate (Beta ${vol.betaScore ?? "?"}/10, Holistico ${vol.holisticScore ?? "?"}/10, arco ${vol.arcPassed ? "PASSED" : "con observaciones"}). Revisa las notas de lectura del panel: los lectores no suben mas la nota sin decisiones de contenido que requieren criterio humano.`,
+      `${PREFIX} tras ${vol.rescueRounds ?? 0} ronda(s) de rescate (Beta ${vol.betaScore ?? "?"}/10, Holistico ${vol.holisticScore ?? "?"}/10, arco ${vol.arcPassed ? "PASSED" : "con observaciones"}). Revisa las decisiones pendientes del panel: puedes seleccionar cuales ejecutar.`,
     );
+    // [Fix217] Diagnostico de decisiones: traducir las notas finales de los
+    // lectores a una lista de cambios concretos que el usuario puede APROBAR
+    // en el panel (con contexto de serie para no romper la continuidad).
+    await runDecisionDiagnosis(state, vol);
+  }
+}
+
+// [Fix217] Ejecuta el juez de diagnostico y deja las decisiones pendientes en
+// el estado del volumen (sobrescribe las anteriores NO ejecutadas: en cada
+// reanudacion el diagnostico se rehace sobre las notas frescas, pero las ya
+// ejecutadas se conservan como historial).
+async function runDecisionDiagnosis(state: SeriesCureState, vol: CureVolumeState): Promise<void> {
+  if (!vol.reviewNotes) {
+    log(state, `Vol ${vol.seriesOrder}: sin notas de lectura; no se puede diagnosticar decisiones pendientes.`);
+    return;
+  }
+  try {
+    const chapters = await getVolumeChapters(vol);
+    const chapterIndex = chapters
+      .sort((a, b) => a.chapterNumber - b.chapterNumber)
+      .map((c) => ({ numero: c.chapterNumber, titulo: c.title, extracto: c.content.slice(0, 500) }));
+    const seriesContext = await buildSeriesContextForReviewers({
+      seriesId: state.seriesId,
+      seriesOrder: vol.seriesOrder,
+    }).catch(() => undefined);
+    log(state, `Vol ${vol.seriesOrder}: diagnostico de decisiones pendientes (juez editorial${seriesContext ? " con contexto de serie" : ""})...`);
+    const decisions = await decisionDiagnosis.diagnose({
+      volumeTitle: vol.title,
+      reviewNotes: vol.reviewNotes,
+      betaScore: vol.betaScore ?? null,
+      holisticScore: vol.holisticScore ?? null,
+      arcPassed: vol.arcPassed === true,
+      chapterIndex,
+      seriesContext,
+      projectId: vol.volumeType === "project" ? vol.volumeId : undefined,
+    });
+    const executed = (vol.pendingDecisions || []).filter((d) => d.status === "ejecutada");
+    if (!decisions || decisions.length === 0) {
+      vol.pendingDecisions = executed;
+      log(state, `Vol ${vol.seriesOrder}: el juez no devolvio decisiones accionables.`);
+      return;
+    }
+    vol.pendingDecisions = [
+      ...executed,
+      ...decisions.map((d, i) => ({
+        id: `${vol.volumeId}-${Date.now()}-${i}`,
+        titulo: d.titulo,
+        instruccion: d.instruccion,
+        capitulos: d.capitulos,
+        tipo: d.tipo,
+        status: "pendiente" as const,
+      })),
+    ];
+    log(state, `Vol ${vol.seriesOrder}: ${decisions.length} decision(es) pendiente(s) diagnosticada(s); seleccionalas en el panel para ejecutarlas.`);
+    await persistState(state, true);
+  } catch (e: any) {
+    log(state, `Vol ${vol.seriesOrder}: el diagnostico de decisiones fallo: ${e?.message || e}`);
+  }
+}
+
+// [Fix217] Ejecuta las decisiones SELECCIONADAS por el usuario sobre un volumen
+// que quedo "publicable con reservas": correcciones quirurgicas o reescrituras
+// dirigidas (ambas vias ya inyectan World Bible/contexto), y despues una
+// relectura fresca Holistico+Beta que recalcula el veredicto.
+// [Fix217] Lock SINCRONO por serie+volumen: Node es monohilo, asi que un
+// check-and-set sin ningun await entre medias es atomico y evita que dos POST
+// concurrentes lancen dos workers sobre el mismo volumen.
+const decisionLocks = new Set<string>();
+
+export async function executeCureDecisions(
+  seriesId: number,
+  volumeType: string,
+  volumeId: number,
+  decisionIds: string[],
+): Promise<{ success: boolean; message: string }> {
+  const lockKey = `${seriesId}:${volumeType}:${volumeId}`;
+  if (decisionLocks.has(lockKey)) {
+    return { success: false, message: "Ya hay decisiones ejecutandose en este volumen." };
+  }
+  decisionLocks.add(lockKey);
+  let lockReleased = false;
+  const releaseLock = () => { if (!lockReleased) { lockReleased = true; decisionLocks.delete(lockKey); } };
+  try {
+    const inMemory = cureRegistry.get(seriesId);
+    if (inMemory && inMemory.status === "running") {
+      releaseLock();
+      return { success: false, message: "La cura de esta serie esta en marcha; espera a que termine." };
+    }
+    const state = inMemory ?? (await getSeriesCureStatusWithHistory(seriesId));
+    if (!state) { releaseLock(); return { success: false, message: "No hay ninguna cura registrada para esta serie." }; }
+    // Los IDs pueden colisionar entre las 3 tablas (project/imported/reedit):
+    // el volumen se resuelve SIEMPRE por tipo + id.
+    const vol = state.volumes.find((v) => v.volumeType === volumeType && v.volumeId === volumeId);
+    if (!vol) { releaseLock(); return { success: false, message: "Volumen no encontrado en la ultima cura." }; }
+    if (vol.decisionRun === "running") {
+      releaseLock();
+      return { success: false, message: "Ya hay decisiones ejecutandose en este volumen." };
+    }
+    const selected = (vol.pendingDecisions || []).filter(
+      (d) => decisionIds.includes(d.id) && d.status !== "ejecutada" && d.status !== "ejecutando",
+    );
+    if (selected.length === 0) {
+      releaseLock();
+      return { success: false, message: "Ninguna de las decisiones seleccionadas esta pendiente." };
+    }
+    // Registrar el estado en memoria para que el panel vea el progreso en vivo.
+    cureRegistry.set(seriesId, state);
+    vol.decisionRun = "running";
+    state.cancelRequested = false;
+    await persistState(state, true);
+
+  void (async () => {
+    try {
+      for (const d of selected) {
+        d.status = "ejecutando";
+        log(state, `Vol ${vol.seriesOrder}: ejecutando decision aprobada "${d.titulo}" (${d.tipo}, cap(s) ${d.capitulos.join(", ")})...`);
+        try {
+          if (d.tipo === "reescritura") {
+            const json = await selfFetch(`/api/series/${seriesId}/structural-rewrite`, {
+              projectId: vol.volumeId,
+              volumeType: vol.volumeType,
+              chapterNumbers: d.capitulos,
+              structuralInstructions: `DECISION EDITORIAL APROBADA POR EL USUARIO (perspectiva de serie): ${d.instruccion}\nManten la trama y el elenco; puedes modificar cualquier porcentaje del texto para cumplir la decision, dramatizando EN PAGINA lo decisivo.`,
+            });
+            const ok = (json?.results || []).some((r: any) => r.success);
+            d.status = ok ? "ejecutada" : "fallida";
+          } else {
+            const json = await selfFetch(`/api/series/${seriesId}/apply-corrections`, {
+              projectId: vol.volumeId,
+              volumeType: vol.volumeType,
+              corrections: d.capitulos.map((cap) => ({
+                chapterNumber: cap,
+                instruction: `DECISION EDITORIAL APROBADA POR EL USUARIO: ${d.instruccion}`,
+              })),
+            });
+            d.status = (json?.totalCorrected ?? 0) > 0 ? "ejecutada" : "fallida";
+          }
+        } catch (e: any) {
+          d.status = "fallida";
+          log(state, `Vol ${vol.seriesOrder}: la decision "${d.titulo}" fallo: ${e?.message || e}`);
+        }
+        await persistState(state, true);
+      }
+
+      const anyApplied = selected.some((d) => d.status === "ejecutada");
+      if (anyApplied) {
+        // Relectura fresca + veredicto nuevo: si cruza el umbral, el volumen
+        // queda "publicable"; si no, el proximo diagnostico partira de notas
+        // frescas.
+        await runOneShotReview(state, vol);
+        computeVerdict(vol);
+        log(state, `Vol ${vol.seriesOrder}: tras las decisiones, veredicto = ${vol.verdict} (Beta ${vol.betaScore ?? "?"}, Holistico ${vol.holisticScore ?? "?"}).`);
+        if (vol.verdict === "publicable_con_reservas") {
+          await runDecisionDiagnosis(state, vol);
+        } else if (vol.verdict === "publicable") {
+          vol.pendingDecisions = (vol.pendingDecisions || []).filter((d) => d.status === "ejecutada");
+        }
+      }
+      vol.decisionRun = "done";
+    } catch (e: any) {
+      vol.decisionRun = "failed";
+      log(state, `Vol ${vol.seriesOrder}: la ejecucion de decisiones fallo: ${e?.message || e}`);
+    } finally {
+      releaseLock();
+      await persistState(state, true);
+    }
+  })();
+
+    return { success: true, message: `Ejecutando ${selected.length} decision(es); el panel mostrara el progreso y el nuevo veredicto.` };
+  } catch (e) {
+    releaseLock();
+    throw e;
   }
 }
 
@@ -1129,6 +1326,16 @@ export async function autoResumeInterruptedCures(): Promise<void> {
       for (const vol of state.volumes) {
         for (const key of Object.keys(vol.steps) as Array<keyof CureVolumeState["steps"]>) {
           if (vol.steps[key] === "running") vol.steps[key] = "pending";
+        }
+        // [Fix217] Estados huerfanos de la ejecucion de decisiones: si el
+        // proceso murio a mitad, el worker ya no existe -> normalizar para
+        // que el usuario pueda relanzarlas desde el panel.
+        if (vol.decisionRun === "running") {
+          vol.decisionRun = "failed";
+          for (const d of vol.pendingDecisions || []) {
+            if (d.status === "ejecutando") d.status = "pendiente";
+          }
+          log(state, `Vol ${vol.seriesOrder}: ejecucion de decisiones interrumpida por el reinicio; las decisiones vuelven a "pendiente" (relanzalas desde el panel).`);
         }
       }
       if (state.sagaStep === "running") state.sagaStep = "pending";

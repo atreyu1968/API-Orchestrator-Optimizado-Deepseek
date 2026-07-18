@@ -6634,6 +6634,25 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
     }
   });
 
+  // [Fix217] Ejecuta las decisiones editoriales SELECCIONADAS por el usuario
+  // sobre un volumen que quedo "publicable con reservas" tras el rescate.
+  app.post("/api/series/:id/cure/execute-decisions", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const { volumeType, volumeId, decisionIds } = req.body || {};
+      if (!volumeType || !Number.isFinite(Number(volumeId)) || !Array.isArray(decisionIds) || decisionIds.length === 0) {
+        return res.status(400).json({ error: "Se requieren volumeType, volumeId y decisionIds (lista no vacia)" });
+      }
+      const { executeCureDecisions } = await import("./services/series-cure");
+      const result = await executeCureDecisions(seriesId, String(volumeType), Number(volumeId), decisionIds.map(String));
+      if (!result.success) return res.status(409).json({ error: result.message });
+      res.status(202).json(result);
+    } catch (error) {
+      console.error("Error ejecutando decisiones de la cura:", error);
+      res.status(500).json({ error: "Fallo la ejecucion de decisiones" });
+    }
+  });
+
   app.post("/api/series/:id/cure-cancel", async (req: Request, res: Response) => {
     const { cancelSeriesCure } = await import("./services/series-cure");
     const ok = cancelSeriesCure(parseInt(req.params.id));

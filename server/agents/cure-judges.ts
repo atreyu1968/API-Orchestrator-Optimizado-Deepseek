@@ -143,5 +143,86 @@ Responde SOLO este JSON:
   }
 }
 
+// [Fix217] Juez de decisiones pendientes: cuando un volumen agota el rescate
+// y sigue "publicable con reservas", este juez lee las notas finales de los
+// lectores y las traduce a una lista CORTA de decisiones editoriales concretas
+// (que cambiar, en que capitulos, y como) que el usuario puede APROBAR en el
+// panel para que la cura las ejecute. Recibe el contexto de serie para que
+// ninguna propuesta rompa la continuidad con otros volumenes.
+export interface DiagnosedDecision {
+  titulo: string;
+  instruccion: string;
+  capitulos: number[];
+  tipo: "correccion" | "reescritura";
+}
+
+class DecisionDiagnosisAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "Diagnostico de Decisiones",
+      role: "decision-diagnosis",
+      systemPrompt: `Eres un editor jefe. Un volumen quedo "publicable con reservas" tras varias rondas automaticas de correccion: los arreglos mecanicos ya se agotaron y lo que falta son DECISIONES DE CONTENIDO. Tu unica tarea: leer las notas finales de los lectores y proponer una lista CORTA (2-5) de decisiones editoriales concretas y ejecutables que subirian el veredicto a "publicable". Cada decision debe decir QUE cambiar, EN QUE capitulos y COMO (instruccion accionable para un editor-cirujano, sin reescribir tu el texto). Si hay contexto de serie, NINGUNA propuesta puede contradecir hechos, arcos o estados finales de otros volumenes. Responde SOLO con JSON valido, sin markdown.`,
+      useThinking: true,
+      thinkingBudget: 6144,
+      maxOutputTokens: 16384,
+    });
+    this.timeoutMs = 8 * 60 * 1000;
+  }
+
+  async diagnose(opts: {
+    volumeTitle: string;
+    reviewNotes: string;
+    betaScore: number | null;
+    holisticScore: number | null;
+    arcPassed: boolean;
+    chapterIndex: Array<{ numero: number; titulo: string; extracto: string }>;
+    seriesContext?: string;
+    projectId?: number;
+  }): Promise<DiagnosedDecision[] | null> {
+    const indexBlock = opts.chapterIndex
+      .map((c) => `- Capitulo ${c.numero}: "${c.titulo}"\n  ${c.extracto.replace(/\n+/g, " ").slice(0, 400)}`)
+      .join("\n");
+    const prompt = `## VOLUMEN
+"${opts.volumeTitle}" — Beta ${opts.betaScore ?? "?"}/10, Holistico ${opts.holisticScore ?? "?"}/10, arco ${opts.arcPassed ? "SUPERADO" : "con observaciones"}. Umbral para "publicable": arco superado + Beta >=9 + Holistico >=8.
+${opts.seriesContext ? `\n## CONTEXTO DE SERIE (INVIOLABLE: ninguna decision puede contradecirlo)\n${opts.seriesContext.slice(0, 8000)}\n` : ""}
+## NOTAS FINALES DE LOS LECTORES
+${opts.reviewNotes.slice(0, 12000)}
+
+## INDICE DE CAPITULOS
+${indexBlock}
+
+## TAREA
+Propon 2-5 decisiones editoriales CONCRETAS que subirian las notas al umbral. Reglas:
+- Cada decision ataca UNA queja real de las notas (no inventes problemas).
+- "capitulos": los 1-3 capitulos concretos donde ejecutarla.
+- "tipo": "correccion" si basta una intervencion quirurgica localizada; "reescritura" si el capitulo necesita reescribirse entero.
+- "instruccion": orden accionable para el editor-cirujano (que cambiar y como), coherente con el contexto de serie si existe.
+- "titulo": 4-10 palabras que el usuario entienda de un vistazo.
+
+Responde SOLO este JSON:
+{"decisiones": [{"titulo": "...", "instruccion": "...", "capitulos": [numeros], "tipo": "correccion"|"reescritura"}]}`;
+    const res = await this.generateContent(prompt, opts.projectId, { temperature: 0.4 });
+    if (res.error || !res.content) return null;
+    try {
+      const parsed = repairJson(res.content);
+      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.decisiones)) return null;
+      const out: DiagnosedDecision[] = parsed.decisiones
+        .filter((d: any) => d && typeof d.instruccion === "string" && d.instruccion.trim().length > 20 && Array.isArray(d.capitulos))
+        .map((d: any) => ({
+          titulo: typeof d.titulo === "string" && d.titulo.trim() ? d.titulo.trim().slice(0, 120) : "Decision editorial",
+          instruccion: d.instruccion.trim(),
+          capitulos: d.capitulos.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0).slice(0, 3),
+          tipo: d.tipo === "reescritura" ? "reescritura" as const : "correccion" as const,
+        }))
+        .filter((d: DiagnosedDecision) => d.capitulos.length > 0)
+        .slice(0, 5);
+      return out.length > 0 ? out : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
 export const findingLocalizer = new FindingLocalizerAgent();
 export const seamJudge = new SeamJudgeAgent();
+export const decisionDiagnosis = new DecisionDiagnosisAgent();
