@@ -184,8 +184,8 @@ export default function ManuscriptPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id] });
       const desc = data?.alreadyApplied
         ? "El capítulo ya no existía; la tarjeta se ha limpiado."
-        : data?.type === "merge_chapters"
-          ? `Cap ${data.chapterDeleted} eliminado y ${data.renumbered} cap(s) renumerado(s).`
+        : data?.split
+          ? `Cap ${data.chapterSplit} dividido en dos (nuevo cap ${data.newChapter}); ${data.renumbered} cap(s) renumerado(s) +1.`
           : `Cap ${data.chapterDeleted} eliminado y ${data.renumbered} cap(s) renumerado(s).`;
       toast({ title: "Acción ejecutada", description: desc });
     },
@@ -195,12 +195,15 @@ export default function ManuscriptPage() {
   });
 
   const isExecutableAdminAction = (type: string): boolean =>
-    type === "merge_chapters" || type === "delete_chapter";
+    type === "merge_chapters" || type === "delete_chapter" || type === "split_chapter";
 
   const handleExecuteAdminAction = (action: any) => {
     const isMerge = action.type === "merge_chapters";
+    const isSplit = action.type === "split_chapter";
     const chapToDelete = isMerge ? action.secondaryChapter : action.targetChapter;
-    const msg = isMerge
+    const msg = isSplit
+      ? `Esto dividirá el capítulo ${action.targetChapter} en dos por el punto de corte citado en la descripción (texto ancla) y renumerará los capítulos posteriores +1. Si el ancla no se localiza de forma única, no se hará ningún cambio. ¿Continuar?`
+      : isMerge
       ? `Esto eliminará el capítulo ${chapToDelete} (su contenido ya fue absorbido por el capítulo ${action.targetChapter} en el paso de prosa) y renumerará los capítulos posteriores. ¿Continuar?`
       : `Esto eliminará el capítulo ${chapToDelete} y renumerará los capítulos posteriores. ¿Continuar?`;
     if (window.confirm(msg)) {
@@ -622,7 +625,7 @@ export default function ManuscriptPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              Operaciones destructivas que el sistema detectó pero <strong>NO aplicó automáticamente</strong>. Para <em>Fusionar</em> y <em>Eliminar</em> capítulos puedes pulsar <strong>Ejecutar</strong> y el sistema borrará el capítulo correspondiente y renumerará los siguientes. El resto de tipos (dividir, intercambiar, mover, etc.) requieren intervención manual desde la lista de capítulos. Usa el botón de papelera para descartar una acción sin aplicarla.
+              Operaciones destructivas que el sistema detectó pero <strong>NO aplicó automáticamente</strong>. Para <em>Fusionar</em>, <em>Eliminar</em> y <em>Dividir</em> capítulos puedes pulsar <strong>Ejecutar</strong>: el sistema borrará/partirá el capítulo correspondiente y renumerará los siguientes (en la división, el punto de corte se localiza por el texto ancla citado en la descripción). El resto de tipos (intercambiar, mover, etc.) requieren intervención manual desde la lista de capítulos. Usa el botón de papelera para descartar una acción sin aplicarla.
             </p>
             <div className="space-y-1.5">
               {pendingAdminActions.map((action: any) => (

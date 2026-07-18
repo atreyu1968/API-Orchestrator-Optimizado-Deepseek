@@ -9256,7 +9256,80 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       if (!action) return res.status(404).json({ error: "Acción no encontrada (puede que ya se haya ejecutado o descartado)" });
 
       const type = String(action.type || "");
-      const SUPPORTED = ["merge_chapters", "delete_chapter"];
+
+      // [Fix215] split_chapter: ejecutor automatico. Localiza el punto de
+      // corte via la cita del texto ancla incluida en el reason (anclaje
+      // tolerante de 2 niveles, [Fix212]), parte el capitulo en dos,
+      // renumera los siguientes +1 y crea el nuevo capitulo con la 2a parte.
+      if (type === "split_chapter") {
+        const targetNum = Number(action.targetChapter);
+        if (!Number.isFinite(targetNum) || targetNum <= 0) {
+          return res.status(400).json({ error: `Numero de capitulo invalido en la accion (${action.targetChapter}).` });
+        }
+        const allChaps = await storage.getChaptersByProject(projectId);
+        const chap = allChaps.find(c => Number(c.chapterNumber) === targetNum);
+        if (!chap) {
+          return res.status(400).json({ error: `El capitulo ${targetNum} ya no existe. Revisa el estado y descarta la tarjeta si procede.` });
+        }
+        const content = String(chap.content || "");
+        const { findSplitAnchor } = await import("./utils/split-chapter-anchor");
+        const found = findSplitAnchor(content, String(action.reason || ""));
+        if ("error" in found) {
+          return res.status(400).json({ error: found.error });
+        }
+        const partA = content.slice(0, found.index).replace(/\s+$/, "");
+        const partB = content.slice(found.index).replace(/^\s+/, "");
+        const MIN_PART = 200;
+        if (partA.length < MIN_PART || partB.length < MIN_PART) {
+          return res.status(400).json({
+            error: `El punto de corte deja una parte demasiado corta (antes=${partA.length} chars, despues=${partB.length} chars). Divide el capitulo manualmente y descarta la tarjeta.`,
+          });
+        }
+
+        // [Fix215 post-review] TODA la mutacion en UNA transaccion, con lock
+        // FOR UPDATE de la fila del proyecto como guard de concurrencia: dos
+        // ejecuciones simultaneas de la misma accion se serializan y la 2a
+        // ve la accion ya consumida (409). Si algo falla a mitad, rollback
+        // completo — nada de numeraciones desplazadas a medias.
+        const { db } = await import("./db");
+        const { sql: dsql } = await import("drizzle-orm");
+        const newTitle = chap.title ? `${chap.title} (continuación)` : null;
+        const wcA = partA.split(/\s+/).filter(Boolean).length;
+        const wcB = partB.split(/\s+/).filter(Boolean).length;
+        let renumberedCount = 0;
+        let consumed = false;
+        await db.transaction(async (tx) => {
+          const lockRes: any = await tx.execute(dsql`SELECT pending_admin_actions FROM projects WHERE id = ${projectId} FOR UPDATE`);
+          const lockedActions: any[] = Array.isArray(lockRes?.rows?.[0]?.pending_admin_actions) ? lockRes.rows[0].pending_admin_actions : [];
+          if (!lockedActions.some((a: any) => Number(a?.id) === actionId)) {
+            // Otra peticion ya la ejecuto/descarto mientras leiamos.
+            return;
+          }
+          // Verificar dentro del lock que el capitulo sigue con el contenido leido.
+          const chapRes: any = await tx.execute(dsql`SELECT id, content FROM chapters WHERE id = ${chap.id} FOR UPDATE`);
+          if (!chapRes?.rows?.length || String(chapRes.rows[0].content || "") !== content) {
+            throw new Error("El capitulo cambio mientras se preparaba la division. Recarga y reintenta.");
+          }
+          const shiftRes: any = await tx.execute(dsql`UPDATE chapters SET chapter_number = chapter_number + 1 WHERE project_id = ${projectId} AND chapter_number > ${targetNum}`);
+          renumberedCount = Number(shiftRes?.rowCount ?? 0);
+          await tx.execute(dsql`UPDATE chapters SET content = ${partA}, word_count = ${wcA} WHERE id = ${chap.id}`);
+          await tx.execute(dsql`INSERT INTO chapters (project_id, chapter_number, title, content, status, word_count) VALUES (${projectId}, ${targetNum + 1}, ${newTitle}, ${partB}, ${chap.status || "completed"}, ${wcB})`);
+          await tx.execute(dsql`UPDATE projects SET pending_admin_actions = ${JSON.stringify(lockedActions.filter((a: any) => Number(a?.id) !== actionId))}::jsonb WHERE id = ${projectId}`);
+          consumed = true;
+        });
+        if (!consumed) {
+          return res.status(409).json({ error: "La acción ya fue ejecutada o descartada por otra petición." });
+        }
+        await storage.createActivityLog({
+          projectId,
+          level: "info",
+          message: `[Fix215] Division ejecutada: cap ${targetNum} partido en dos por ancla ${found.method === "literal" ? "literal" : "normalizada"} ("${found.anchor.slice(0, 60)}..."); ${renumberedCount} cap(s) renumerado(s) +1.`,
+          agentRole: "editor",
+        });
+        return res.json({ success: true, type, split: true, chapterSplit: targetNum, newChapter: targetNum + 1, renumbered: renumberedCount });
+      }
+
+      const SUPPORTED = ["merge_chapters", "delete_chapter", "split_chapter"];
       if (!SUPPORTED.includes(type)) {
         return res.status(400).json({
           error: `El tipo "${type}" no se puede ejecutar automáticamente. Aplícalo manualmente desde la lista de capítulos y luego descarta esta tarjeta.`,
