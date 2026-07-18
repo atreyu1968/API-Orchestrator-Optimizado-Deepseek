@@ -322,6 +322,7 @@ INSTRUCCIONES DE VERIFICACIÓN:
 7. HITOS MARCADOS COMO "YA CUMPLIDO": Devuelve isFulfilled: true para ellos SIN reevaluarlos. Ya fueron verificados previamente
 8. HILOS CON STATUS "resolved": Devuelve currentStatus: "resolved". NO regreses su estado a "active" o "developing"
 9. NUNCA regreses el estado de un hito o hilo a un estado inferior al que tiene actualmente
+10. [Fix199] RED DE SEGURIDAD DE PERSONAJES: si un personaje con presencia real en el volumen (aparece en varios capitulos) queda SIN destino resuelto al final (desaparece sin explicacion, sin cierre en pagina ni despedida narrada), marcalo como hallazgo en "findings" indicando el nombre del personaje y el ultimo capitulo donde aparece
 
 PUNTUACIÓN:
 - 80-100: Todos los hitos requeridos cumplidos

@@ -65,6 +65,7 @@ const configSchema = z.object({
   hasAuthorNote: z.boolean().default(false),
   autoBetaLoop: z.boolean().default(false),
   autoBetaLoopMaxIterations: z.number().min(1).max(10).default(3),
+  deferPolishToCure: z.boolean().default(false),
   pseudonymId: z.number().nullable().optional(),
   styleGuideId: z.number().nullable().optional(),
   extendedGuideId: z.number().nullable().optional(),
@@ -111,6 +112,7 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
       hasAuthorNote: defaultValues?.hasAuthorNote || false,
       autoBetaLoop: (defaultValues as any)?.autoBetaLoop || false,
       autoBetaLoopMaxIterations: (defaultValues as any)?.autoBetaLoopMaxIterations || 3,
+      deferPolishToCure: (defaultValues as any)?.deferPolishToCure || false,
       pseudonymId: defaultValues?.pseudonymId || null,
       styleGuideId: defaultValues?.styleGuideId || null,
       extendedGuideId: (defaultValues as any)?.extendedGuideId || null,
@@ -1218,6 +1220,33 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
                   )}
                 />
               )}
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="deferPolishToCure"
+          render={({ field }) => (
+            <FormItem className="flex flex-col gap-3 space-y-0 rounded-md border p-3">
+              <div className="flex items-center gap-3">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    data-testid="checkbox-defer-polish-to-cure"
+                  />
+                </FormControl>
+                <div className="flex items-center gap-2 flex-1">
+                  <Repeat className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <FormLabel className="font-medium cursor-pointer">Aplazar el pulido a la Cura de Serie</FormLabel>
+                    <FormDescription className="text-xs">
+                      Al terminar la novela NO se lanza el pulido automático (Holístico+Beta) ni la ortotipográfica: quedan para el paso de pulido de la <strong>Cura de Serie</strong>, que los ejecuta con la saga completa como contexto. Útil en series: evita pagar dos pulidos por volumen. Si nunca lanzas la Cura, puedes forzar el pulido manualmente desde el dashboard.
+                    </FormDescription>
+                  </div>
+                </div>
+              </div>
             </FormItem>
           )}
         />

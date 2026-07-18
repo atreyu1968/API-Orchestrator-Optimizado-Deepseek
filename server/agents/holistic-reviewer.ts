@@ -33,6 +33,13 @@ interface HolisticReviewerInput {
   // contexto para NO penalizar arcos intencionalmente abiertos cuando este
   // libro NO es el último de la serie.
   seriesContext?: string;
+  // [Fix197] Canon historico-factual INVIOLABLE del World Bible: el Holistico
+  // senala violaciones como hallazgos corregibles (solo contrasta contra el
+  // canon declarado, no verifica historia real por si solo).
+  canonHistorico?: string[];
+  // [Fix200] Lectura MID-NOVELA: pedir explicitamente al lector que vigile la
+  // repeticion de esqueleto de capitulo para corregir en los caps RESTANTES.
+  focoEsqueletoCapitulo?: boolean;
   // [Fix76] Acciones administrativas pendientes (delete_chapter, etc.) que
   // el Holístico debe verificar tras leer el manuscrito completo. Si llega
   // un array no vacío, el agente añade a su informe un bloque
@@ -302,6 +309,16 @@ export class HolisticReviewerAgent extends BaseAgent {
       ? `\n\n${input.seriesContext}`
       : "";
 
+    // [Fix197] Canon historico declarado: violaciones = hallazgos corregibles.
+    const canonBlock = (input.canonHistorico && input.canonHistorico.length > 0)
+      ? `\n\n## CANON HISTORICO-FACTUAL INVIOLABLE (declarado en la guia)\nEstos datos reales son INVIOLABLES. Si el manuscrito los contradice (nombre de lugar/institucion/cargo alterado, fecha cambiada, algo que aun no existia), SENALALO como instruccion de correccion puntual citando el pasaje. Las entradas "LICENCIA:" son desvios autorizados, NO son errores.\n${input.canonHistorico.map(c => `- ${c}`).join("\n")}`
+      : "";
+
+    // [Fix200] Foco explicito en repeticion de esqueleto de capitulo (mid-novela).
+    const skeletonBlock = input.focoEsqueletoCapitulo
+      ? `\n\n## FOCO ESPECIAL: REPETICION DE ESQUELETO DE CAPITULO (acto 2)\nEsta es una lectura INTERMEDIA: los capitulos restantes aun pueden corregirse. Pregunta obligatoria: en los capitulos leidos, ¿hay dos o mas capitulos cercanos con el MISMO esqueleto (misma combinacion de escenario + tipo de oposicion + tactica del protagonista + coste pagado), aunque cambien el lugar o el interlocutor (p. ej. llegar-interrogar-obtener dato-escapar repetido)? Si la respuesta es SI, dilo explicitamente en tu informe nombrando los capitulos gemelos y que eje deberia variar en los caps RESTANTES.`
+      : "";
+
     // [Fix76] Si hay acciones administrativas pendientes (delete_chapter,
     // merge_chapters...) emitidas por el cirujano estructural, el editor las
     // verifica ahora: tiene el manuscrito entero delante, puede comprobar si
@@ -384,7 +401,7 @@ REGLA CRÍTICA para esta relectura:
 - Si el manuscrito ya está sólido, dilo: es legítimo emitir pocas o ninguna instrucción en vez de forzar cambios que puedan empeorar el conjunto.`
       : "";
 
-    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${adminBlock}${regressionBlock}
+    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${canonBlock}${skeletonBlock}${adminBlock}${regressionBlock}
 
 ═══════════════════════════════════════════════════════════════════
 NOVELA COMPLETA A REVISAR

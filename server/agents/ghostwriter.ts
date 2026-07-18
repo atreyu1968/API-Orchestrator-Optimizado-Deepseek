@@ -476,6 +476,16 @@ Consulta SIEMPRE la sección "lexico_historico" del World Bible:
 - Respeta el "registro_linguistico" indicado (formal/coloquial/técnico de época)
 - Cuando dudes sobre una palabra, elige la alternativa más antigua/clásica
 
+CANON HISTÓRICO INVIOLABLE [Fix197]: si el World Bible trae "canon_historico"
+(datos factuales verificables: fechas reales, nombres REALES de lugares,
+edificios, instituciones y cargos, qué existía y qué NO existía todavía),
+esos datos son INVIOLABLES:
+- PROHIBIDO alterarlos, "mejorarlos" o inventar equivalentes (si el canon dice
+  que el templo era una IGLESIA, prohibido llamarlo catedral; si el cargo era
+  corregidor, prohibido convertirlo en alcalde moderno).
+- Las entradas "LICENCIA:" son desvíos deliberados autorizados: respétalas tal cual.
+- Ante la duda entre el canon y tu conocimiento general, GANA EL CANON.
+
 TÉRMINOS MODERNOS PROHIBIDOS EN FICCIÓN HISTÓRICA (lista por defecto):
 "burguesa", "estrés", "impacto" (metafórico), "enfocarse", "rol", "empoderamiento", "básico", 
 "literal", "problemática", "dinámico", "autoestima", "productivo", "agenda" (metafórico), 
@@ -823,6 +833,13 @@ export class GhostwriterAgent extends BaseAgent {
       if (lexico.prohibido || lexico.forbidden) {
         parts.push(`  Prohibido: ${JSON.stringify(lexico.prohibido || lexico.forbidden)}`);
       }
+    }
+
+    // [Fix197] Canon historico-factual: datos reales INVIOLABLES de la guia
+    mappedKeys.add('canon_historico');
+    if (Array.isArray(wb.canon_historico) && wb.canon_historico.length > 0) {
+      parts.push(`\n🏛️ CANON HISTORICO INVIOLABLE (datos reales, prohibido alterarlos):`);
+      wb.canon_historico.forEach((c: any) => { if (c) parts.push(`  ▸ ${typeof c === 'string' ? c : JSON.stringify(c)}`); });
     }
 
     mappedKeys.add('_hilos_pendientes'); mappedKeys.add('_hilos_resueltos');

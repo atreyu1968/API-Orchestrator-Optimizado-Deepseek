@@ -294,6 +294,14 @@ ancla; si no, déjalos como [] o "" — los agentes posteriores los
 completan bajo demanda. NO inventes listas largas: ahorrar tokens
 es más importante que cubrir todo el vocabulario aquí.
 
+CANON HISTORICO [Fix197]: si la Guia de Estilo trae la subseccion
+"CANON HISTORICO-FACTUAL VERIFICABLE" con datos reales (fechas exactas,
+nombres reales de lugares/instituciones/cargos, que existia y que NO),
+copia esos datos a "world_bible.canon_historico" como lista de strings
+LITERALES e INVIOLABLES (no los parafrasees ni los "corrijas"). Incluye
+tambien las licencias narrativas declaradas, prefijadas "LICENCIA:".
+Si la guia dice "No aplica" o no trae la subseccion, deja [].
+
 MULTI-ÉPOCA (solo si la novela tiene timelines paralelos): añade entradas
 en "epocas_paralelas" con {id (slug), epoca}. El resto opcional. Cada
 capítulo de "escaleta_capitulos" debe traer "epoca_id" igual a un id del
@@ -356,6 +364,7 @@ Genera un JSON con estas claves:
     "notas_voz_historica": "",
     "epocas_paralelas": []
   },
+  "canon_historico": ["Datos factuales INVIOLABLES copiados de la guia (ver CANON HISTORICO arriba); [] si no aplica"],
   "paleta_sensorial_global": {
     "sentidos_dominantes": [],
     "imagenes_recurrentes_permitidas": [],
@@ -839,6 +848,7 @@ C. RITMO ACTO 3: distribuye "eventos_pivotales" sin que el acto 3 acumule >50% d
 19. [Fix192] FUNCIÓN NARRATIVA ÚNICA (anti-segundo-acto-redundante). Recorre el acto 2 y verifica que NO existen dos capítulos que cumplan la MISMA función narrativa (p. ej. dos caps cuyo resultado es "descubrir el alcance de la red", dos caps que re-establecen una amenaza ya establecida, dos rondas del mismo trámite judicial/burocrático sin resultado nuevo). Test: si eliminaras el capítulo, ¿el lector perdería información o consecuencias que ningún otro cap aporta? Si la respuesta es NO, ese cap sobra: fusiónalo con su gemelo o dale una función nueva con consecuencia irreversible. Además, si la novela declara un RELOJ o cuenta atrás (plazo, fecha límite, ultimátum), ese reloj DEBE latir en el "objetivo_narrativo" o los "beats" de CADA capítulo del acto 2 (cuánto tiempo queda, qué se pierde si vence); prohibido que la cuenta atrás desaparezca durante 3+ caps seguidos. Y tras el clímax: máximo 2 capítulos de resolución + 1 epílogo; el epílogo cierra hilos emocionales con escenas NUEVAS, no re-narra lo ya resuelto ni acumula vida cotidiana sin información.
 20. [Fix192] CANON DE SERIE INVIOLABLE (si hay HITOS E HILOS DE LA SERIE arriba). Los NOMBRES PROPIOS que aparecen en los hitos/hilos (protagonistas, secundarios, lugares, objetos) son CANÓNICOS: tu escaleta y tu world_bible deben usarlos EXACTAMENTE igual. PROHIBIDO renombrar, sustituir o "mejorar" un personaje citado en un hito (si el hito dice "Leonor", el personaje se llama Leonor, no un equivalente tuyo). Si un personaje de los hilos no encaja en tu diseño, adáptalo — no lo reemplaces por otro con distinto nombre. Antes de responder, recorre cada nombre propio de los hitos y comprueba que aparece literal en tu escaleta.
 21. [Fix193] PICOS EN PÁGINA (nada decisivo ocurre "entre capítulos"). Haz una lista de los EVENTOS DECISIVOS de tu escaleta: muerte, captura, derrota o salida definitiva de cualquier personaje con presencia real (aparece en 3+ caps o tiene arco/rol en el world_bible), la recuperación o pérdida del objeto central de la trama, y toda revelación que recontextualice la historia. Para CADA uno, comprueba que está asignado a una ESCENA EN PÁGINA de un capítulo concreto: o bien el evento ocurre EN ESCENA (declarado en "eventos_pivotales"/"beats" de ese cap), o bien —si el POV no puede presenciarlo— existe una ESCENA DE DESCUBRIMIENTO con peso dramático propio (el POV encuentra el cuerpo, recibe la noticia y reacciona en escena, ve las consecuencias con sus ojos). PROHIBIDO que un antagonista o secundario relevante muera o desaparezca fuera de página y el lector se entere por una mención de pasada ("supieron que había muerto en el incendio"). El GHOSTWRITER solo puede dramatizar lo que TÚ pongas en la escaleta: si el pico no está planificado en un capítulo, se pierde para siempre. Si detectas un evento decisivo sin escena, créala o muévelo dentro de un cap existente.
+22. [Fix200] ESQUELETO DE CAPITULO VARIADO EN EL ACTO 2. Para cada capitulo del acto 2, su FORMA debe quedar declarada como CONTENIDO en la escaleta: escenario (lugar y sus reglas), tipo de oposicion (quien o que presiona al protagonista y de que clase es esa presion), tactica del protagonista (que hace distinto para avanzar) y coste pagado (que pierde o arriesga aqui). PROHIBIDO repetir la MISMA combinacion de esos 4 ejes en capitulos cercanos (ventana de ~3 caps): dos caps consecutivos donde el protagonista llega a un lugar, interroga, obtiene un dato y escapa, son el MISMO esqueleto aunque cambien el lugar y el interlocutor. Si detectas dos caps cercanos con esqueleto clonado, cambia en uno de ellos al menos 2 de los 4 ejes (p. ej. que la informacion venga a buscarle a el con coste imprevisto; que la tactica falle y el cap avance por la consecuencia del fallo; que la oposicion sea interna o social en vez de fisica). El lector percibe la repeticion de FORMA antes que la de contenido: variar el esqueleto es lo que evita el "tramo central que se hace cuesta arriba".
 Si algo falla, REGENERA antes de responder. Esto es lo más importante.
 
 Responde ÚNICAMENTE con el JSON.
@@ -1304,6 +1314,8 @@ ${input.writtenChaptersFullText}
           epoca: phase1Json.world_bible.lexico_historico.epoca,
           epocas_paralelas: phase1Json.world_bible.lexico_historico.epocas_paralelas,
         } : undefined,
+        // [Fix197] El canon factual viaja tambien a Fase 2 para que la escaleta no lo contradiga
+        canon_historico: phase1Json.world_bible?.canon_historico,
       },
       matriz_arcos: phase1Json.matriz_arcos,
       momentum_plan: phase1Json.momentum_plan,

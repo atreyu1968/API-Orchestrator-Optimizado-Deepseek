@@ -235,6 +235,15 @@ La guía debe cubrir TODOS estos apartados:
        - terminos_anacronicos_prohibidos: 10-20 términos modernos prohibidos (omitir sólo si la novela es estrictamente contemporánea)
        - notas_voz_historica: 2-4 frases
 
+   9.4 **CANON HISTÓRICO-FACTUAL VERIFICABLE** (OBLIGATORIO):
+       - Si la época es un periodo histórico REAL: lista de 10-20 datos canónicos VERIFICABLES e INVIOLABLES que anclan la novela a la historia real:
+         · Fechas exactas de eventos históricos reales relevantes a la trama.
+         · Nombres REALES de lugares, edificios, instituciones y cargos tal como existían en esa época (ej.: si el templo real era una iglesia, PROHIBIDO llamarlo catedral; si la institución era un cabildo, PROHIBIDO llamarla ayuntamiento moderno).
+         · Qué existía ya y qué NO existía todavía (tecnología, instituciones, costumbres, monedas, rutas).
+       - Cada dato debe ser un hecho comprobable, no una vaguedad. Estos datos son INVIOLABLES para todos los agentes: prohibido alterarlos o inventar equivalentes.
+       - Si la novela se desvía deliberadamente de la historia real, DECLÁRALO como "licencia narrativa" explícita (qué se cambia y por qué).
+       - Si la época es contemporánea o el mundo es secundario/inventado: escribe literalmente "Canon histórico-factual: No aplica".
+
 10. **REGLAS DE ESCRITURA** (10-15 mandamientos específicos)
     - Directrices concretas para el ghostwriter
     - Qué hacer y qué NO hacer
@@ -363,6 +372,7 @@ Una línea en blanco después, y a continuación la guía completa con TODOS est
    - terminos_anacronicos_prohibidos: 10-20 términos modernos prohibidos en esa época (omitir solo si la novela es estrictamente contemporánea).
    - notas_voz_historica: 2-4 frases con el matiz histórico/cultural a mantener.
    - Si hay líneas temporales paralelas, declara cada época con su ficha (id, época, registro, vocabulario, anacronismos, notas).
+   - **CANON HISTÓRICO-FACTUAL VERIFICABLE** (OBLIGATORIO): si la época es un periodo histórico REAL, lista 10-20 datos canónicos VERIFICABLES e INVIOLABLES (fechas exactas de eventos reales; nombres REALES de lugares/edificios/instituciones/cargos tal como existían — ej.: si el templo real era iglesia, PROHIBIDO llamarlo catedral; qué existía ya y qué NO existía todavía). Desvíos deliberados de la historia real se declaran como "licencia narrativa" explícita. Si es contemporánea o mundo secundario: escribe "Canon histórico-factual: No aplica".
 
 10. **REGLAS DE ESCRITURA PARA ESTA NOVELA** (10-15 mandamientos)
     - Reglas concretas para el ghostwriter, derivadas de las guías de estilo del pseudónimo aplicadas a esta historia concreta.
@@ -509,6 +519,15 @@ Crea una guía EXHAUSTIVA para mantener la coherencia y calidad a lo largo de to
          - vocabulario_epoca_autorizado: 10-20 términos
          - terminos_anacronicos_prohibidos: 10-20 términos modernos prohibidos (omitir sólo si la serie es estrictamente contemporánea)
          - notas_voz_historica: 2-4 frases
+
+    11.5 **CANON HISTÓRICO-FACTUAL VERIFICABLE** (OBLIGATORIO):
+         - Si la época de la serie es un periodo histórico REAL: lista de 10-20 datos canónicos VERIFICABLES e INVIOLABLES compartidos por todos los volúmenes:
+           · Fechas exactas de eventos históricos reales relevantes al arco de la serie.
+           · Nombres REALES de lugares, edificios, instituciones y cargos tal como existían (ej.: si el templo real era una iglesia, PROHIBIDO llamarlo catedral).
+           · Qué existía ya y qué NO existía todavía en cada tramo temporal de la serie (si la serie avanza en el tiempo, distingue por volumen).
+         - Estos datos son INVIOLABLES para todos los agentes de todos los volúmenes: prohibido alterarlos o inventar equivalentes.
+         - Desvíos deliberados de la historia real se declaran como "licencia narrativa" explícita (qué se cambia y por qué).
+         - Si la serie es contemporánea o de mundo secundario/inventado: escribe literalmente "Canon histórico-factual: No aplica".
 
 12. **VOZ NARRATIVA CANÓNICA DE LA SERIE** (OBLIGATORIO — al FINAL del documento, formato literal)
     Cierra la guía con un bloque EXACTAMENTE en este formato (sin emojis, sin variaciones), declarando la voz que comparten TODOS los volúmenes de la serie:

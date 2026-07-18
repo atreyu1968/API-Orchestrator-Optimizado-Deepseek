@@ -218,6 +218,12 @@ export const projects = pgTable("projects", {
   //     este pulido; topado a un maximo para no gastar tokens en bucle si el
   //     pulido se cuelga siempre en el mismo punto.
   autoPolishPending: boolean("auto_polish_pending").notNull().default(false),
+  // [Fix204] Aplazar el pulido advisory a la Cura de Serie: si esta activo,
+  // al finalizar el manuscrito NO se lanza el bucle Holistico+Beta (ni la
+  // ortotipografica que corre dentro); el pulido queda para el paso "polish"
+  // de la Cura de Serie (forcePolishResume), que lo ejecuta con la saga
+  // completa como contexto y sin duplicar coste.
+  deferPolishToCure: boolean("defer_polish_to_cure").notNull().default(false),
   autoPolishResumeCount: integer("auto_polish_resume_count").notNull().default(0),
   // [Fix108] Voz narrativa canónica del proyecto (POV + tiempo verbal + tipo
   // de narrador opcional). Antes de Fix108 la voz se inferia con regex de

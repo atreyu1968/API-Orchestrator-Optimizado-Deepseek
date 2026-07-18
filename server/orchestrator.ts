@@ -4543,13 +4543,19 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
             sectionData.numero
           );
 
+          // [Fix199] Personajes emergentes sin desenlace: instruccion de cierre
+          // EN PAGINA en la recta final (ultimo tercio).
+          const emergentClosure = await this.buildEmergentClosureGuidance(
+            project.id, sectionData.numero, allSections.length, chapters
+          );
+
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
             worldBible: this.worldBibleWithResolvedLexico(enrichedWB, this.resolveLexicoForChapter(worldBibleData, sectionData.numero)),
             guiaEstilo: fullStyleGuide,
             previousContinuity: optimizedContinuity,
-            refinementInstructions: refinementInstructions + stalledEscalation,
+            refinementInstructions: refinementInstructions + stalledEscalation + emergentClosure,
             antiRepetitionGuidance: (project as any).antiRepetitionGuidance || undefined,
             authorName,
             isRewrite: isRewrite || isStalled,
@@ -5560,6 +5566,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           allChaptersForCtxResume,
           sectionData.numero
         );
+        // [Fix199] Personajes emergentes sin desenlace (round-trip de RESUME).
+        const emergentClosureResume = await this.buildEmergentClosureGuidance(
+          project.id,
+          sectionData.numero,
+          (worldBibleData as any)?.escaleta_capitulos?.length || existingChapters.length || 0,
+          allChaptersForCtxResume
+        );
         const recentSceneMoldsResume = Orchestrator.buildRecentSceneMolds(
           allChaptersForCtxResume,
           (worldBibleData as any)?.escaleta_capitulos,
@@ -5606,7 +5619,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             worldBible: this.worldBibleWithResolvedLexico(enrichedWBResume, this.resolveLexicoForChapter(worldBibleData, sectionData.numero)),
             guiaEstilo: fullStyleGuide,
             previousContinuity,
-            refinementInstructions: refinementInstructions + stalledEscalationResume,
+            refinementInstructions: refinementInstructions + stalledEscalationResume + emergentClosureResume,
             antiRepetitionGuidance: (project as any).antiRepetitionGuidance || undefined,
             editorialCritique: this.combinedMidNovelCritique(),
             authorName,
@@ -6311,6 +6324,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         lugares: lugares,
         reglas_lore: (worldBible.worldRules as WorldRule[]) || [],
         lexico_historico: plotOutlineData?.lexico_historico || null,
+        // [Fix197] Recupera el canon historico persistido para RESUME
+        canon_historico: plotOutlineData?.canon_historico || [],
       },
       escaleta_capitulos,
       premisa: plotOutlineData?.premise || project.premise || "",
@@ -6821,7 +6836,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   ): Promise<void> {
     const MAX_PASSES = 2;
     const MAX_ACT2_REWRITES = 4;
-    const MIN_ACT2_SCORE = 7;
+    // [Fix201] Liston mas alto: un acto 2 "apto con costuras" (7/10) ya no pasa.
+    // Con 7 y capitulos_problematicos el propio bucle aplica las directivas de
+    // reescritura (one-shot, con bestSnapshot/revert ya existentes).
+    const MIN_ACT2_SCORE = 8;
     try {
       const wb = (worldBibleData as any)?.world_bible || {};
       const protName = getProtagonistName(wb);
@@ -7588,6 +7606,71 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     };
   }
 
+  // [Fix199] Puerta pre-recta-final: personajes emergentes (nacidos durante la
+  // escritura via enriquecimiento de continuidad, role "secondary" sin arco
+  // declarado) con presencia real pero sin desenlace deben cerrarse EN PAGINA
+  // en los capitulos restantes. Determinista, coste 0 LLM.
+  private async buildEmergentClosureGuidance(
+    projectId: number,
+    chapterNumber: number,
+    totalChapters: number,
+    writtenChapters: Array<{ content?: string | null }>
+  ): Promise<string> {
+    try {
+      if (!totalChapters || totalChapters < 6) return "";
+      if (chapterNumber < Math.ceil((totalChapters * 2) / 3)) return "";
+      const wb = await storage.getWorldBibleByProject(projectId);
+      if (!wb) return "";
+      const dbChars = (wb.characters || []) as any[];
+      const pending: string[] = [];
+      for (const ch of dbChars) {
+        const name = String(ch?.name || "").trim();
+        if (!name || name.length < 3) continue;
+        if (ch.role !== "secondary") continue;
+        if (ch.isAlive === false) continue;
+        if (ch.estado_final || ch.arco_transformacion || ch.desenlace) continue;
+        // Presencia real: mencion textual en 3+ capitulos ya escritos
+        let apariciones = 0;
+        for (const cap of writtenChapters) {
+          if ((cap.content || "").includes(name)) apariciones++;
+          if (apariciones >= 3) break;
+        }
+        if (apariciones < 3) continue;
+        pending.push(`- ${name} (ultimo cap visto: ${ch.lastSeenChapter ?? "?"}, estado: ${ch.currentStatus || "desconocido"}${ch.lastLocation ? `, en ${ch.lastLocation}` : ""})`);
+      }
+      if (pending.length === 0) return "";
+      const restantes = Math.max(totalChapters - chapterNumber + 1, 1);
+      return `\n\n## [Fix199] PERSONAJES EMERGENTES SIN DESENLACE — CIERRE OBLIGATORIO EN LA RECTA FINAL\nLos siguientes personajes surgieron durante la escritura, tienen presencia real en la novela y AUN NO tienen destino resuelto. En los capitulos restantes (quedan ${restantes}) debes CERRAR su destino EN PAGINA (escena con peso dramatico) o despedirlos limpiamente de forma explicita (salida coherente narrada, nunca evaporacion silenciosa):\n${pending.slice(0, 8).join("\n")}\nPROHIBIDO que un personaje con presencia real desaparezca sin explicacion antes del final de la novela.`;
+    } catch (e) {
+      console.warn(`[Fix199] buildEmergentClosureGuidance fallo (no bloqueante): ${(e as Error).message}`);
+      return "";
+    }
+  }
+
+  // [Fix199] Al cerrar la novela, registra estado_final en los personajes de la
+  // WB que no lo tengan (util para volumenes siguientes de serie). Idempotente.
+  private async registerEmergentFinalStates(projectId: number): Promise<void> {
+    try {
+      const wb = await storage.getWorldBibleByProject(projectId);
+      if (!wb) return;
+      const chars = ((wb.characters || []) as any[]).slice();
+      let touched = false;
+      for (const ch of chars) {
+        if (!ch?.name || ch.estado_final) continue;
+        if (!ch.lastSeenChapter && ch.isAlive !== false) continue;
+        const estado = ch.isAlive === false ? "muerto" : (ch.currentStatus || "vivo");
+        ch.estado_final = `${estado}${ch.lastLocation ? `, ${ch.lastLocation}` : ""} (visto por ultima vez en cap ${ch.lastSeenChapter ?? "?"})`;
+        touched = true;
+      }
+      if (touched) {
+        await storage.updateWorldBible(wb.id, { characters: chars });
+        console.log(`[Fix199] estado_final registrado en personajes sin desenlace declarado (proyecto ${projectId})`);
+      }
+    } catch (e) {
+      console.warn(`[Fix199] registerEmergentFinalStates fallo (no bloqueante): ${(e as Error).message}`);
+    }
+  }
+
   private async runFinalReview(
     project: Project,
     chapters: Chapter[],
@@ -7597,6 +7680,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     styleGuideContent: string,
     authorName: string
   ): Promise<FinalReviewOutcome> {
+    // [Fix199] La novela llega completa: registra estado_final en los
+    // personajes emergentes sin desenlace declarado (util para series).
+    await this.registerEmergentFinalStates(project.id);
     let revisionCycle = 0;
     let issuesPreviosCorregidos: string[] = [];
     let consecutiveHighScores = 0;
@@ -9575,6 +9661,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     chapters: Array<{ numero: number; titulo: string; contenido: string }>;
     styleGuideContent?: string;
     worldBibleSummary?: string;
+    canonHistorico?: string[];
   }> {
     this.cumulativeTokens = {
       inputTokens: project.totalInputTokens || 0,
@@ -9636,6 +9723,15 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       worldBibleSummary = `### PERSONAJES PRINCIPALES\n${charLines || "(no hay personajes registrados)"}\n\n### REGLAS DEL MUNDO\n${ruleLines || "(no hay reglas registradas)"}\n\n### ESCALETA ORIGINAL\n${outlineLines || "(no hay escaleta registrada)"}`;
     }
 
+    // [Fix197] Canon historico-factual persistido en plotOutline (jsonb):
+    // los lectores lo reciben para senalar violaciones como hallazgos.
+    let canonHistorico: string[] | undefined;
+    const plotForCanon: any = worldBible?.plotOutline;
+    if (plotForCanon && typeof plotForCanon === "object" && Array.isArray(plotForCanon.canon_historico) && plotForCanon.canon_historico.length > 0) {
+      canonHistorico = plotForCanon.canon_historico.filter((c: any) => typeof c === "string" && c.trim().length > 0);
+      if (canonHistorico && canonHistorico.length === 0) canonHistorico = undefined;
+    }
+
     return {
       chapters: allChapters.map(c => ({
         numero: c.chapterNumber || 0,
@@ -9644,6 +9740,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       })),
       styleGuideContent,
       worldBibleSummary,
+      canonHistorico,
     };
   }
 
@@ -9694,6 +9791,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       chapters: ctx.chapters,
       guiaEstilo: ctx.styleGuideContent,
       worldBibleSummary: ctx.worldBibleSummary,
+      canonHistorico: ctx.canonHistorico,
       generoObjetivo: project.genre || undefined,
       longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
       seriesContext,
@@ -9835,6 +9933,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       chapters: completedChapters,
       guiaEstilo: ctx.styleGuideContent,
       worldBibleSummary: ctx.worldBibleSummary,
+      canonHistorico: ctx.canonHistorico,
+      // [Fix200] Lectura intermedia: vigilar repeticion de esqueleto de capitulo.
+      focoEsqueletoCapitulo: true,
       generoObjetivo: project.genre || undefined,
       longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
       previousBetaNotes: previousMidBetaNotes,
@@ -9969,6 +10070,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       chapters: completedChapters,
       guiaEstilo: ctx.styleGuideContent,
       worldBibleSummary: ctx.worldBibleSummary,
+      canonHistorico: ctx.canonHistorico,
+      // [Fix200] Lectura intermedia: vigilar repeticion de esqueleto de capitulo.
+      focoEsqueletoCapitulo: true,
       generoObjetivo: project.genre || undefined,
       longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
       seriesContext,
@@ -10017,6 +10121,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       chapters: ctx.chapters,
       guiaEstilo: ctx.styleGuideContent,
       worldBibleSummary: ctx.worldBibleSummary,
+      canonHistorico: ctx.canonHistorico,
       generoObjetivo: project.genre || undefined,
       longitudObjetivo: project.minWordCount ? `${project.minWordCount.toLocaleString("es-ES")}+ palabras` : undefined,
       previousBetaNotes,
@@ -11775,6 +11880,102 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     return rewritten;
   }
 
+  // [Fix201] Brazo de RITMO del acto 2 en el PULIDO: cuando el Beta se queja de
+  // ritmo/meseta/tramo central, el Act2PacingEditor relee el tramo central y
+  // traduce la queja en directivas concretas por capitulo; se ejecutan como
+  // reescritura dirigida (tope acotado). One-shot por bucle (flag en el caller);
+  // el revert lo respalda el bestSnapshot del bucle. Devuelve caps reescritos.
+  private async runAct2PacingPolishArm(
+    project: Project,
+    betaNotes: string,
+    holisticNotes: string,
+  ): Promise<number> {
+    const worldBible = await storage.getWorldBibleByProject(project.id);
+    if (!worldBible) return 0;
+    const worldBibleData = this.reconstructWorldBibleData(worldBible, project);
+    const allChapters = await storage.getChaptersByProject(project.id);
+    const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
+
+    let styleGuideContent = "";
+    if (project.styleGuideId) {
+      const sg = await storage.getStyleGuide(project.styleGuideId);
+      if (sg) styleGuideContent = sg.content;
+    }
+    const guiaEstilo = styleGuideContent
+      ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+      : `Género: ${project.genre}, Tono: ${project.tone}`;
+
+    // Tramo central: caps positivos del 25% al 75% (acto 2 aproximado).
+    const positives = allChapters
+      .filter(c => c.chapterNumber > 0 && c.content && c.content.trim().length > 100)
+      .sort((a, b) => a.chapterNumber - b.chapterNumber);
+    const total = positives.length;
+    if (total < 6) return 0;
+    const startIdx = Math.floor(total * 0.25);
+    const endIdx = Math.max(startIdx, Math.ceil(total * 0.75) - 1);
+    const tramo = positives.slice(startIdx, endIdx + 1);
+    if (tramo.length === 0) return 0;
+
+    const protName = getProtagonistName((worldBibleData as any)?.world_bible || {});
+    const { result } = await this.act2PacingEditor.analyze({
+      title: project.title,
+      genre: project.genre || "",
+      tone: project.tone || undefined,
+      protagonista: protName,
+      premise: project.premise || undefined,
+      capitulos: tramo.map(c => ({
+        numero: c.chapterNumber,
+        titulo: c.title || `Capitulo ${c.chapterNumber}`,
+        prosa: c.content || "",
+      })),
+      projectId: project.id,
+    });
+    if (!result || !Array.isArray(result.capitulos_problematicos) || result.capitulos_problematicos.length === 0) {
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "act2-pacing-editor",
+        message: `[Fix201] Brazo de ritmo del pulido: el Act2PacingEditor no localizo capitulos problematicos concretos en el tramo central (queja del Beta sin ancla accionable). No se reescribe nada.`,
+      });
+      return 0;
+    }
+
+    // Prioriza severidad critica/alta y acota el coste.
+    const MAX_PACING_REWRITES = 3;
+    const ordered = [...result.capitulos_problematicos].sort((a, b) => {
+      const rank = (s: string) => s === "critica" ? 0 : s === "alta" ? 1 : 2;
+      return rank(a.severidad) - rank(b.severidad);
+    }).slice(0, MAX_PACING_REWRITES);
+
+    await storage.createActivityLog({
+      projectId: project.id, level: "info", agentRole: "act2-pacing-editor",
+      message: `[Fix201] Brazo de ritmo del pulido activado: el Beta se queja del tramo central (${result.puntuacion_acto2}/10 segun Act2PacingEditor). Reescritura dirigida de ${ordered.length} capitulo(s): ${ordered.map(p => p.numero).join(", ")}. El bestSnapshot del bucle revierte si el combinado empeora.`,
+      metadata: { fix: "Fix201", targets: ordered.map(p => p.numero) },
+    });
+
+    const betaExcerpt = betaNotes.trim().slice(0, 4000);
+    let rewritten = 0;
+    for (const prob of ordered) {
+      if (this.aborted) break;
+      const chapter = allChapters.find(c => c.chapterNumber === prob.numero);
+      const sectionData = allSections.find(s => s.numero === prob.numero);
+      if (!chapter || !sectionData || !chapter.content) continue;
+      const directiva = [
+        `REESCRITURA DIRIGIDA DE RITMO DEL ACTO 2 (${prob.tipo}). ${prob.descripcion}`,
+        `QUE HACER EN ESTE CAPITULO: ${prob.directiva_de_reescritura}`,
+        `CONTEXTO DEL LECTOR BETA (queja original de ritmo):\n${betaExcerpt}`,
+        `LIMITES: conserva hechos, canon, continuidad y World Bible; cambia el RITMO (escalada, coste, tension), no la trama.`,
+      ].join("\n\n");
+      try {
+        await this.rewriteChapterForQA(
+          project, chapter, sectionData, worldBibleData, guiaEstilo, "editorial", directiva,
+        );
+        rewritten++;
+      } catch (e) {
+        console.warn(`[Fix201] Reescritura de ritmo del cap ${prob.numero} fallo (no bloqueante): ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    return rewritten;
+  }
+
   private async runAutoHolisticReviewLoop(project: Project): Promise<void> {
     // [Fix81] Bucle iterativo Holístico + Beta con TARGET DUAL ESTRICTO:
     //   Beta ≥ 9/10 AND Holístico ≥ 8/10
@@ -11814,6 +12015,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // como mucho una vez por run cuando el Beta se atasca por debajo de su meta y el
     // cirujano cap-a-cap solo regresa; reescribe la prosa de los caps peor valorados.
     let betaLastMileDone = false;
+    // [Fix201] One-shot por bucle del brazo de RITMO del acto 2: si el Beta se
+    // queja de ritmo/meseta/tramo central, el Act2PacingEditor traduce la queja
+    // en directivas por capitulo y se ejecutan como reescritura dirigida. El
+    // revert lo respalda el bestSnapshot del bucle si el combinado empeora.
+    let act2PacingArmDone = false;
     // [Fix159] Relecturas-rescate concedidas mas alla de MAX_ITERATIONS. Cuando el
     // bucle se agota por maximo de iteraciones (o se rinde por anti-paliza) con un
     // lector aun corto, disparamos los brazos de REESCRITURA one-shot y concedemos
@@ -12326,6 +12532,30 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
         }
 
+        // [Fix201] Brazo de RITMO del acto 2 (one-shot por bucle): si el Beta
+        // sigue corto y sus notas se quejan de ritmo/meseta/tramo central, el
+        // Act2PacingEditor convierte la queja en directivas por capitulo que se
+        // ejecutan como reescritura dirigida. No toca las ramas de abandono.
+        if (!act2PacingArmDone && !this.aborted
+          && betaScore !== null && betaScore < TARGET_BETA_SCORE
+          && betaNotes && /ritmo|meseta|tramo central|cuesta arriba|se estanca|se hace larg|pierde fuelle|lentitud|se alarga|decae/i.test(betaNotes)) {
+          act2PacingArmDone = true;
+          try {
+            const rewrittenPacing = await this.runAct2PacingPolishArm(currentProject, betaNotes, holisticNotes);
+            if (rewrittenPacing > 0 && !this.aborted) {
+              currentProject = (await storage.getProject(project.id)) ?? currentProject;
+              // Si estamos en la ultima iteracion, concedemos UNA relectura
+              // rescate para evaluar el resultado del brazo (hallazgo architect).
+              if (iter >= MAX_ITERATIONS && rescueReadsRemaining <= 0) {
+                rescueReadsRemaining = 1;
+              }
+              continue; // relectura en la siguiente iteracion evalua el resultado
+            }
+          } catch (e) {
+            console.warn(`[Fix201] Brazo de ritmo del pulido fallo (no bloqueante): ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+
         // [Fix77 architect] Distinguir "manuscrito limpio" de "ambos lectores fallaron".
         // El primer caso es éxito (no hay nada que tocar); el segundo es fallo operativo
         // que NO debe enmascararse como aprobación.
@@ -12822,14 +13052,32 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       }
 
       if (decision === "keep_pending") {
-        survivors.push(action);
-        keptPending++;
         const fmt = (v: VerdictState) => v === "missing" ? "sin-veredicto" : v === "failed_globally" ? "lector-falló" : v;
         const reasonSummary = `Holístico=${fmt(hVerdict)}, Beta=${fmt(bVerdict)}`;
+        // [Fix207] Contador de rondas de evaluacion sin acuerdo. Cada pasada
+        // que deja la accion pendiente suma 1; al llegar al tope se ARCHIVA
+        // como sugerencia (mismo patron que [Fix185]: no se ejecuta, queda en
+        // el log como sugerencia aplicable a mano) en vez de arrastrarse
+        // indefinidamente ronda tras ronda gastando contexto de los lectores.
+        const MAX_ADMIN_EVAL_ROUNDS = 3;
+        const rounds = (Number(action?.evalRounds) || 0) + 1;
+        if (rounds >= MAX_ADMIN_EVAL_ROUNDS) {
+          discarded++;
+          processedAppliedOrDiscarded.add(id);
+          await storage.createActivityLog({
+            projectId,
+            level: "warning",
+            message: `[Fix207] Accion admin id=${id} (${action?.type} sobre ${action?.targetLabel || `cap ${action?.targetChapter}`}) ARCHIVADA COMO SUGERENCIA tras ${rounds} rondas sin acuerdo de los lectores (${reasonSummary}). No se ejecuta automaticamente; puede aplicarse a mano desde el flujo editorial. Detalle: ${String(action?.detail || action?.motivo || "").slice(0, 300)}`,
+            agentRole: "editor",
+          });
+          continue;
+        }
+        survivors.push({ ...action, evalRounds: rounds });
+        keptPending++;
         await storage.createActivityLog({
           projectId,
           level: "info",
-          message: `Fix76: acción admin id=${id} (${action?.type} sobre ${action?.targetLabel || `cap ${action?.targetChapter}`}) se mantiene pendiente — ${reasonSummary}.`,
+          message: `Fix76: acción admin id=${id} (${action?.type} sobre ${action?.targetLabel || `cap ${action?.targetChapter}`}) se mantiene pendiente — ${reasonSummary} (ronda ${rounds}/${MAX_ADMIN_EVAL_ROUNDS} [Fix207]).`,
           agentRole: "editor",
         });
         continue;
@@ -13118,10 +13366,21 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const latestList: any[] = Array.isArray((latest as any)?.pendingAdminActions)
         ? (latest as any).pendingAdminActions
         : [];
+      // [Fix207] Los supervivientes llevan evalRounds incrementado; la lista
+      // fresca de BD aun tiene el valor viejo. Propagamos el contador para
+      // que el tope de rondas avance de verdad entre pasadas.
+      const roundsById = new Map<number, number>();
+      for (const s of survivors) {
+        const sid = Number(s?.id);
+        if (Number.isFinite(sid) && Number(s?.evalRounds) > 0) roundsById.set(sid, Number(s.evalRounds));
+      }
       const finalList = latestList.filter(a => {
         const aid = Number(a?.id);
         if (!Number.isFinite(aid)) return true;
         return !processedAppliedOrDiscarded.has(aid);
+      }).map(a => {
+        const aid = Number(a?.id);
+        return roundsById.has(aid) ? { ...a, evalRounds: roundsById.get(aid) } : a;
       });
       const addedConcurrently = latestList.length - existing.length;
       await storage.updateProject(projectId, { pendingAdminActions: finalList } as any);
@@ -16370,6 +16629,11 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
       // ruta de RESUME lo recupere en reconstructWorldBibleData.
       ...((data as any).tiempo_verbal_establecido ? { tiempo_verbal_establecido: (data as any).tiempo_verbal_establecido } : {}),
       lexico_historico: data.world_bible?.lexico_historico || null,
+      // [Fix197] Persiste el canon historico-factual (jsonb passthrough, sin
+      // migracion) para que viaje al ghostwriter y a los lectores de calidad.
+      ...(Array.isArray((data.world_bible as any)?.canon_historico) && (data.world_bible as any).canon_historico.length > 0
+        ? { canon_historico: (data.world_bible as any).canon_historico }
+        : {}),
       chapterOutlines: (data.escaleta_capitulos || []).map((c: any) => ({
         number: c.numero,
         summary: c.objetivo_narrativo || "",
@@ -16860,6 +17124,17 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
     // [Fix171] Al terminar el bucle (converja o no), se descartan las tarjetas
     // administrativas que el propio bucle dejo sin resolver: el flujo
     // desatendido no deja propuestas pendientes que pidan intervencion.
+    // [Fix204] Pulido APLAZADO a la Cura de Serie: si el proyecto tiene el
+    // flag activo, NO lanzamos el bucle advisory (ni la ortotipografica que
+    // corre dentro). El paso "polish" de la Cura de Serie lo ejecutara con
+    // forcePolishResume cuando toque, con la saga completa como contexto.
+    if ((project as any).deferPolishToCure) {
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "orchestrator",
+        message: `[Fix204] Pulido advisory APLAZADO a la Cura de Serie (flag defer_polish_to_cure activo). El manuscrito queda completed; el pulido y la ortotipografica correran en el paso de pulido de la Cura.`,
+      });
+      return;
+    }
     // [Fix177] Marca el pulido como EN CURSO antes de lanzarlo. Si el server
     // se reinicia/cae durante el bucle, este flag queda en true y el
     // auto-resume de arranque (autoResumePendingPolish) lo reanuda. Resetea

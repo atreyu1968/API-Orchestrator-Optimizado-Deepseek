@@ -30,6 +30,14 @@ interface BetaReaderInput {
   // contexto para NO quejarse de arcos intencionalmente abiertos cuando este
   // libro NO es el último de la serie.
   seriesContext?: string;
+  // [Fix197] Canon historico-factual INVIOLABLE del World Bible (datos reales:
+  // fechas, nombres reales de lugares/instituciones/cargos). El Beta lo usa
+  // para SENALAR violaciones como hallazgos corregibles; no puede verificar
+  // historia real por si solo, solo contrasta contra el canon declarado.
+  canonHistorico?: string[];
+  // [Fix200] Lectura MID-NOVELA: pedir explicitamente al lector que vigile la
+  // repeticion de esqueleto de capitulo para corregir en los caps RESTANTES.
+  focoEsqueletoCapitulo?: boolean;
   // [Fix76] Acciones administrativas pendientes que el Beta también verifica
   // tras leer el manuscrito completo. Mismo contrato que el Holístico: si
   // ambos coinciden en "apply", el orquestador la ejecuta sin confirmación.
@@ -296,6 +304,17 @@ export class BetaReaderAgent extends BaseAgent {
       ? `\n\n${input.seriesContext}`
       : "";
 
+    // [Fix197] Canon historico declarado: el Beta marca como hallazgo corregible
+    // cualquier pasaje que lo contradiga (nombres/fechas/instituciones reales).
+    const canonBlock = (input.canonHistorico && input.canonHistorico.length > 0)
+      ? `\n\n## CANON HISTORICO-FACTUAL INVIOLABLE (declarado en la guia)\nEstos datos reales son INVIOLABLES. Si el manuscrito los contradice (nombre de lugar/institucion/cargo alterado, fecha cambiada, algo que aun no existia), SENALALO como instruccion de correccion puntual citando el pasaje. Las entradas "LICENCIA:" son desvios autorizados, NO son errores.\n${input.canonHistorico.map(c => `- ${c}`).join("\n")}`
+      : "";
+
+    // [Fix200] Foco explicito en repeticion de esqueleto de capitulo (mid-novela).
+    const skeletonBlock = input.focoEsqueletoCapitulo
+      ? `\n\n## FOCO ESPECIAL: REPETICION DE ESQUELETO DE CAPITULO (acto 2)\nEsta es una lectura INTERMEDIA: los capitulos restantes aun pueden corregirse. Pregunta obligatoria: en los capitulos leidos, ¿hay dos o mas capitulos cercanos con el MISMO esqueleto (misma combinacion de escenario + tipo de oposicion + tactica del protagonista + coste pagado), aunque cambien el lugar o el interlocutor (p. ej. llegar-interrogar-obtener dato-escapar repetido)? Si la respuesta es SI, dilo explicitamente en tus notas nombrando los capitulos gemelos y que eje deberia variar en los caps RESTANTES.`
+      : "";
+
     // [Fix76] Mismo bloque que en el Holístico — el Beta da su propia
     // verificación como LECTOR (¿se nota que falta algo si borramos este cap?
     // ¿el material ya está en otro?). Si Holístico y Beta coinciden en
@@ -407,7 +426,7 @@ REGLA CRÍTICA para esta relectura:
 - Si la novela ya está sólida, es legítimo emitir pocas o ninguna instrucción en vez de forzar cambios que puedan empeorar el conjunto.`
       : "";
 
-    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${adminBlock}${translationBlock}${previousNotesBlock}${appliedHistoryBlock}${regressionBlock}
+    const prompt = `${metaBlock}${voiceBlock}${styleBlock}${worldBibleBlock}${seriesBlock}${canonBlock}${skeletonBlock}${adminBlock}${translationBlock}${previousNotesBlock}${appliedHistoryBlock}${regressionBlock}
 
 ═══════════════════════════════════════════════════════════════════
 NOVELA COMPLETA QUE ACABAS DE LEER

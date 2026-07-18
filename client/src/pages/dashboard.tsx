@@ -1148,6 +1148,11 @@ export default function Dashboard() {
                       {getPseudonymName(currentProject.pseudonymId)}
                     </Badge>
                   )}
+                  {(currentProject as any).deferPolishToCure && (
+                    <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-500/40" data-testid="badge-defer-polish">
+                      Pulido aplazado a la Cura
+                    </Badge>
+                  )}
                   <div className="flex items-center gap-2 text-sm">
                     <FileText className="h-4 w-4 text-muted-foreground" />
                     <span>{completedChapters}/{currentProject.chapterCount + (currentProject.hasPrologue ? 1 : 0) + (currentProject.hasEpilogue ? 1 : 0) + (currentProject.hasAuthorNote ? 1 : 0)} secciones</span>
