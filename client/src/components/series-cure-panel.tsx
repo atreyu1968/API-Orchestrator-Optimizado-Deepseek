@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Stethoscope, Loader2, XCircle, CheckCircle2, AlertTriangle, Circle, ShieldCheck } from "lucide-react";
+import { Stethoscope, Loader2, XCircle, CheckCircle2, AlertTriangle, Circle, ShieldCheck, Activity } from "lucide-react";
 
 // [Fix194] Panel de la Cura de Serie: lanza el pipeline autonomo por volumen
 // (arco -> correcciones -> reescritura profunda -> pulido -> veredicto) y
@@ -64,6 +64,40 @@ function StepBadge({ name, status }: { name: string; status: string }) {
       {STEP_LABELS[name] || name}
       {status === "validated" && <span className="text-green-600">(validado)</span>}
     </span>
+  );
+}
+
+// [Fix203] Actividad en vivo del volumen en pulido: el paso "polish" dura
+// horas y el estado de la cura solo cambia en las fronteras de paso; este
+// ticker lee los activity-logs del proyecto (endpoint ya existente) para que
+// el panel muestre que esta pasando DENTRO del pulido.
+interface ActivityLogEntry {
+  id: number;
+  agentRole?: string | null;
+  message: string;
+  createdAt: string;
+}
+
+function PolishActivityTicker({ projectId }: { projectId: number }) {
+  const { data: logs } = useQuery<ActivityLogEntry[]>({
+    queryKey: [`/api/projects/${projectId}/activity-logs?limit=5`],
+    refetchInterval: 10000,
+  });
+  if (!logs || logs.length === 0) return null;
+  // El endpoint devuelve ascendente (mas antiguo primero): mostrar los ultimos.
+  const recent = logs.slice(-3).reverse();
+  return (
+    <div className="space-y-1 rounded-md bg-muted/50 p-2" data-testid={`ticker-polish-activity-${projectId}`}>
+      {recent.map((l, i) => (
+        <p key={l.id} className={`text-xs flex items-start gap-1 ${i === 0 ? "text-foreground" : "text-muted-foreground"}`}>
+          <Activity className="h-3 w-3 mt-0.5 shrink-0 text-primary" />
+          <span>
+            <span className="font-medium">{new Date(l.createdAt).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</span>
+            {l.agentRole ? ` · ${l.agentRole}` : ""} — {l.message}
+          </span>
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -155,6 +189,9 @@ export function SeriesCurePanel({ seriesId }: { seriesId: number }) {
                     {v.betaScore != null && <span data-testid={`text-cure-beta-${v.volumeId}`}>Beta: {v.betaScore}/10</span>}
                     {v.holisticScore != null && <span>Holistico: {v.holisticScore}/10</span>}
                   </div>
+                  {v.steps.polish === "running" && v.volumeType === "project" && (
+                    <PolishActivityTicker projectId={v.volumeId} />
+                  )}
                   {v.suggestions.length > 0 && (
                     <div className="space-y-1">
                       {v.suggestions.map((sug, i) => (
