@@ -34,6 +34,7 @@ interface CureVolume {
   issuesResolved?: number;
   seamSummary?: string;
   verdict?: string;
+  rescueRounds?: number;
   suggestions: string[];
   error?: string;
 }
@@ -201,7 +202,7 @@ export function SeriesCurePanel({ seriesId }: { seriesId: number }) {
                 <CardContent className="p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-sm font-medium">Vol. {v.seriesOrder}: {v.title}</span>
-                    {verdict && <Badge variant={verdict.variant} data-testid={`badge-cure-verdict-${v.volumeId}`}>{verdict.label}</Badge>}
+                    {verdict && <Badge variant={verdict.variant} data-testid={`badge-cure-verdict-${v.volumeId}`}>{verdict.label}{(v.rescueRounds ?? 0) > 0 ? ` · ${v.rescueRounds} rescate(s)` : ""}</Badge>}
                   </div>
                   <div className="flex items-center gap-3 flex-wrap">
                     {Object.entries(v.steps).map(([name, status]) => (

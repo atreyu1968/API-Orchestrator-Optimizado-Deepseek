@@ -73,6 +73,9 @@ export interface CureVolumeState {
   issuesResolved?: number;
   seamSummary?: string;
   verdict?: "publicable" | "publicable_con_reservas" | "necesita_cirugia" | "sin_veredicto";
+  // [Fix216] Rondas extra de rescate ejecutadas para intentar subir el
+  // veredicto de "con reservas" a "publicable".
+  rescueRounds?: number;
   suggestions: string[];
   error?: string;
 }
@@ -100,6 +103,12 @@ const cureRegistry = new Map<number, SeriesCureState>();
 const MAX_DEEP_REWRITE_CHAPTERS = 4;
 const MAX_SEAM_REWRITE_CHAPTERS = 2;
 const MAX_SAGA_CORRECTIONS = 6;
+// [Fix216] Rondas maximas de rescate por volumen cuando el veredicto sale
+// "publicable_con_reservas": el objetivo es que TODO volumen termine
+// "publicable" sin reservas. Cada ronda repite verificacion de arco +
+// correcciones + reescritura dirigida + relectura fresca. Se corta antes si
+// una ronda no mejora ninguna nota (estancamiento).
+const MAX_RESCUE_ROUNDS = 3;
 const POLISH_POLL_MS = 30_000;
 const POLISH_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6 horas por volumen
 const ISSUES_POLL_MS = 30_000;
@@ -882,6 +891,65 @@ async function runSagaRead(state: SeriesCureState): Promise<void> {
   }
 }
 
+// [Fix216] Rescate "sin reservas": un veredicto "publicable_con_reservas" NO
+// es aceptable como final — el usuario exige que todo volumen termine
+// "publicable". Rondas extra (arco + correcciones + reescritura dirigida +
+// relectura fresca Holistico+Beta) hasta lograrlo, con tope MAX_RESCUE_ROUNDS
+// y corte por estancamiento (ronda sin mejora en ninguna nota).
+async function runRescueLoop(state: SeriesCureState, vol: CureVolumeState): Promise<void> {
+  let rescueRound = vol.rescueRounds ?? 0;
+  while (
+    vol.verdict === "publicable_con_reservas" &&
+    rescueRound < MAX_RESCUE_ROUNDS &&
+    !state.cancelRequested
+  ) {
+    rescueRound++;
+    vol.rescueRounds = rescueRound;
+    const prevBeta = vol.betaScore ?? 0;
+    const prevHol = vol.holisticScore ?? 0;
+    const prevArc = vol.arcScore ?? 0;
+    log(state, `Vol ${vol.seriesOrder}: veredicto con reservas -> ronda de rescate ${rescueRound}/${MAX_RESCUE_ROUNDS} (objetivo: publicable sin reservas).`);
+    await persistState(state, true);
+
+    const rescueArc = await runArcVerify(state, vol);
+    if (state.cancelRequested) return;
+    if (rescueArc) {
+      await runCorrections(state, vol, rescueArc);
+      if (state.cancelRequested) return;
+      await runDeepRewrite(state, vol, rescueArc);
+      if (state.cancelRequested) return;
+    }
+    // Relectura FRESCA Holistico+Beta para todos los tipos de volumen
+    // (mucho mas barata que relanzar el pulido completo) -> notas nuevas.
+    await runOneShotReview(state, vol);
+    if (state.cancelRequested) return;
+
+    computeVerdict(vol);
+    // TS no ve que computeVerdict muta vol.verdict (inferencia estrecha del
+    // while); se relee via variable tipada ancha.
+    const verdictNow = vol.verdict as CureVolumeState["verdict"];
+    log(state, `Vol ${vol.seriesOrder}: rescate ${rescueRound} -> veredicto = ${verdictNow} (Beta ${vol.betaScore ?? "?"}, Holistico ${vol.holisticScore ?? "?"}, arco ${vol.arcScore ?? "?"}).`);
+
+    if (verdictNow === "publicable") break;
+    const improved =
+      (vol.betaScore ?? 0) > prevBeta ||
+      (vol.holisticScore ?? 0) > prevHol ||
+      (vol.arcScore ?? 0) > prevArc;
+    if (!improved) {
+      log(state, `Vol ${vol.seriesOrder}: ronda de rescate ${rescueRound} sin mejora en ninguna nota; se corta el rescate para no gastar sin avance.`);
+      break;
+    }
+  }
+  if (vol.verdict === "publicable_con_reservas" && !state.cancelRequested) {
+    // Dedupe: si la cura se reanuda varias veces no se apila la misma nota.
+    const PREFIX = `El volumen quedo "publicable con reservas"`;
+    vol.suggestions = vol.suggestions.filter((s) => !s.startsWith(PREFIX));
+    vol.suggestions.push(
+      `${PREFIX} tras ${vol.rescueRounds ?? 0} ronda(s) de rescate (Beta ${vol.betaScore ?? "?"}/10, Holistico ${vol.holisticScore ?? "?"}/10, arco ${vol.arcPassed ? "PASSED" : "con observaciones"}). Revisa las notas de lectura del panel: los lectores no suben mas la nota sin decisiones de contenido que requieren criterio humano.`,
+    );
+  }
+}
+
 function computeVerdict(vol: CureVolumeState): void {
   if (vol.steps.polish !== "done") {
     // Sin pulido ni lectura puntual el veredicto sale solo del arco:
@@ -910,6 +978,15 @@ async function runCure(state: SeriesCureState): Promise<void> {
       const vol = state.volumes[i];
       // [Fix205] Reanudacion: un volumen ya cerrado (con veredicto) se respeta.
       if (vol.verdict) {
+        // [Fix216] "publicable_con_reservas" ya no es final: al reanudar, un
+        // volumen cerrado con reservas entra directo al rescate (sin repetir
+        // toda la tuberia); los demas veredictos si se respetan.
+        if (vol.verdict === "publicable_con_reservas" && (vol.rescueRounds ?? 0) < MAX_RESCUE_ROUNDS) {
+          log(state, `=== Volumen ${vol.seriesOrder}: "${vol.title}" quedo con reservas; se reintenta el rescate. ===`);
+          await runRescueLoop(state, vol);
+          if (state.cancelRequested) { state.status = "cancelled"; break; }
+          continue;
+        }
         log(state, `=== Volumen ${vol.seriesOrder}: "${vol.title}" ya curado (veredicto ${vol.verdict}); se omite. ===`);
         continue;
       }
@@ -945,6 +1022,9 @@ async function runCure(state: SeriesCureState): Promise<void> {
 
       computeVerdict(vol);
       log(state, `Vol ${vol.seriesOrder}: veredicto = ${vol.verdict}.`);
+
+      await runRescueLoop(state, vol);
+      if (state.cancelRequested) { state.status = "cancelled"; break; }
     }
 
     // [Fix208] Lectura de saga final (solo si la cura no se cancelo/fallo y
