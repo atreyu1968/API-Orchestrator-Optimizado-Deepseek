@@ -15,6 +15,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2, Pencil, X, Upload, Target, Sparkles, ChevronDown, Link2, Download, Settings2, GitBranch } from "lucide-react";
 import { SERIES_WRITING_GUIDE_TEMPLATE, downloadTemplate } from "@/lib/writing-templates";
 import { ArcVerificationPanel } from "@/components/arc-verification-panel";
+import { SeriesCurePanel } from "@/components/series-cure-panel";
 import { ConfigPanel } from "@/components/config-panel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Pseudonym, Project, Series, ImportedManuscript, ReeditProject } from "@shared/schema";
@@ -1313,6 +1314,16 @@ export default function SeriesPage() {
                     seriesTitle={s.title}
                     totalVolumes={s.totalPlannedBooks || 0}
                   />
+                </div>
+
+                <Separator />
+
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Cura de Serie</span>
+                  </div>
+                  <SeriesCurePanel seriesId={s.id} />
                 </div>
                 </div>
               </AccordionContent>

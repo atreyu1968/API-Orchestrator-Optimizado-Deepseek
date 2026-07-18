@@ -6442,6 +6442,163 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
     }
   });
 
+  // [Fix194] Insertar un capitulo NUEVO en una posicion concreta de un proyecto
+  // de la serie. Renumera primero (descendente, para no chocar numeros) y luego
+  // escribe el capitulo con el Ghostwriter usando el texto integro de los
+  // capitulos previos como contexto. Pensado para huecos detectados por la Cura
+  // de Serie (p.ej. un evento decisivo que ocurria "entre capitulos").
+  app.post("/api/series/:id/insert-chapter", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const { projectId, position, instructions, title } = req.body || {};
+      const pos = parseInt(position);
+
+      if (!projectId || !Number.isFinite(pos) || pos < 1 || !instructions) {
+        return res.status(400).json({ error: "projectId, position (>=1) e instructions son obligatorios" });
+      }
+
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (project.seriesId !== seriesId) {
+        return res.status(400).json({ error: "El proyecto no pertenece a esta serie" });
+      }
+
+      const chapters = await storage.getChaptersByProject(projectId);
+      const maxNumber = Math.max(0, ...chapters.map((c) => c.chapterNumber));
+      if (pos > maxNumber + 1) {
+        return res.status(400).json({ error: `Posicion fuera de rango (max ${maxNumber + 1})` });
+      }
+
+      // Contexto: capitulos previos INTEGROS (lista pre-desplazamiento; los
+      // capitulos < pos no cambian de numero).
+      const { Orchestrator: OrchestratorClassIc } = await import("./orchestrator");
+      const previousChaptersFullText = OrchestratorClassIc.buildPreviousChaptersFullText(chapters, pos);
+
+      // Desplazar +1 los capitulos >= pos, en orden DESCENDENTE para no
+      // pisar numeros. Se hace ANTES de generar: si la generacion falla, el
+      // hueco queda en pos (reintentable), sin duplicados.
+      const toShift = chapters
+        .filter((c) => c.chapterNumber >= pos)
+        .sort((a, b) => b.chapterNumber - a.chapterNumber);
+      for (const ch of toShift) {
+        await storage.updateChapter(ch.id, { chapterNumber: ch.chapterNumber + 1 });
+      }
+
+      const worldBible = await storage.getWorldBibleByProject(projectId);
+      const styleGuide = project.styleGuideId ? await storage.getStyleGuide(project.styleGuideId) : null;
+
+      const { GhostwriterAgent } = await import("./agents/ghostwriter");
+      const ghostwriter = new GhostwriterAgent();
+
+      const chapterData = {
+        numero: pos,
+        titulo: title || `Capítulo ${pos}`,
+        cronologia: "Encajar entre el capitulo anterior y el siguiente sin contradecir su cronologia",
+        ubicacion: "Coherente con los capitulos adyacentes",
+        elenco_presente: [],
+        objetivo_narrativo: instructions,
+        beats: [
+          `CAPITULO NUEVO INSERTADO EN LA POSICION ${pos}: ${instructions}`,
+          "Dramatizar EN PAGINA los eventos indicados (mostrar, no contar)",
+          "Mantener continuidad estricta con el capitulo anterior y el siguiente",
+          "No contradecir hechos ya narrados ni adelantar revelaciones futuras",
+        ],
+        funcion_estructural: "Capitulo insertado para cubrir un hueco estructural detectado desde la perspectiva de la serie",
+      };
+
+      const guiaEstilo = styleGuide?.content || `Estilo: Prosa profesional de bestseller internacional\nTono: ${project.tone || "Dramático"}\nGénero: ${project.genre || "Ficción"}`;
+
+      // Rollback GARANTIZADO: si la generacion lanza excepcion, no produce
+      // prosa, o falla el createChapter, se revierte el desplazamiento (-1
+      // sobre los MISMOS ids desplazados, en orden ascendente) para no dejar
+      // un hueco huerfano ni numeracion corrupta.
+      const rollbackShift = async () => {
+        const asc = [...toShift].sort((a, b) => a.chapterNumber - b.chapterNumber);
+        for (const ch of asc) {
+          await storage.updateChapter(ch.id, { chapterNumber: ch.chapterNumber }).catch((e) =>
+            console.error(`[InsertChapter] Rollback fallo para capitulo id=${ch.id}:`, e),
+          );
+        }
+      };
+
+      let created: any;
+      try {
+        const result = await ghostwriter.execute({
+          chapterNumber: pos,
+          chapterData,
+          worldBible: worldBible || {},
+          guiaEstilo,
+          isRewrite: false,
+          previousChaptersFullText,
+        });
+
+        const prose = (result as any).result?.prose;
+        if (!prose) {
+          await rollbackShift();
+          return res.status(500).json({ error: "El Ghostwriter no produjo contenido; renumeracion revertida" });
+        }
+
+        created = await storage.createChapter({
+          projectId,
+          chapterNumber: pos,
+          title: (result as any).result?.titulo || title || `Capítulo ${pos}`,
+          content: prose,
+          status: "completed",
+          wordCount: prose.split(/\s+/).length,
+        } as any);
+      } catch (genError) {
+        console.error("[InsertChapter] Fallo generando/creando el capitulo; revirtiendo renumeracion:", genError);
+        await rollbackShift();
+        return res.status(500).json({ error: "Fallo la generacion del capitulo; renumeracion revertida" });
+      }
+
+      await storage.updateProject(projectId, { chapterCount: (project.chapterCount || 0) + 1 }).catch(() => {});
+      await storage.createActivityLog({
+        projectId,
+        level: "info",
+        message: `[Fix194] Capitulo nuevo insertado en la posicion ${pos} (cura de serie): ${String(instructions).slice(0, 160)}`,
+        agentRole: "orchestrator",
+      }).catch(() => {});
+
+      res.json({
+        success: true,
+        chapter: { id: created.id, chapterNumber: created.chapterNumber, title: created.title, wordCount: created.wordCount },
+        shifted: toShift.length,
+        message: `Capitulo insertado en la posicion ${pos}; ${toShift.length} capitulo(s) renumerado(s)`,
+      });
+    } catch (error) {
+      console.error("Error inserting chapter:", error);
+      res.status(500).json({ error: "Failed to insert chapter" });
+    }
+  });
+
+  // [Fix194] Cura de Serie: arranque, estado y cancelacion.
+  app.post("/api/series/:id/cure", async (req: Request, res: Response) => {
+    try {
+      const { startSeriesCure } = await import("./services/series-cure");
+      const result = await startSeriesCure(parseInt(req.params.id));
+      if (!result.success) return res.status(409).json({ error: result.message });
+      res.status(202).json(result);
+    } catch (error) {
+      console.error("Error starting series cure:", error);
+      res.status(500).json({ error: "Failed to start series cure" });
+    }
+  });
+
+  app.get("/api/series/:id/cure-status", async (req: Request, res: Response) => {
+    const { getSeriesCureStatus } = await import("./services/series-cure");
+    const state = getSeriesCureStatus(parseInt(req.params.id));
+    if (!state) return res.json({ status: "idle" });
+    res.json(state);
+  });
+
+  app.post("/api/series/:id/cure-cancel", async (req: Request, res: Response) => {
+    const { cancelSeriesCure } = await import("./services/series-cure");
+    const ok = cancelSeriesCure(parseInt(req.params.id));
+    if (!ok) return res.status(409).json({ error: "No hay cura en marcha para esta serie" });
+    res.json({ success: true, message: "Cancelacion solicitada" });
+  });
+
   // Series Thread Fixer - Analyze and auto-fix thread/milestone issues
   app.post("/api/series/:id/analyze-threads", async (req: Request, res: Response) => {
     try {
