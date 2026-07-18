@@ -80,6 +80,11 @@ export interface CureVolumeState {
   // rescate: el usuario selecciona cuales ejecutar desde el panel.
   pendingDecisions?: PendingCureDecision[];
   decisionRun?: "running" | "done" | "failed";
+  // [Fix221] Historial de rondas de decisiones ejecutadas: puntuaciones
+  // antes/despues para que el usuario VEA si el libro mejora, y contador de
+  // rondas seguidas sin mejora para frenar el rediagnostico infinito.
+  decisionRoundsLog?: DecisionRoundEntry[];
+  decisionStagnantRounds?: number;
   suggestions: string[];
   error?: string;
 }
@@ -92,6 +97,19 @@ export interface PendingCureDecision {
   capitulos: number[];
   tipo: "correccion" | "reescritura";
   status: "pendiente" | "ejecutando" | "ejecutada" | "fallida";
+}
+
+// [Fix221] Resultado de una ronda de decisiones ejecutadas.
+export interface DecisionRoundEntry {
+  ronda: number;
+  ejecutadas: string[];
+  betaAntes: number | null;
+  holisticoAntes: number | null;
+  betaDespues: number | null;
+  holisticoDespues: number | null;
+  veredictoDespues: string;
+  mejora: boolean;
+  fecha: string;
 }
 
 export interface SeriesCureState {
@@ -123,6 +141,9 @@ const MAX_SAGA_CORRECTIONS = 6;
 // correcciones + reescritura dirigida + relectura fresca. Se corta antes si
 // una ronda no mejora ninguna nota (estancamiento).
 const MAX_RESCUE_ROUNDS = 3;
+// [Fix221] Rondas seguidas de decisiones SIN mejora de Beta/Holistico tras
+// las que se detiene el rediagnostico automatico (evita apilar issues sin fin).
+const MAX_STAGNANT_DECISION_ROUNDS = 2;
 const POLISH_POLL_MS = 30_000;
 const POLISH_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6 horas por volumen
 const ISSUES_POLL_MS = 30_000;
@@ -1236,15 +1257,51 @@ export async function executeCureDecisions(
 
       const anyApplied = selected.some((d) => d.status === "ejecutada");
       if (anyApplied) {
+        // [Fix221] Capturar puntuaciones ANTES de la relectura para poder
+        // mostrar al usuario si el libro mejora ronda a ronda.
+        const betaAntes = vol.betaScore ?? null;
+        const holisticoAntes = vol.holisticScore ?? null;
         // Relectura fresca + veredicto nuevo: si cruza el umbral, el volumen
         // queda "publicable"; si no, el proximo diagnostico partira de notas
         // frescas.
         await runOneShotReview(state, vol);
         computeVerdict(vol);
-        log(state, `Vol ${vol.seriesOrder}: tras las decisiones, veredicto = ${vol.verdict} (Beta ${vol.betaScore ?? "?"}, Holistico ${vol.holisticScore ?? "?"}).`);
+        const betaDespues = vol.betaScore ?? null;
+        const holisticoDespues = vol.holisticScore ?? null;
+        const mejora = ((betaDespues ?? 0) + (holisticoDespues ?? 0)) > ((betaAntes ?? 0) + (holisticoAntes ?? 0));
+        const ronda = (vol.decisionRoundsLog?.length ?? 0) + 1;
+        vol.decisionRoundsLog = [
+          ...(vol.decisionRoundsLog || []),
+          {
+            ronda,
+            ejecutadas: selected.filter((d) => d.status === "ejecutada").map((d) => d.titulo),
+            betaAntes,
+            holisticoAntes,
+            betaDespues,
+            holisticoDespues,
+            veredictoDespues: vol.verdict || "sin_veredicto",
+            mejora,
+            fecha: new Date().toISOString(),
+          },
+        ];
+        vol.decisionStagnantRounds = mejora ? 0 : (vol.decisionStagnantRounds ?? 0) + 1;
+        log(state, `Vol ${vol.seriesOrder}: ronda de decisiones ${ronda} — Beta ${betaAntes ?? "?"}→${betaDespues ?? "?"}, Holistico ${holisticoAntes ?? "?"}→${holisticoDespues ?? "?"} (${mejora ? "MEJORA" : "sin mejora"}). Veredicto: ${vol.verdict}.`);
         if (vol.verdict === "publicable_con_reservas" || vol.verdict === "necesita_cirugia") {
-          // [Fix218] Rediagnostico tambien si sigue en "necesita cirugia".
-          await runDecisionDiagnosis(state, vol);
+          // [Fix221] Freno por estancamiento: tras 2 rondas seguidas sin
+          // mejora, dejar de proponer decisiones nuevas (se apilaban issues
+          // sin saber si el libro avanzaba). Queda anotado para el usuario.
+          if ((vol.decisionStagnantRounds ?? 0) >= MAX_STAGNANT_DECISION_ROUNDS) {
+            vol.pendingDecisions = (vol.pendingDecisions || []).filter((d) => d.status === "ejecutada");
+            const NOTA_PREFIX = "Decisiones en punto muerto:";
+            vol.suggestions = vol.suggestions.filter((s) => !s.startsWith(NOTA_PREFIX));
+            vol.suggestions.push(
+              `${NOTA_PREFIX} ${vol.decisionStagnantRounds} ronda(s) seguidas sin subir Beta/Holistico (ultimo: Beta ${betaDespues ?? "?"}, Holistico ${holisticoDespues ?? "?"}). El diagnostico automatico se detiene aqui; hace falta criterio humano (notas editoriales manuales o cirugia dirigida). El historial de rondas queda en el panel.`,
+            );
+            log(state, `Vol ${vol.seriesOrder}: ${vol.decisionStagnantRounds} ronda(s) sin mejora; se detiene el diagnostico automatico de decisiones (hace falta criterio humano).`);
+          } else {
+            // [Fix218] Rediagnostico tambien si sigue en "necesita cirugia".
+            await runDecisionDiagnosis(state, vol);
+          }
         } else if (vol.verdict === "publicable") {
           vol.pendingDecisions = (vol.pendingDecisions || []).filter((d) => d.status === "ejecutada");
         }

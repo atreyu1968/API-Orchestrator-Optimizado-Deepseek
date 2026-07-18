@@ -39,6 +39,8 @@ interface CureVolume {
   rescueRounds?: number;
   pendingDecisions?: PendingDecision[];
   decisionRun?: "running" | "done" | "failed";
+  decisionRoundsLog?: DecisionRound[];
+  decisionStagnantRounds?: number;
   suggestions: string[];
   error?: string;
 }
@@ -52,6 +54,19 @@ interface PendingDecision {
   capitulos: number[];
   tipo: "correccion" | "reescritura";
   status: "pendiente" | "ejecutando" | "ejecutada" | "fallida";
+}
+
+// [Fix221] Ronda de decisiones ejecutada, con puntuaciones antes/despues.
+interface DecisionRound {
+  ronda: number;
+  ejecutadas: string[];
+  betaAntes: number | null;
+  holisticoAntes: number | null;
+  betaDespues: number | null;
+  holisticoDespues: number | null;
+  veredictoDespues: string;
+  mejora: boolean;
+  fecha: string;
 }
 
 interface SagaVerdict {
@@ -147,6 +162,27 @@ function PolishActivityTicker({ projectId }: { projectId: number }) {
 // cambios concretos cuando el volumen agota el rescate "con reservas"; el
 // usuario marca cuales quiere y la cura los ejecuta (con relectura y nuevo
 // veredicto al terminar).
+// [Fix221] Historial de rondas de decisiones: visible SIEMPRE que exista,
+// aunque ya no queden decisiones pendientes (p.ej. tras el freno por
+// estancamiento), para que el usuario vea si el libro mejoro o no.
+function DecisionRoundsHistory({ volume }: { volume: CureVolume }) {
+  const rounds = volume.decisionRoundsLog || [];
+  if (rounds.length === 0) return null;
+  return (
+    <div className="space-y-0.5 border rounded-md p-2 bg-muted/40" data-testid={`list-decision-rounds-${volume.volumeId}`}>
+      <p className="text-xs font-medium">Evolucion tras cada ronda de decisiones</p>
+      {rounds.map((r) => (
+        <p key={r.ronda} className="text-[11px] text-muted-foreground" data-testid={`text-decision-round-${volume.volumeId}-${r.ronda}`}>
+          Ronda {r.ronda} ({r.ejecutadas.length} decision{r.ejecutadas.length === 1 ? "" : "es"}): Beta {r.betaAntes ?? "?"}→{r.betaDespues ?? "?"}, Holistico {r.holisticoAntes ?? "?"}→{r.holisticoDespues ?? "?"}{" "}
+          {r.mejora
+            ? <Badge variant="default" className="text-[10px] px-1 py-0 align-middle">mejora</Badge>
+            : <Badge variant="secondary" className="text-[10px] px-1 py-0 align-middle">sin mejora</Badge>}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function PendingDecisionsBlock({ seriesId, volume }: { seriesId: number; volume: CureVolume }) {
   const { toast } = useToast();
   const [selected, setSelected] = useState<string[]>([]);
@@ -359,6 +395,7 @@ export function SeriesCurePanel({ seriesId }: { seriesId: number }) {
                       ))}
                     </div>
                   )}
+                  <DecisionRoundsHistory volume={v} />
                   {(v.pendingDecisions?.length ?? 0) > 0 && (
                     <PendingDecisionsBlock seriesId={seriesId} volume={v} />
                   )}
