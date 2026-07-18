@@ -6665,8 +6665,22 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       }
 
       // Helper to remove id/createdAt before insert
+      // [Fix189] Las fechas del backup llegan como STRING (JSON no tiene tipo
+      // fecha) pero las columnas timestamp de Drizzle esperan Date -> el insert
+      // reventaba con "value.toISOString is not a function" en projects y
+      // chapters (completedAt, heartbeatAt, updatedAt, ...). Se convierte a
+      // Date cualquier string con formato ISO datetime estricto; el resto de
+      // strings (titulos, contenido) no matchean el patron y quedan intactos.
+      const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/;
       const prepareForInsert = (item: any) => {
         const { id, createdAt, ...rest } = item;
+        for (const key of Object.keys(rest)) {
+          const value = rest[key];
+          if (typeof value === "string" && ISO_DATETIME_RE.test(value)) {
+            const d = new Date(value);
+            if (!isNaN(d.getTime())) rest[key] = d;
+          }
+        }
         return rest;
       };
 
