@@ -1,4 +1,5 @@
 import { storage } from "../storage";
+import { INTERNAL_AUTH_HEADER, INTERNAL_AUTH_TOKEN } from "../auth";
 import { forcePolishResume } from "../polish-auto-resume";
 import { isPolishActive, requestPolishStop } from "../utils/polish-registry";
 import { cleanProseMarkdown } from "../utils/prose-markdown-cleaner";
@@ -210,7 +211,7 @@ export function cancelSeriesCure(seriesId: number): boolean {
 async function selfFetch(path: string, body: any): Promise<any> {
   const res = await fetch(`${baseUrl()}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", [INTERNAL_AUTH_HEADER]: INTERNAL_AUTH_TOKEN },
     body: JSON.stringify(body),
   });
   const text = await res.text();

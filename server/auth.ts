@@ -2,6 +2,13 @@ import { Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pg from "pg";
+import { randomBytes } from "crypto";
+
+// [Fix214] Token interno por proceso: permite que las llamadas servidor->servidor
+// (p.ej. la Cura de Serie invocando sus propios endpoints) pasen el auth
+// en instalaciones con LITAGENTS_PASSWORD (Ubuntu). No sale del proceso.
+export const INTERNAL_AUTH_TOKEN = randomBytes(32).toString("hex");
+export const INTERNAL_AUTH_HEADER = "x-litagents-internal";
 
 declare module "express-session" {
   interface SessionData {
@@ -46,6 +53,12 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction):
   }
 
   if (req.session?.authenticated) {
+    next();
+    return;
+  }
+
+  // [Fix214] Llamadas internas del propio servidor (loopback con token de proceso)
+  if (req.headers[INTERNAL_AUTH_HEADER] === INTERNAL_AUTH_TOKEN) {
     next();
     return;
   }
