@@ -6599,6 +6599,41 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
     res.json({ success: true, message: "Cancelacion solicitada" });
   });
 
+  // [Fix195] Parada manual del bucle de pulido de un proyecto. Antes no existia
+  // (la unica via era reiniciar el servidor). El bucle sale limpio ENTRE
+  // iteraciones (nunca a mitad de una lectura) conservando la version actual;
+  // ademas se apaga autoPolishPending para que no se reanude solo tras un
+  // reinicio del servidor.
+  app.post("/api/projects/:id/stop-polish", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const { requestPolishStop, isPolishActive } = await import("./utils/polish-registry");
+      const active = isPolishActive(projectId);
+      const pending = (project as any).autoPolishPending === true;
+      if (!active && !pending) {
+        return res.status(409).json({ error: "No hay pulido en marcha ni pendiente para este proyecto" });
+      }
+
+      // [Fix195] Solo se pide la parada si el bucle esta ACTIVO; con solo
+      // "pending" basta apagar la bandera de reanudacion (pedir stop sin bucle
+      // dejaria una peticion huerfana que frenaria el proximo pulido).
+      if (active) requestPolishStop(projectId);
+      await storage.updateProject(projectId, { autoPolishPending: false } as any);
+      res.json({
+        success: true,
+        message: active
+          ? "Parada solicitada: el pulido se detendra al terminar la iteracion en curso (conservando la mejor version)."
+          : "Reanudacion automatica desactivada: el pulido pendiente ya no se relanzara.",
+      });
+    } catch (error) {
+      console.error("Error stopping polish:", error);
+      res.status(500).json({ error: "Failed to stop polish" });
+    }
+  });
+
   // Series Thread Fixer - Analyze and auto-fix thread/milestone issues
   app.post("/api/series/:id/analyze-threads", async (req: Request, res: Response) => {
     try {

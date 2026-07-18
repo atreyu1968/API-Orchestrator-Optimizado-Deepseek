@@ -67,7 +67,7 @@ import { repairJson } from "./utils/json-repair";
 import { groundInstructionInChapter, extractFlaggedChapters } from "./utils/instruction-grounding";
 import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper } from "./utils/series-context-builder";
 import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
-import { tryMarkPolishActive, clearPolishActive } from "./utils/polish-registry";
+import { tryMarkPolishActive, clearPolishActive, isPolishStopRequested, clearPolishStopRequest } from "./utils/polish-registry";
 import { recordRawAiUsage } from "./utils/ai-usage";
 import { renumberChaptersSequential } from "./utils/renumber-chapters";
 import { calculateRealCost } from "./cost-calculator";
@@ -12058,6 +12058,21 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         if (this.aborted) return;
         iter++;
 
+        // [Fix195] Parada solicitada (stop-polish manual o cancelacion de la
+        // Cura de Serie): salimos limpio ENTRE iteraciones, conservando la
+        // version actual (las regresiones ya se revierten al final de cada
+        // iteracion) y desactivando la reanudacion automatica.
+        if (isPolishStopRequested(project.id)) {
+          clearPolishStopRequest(project.id);
+          await storage.updateProject(project.id, { autoPolishPending: false } as any).catch(() => {});
+          await storage.createActivityLog({
+            projectId: project.id, level: "info",
+            message: `[Fix195] Pulido DETENIDO por peticion del usuario en la iteracion ${iter}. Se conserva la version actual del manuscrito; el pulido puede relanzarse manualmente cuando se quiera.`,
+            agentRole: "editor",
+          });
+          return;
+        }
+
         // Chequeo de cancelación entre iteraciones — si el usuario archivó/canceló
         // el proyecto, salimos limpio sin tocar el manuscrito.
         const cancelCheck = await storage.getProject(project.id);
@@ -16865,6 +16880,10 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
         // del proceso) impide llegar aqui -> el flag queda en true -> resume.
         void storage.updateProject(project.id, { autoPolishPending: false }).catch(() => {});
         clearPolishActive(project.id);
+        // [Fix195] Limpia cualquier peticion de parada no consumida: si el
+        // bucle termino de forma natural con un stop pendiente, la bandera
+        // huerfana detendria el PROXIMO pulido en su primera iteracion.
+        clearPolishStopRequest(project.id);
       });
   }
 

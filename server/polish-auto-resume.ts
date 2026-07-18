@@ -1,7 +1,7 @@
 import { storage } from "./storage";
 import { Orchestrator } from "./orchestrator";
 import type { Project } from "@shared/schema";
-import { tryMarkPolishActive, clearPolishActive, isPolishActive } from "./utils/polish-registry";
+import { tryMarkPolishActive, clearPolishActive, isPolishActive, clearPolishStopRequest } from "./utils/polish-registry";
 
 // [Fix177] Auto-resume del pulido advisory (Holistico+Beta) tras un reinicio.
 //
@@ -67,10 +67,14 @@ async function launchPolishResume(project: Project, attempt: number): Promise<bo
       })
       .finally(() => {
         clearPolishActive(project.id);
+        // [Fix195] Limpia peticiones de parada no consumidas (evita que una
+        // bandera huerfana detenga el proximo pulido nada mas arrancar).
+        clearPolishStopRequest(project.id);
       });
     return true;
   } catch (error) {
     clearPolishActive(project.id);
+    clearPolishStopRequest(project.id);
     throw error;
   }
 }

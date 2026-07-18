@@ -1,6 +1,6 @@
 import { storage } from "../storage";
 import { forcePolishResume } from "../polish-auto-resume";
-import { isPolishActive } from "../utils/polish-registry";
+import { isPolishActive, requestPolishStop } from "../utils/polish-registry";
 
 // [Fix194] Cura de Serie: pipeline reutilizable a nivel de SERIE que cura cada
 // volumen desde la perspectiva de la saga, en orden y de forma autonoma:
@@ -18,7 +18,9 @@ import { isPolishActive } from "../utils/polish-registry";
 // mitad, relanzar la cura es seguro (cada paso es idempotente y el pulido tiene
 // su propio auto-resume via autoPolishPending).
 
-export type CureStepStatus = "pending" | "running" | "done" | "skipped" | "failed";
+// [Fix195] "validated" = el paso se examino y NO hizo falta tocar nada (todo
+// correcto), distinto de "skipped" (el paso no aplica o no se pudo evaluar).
+export type CureStepStatus = "pending" | "running" | "done" | "validated" | "skipped" | "failed";
 
 export interface CureVolumeState {
   volumeType: "project" | "imported" | "reedit";
@@ -166,8 +168,9 @@ async function runCorrections(state: SeriesCureState, vol: CureVolumeState, arcR
     }));
 
   if (unfulfilled.length === 0) {
-    vol.steps.corrections = "skipped";
-    log(state, `Vol ${vol.seriesOrder}: todos los hitos cumplidos, sin correcciones.`);
+    // [Fix195] Todos los hitos cumplidos: el paso queda VALIDADO, no omitido.
+    vol.steps.corrections = "validated";
+    log(state, `Vol ${vol.seriesOrder}: todos los hitos cumplidos -> paso VALIDADO.`);
     return;
   }
 
@@ -208,9 +211,14 @@ async function runDeepRewrite(state: SeriesCureState, vol: CureVolumeState, arcR
   }
 
   if (withChapters.length === 0) {
-    vol.steps.deepRewrite = "skipped";
     if (structural.length > 0) {
+      // Hay hallazgos pero ninguno accionable automaticamente: omitido con sugerencias.
+      vol.steps.deepRewrite = "skipped";
       log(state, `Vol ${vol.seriesOrder}: ${vol.suggestions.length} hallazgo(s) estructural(es) sin capitulo concreto -> quedan como sugerencias.`);
+    } else {
+      // [Fix195] Sin hallazgos estructurales: el paso queda VALIDADO.
+      vol.steps.deepRewrite = "validated";
+      log(state, `Vol ${vol.seriesOrder}: sin hallazgos estructurales -> paso VALIDADO.`);
     }
     return;
   }
@@ -303,10 +311,13 @@ async function runPolishAndWait(state: SeriesCureState, vol: CureVolumeState): P
       return;
     }
     if (state.cancelRequested) {
-      // No se puede abortar el bucle de pulido en si; se deja correr en
-      // segundo plano y la cura se retira sin veredicto.
-      vol.steps.polish = "running";
-      log(state, `Vol ${vol.seriesOrder}: cura cancelada; el pulido sigue en segundo plano.`);
+      // [Fix195] Cancelar la cura tambien PARA el pulido en marcha: se pide la
+      // parada (el bucle sale limpio entre iteraciones conservando la mejor
+      // version) y se apaga autoPolishPending para que no se reanude solo.
+      requestPolishStop(vol.volumeId);
+      await storage.updateProject(vol.volumeId, { autoPolishPending: false } as any).catch(() => {});
+      vol.steps.polish = "skipped";
+      log(state, `Vol ${vol.seriesOrder}: cura cancelada; parada del pulido solicitada (se detendra al cerrar la iteracion en curso).`);
       return;
     }
   }

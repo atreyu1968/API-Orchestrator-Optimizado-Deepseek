@@ -33,3 +33,22 @@ export function clearPolishActive(projectId: number): void {
 export function isPolishActive(projectId: number): boolean {
   return activePolishProjects.has(projectId);
 }
+
+// [Fix195] Peticiones de PARADA del bucle de pulido. Antes no existia forma de
+// detener un pulido en marcha (solo matar el proceso). El bucle consulta esta
+// bandera entre iteraciones (nunca a mitad de una lectura/cirugia) y cierra
+// limpio conservando la mejor version. La bandera se limpia al consumirse o al
+// terminar el bucle por cualquier via.
+const stopRequestedProjects = new Set<number>();
+
+export function requestPolishStop(projectId: number): void {
+  stopRequestedProjects.add(projectId);
+}
+
+export function isPolishStopRequested(projectId: number): boolean {
+  return stopRequestedProjects.has(projectId);
+}
+
+export function clearPolishStopRequest(projectId: number): void {
+  stopRequestedProjects.delete(projectId);
+}

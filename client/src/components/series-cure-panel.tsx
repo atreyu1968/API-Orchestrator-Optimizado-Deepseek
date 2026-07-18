@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Stethoscope, Loader2, XCircle, CheckCircle2, AlertTriangle, Circle } from "lucide-react";
+import { Stethoscope, Loader2, XCircle, CheckCircle2, AlertTriangle, Circle, ShieldCheck } from "lucide-react";
 
 // [Fix194] Panel de la Cura de Serie: lanza el pipeline autonomo por volumen
 // (arco -> correcciones -> reescritura profunda -> pulido -> veredicto) y
@@ -54,6 +54,7 @@ function StepBadge({ name, status }: { name: string; status: string }) {
   const icon =
     status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> :
     status === "done" ? <CheckCircle2 className="h-3 w-3 text-green-600" /> :
+    status === "validated" ? <ShieldCheck className="h-3 w-3 text-green-600" /> :
     status === "failed" ? <XCircle className="h-3 w-3 text-destructive" /> :
     status === "skipped" ? <Circle className="h-3 w-3 text-muted-foreground" /> :
     <Circle className="h-3 w-3 text-muted-foreground/40" />;
@@ -61,6 +62,7 @@ function StepBadge({ name, status }: { name: string; status: string }) {
     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" data-testid={`step-cure-${name}`}>
       {icon}
       {STEP_LABELS[name] || name}
+      {status === "validated" && <span className="text-green-600">(validado)</span>}
     </span>
   );
 }
