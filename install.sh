@@ -2,7 +2,7 @@
 set -eo pipefail
 
 # ============================================================
-# Autoinstalador para LitAgents v9.1 (API Orchestrator Optimizado DeepSeek)
+# Autoinstalador para LitAgents v10 (API Orchestrator Optimizado DeepSeek)
 # Compatible con Ubuntu 22.04 LTS y 24.04 LTS (tambien Debian 12+)
 # Repositorio: https://github.com/atreyu1968/API-Orchestrator-Optimizado-Deepseek
 # 
@@ -131,7 +131,7 @@ PROVIDED_FISH_AUDIO_API_KEY="${FISH_AUDIO_API_KEY:-}"
 PROVIDED_LITAGENTS_PASSWORD="${LITAGENTS_PASSWORD:-}"
 PROVIDED_CF_TUNNEL_TOKEN="${CF_TUNNEL_TOKEN:-}"
 
-print_header "INSTALADOR DE LITAGENTS v6.9 (DeepSeek V4-Flash)"
+print_header "INSTALADOR DE LITAGENTS v10 (DeepSeek V4-Flash)"
 echo "Este script instalara y configurara la aplicacion completa."
 echo ""
 

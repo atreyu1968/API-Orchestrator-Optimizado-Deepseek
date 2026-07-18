@@ -1,4 +1,6 @@
-# LitAgents v9.1 — Sistema de Orquestacion de Agentes Literarios IA
+# LitAgents v10 — Sistema de Orquestacion de Agentes Literarios IA
+
+**Version actual: v10.0.45**
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando **DeepSeek V4-Flash** como unico backend de IA.
 
@@ -6,11 +8,14 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 
 **Instalacion soportada**: Ubuntu 22.04 LTS y 24.04 LTS (tambien Debian 12+). Ver seccion [Instalacion Rapida](#instalacion-rapida).
 
-## Cambios recientes (v9.1)
+## Cambios recientes (v10)
 
-- **[Fix92] Auditor estructural del Arquitecto (forma de escena + ledger de informacion + dosificacion de revelaciones)**: nuevo modulo determinista (`server/agents/scene-shape-auditor.ts`) que examina la escaleta antes de generar el primer capitulo en tres dimensiones: (a) **forma de escena** — catalogo de 8 valores con ventana deslizante de 4 caps en el acto 2 (maximo 2 repeticiones por valor) para evitar el segundo acto monotono "va a un sitio, no obtiene nada, vuelve, repite"; (b) **ledger de informacion** — catalogo de 10 categorias, prohibido "ninguna" en 2 caps seguidos del acto 2/3 y maximo 2 repeticiones por categoria en ventana de 4 caps, contra el patron "informacion_nueva" de relleno; (c) **dosificacion de revelaciones** — array `revelaciones_dosificadas` por cap con dificultad/modo_extraccion/setup_capitulos, bloquea info-dumps y antagonistas que se vacian de golpe (matching tolerante de alias y honorificos). Si la auditoria detecta severidad alta o score < 7 el orquestador re-ejecuta al Arquitecto con instrucciones literales (max 2 iteraciones, mismo patron que el PlotIntegrityAuditor).
-- **[Fix91] Refresco automatico de las 3 puntuaciones (Final + Holistico + Beta) tras aplicar revisiones**: tras pulsar "Aplicar revisiones" en la UI, las tres notas se actualizan automaticamente para que veas de inmediato si los cambios mejoran o empeoran. Activity log con delta legible: `Holistico: 7/10 -> 8/10 (mejora) (+1.0); Beta: 9/10 -> 8/10 (empeora) (-1.0)`. Los loops automaticos (Fix47, Fix81) opt-out via `skipReaderReviewRefresh` porque ya re-evaluan H+B al inicio de la siguiente iteracion.
-- **[Fix90] Rango opcional min/max de capitulos + autoauditoria de densidad del Arquitecto**: nueva pareja `minChapterCount` / `maxChapterCount` (NULL = modo exacto clasico). En modo rango el Arquitecto debe justificar el numero elegido y reducir hacia `min` si detecta hilos debiles, evitando la espiral "los lectores piden podar caps porque el Arquitecto rellena con caps puente".
+- **Cura de Serie** ([Fix194] y siguientes): pipeline que cura cada volumen desde la perspectiva de la saga completa — verificacion de arco, correcciones, reescritura profunda, pulido, Lector de Saga (lectura de la serie del tiron con veredicto), revision de costuras entre volumenes, localizacion de hallazgos difusos y resolucion de issues del Revisor Final antes del veredicto. Resistente a reinicios (persistencia + auto-resume) y cancelable.
+- **Pulido diferido a la Cura** ([Fix204]): opcion por proyecto de serie para no pagar dos veces el bucle Holistico+Beta (columna `defer_polish_to_cure`).
+- **Canon historico-factual verificable** ([Fix197]): las guias generan datos canonicos INVIOLABLES que viajan guia → World Bible → ghostwriter → lectores.
+- **Calidad del acto 2** ([Fix200]/[Fix201]): variedad de esqueleto de capitulo en la escaleta, liston de ritmo mas alto en generacion y brazo de ritmo dedicado en el pulido.
+- **Cirugia mas robusta** ([Fix206]/[Fix212]): purga de instrucciones fantasma y anclaje tolerante de 2 niveles (tildes/comillas/espacios).
+- **Desenlace obligatorio de personajes emergentes** ([Fix199]), limpieza determinista de Markdown en la prosa ([Fix198]), 31 generos y 22 tonos centralizados ([Fix202]), progresion del pulido visible en el panel de cura ([Fix203]), boton "Detener pulido" ([Fix195]/[Fix196]).
 
 > Historial completo de fixes en `CHANGELOG.md` y entradas recientes en `replit.md`.
 
