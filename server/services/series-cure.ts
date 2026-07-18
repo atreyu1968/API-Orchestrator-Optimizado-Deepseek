@@ -85,6 +85,9 @@ export interface CureVolumeState {
   // rondas seguidas sin mejora para frenar el rediagnostico infinito.
   decisionRoundsLog?: DecisionRoundEntry[];
   decisionStagnantRounds?: number;
+  // [Fix222] La escalada de cirugia profunda tras estancamiento solo se
+  // intenta UNA vez por volumen (es cara: arco + correcciones + reescritura).
+  decisionSurgeryTried?: boolean;
   suggestions: string[];
   error?: string;
 }
@@ -1291,13 +1294,74 @@ export async function executeCureDecisions(
           // mejora, dejar de proponer decisiones nuevas (se apilaban issues
           // sin saber si el libro avanzaba). Queda anotado para el usuario.
           if ((vol.decisionStagnantRounds ?? 0) >= MAX_STAGNANT_DECISION_ROUNDS) {
+            // [Fix222] Antes de rendirse: UNA escalada de cirugia profunda
+            // (la misma artilleria del rescate: arco + correcciones +
+            // reescritura dirigida + relectura fresca). Solo se intenta una
+            // vez por volumen para no entrar en otro bucle caro.
+            let escalated = false;
+            let surgeryCancelled = false;
+            if (!vol.decisionSurgeryTried && !state.cancelRequested) {
+              log(state, `Vol ${vol.seriesOrder}: decisiones estancadas; escalada a cirugia profunda (arco + correcciones + reescritura dirigida) antes de pedir criterio humano...`);
+              await persistState(state, true);
+              const betaPre = vol.betaScore ?? null;
+              const holPre = vol.holisticScore ?? null;
+              const surgArc = await runArcVerify(state, vol);
+              if (surgArc && !state.cancelRequested) {
+                await runCorrections(state, vol, surgArc);
+                if (!state.cancelRequested) await runDeepRewrite(state, vol, surgArc);
+              }
+              if (state.cancelRequested) {
+                // Cancelacion a mitad: NO se quema el intento ni se cierra en
+                // "punto muerto"; el volumen queda reanudable tal cual.
+                surgeryCancelled = true;
+                log(state, `Vol ${vol.seriesOrder}: cirugia profunda cancelada a mitad; el intento queda disponible para reanudar.`);
+              } else {
+                // La escalada se da por consumida solo si llego a completarse.
+                vol.decisionSurgeryTried = true;
+                await runOneShotReview(state, vol);
+                computeVerdict(vol);
+                const betaPost = vol.betaScore ?? null;
+                const holPost = vol.holisticScore ?? null;
+                const surgeryImproved = ((betaPost ?? 0) + (holPost ?? 0)) > ((betaPre ?? 0) + (holPre ?? 0));
+                vol.decisionRoundsLog = [
+                  ...(vol.decisionRoundsLog || []),
+                  {
+                    ronda: (vol.decisionRoundsLog?.length ?? 0) + 1,
+                    ejecutadas: ["Cirugia profunda automatica (escalada por estancamiento)"],
+                    betaAntes: betaPre,
+                    holisticoAntes: holPre,
+                    betaDespues: betaPost,
+                    holisticoDespues: holPost,
+                    veredictoDespues: vol.verdict || "sin_veredicto",
+                    mejora: surgeryImproved,
+                    fecha: new Date().toISOString(),
+                  },
+                ];
+                log(state, `Vol ${vol.seriesOrder}: cirugia profunda terminada — Beta ${betaPre ?? "?"}→${betaPost ?? "?"}, Holistico ${holPre ?? "?"}→${holPost ?? "?"} (${surgeryImproved ? "MEJORA" : "sin mejora"}). Veredicto: ${vol.verdict}.`);
+                // computeVerdict muta vol.verdict: leerlo ensanchado para
+                // que TS no arrastre el narrowing del if exterior.
+                const verdictPost = vol.verdict as string;
+                if (verdictPost === "publicable") {
+                  vol.pendingDecisions = (vol.pendingDecisions || []).filter((d) => d.status === "ejecutada");
+                  escalated = true;
+                } else if (surgeryImproved) {
+                  // La cirugia desatasco el volumen: se reabre el ciclo de
+                  // decisiones con notas frescas.
+                  vol.decisionStagnantRounds = 0;
+                  await runDecisionDiagnosis(state, vol);
+                  escalated = true;
+                }
+              }
+            }
+            if (!escalated && !surgeryCancelled && !state.cancelRequested) {
             vol.pendingDecisions = (vol.pendingDecisions || []).filter((d) => d.status === "ejecutada");
             const NOTA_PREFIX = "Decisiones en punto muerto:";
             vol.suggestions = vol.suggestions.filter((s) => !s.startsWith(NOTA_PREFIX));
             vol.suggestions.push(
-              `${NOTA_PREFIX} ${vol.decisionStagnantRounds} ronda(s) seguidas sin subir Beta/Holistico (ultimo: Beta ${betaDespues ?? "?"}, Holistico ${holisticoDespues ?? "?"}). El diagnostico automatico se detiene aqui; hace falta criterio humano (notas editoriales manuales o cirugia dirigida). El historial de rondas queda en el panel.`,
+              `${NOTA_PREFIX} ${vol.decisionStagnantRounds} ronda(s) seguidas sin subir Beta/Holistico${vol.decisionSurgeryTried ? " y la cirugia profunda automatica tampoco lo desatasco" : ""} (ultimo: Beta ${vol.betaScore ?? "?"}, Holistico ${vol.holisticScore ?? "?"}). El diagnostico automatico se detiene aqui; hace falta criterio humano (notas editoriales manuales o cirugia dirigida). El historial de rondas queda en el panel.`,
             );
             log(state, `Vol ${vol.seriesOrder}: ${vol.decisionStagnantRounds} ronda(s) sin mejora; se detiene el diagnostico automatico de decisiones (hace falta criterio humano).`);
+            }
           } else {
             // [Fix218] Rediagnostico tambien si sigue en "necesita cirugia".
             await runDecisionDiagnosis(state, vol);
