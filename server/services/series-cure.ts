@@ -155,7 +155,20 @@ async function ensureCureTable(): Promise<void> {
 const lastPersistAt = new Map<number, number>();
 const PERSIST_THROTTLE_MS = 5_000;
 
-async function persistState(state: SeriesCureState, force = false): Promise<void> {
+// [Fix220] Cola de persistencia por serie: con el worker de decisiones y la
+// cura corriendo en paralelo, dos escrituras JSONB simultaneas podian llegar
+// fuera de orden a la BD (snapshot viejo pisando uno nuevo). Encadenarlas
+// garantiza orden de llegada; ambas serializan el MISMO objeto vivo, asi que
+// la ultima escritura siempre contiene el estado mas fresco.
+const persistChain = new Map<number, Promise<void>>();
+function persistState(state: SeriesCureState, force = false): Promise<void> {
+  const prev = persistChain.get(state.seriesId) || Promise.resolve();
+  const next = prev.then(() => doPersistState(state, force)).catch(() => {});
+  persistChain.set(state.seriesId, next);
+  return next;
+}
+
+async function doPersistState(state: SeriesCureState, force = false): Promise<void> {
   try {
     const now = Date.now();
     const last = lastPersistAt.get(state.seriesId) || 0;
@@ -785,6 +798,25 @@ async function runSeamStep(state: SeriesCureState, vol: CureVolumeState, prevVol
     vol.steps.seam = "skipped";
     return;
   }
+  // [Fix220] La costura reescribe el final del volumen ANTERIOR: si hay
+  // decisiones editoriales ejecutandose sobre el, esperar a que terminen
+  // (el worker siempre cierra decisionRun en su finally; tope defensivo).
+  const SEAM_WAIT_POLL_MS = 20_000;
+  const SEAM_WAIT_MAX_MS = 3 * 60 * 60 * 1000;
+  const seamWaitStart = Date.now();
+  let seamWaitLogged = false;
+  while (
+    prevVol.decisionRun === "running" &&
+    !state.cancelRequested &&
+    Date.now() - seamWaitStart < SEAM_WAIT_MAX_MS
+  ) {
+    if (!seamWaitLogged) {
+      seamWaitLogged = true;
+      log(state, `Vol ${vol.seriesOrder}: hay decisiones ejecutandose en el vol ${prevVol.seriesOrder}; la costura espera a que terminen.`);
+    }
+    await new Promise((r) => setTimeout(r, SEAM_WAIT_POLL_MS));
+  }
+  if (state.cancelRequested) { vol.steps.seam = "skipped"; return; }
   vol.steps.seam = "running";
   log(state, `Vol ${vol.seriesOrder}: revisando la costura con el vol ${prevVol.seriesOrder}...`);
   try {
@@ -840,6 +872,24 @@ async function runSeamStep(state: SeriesCureState, vol: CureVolumeState, prevVol
 // tiron y emitir veredicto de saga; hallazgos con volumen+capitulo concreto
 // se corrigen por la via dirigida (tope global), el resto queda en sugerencias.
 async function runSagaRead(state: SeriesCureState): Promise<void> {
+  // [Fix220] La lectura de saga puede aplicar correcciones sobre CUALQUIER
+  // volumen: si hay decisiones ejecutandose en paralelo, esperar a que
+  // terminen (el worker siempre cierra decisionRun en su finally). Tope de
+  // espera defensivo por si algo quedara colgado.
+  const SAGA_WAIT_POLL_MS = 20_000;
+  const SAGA_WAIT_MAX_MS = 3 * 60 * 60 * 1000;
+  const waitStart = Date.now();
+  while (
+    state.volumes.some((v) => v.decisionRun === "running") &&
+    !state.cancelRequested &&
+    Date.now() - waitStart < SAGA_WAIT_MAX_MS
+  ) {
+    if (Date.now() - waitStart < SAGA_WAIT_POLL_MS) {
+      log(state, "Lector de Saga: hay decisiones editoriales ejecutandose; se espera a que terminen antes de leer la saga.");
+    }
+    await new Promise((r) => setTimeout(r, SAGA_WAIT_POLL_MS));
+  }
+  if (state.cancelRequested) return;
   state.sagaStep = "running";
   log(state, `Lector de Saga: preparando lectura de la serie completa...`);
   try {
@@ -1101,8 +1151,29 @@ export async function executeCureDecisions(
   try {
     const inMemory = cureRegistry.get(seriesId);
     if (inMemory && inMemory.status === "running") {
-      releaseLock();
-      return { success: false, message: "La cura de esta serie esta en marcha; espera a que termine." };
+      // [Fix220] La cura en marcha ya NO bloquea todo: solo si esta
+      // trabajando en ESTE volumen o en la lectura final de saga (que toca
+      // cualquier volumen). Con la cura ocupada en otro volumen, las
+      // decisiones de un volumen ya cerrado se pueden ejecutar en paralelo.
+      const curIdx = inMemory.currentVolumeIndex ?? -1;
+      const targetIdx = inMemory.volumes.findIndex((v) => v.volumeType === volumeType && v.volumeId === volumeId);
+      // La cura toca el volumen ACTUAL; el ANTERIOR solo durante la costura
+      // [Fix209] (puede reescribir su final), asi que se bloquea unicamente
+      // mientras ese paso esta corriendo, no durante toda la tuberia.
+      const busyOnThisVolume = targetIdx >= 0 && (
+        targetIdx === curIdx ||
+        (targetIdx === curIdx - 1 && inMemory.volumes[curIdx]?.steps?.seam === "running")
+      );
+      const sagaBusy = (inMemory as any).sagaStep === "running";
+      if (busyOnThisVolume || sagaBusy) {
+        releaseLock();
+        return {
+          success: false,
+          message: sagaBusy
+            ? "La lectura de saga final esta en marcha; espera a que termine."
+            : "La cura esta trabajando ahora mismo en este volumen; espera a que lo cierre.",
+        };
+      }
     }
     const state = inMemory ?? (await getSeriesCureStatusWithHistory(seriesId));
     if (!state) { releaseLock(); return { success: false, message: "No hay ninguna cura registrada para esta serie." }; }
@@ -1124,7 +1195,10 @@ export async function executeCureDecisions(
     // Registrar el estado en memoria para que el panel vea el progreso en vivo.
     cureRegistry.set(seriesId, state);
     vol.decisionRun = "running";
-    state.cancelRequested = false;
+    // [Fix220] cancelRequested solo se resetea si NO hay cura corriendo:
+    // antes se pisaba siempre y podia deshacer una cancelacion pedida por el
+    // usuario mientras runCure seguia procesando otro volumen.
+    if (!(inMemory && inMemory.status === "running")) state.cancelRequested = false;
     await persistState(state, true);
 
   void (async () => {
