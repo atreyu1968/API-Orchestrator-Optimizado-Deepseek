@@ -965,10 +965,20 @@ async function runRescueLoop(state: SeriesCureState, vol: CureVolumeState): Prom
       break;
     }
   }
-  if (vol.verdict === "publicable_con_reservas" && !state.cancelRequested) {
+  // [Fix218] El diagnostico de decisiones ya no es solo para "con reservas":
+  // un volumen que quedo "necesita_cirugia" tambien recibe la lista de
+  // decisiones ejecutables (antes solo dejaba el aviso de revision manual).
+  if (
+    (vol.verdict === "publicable_con_reservas" || vol.verdict === "necesita_cirugia") &&
+    !state.cancelRequested
+  ) {
     // Dedupe: si la cura se reanuda varias veces no se apila la misma nota.
-    const PREFIX = `El volumen quedo "publicable con reservas"`;
-    vol.suggestions = vol.suggestions.filter((s) => !s.startsWith(PREFIX));
+    const PREFIX = vol.verdict === "necesita_cirugia"
+      ? `El volumen quedo "necesita cirugia"`
+      : `El volumen quedo "publicable con reservas"`;
+    vol.suggestions = vol.suggestions.filter(
+      (s) => !s.startsWith(`El volumen quedo "publicable con reservas"`) && !s.startsWith(`El volumen quedo "necesita cirugia"`),
+    );
     vol.suggestions.push(
       `${PREFIX} tras ${vol.rescueRounds ?? 0} ronda(s) de rescate (Beta ${vol.betaScore ?? "?"}/10, Holistico ${vol.holisticScore ?? "?"}/10, arco ${vol.arcPassed ? "PASSED" : "con observaciones"}). Revisa las decisiones pendientes del panel: puedes seleccionar cuales ejecutar.`,
     );
@@ -1124,7 +1134,8 @@ export async function executeCureDecisions(
         await runOneShotReview(state, vol);
         computeVerdict(vol);
         log(state, `Vol ${vol.seriesOrder}: tras las decisiones, veredicto = ${vol.verdict} (Beta ${vol.betaScore ?? "?"}, Holistico ${vol.holisticScore ?? "?"}).`);
-        if (vol.verdict === "publicable_con_reservas") {
+        if (vol.verdict === "publicable_con_reservas" || vol.verdict === "necesita_cirugia") {
+          // [Fix218] Rediagnostico tambien si sigue en "necesita cirugia".
           await runDecisionDiagnosis(state, vol);
         } else if (vol.verdict === "publicable") {
           vol.pendingDecisions = (vol.pendingDecisions || []).filter((d) => d.status === "ejecutada");
@@ -1181,6 +1192,15 @@ async function runCure(state: SeriesCureState): Promise<void> {
         if (vol.verdict === "publicable_con_reservas" && (vol.rescueRounds ?? 0) < MAX_RESCUE_ROUNDS) {
           log(state, `=== Volumen ${vol.seriesOrder}: "${vol.title}" quedo con reservas; se reintenta el rescate. ===`);
           await runRescueLoop(state, vol);
+          if (state.cancelRequested) { state.status = "cancelled"; break; }
+          continue;
+        }
+        // [Fix218] Un volumen cerrado en "necesita_cirugia" SIN decisiones
+        // pendientes (curas anteriores al fix) recibe el diagnostico al
+        // reanudar: solo el juez, sin repetir la tuberia ni el rescate.
+        if (vol.verdict === "necesita_cirugia" && !(vol.pendingDecisions || []).some((d) => d.status !== "ejecutada")) {
+          log(state, `=== Volumen ${vol.seriesOrder}: "${vol.title}" quedo en necesita_cirugia sin decisiones; se diagnostican. ===`);
+          await runDecisionDiagnosis(state, vol);
           if (state.cancelRequested) { state.status = "cancelled"; break; }
           continue;
         }

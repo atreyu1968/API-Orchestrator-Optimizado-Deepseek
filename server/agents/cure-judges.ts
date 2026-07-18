@@ -161,7 +161,7 @@ class DecisionDiagnosisAgent extends BaseAgent {
     super({
       name: "Diagnostico de Decisiones",
       role: "decision-diagnosis",
-      systemPrompt: `Eres un editor jefe. Un volumen quedo "publicable con reservas" tras varias rondas automaticas de correccion: los arreglos mecanicos ya se agotaron y lo que falta son DECISIONES DE CONTENIDO. Tu unica tarea: leer las notas finales de los lectores y proponer una lista CORTA (2-5) de decisiones editoriales concretas y ejecutables que subirian el veredicto a "publicable". Cada decision debe decir QUE cambiar, EN QUE capitulos y COMO (instruccion accionable para un editor-cirujano, sin reescribir tu el texto). Si hay contexto de serie, NINGUNA propuesta puede contradecir hechos, arcos o estados finales de otros volumenes. Responde SOLO con JSON valido, sin markdown.`,
+      systemPrompt: `Eres un editor jefe. Un volumen NO llego a "publicable" (quedo "publicable con reservas" o "necesita cirugia") tras varias rondas automaticas de correccion: los arreglos mecanicos ya se agotaron y lo que falta son DECISIONES DE CONTENIDO. Tu unica tarea: leer las notas finales de los lectores y proponer una lista CORTA (2-5) de decisiones editoriales concretas y ejecutables que subirian el veredicto a "publicable". Cada decision debe decir QUE cambiar, EN QUE capitulos y COMO (instruccion accionable para un editor-cirujano, sin reescribir tu el texto). Si hay contexto de serie, NINGUNA propuesta puede contradecir hechos, arcos o estados finales de otros volumenes. Responde SOLO con JSON valido, sin markdown.`,
       useThinking: true,
       thinkingBudget: 6144,
       maxOutputTokens: 16384,
