@@ -28,29 +28,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Play, RotateCcw, BookOpen, FileText, ScrollText, User, Library, BookMarked, Plus, Trash2, Zap, Repeat, Sparkles, CheckCircle2 } from "lucide-react";
 import type { Pseudonym, StyleGuide, Series, ExtendedGuide } from "@shared/schema";
 
-const genres = [
-  { value: "fantasy", label: "Fantasía", description: "Mundos mágicos y criaturas sobrenaturales" },
-  { value: "scifi", label: "Ciencia Ficción", description: "Futuros tecnológicos y exploración espacial" },
-  { value: "thriller", label: "Thriller", description: "Suspense y tensión narrativa" },
-  { value: "historical_thriller", label: "Thriller Histórico", description: "Suspense en contextos históricos" },
-  { value: "romance", label: "Romance", description: "Relaciones y conexiones emocionales" },
-  { value: "horror", label: "Horror", description: "Terror y elementos sobrenaturales" },
-  { value: "mystery", label: "Misterio", description: "Investigación y resolución de enigmas" },
-  { value: "literary", label: "Literaria", description: "Exploración de la condición humana" },
-  { value: "historical", label: "Histórica", description: "Narrativas en contextos del pasado" },
-  { value: "adventure", label: "Aventura", description: "Viajes y descubrimientos épicos" },
-];
-
-const tones = [
-  { value: "dramatic", label: "Dramático", description: "Emociones intensas y conflictos profundos" },
-  { value: "dark", label: "Oscuro", description: "Atmósfera sombría y temas maduros" },
-  { value: "satirical", label: "Satírico", description: "Crítica social con humor mordaz" },
-  { value: "lyrical", label: "Lírico", description: "Prosa poética y descriptiva" },
-  { value: "minimalist", label: "Minimalista", description: "Estilo conciso y directo" },
-  { value: "epic", label: "Épico", description: "Grandeza y eventos monumentales" },
-  { value: "intimate", label: "Íntimo", description: "Cercanía emocional con los personajes" },
-  { value: "suspenseful", label: "Tenso", description: "Mantiene al lector en vilo" },
-];
+// [Fix202] Listas centralizadas en client/src/lib/genre-options.ts
+import { GENRE_OPTIONS as genres, TONE_OPTIONS as tones } from "@/lib/genre-options";
 
 const workTypes = [
   { value: "standalone", label: "Obra Independiente", description: "Una novela autónoma sin continuación" },

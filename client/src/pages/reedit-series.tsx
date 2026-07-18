@@ -122,29 +122,10 @@ function toUnifiedFromImported(ms: ImportedManuscript): UnifiedBook {
   };
 }
 
-const GENRES = [
-  { value: "fantasy", label: "Fantasía" },
-  { value: "scifi", label: "Ciencia Ficción" },
-  { value: "thriller", label: "Thriller" },
-  { value: "historical_thriller", label: "Thriller Histórico" },
-  { value: "romance", label: "Romance" },
-  { value: "horror", label: "Horror" },
-  { value: "mystery", label: "Misterio" },
-  { value: "literary", label: "Literaria" },
-  { value: "historical", label: "Histórica" },
-  { value: "adventure", label: "Aventura" },
-];
-
-const TONES = [
-  { value: "dramatic", label: "Dramático" },
-  { value: "dark", label: "Oscuro" },
-  { value: "satirical", label: "Satírico" },
-  { value: "lyrical", label: "Lírico" },
-  { value: "minimalist", label: "Minimalista" },
-  { value: "epic", label: "Épico" },
-  { value: "intimate", label: "Íntimo" },
-  { value: "suspenseful", label: "Tenso" },
-];
+// [Fix202] Listas centralizadas
+import { GENRE_OPTIONS, TONE_OPTIONS } from "@/lib/genre-options";
+const GENRES = GENRE_OPTIONS;
+const TONES = TONE_OPTIONS;
 
 function bookKey(book: { id: number; type: BookType }) {
   return `${book.type}-${book.id}`;

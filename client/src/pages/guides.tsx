@@ -173,29 +173,10 @@ function AuthorStyleForm({ onGenerate, isGenerating }: { onGenerate: (data: any)
   );
 }
 
-const IDEA_GENRES = [
-  { value: "fantasy", label: "Fantasía" },
-  { value: "scifi", label: "Ciencia Ficción" },
-  { value: "thriller", label: "Thriller" },
-  { value: "historical_thriller", label: "Thriller Histórico" },
-  { value: "romance", label: "Romance" },
-  { value: "horror", label: "Horror" },
-  { value: "mystery", label: "Misterio" },
-  { value: "literary", label: "Literaria" },
-  { value: "historical", label: "Histórica" },
-  { value: "adventure", label: "Aventura" },
-];
-
-const IDEA_TONES = [
-  { value: "dramatic", label: "Dramático" },
-  { value: "dark", label: "Oscuro" },
-  { value: "satirical", label: "Satírico" },
-  { value: "lyrical", label: "Lírico" },
-  { value: "minimalist", label: "Minimalista" },
-  { value: "epic", label: "Épico" },
-  { value: "intimate", label: "Íntimo" },
-  { value: "suspenseful", label: "Tenso" },
-];
+// [Fix202] Listas centralizadas
+import { GENRE_OPTIONS, TONE_OPTIONS } from "@/lib/genre-options";
+const IDEA_GENRES = GENRE_OPTIONS;
+const IDEA_TONES = TONE_OPTIONS;
 
 function IdeaWritingForm({ onGenerate, isGenerating }: { onGenerate: (data: any) => void; isGenerating: boolean }) {
   const [idea, setIdea] = useState("");
