@@ -18,5 +18,6 @@
 - [Acciones destructivas en auto-loop: gate + tope](auto-destructive-actions-budget.md) — borrar capítulos en bucles automáticos exige unanimidad de lectores + tope GLOBAL por run (no por iteración); nunca ejecutar irreversibles en FASE 0; el flujo manual va por flag aparte.
 - [Cura de Serie](series-cure-pipeline.md) — runner via self-fetch de endpoints existentes; start atomico check+set sin await; insert-chapter = shift antes de generar + rollback garantizado.
 - [Renumeración de capítulos tras borrar/fusionar](chapter-renumber-after-delete.md) — compactar a 1..N con helper compartido; NUNCA renumerar dentro del bucle que resuelve targets por número (borra el cap equivocado).
+- [Ideas futuras de calidad de serie](series-quality-ideas.md) — el usuario pidio recordar: repeticion semantica ENTRE volumenes y deriva de voz entre tomos (ofrecer cuando pida mas mejoras de series).
 - [Canon de nombres de serie](series-canon-names.md) — hitos/hilos = canon literal en generacion; en texto ya escrito, un nombre divergente puede ser alias/retcon legitimo: auditar contexto antes de corregir.
 - [Capa correcta para guardias de craft](craft-guard-layering.md) — una regla de PROSA (ghostwriter) no recupera un beat que la ESCALETA nunca asigno; los fallos "told-not-shown" de eventos decisivos se guardan en el Arquitecto, no solo en el ghostwriter.
