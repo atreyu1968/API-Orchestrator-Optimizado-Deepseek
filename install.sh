@@ -241,7 +241,9 @@ print_header "PASO 2: Instalando dependencias del sistema"
 
 print_status "Actualizando repositorios..."
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
+if ! apt-get update -qq; then
+    print_warning "apt-get update fallo (repositorio roto o sistema de archivos en solo lectura); se continua con los indices existentes."
+fi
 
 print_status "Instalando paquetes base..."
 apt-get install -y -qq curl git build-essential python3
