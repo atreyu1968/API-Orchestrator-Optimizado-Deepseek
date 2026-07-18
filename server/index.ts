@@ -20,16 +20,19 @@ declare module "http" {
   }
 }
 
+// [Fix190] 50mb -> 500mb: los backups completos (data-import) superan los
+// 190 MB con novelas largas y el import fallaba con HTTP 413 antes de llegar
+// a la ruta ("request entity too large").
 app.use(
   express.json({
-    limit: '50mb',
+    limit: '500mb',
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
   }),
 );
 
-app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+app.use(express.urlencoded({ extended: false, limit: '500mb' }));
 
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/")) {

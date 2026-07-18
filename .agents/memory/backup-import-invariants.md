@@ -19,3 +19,8 @@ Reglas que futuras ampliaciones DEBEN respetar al tocar los endpoints de copia/r
   **Why:** el requisito del usuario es no perder ninguna guia al restaurar sobre una BD con datos.
 
 - **`sourceUrl` en data-import hace fetch remoto sin allowlist (SSRF pendiente).** Riesgo preexistente; si se endurece seguridad, empezar por aqui.
+
+- **Fila hija sin padre mapeado = OMITIR con error explicito, jamas insertar con el id antiguo.** En backups de otra instalacion los ids antiguos pueden coincidir con filas locales: un capitulo con projectId sin mapear se cuelga de una novela LOCAL equivocada (duplicacion real confirmada). Aplica a chapters y worldBibles; FKs opcionales (guias de projects) degradan a NULL.
+  **Why:** insertar con id antiguo corrompe datos ajenos en silencio; omitir + error es auditable y reversible.
+
+- **Los backups completos superan los 190 MB: el limite de body de Express debe holgar (500mb).** Un limite corto devuelve HTTP 413 antes de llegar a la ruta y parece "error del import".

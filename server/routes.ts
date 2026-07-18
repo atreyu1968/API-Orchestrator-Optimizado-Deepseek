@@ -6689,6 +6689,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       // ID mappings: oldId -> newId
       const pseudonymIdMap = new Map<number, number>();
       const seriesIdMap = new Map<number, number>();
+      // [Fix191] Los proyectos referencian guias por FK (styleGuideId,
+      // extendedGuideId) y NO se remapeaban -> en backups de otra instalacion
+      // los IDs antiguos violaban la FK y el proyecto entero fallaba, y sus
+      // capitulos (con projectId sin mapear) se colgaban de novelas locales
+      // que casualmente tenian ese ID (duplicando capitulos).
+      const styleGuideIdMap = new Map<number, number>();
+      const extendedGuideIdMap = new Map<number, number>();
 
       // [Fix181] Importacion correcta de guias. Prefetch del estado ACTUAL
       // (antes de importar) para: (a) reusar seudonimos/series existentes por
@@ -6772,7 +6779,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
               data.title = markImported(data.title);
               results.imported.styleGuidesMarcadas = (results.imported.styleGuidesMarcadas || 0) + 1;
             }
-            await storage.createStyleGuide(data);
+            const createdSG = await storage.createStyleGuide(data);
+            if (item.id != null) styleGuideIdMap.set(item.id, createdSG.id); // [Fix191]
             results.imported.styleGuides = (results.imported.styleGuides || 0) + 1;
           } catch (e: any) {
             if (!e.message?.includes('duplicate')) {
@@ -6791,7 +6799,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
               rest.title = markImported(rest.title);
               results.imported.extendedGuidesMarcadas = (results.imported.extendedGuidesMarcadas || 0) + 1;
             }
-            await storage.createExtendedGuide(rest);
+            const createdEG = await storage.createExtendedGuide(rest);
+            if (item.id != null) extendedGuideIdMap.set(item.id, createdEG.id); // [Fix191]
             results.imported.extendedGuides = (results.imported.extendedGuides || 0) + 1;
           } catch (e: any) {
             if (!e.message?.includes('duplicate')) {
@@ -6873,6 +6882,14 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
             if (data.pseudonymId && pseudonymIdMap.has(data.pseudonymId)) {
               data.pseudonymId = pseudonymIdMap.get(data.pseudonymId);
             }
+            // [Fix191] Remapear guias; si el ID antiguo no se pudo mapear
+            // (guia no incluida o fallida) se pone NULL en vez de romper la FK
+            if (data.styleGuideId != null) {
+              data.styleGuideId = styleGuideIdMap.get(data.styleGuideId) ?? null;
+            }
+            if (data.extendedGuideId != null) {
+              data.extendedGuideId = extendedGuideIdMap.get(data.extendedGuideId) ?? null;
+            }
             const created = await storage.createProject(data);
             projectIdMap.set(oldId, created.id);
             results.imported.projects = (results.imported.projects || 0) + 1;
@@ -6891,6 +6908,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
             // Map projectId to new ID
             if (data.projectId && projectIdMap.has(data.projectId)) {
               data.projectId = projectIdMap.get(data.projectId);
+            } else {
+              // [Fix191] Sin mapeo NO se inserta: el ID antiguo podria
+              // coincidir con una novela local y duplicarle capitulos
+              results.errors.push({ table: 'chapters', error: `Capitulo omitido: proyecto original ${data.projectId} no importado` });
+              continue;
             }
             await storage.createChapter(data);
             results.imported.chapters = (results.imported.chapters || 0) + 1;
@@ -6909,6 +6931,10 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
             // Map projectId to new ID
             if (data.projectId && projectIdMap.has(data.projectId)) {
               data.projectId = projectIdMap.get(data.projectId);
+            } else {
+              // [Fix191] Sin mapeo NO se inserta (ver capitulos)
+              results.errors.push({ table: 'worldBibles', error: `World bible omitida: proyecto original ${data.projectId} no importado` });
+              continue;
             }
             await storage.createWorldBible(data);
             results.imported.worldBibles = (results.imported.worldBibles || 0) + 1;
