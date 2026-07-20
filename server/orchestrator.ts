@@ -282,12 +282,13 @@ export class Orchestrator {
   // escrito). Se vacía al inicio de generateNovel. Best-effort: si falla queda
   // vacío y la generación continúa.
   private midNovelHolisticCritique: string = "";
-  // Tres pasadas tempranas (~30%/55%/80%), one-shot cada una. Flags de idempotencia
-  // reseteados en generateNovel para que un fallo/notas vacías no las repita en cada
-  // capítulo posterior.
-  private midNovelHolisticAttempted: boolean = false;
-  private midNovelHolisticSecondAttempted: boolean = false;
-  private midNovelHolisticThirdAttempted: boolean = false;
+  // Pasadas tempranas one-shot, contador reseteado en generateNovel para que
+  // un fallo/notas vacías no las repita en cada capítulo posterior.
+  // [Fix226] Generalizado de 3 flags a contador de pasadas completadas para
+  // soportar N hitos (ahora 20/40/60/80%). Las pasadas tempranas son baratas
+  // (leen solo lo escrito) y cada hallazgo reparado gana una pasada posterior
+  // que verifica su resolucion.
+  private midNovelHolisticPassesDone: number = 0;
 
   // [Fix225] Memoria de hallazgos abiertos de las lecturas mid-novela y
   // presupuesto GLOBAL de reparaciones en caliente por run. Los hallazgos se
@@ -1365,9 +1366,7 @@ NO los reescribas ni copies su prosa al capítulo actual.${headerWarning}
     this.midNovelBetaSecondAttempted = false;
     // [Fix143-A] Resetear la crítica y los flags del Holístico de mid-novela.
     this.midNovelHolisticCritique = "";
-    this.midNovelHolisticAttempted = false;
-    this.midNovelHolisticSecondAttempted = false;
-    this.midNovelHolisticThirdAttempted = false;
+    this.midNovelHolisticPassesDone = 0;
     // [Fix225] Resetear la memoria de hallazgos y el presupuesto de reparacion.
     this.midNovelOpenFindings = [];
     this.midNovelRepairsUsed = 0;
@@ -4983,35 +4982,30 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           }
         }
 
-        // [Fix143-A] Lector HOLÍSTICO a mid-novela en TRES pasadas tempranas
-        // (~30%/55%/80%). Espejo del Beta pero con el lector macro/estructural:
+        // [Fix143-A] Lector HOLÍSTICO a mid-novela en pasadas tempranas.
+        // Espejo del Beta pero con el lector macro/estructural:
         // detecta de forma PREVENTIVA fallos estructurales/arcos/ritmo mientras
         // aún se escribe y solo GUÍA los capítulos restantes (no reescribe lo ya
         // escrito). Best-effort + one-shot por pasada (flag puesto ANTES de la
         // llamada). Reutiliza las guardas/contadores del bloque Beta de arriba.
-        const firstHolisticMark = Math.floor(totalChaptersForBeta * 0.30);
-        const secondHolisticMark = Math.floor(totalChaptersForBeta * 0.55);
-        const thirdHolisticMark = Math.floor(totalChaptersForBeta * 0.80);
-        if (betaEligible && !this.midNovelHolisticAttempted && completedSoFar >= firstHolisticMark) {
-          this.midNovelHolisticAttempted = true;
-          await this.runMidNovelHolisticPass(project, completedSoFar, totalChaptersForBeta, remainingAfter, 1);
-          if (this.aborted) {
-            console.log(`[Orchestrator] [Fix143-A] Aborted tras Holístico mid-novela (pasada 1). Saliendo silenciosamente.`);
-            return;
-          }
-        } else if (betaEligible && this.midNovelHolisticAttempted && !this.midNovelHolisticSecondAttempted && completedSoFar >= secondHolisticMark) {
-          this.midNovelHolisticSecondAttempted = true;
-          await this.runMidNovelHolisticPass(project, completedSoFar, totalChaptersForBeta, remainingAfter, 2);
-          if (this.aborted) {
-            console.log(`[Orchestrator] [Fix143-A] Aborted tras Holístico mid-novela (pasada 2). Saliendo silenciosamente.`);
-            return;
-          }
-        } else if (betaEligible && this.midNovelHolisticSecondAttempted && !this.midNovelHolisticThirdAttempted && completedSoFar >= thirdHolisticMark) {
-          this.midNovelHolisticThirdAttempted = true;
-          await this.runMidNovelHolisticPass(project, completedSoFar, totalChaptersForBeta, remainingAfter, 3);
-          if (this.aborted) {
-            console.log(`[Orchestrator] [Fix143-A] Aborted tras Holístico mid-novela (pasada 3). Saliendo silenciosamente.`);
-            return;
+        // [Fix226] Hitos ampliados de 3 (30/55/80%) a 4 equiespaciados
+        // (20/40/60/80%): coste marginal bajo (las pasadas leen solo lo ya
+        // escrito) a cambio de deteccion mas temprana y de que cada reparacion
+        // [Fix225] tenga una pasada posterior que verifique su resolucion.
+        // Una sola pasada por capitulo terminado (no se recuperan hitos
+        // saltados en el mismo tick), one-shot por hito via contador.
+        const HOLISTIC_MARKS = [0.20, 0.40, 0.60, 0.80];
+        if (betaEligible && this.midNovelHolisticPassesDone < HOLISTIC_MARKS.length) {
+          const nextIdx = this.midNovelHolisticPassesDone;
+          const nextMark = Math.floor(totalChaptersForBeta * HOLISTIC_MARKS[nextIdx]);
+          if (completedSoFar >= nextMark) {
+            // Marcar ANTES de la llamada (one-shot aunque la pasada falle).
+            this.midNovelHolisticPassesDone = nextIdx + 1;
+            await this.runMidNovelHolisticPass(project, completedSoFar, totalChaptersForBeta, remainingAfter, nextIdx + 1);
+            if (this.aborted) {
+              console.log(`[Orchestrator] [Fix143-A] Aborted tras Holístico mid-novela (pasada ${nextIdx + 1}). Saliendo silenciosamente.`);
+              return;
+            }
           }
         }
 
@@ -10037,7 +10031,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     completedSoFar: number,
     total: number,
     remainingAfter: number,
-    passNumber: 1 | 2 | 3,
+    passNumber: number,
   ): Promise<void> {
     try {
       this.callbacks.onAgentStatus("editor", "reviewing",
@@ -10136,7 +10130,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
   // documentado para la revision final, sin bucles).
   private async runMidNovelRepairArm(project: Project, passNumber: number): Promise<void> {
     const MAX_REPAIRS_PER_PASS = 2;
-    const MAX_REPAIRS_PER_RUN = 6;
+    // [Fix226] 6 -> 8: con 4 pasadas holisticas el presupuesto global de 6 se
+    // quedaba corto (2 caps/pasada x 4 pasadas). El tope por pasada no cambia.
+    const MAX_REPAIRS_PER_RUN = 8;
     const MAX_ATTEMPTS_PER_FINDING = 2;
 
     const holistic = this.midNovelHolisticCritique?.trim();
