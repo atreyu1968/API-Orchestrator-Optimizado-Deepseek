@@ -1,6 +1,6 @@
 # LitAgents v10 — Sistema de Orquestacion de Agentes Literarios IA
 
-**Version actual: v10.0.45**
+**Version actual: v10.0.60**
 
 Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, traduccion y produccion de novelas completas usando **DeepSeek V4-Flash** como unico backend de IA.
 
@@ -10,7 +10,13 @@ Sistema autonomo de orquestacion de agentes de IA para la escritura, edicion, tr
 
 ## Cambios recientes (v10)
 
+- **Reparacion en caliente mid-novela** ([Fix225]/[Fix226]/[Fix227]): las lecturas Holisticas durante la escritura (ahora 4 pasadas: 20/40/60/80%) ya no solo guian los capitulos futuros — un planificador con memoria traduce la critica en reparaciones dirigidas sobre capitulos YA escritos (frenos: solo critica/alta, topes por pasada y por novela) y verifica en la pasada siguiente que quedaron resueltas. Si el defecto es un evento decisivo relatado fuera de escena, la reparacion añade una escena nueva dramatizada (subcapitulo) sin corse de extension.
+- **Controlador de Propulsion Narrativa** ([Fix223]): cada capitulo declara en la escaleta un cambio irreversible, coste pagado y decision final; restricciones duras en el acto 2 (auditor determinista + gate) contra la "repeticion con decoracion".
+- **Puente fisico-temporal entre volumenes** ([Fix224]): cada transicion de volumen declara tiempo transcurrido, continuidad fisica y tipo de puente, y el capitulo 1 del volumen siguiente lo establece en pagina.
+- **Cura de Serie hasta "publicable"** ([Fix216]-[Fix222]): rondas de rescate mientras el veredicto sea "con reservas", escalada automatica a cirugia profunda antes de rendirse, decisiones editoriales seleccionables por el usuario cuando hace falta criterio humano (ejecutables sin esperar al resto de la cura) y freno por estancamiento con evolucion visible por ronda.
 - **Cura de Serie** ([Fix194] y siguientes): pipeline que cura cada volumen desde la perspectiva de la saga completa — verificacion de arco, correcciones, reescritura profunda, pulido, Lector de Saga (lectura de la serie del tiron con veredicto), revision de costuras entre volumenes, localizacion de hallazgos difusos y resolucion de issues del Revisor Final antes del veredicto. Resistente a reinicios (persistencia + auto-resume) y cancelable.
+- **Ejecutor de "Dividir capitulo"** ([Fix215]): la accion admin split_chapter tiene boton Ejecutar con anclaje tolerante y transaccion con rollback completo.
+- **Auth interna para instalaciones con contraseña** ([Fix214]): token interno por proceso para que la Cura de Serie funcione con `LITAGENTS_PASSWORD` activo (Ubuntu).
 - **Pulido diferido a la Cura** ([Fix204]): opcion por proyecto de serie para no pagar dos veces el bucle Holistico+Beta (columna `defer_polish_to_cure`).
 - **Canon historico-factual verificable** ([Fix197]): las guias generan datos canonicos INVIOLABLES que viajan guia → World Bible → ghostwriter → lectores.
 - **Calidad del acto 2** ([Fix200]/[Fix201]): variedad de esqueleto de capitulo en la escaleta, liston de ritmo mas alto en generacion y brazo de ritmo dedicado en el pulido.
