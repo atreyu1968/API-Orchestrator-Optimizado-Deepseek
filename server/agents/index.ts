@@ -36,3 +36,4 @@ export { PlotIntegrityAuditorAgent, computePlotIntegrityMetrics, type PlotIntegr
 export { WorldBibleAuditorAgent, type WorldBibleAuditResult, type WorldBibleAuditProblem, type WorldBibleAuditArea, type WorldBibleAuditInput } from "./world-bible-auditor";
 // [Fix92] Auditor estructural determinista (forma/ledger/dosificación).
 export { runArchitectStructuralAudits, autopatchDecorativeSetupCapitulos, FORMA_ESCENA_VALORES, CATEGORIA_INFO_VALORES, MODO_EXTRACCION_VALORES, type StructuralAuditResult, type StructuralAuditProblem, type StructuralAuditCoverage, type SeriesAuditContext, type FormaEscena, type CategoriaInfoNueva, type ModoExtraccion } from "./scene-shape-auditor";
+export { MidNovelRepairPlannerAgent, type MidNovelRepairPlannerResult, type MidNovelOpenFinding } from "./mid-novel-repair-planner";

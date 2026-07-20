@@ -26,6 +26,8 @@ import {
   type FinalAxisReaderResult,
   type FinalAxisProblem,
   Act2PacingEditorAgent,
+  MidNovelRepairPlannerAgent,
+  type MidNovelOpenFinding,
   TenseConsistencyJudgeAgent,
   type TenseConsistencyResult,
   type TenseChapterVerdict,
@@ -229,6 +231,10 @@ export class Orchestrator {
   private finalAxisReader = new FinalAxisReaderAgent();
   // [Fix156][Puerta Acto 2] Editor de Ritmo del Acto 2 (juez de la PROSA del tramo central, mid-novela).
   private act2PacingEditor = new Act2PacingEditorAgent();
+  // [Fix225] Planificador de reparacion mid-novela: traduce las criticas
+  // Holistico/Beta de mitad de novela en reescrituras dirigidas de capitulos
+  // YA escritos, con memoria de hallazgos abiertos entre pasadas.
+  private midNovelRepairPlanner = new MidNovelRepairPlannerAgent();
   // [Fix166][Puerta Tiempo Verbal Temprano] Juez del tiempo verbal real de los primeros capitulos.
   private tenseConsistencyJudge = new TenseConsistencyJudgeAgent();
   // [Fix150][Puerta 0] Director Creativo: forja el concepto rector pre-generación.
@@ -282,6 +288,14 @@ export class Orchestrator {
   private midNovelHolisticAttempted: boolean = false;
   private midNovelHolisticSecondAttempted: boolean = false;
   private midNovelHolisticThirdAttempted: boolean = false;
+
+  // [Fix225] Memoria de hallazgos abiertos de las lecturas mid-novela y
+  // presupuesto GLOBAL de reparaciones en caliente por run. Los hallazgos se
+  // resuelven/persisten entre pasadas (el planificador los verifica contra la
+  // critica fresca); el tope global evita que la reparacion en caliente se
+  // coma el presupuesto de la novela.
+  private midNovelOpenFindings: MidNovelOpenFinding[] = [];
+  private midNovelRepairsUsed: number = 0;
 
   // [Fix156][Puerta Acto 2] Puerta semantica del ritmo del acto 2 a mid-novela:
   // corre UNA vez cuando el acto 2 ya esta escrito (~75%) y aun quedan capitulos
@@ -1354,6 +1368,9 @@ NO los reescribas ni copies su prosa al capítulo actual.${headerWarning}
     this.midNovelHolisticAttempted = false;
     this.midNovelHolisticSecondAttempted = false;
     this.midNovelHolisticThirdAttempted = false;
+    // [Fix225] Resetear la memoria de hallazgos y el presupuesto de reparacion.
+    this.midNovelOpenFindings = [];
+    this.midNovelRepairsUsed = 0;
     // [Fix156][Puerta Acto 2] Resetear el flag one-shot de la puerta del acto 2.
     this.act2GateAttempted = false;
     // [Fix166][Puerta Tiempo Verbal Temprano] Resetear el flag one-shot y el
@@ -10034,11 +10051,20 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           projectId: project.id,
           level: "info",
           agentRole: "editor",
-          message: `[Fix143-A] Crítica del Holístico a mid-novela (pasada ${passNumber}) capturada (${this.midNovelHolisticCritique.length.toLocaleString("es-ES")} chars, leídos ${completedSoFar}/${total} caps). Se inyectará en los ${remainingAfter} capítulos restantes (guía-only, no reescribe lo ya escrito).`,
+          message: `[Fix143-A] Crítica del Holístico a mid-novela (pasada ${passNumber}) capturada (${this.midNovelHolisticCritique.length.toLocaleString("es-ES")} chars, leídos ${completedSoFar}/${total} caps). Se inyectará en los ${remainingAfter} capítulos restantes y alimentará la reparación en caliente [Fix225].`,
         });
         this.callbacks.onAgentStatus("editor", "complete",
           `[Fix143-A] Holístico mid-novela (pasada ${passNumber}) completado. Guía activa para los ${remainingAfter} capítulos restantes.`
         );
+        // [Fix225] Reparacion en caliente: traducir la critica fresca en
+        // reescrituras dirigidas de capitulos YA escritos antes de seguir
+        // escribiendo, con memoria de hallazgos abiertos entre pasadas.
+        // Best-effort: un fallo aqui no bloquea la generacion.
+        try {
+          await this.runMidNovelRepairArm(project, passNumber);
+        } catch (repErr) {
+          console.warn(`[Orchestrator] [Fix225] Brazo de reparacion mid-novela (pasada ${passNumber}) fallo (best-effort): ${(repErr as Error).message}`);
+        }
       } else {
         console.warn(`[Orchestrator] [Fix143-A] Holístico mid-novela (pasada ${passNumber}) devolvió notas vacías o muy cortas. No se actualizará la guía.`);
       }
@@ -10096,6 +10122,170 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     );
 
     return result.notesText;
+  }
+
+  // [Fix225] Brazo de REPARACION EN CALIENTE de mid-novela. Antes, los
+  // hallazgos del Holistico/Beta de mitad de novela solo guiaban los capitulos
+  // FUTUROS: los defectos en capitulos ya escritos llegaban intactos a la
+  // revision final. Este brazo, tras cada pasada del Holistico, invoca al
+  // planificador (que ademas lleva memoria de hallazgos abiertos entre pasadas
+  // y verifica cuales quedaron resueltos) y ejecuta reescrituras dirigidas via
+  // rewriteChapterForQA. Frenos: solo hallazgos critica/alta, max
+  // MAX_REPAIRS_PER_PASS caps por pasada, MAX_REPAIRS_PER_RUN caps por novela,
+  // max 2 intentos por hallazgo (un reincidente doblemente reparado se deja
+  // documentado para la revision final, sin bucles).
+  private async runMidNovelRepairArm(project: Project, passNumber: number): Promise<void> {
+    const MAX_REPAIRS_PER_PASS = 2;
+    const MAX_REPAIRS_PER_RUN = 6;
+    const MAX_ATTEMPTS_PER_FINDING = 2;
+
+    const holistic = this.midNovelHolisticCritique?.trim();
+    if (!holistic) return;
+
+    const allChapters = await storage.getChaptersByProject(project.id);
+    const completed = allChapters
+      .filter(c => c.status === "completed" && c.content && c.content.trim().length > 100)
+      .sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0));
+    if (completed.length === 0) return;
+
+    const seriesContext = await this.buildSeriesContextForReviewers(project);
+
+    this.callbacks.onAgentStatus("editor", "reviewing",
+      `[Fix225] Planificador de reparacion mid-novela (pasada ${passNumber}): traduciendo la critica en reparaciones sobre capitulos ya escritos...`
+    );
+
+    const { result: plan, raw } = await this.midNovelRepairPlanner.plan({
+      title: project.title,
+      genre: project.genre || "",
+      tone: project.tone || undefined,
+      holisticCritique: holistic,
+      betaCritique: this.midNovelBetaCritique?.trim() || undefined,
+      chapters: completed.map(c => {
+        const prosa = (c.content || "").trim();
+        const extracto = prosa.length > 1800
+          ? `${prosa.substring(0, 1200)}\n[...]\n${prosa.substring(prosa.length - 600)}`
+          : prosa;
+        return { numero: c.chapterNumber || 0, titulo: c.title || "", extracto };
+      }),
+      previousFindings: this.midNovelOpenFindings,
+      seriesContext,
+      projectId: project.id,
+    });
+
+    if (raw?.tokenUsage) {
+      await this.trackTokenUsage(
+        project.id, raw.tokenUsage,
+        "Planificador de Reparacion (mid-novela)", "deepseek-v4-flash", undefined, "holistic_review"
+      );
+    }
+
+    if (!plan) {
+      console.warn(`[Orchestrator] [Fix225] Planificador de reparacion (pasada ${passNumber}) no devolvio plan valido. No se repara nada.`);
+      return;
+    }
+
+    // Memoria: retirar resueltos y fusionar hallazgos frescos conservando intentos.
+    const prevById = new Map(this.midNovelOpenFindings.map(f => [f.id, f]));
+    const resueltos = this.midNovelOpenFindings.filter(f => plan.resueltos.includes(f.id));
+    this.midNovelOpenFindings = plan.hallazgos.map(h => ({
+      ...h,
+      intentos: prevById.get(h.id)?.intentos ?? 0,
+    }));
+
+    if (resueltos.length > 0) {
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "editor",
+        message: `[Fix225] Hallazgos de pasadas anteriores VERIFICADOS como resueltos en la lectura fresca (pasada ${passNumber}): ${resueltos.map(f => `${f.id} (${f.titulo})`).join("; ")}.`,
+      });
+    }
+
+    if (this.midNovelOpenFindings.length === 0) {
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "editor",
+        message: `[Fix225] Reparacion mid-novela (pasada ${passNumber}): la critica no contiene defectos reparables en capitulos ya escritos. Nada que reparar.`,
+      });
+      return;
+    }
+
+    // Seleccion: solo critica/alta con presupuesto de intentos, priorizando
+    // severidad y reincidencia; tope por pasada y global (en CAPITULOS reescritos).
+    const rank = (s: string) => s === "critica" ? 0 : s === "alta" ? 1 : 2;
+    const candidates = this.midNovelOpenFindings
+      .filter(f => (f.severidad === "critica" || f.severidad === "alta") && f.intentos < MAX_ATTEMPTS_PER_FINDING)
+      .sort((a, b) => rank(a.severidad) - rank(b.severidad) || b.intentos - a.intentos);
+
+    const budgetLeft = MAX_REPAIRS_PER_RUN - this.midNovelRepairsUsed;
+    if (candidates.length === 0 || budgetLeft <= 0) {
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "editor",
+        message: `[Fix225] Reparacion mid-novela (pasada ${passNumber}): ${this.midNovelOpenFindings.length} hallazgo(s) abiertos pero ${budgetLeft <= 0 ? "presupuesto global de reparaciones agotado" : "ninguno elegible (severidad media o intentos agotados)"}. Quedan documentados para la revision final.`,
+      });
+      return;
+    }
+
+    // Preparar maquinaria de reescritura (patron Fix201).
+    const worldBible = await storage.getWorldBibleByProject(project.id);
+    if (!worldBible) return;
+    const worldBibleData = this.reconstructWorldBibleData(worldBible, project);
+    const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
+    let styleGuideContent = "";
+    if (project.styleGuideId) {
+      const sg = await storage.getStyleGuide(project.styleGuideId);
+      if (sg) styleGuideContent = sg.content;
+    }
+    const guiaEstilo = styleGuideContent
+      ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+      : `Género: ${project.genre}, Tono: ${project.tone}`;
+
+    let rewrittenThisPass = 0;
+    // [Fix225] Guard de autonomia (patron Fix111): la generacion es desatendida,
+    // asi que rewriteChapterForQA NO debe persistir tarjetas pendingAdminActions
+    // (acciones estructurales quedan degradadas a log, nunca colgadas esperando
+    // confirmacion humana en mitad de la escritura). try/finally restaura el
+    // valor previo aunque una reescritura lance.
+    const prevFromAutoLoop = this._fromAutoLoop;
+    this._fromAutoLoop = true;
+    try {
+      for (const finding of candidates) {
+        if (this.aborted) break;
+        if (rewrittenThisPass >= MAX_REPAIRS_PER_PASS || this.midNovelRepairsUsed >= MAX_REPAIRS_PER_RUN) break;
+        let executedAny = false;
+        for (const num of finding.capitulos) {
+          if (rewrittenThisPass >= MAX_REPAIRS_PER_PASS || this.midNovelRepairsUsed >= MAX_REPAIRS_PER_RUN) break;
+          // Fail-safe duro: solo capitulos ya COMPLETADOS con contenido real.
+          const chapter = allChapters.find(c => c.chapterNumber === num && c.status === "completed");
+          const sectionData = allSections.find(s => s.numero === num);
+          if (!chapter || !sectionData || !chapter.content || chapter.content.trim().length < 200) continue;
+          const directiva = [
+            `REPARACION MID-NOVELA (hallazgo ${finding.id}: ${finding.titulo}, severidad ${finding.severidad}${finding.intentos > 0 ? ", REINCIDENTE — se intento reparar antes y persiste, se mas quirurgico" : ""}).`,
+            `QUE REPARAR EN ESTE CAPITULO: ${finding.instruccion}`,
+            `LIMITES: conserva hechos, canon, continuidad, World Bible e hitos de serie; repara el defecto señalado sin alterar la trama establecida. PROHIBIDO fusionar, dividir o eliminar capitulos: repara DENTRO de este capitulo.`,
+          ].join("\n\n");
+          try {
+            await this.rewriteChapterForQA(
+              project, chapter, sectionData, worldBibleData, guiaEstilo, "editorial", directiva,
+            );
+            rewrittenThisPass++;
+            this.midNovelRepairsUsed++;
+            executedAny = true;
+          } catch (e) {
+            console.warn(`[Fix225] Reparacion del cap ${num} (hallazgo ${finding.id}) fallo (no bloqueante): ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+        if (executedAny) finding.intentos++;
+      }
+    } finally {
+      this._fromAutoLoop = prevFromAutoLoop;
+    }
+
+    await storage.createActivityLog({
+      projectId: project.id, level: "info", agentRole: "editor",
+      message: `[Fix225] Reparacion en caliente (pasada ${passNumber}): ${rewrittenThisPass} capitulo(s) reescritos (${this.midNovelRepairsUsed}/${MAX_REPAIRS_PER_RUN} del presupuesto global). Hallazgos abiertos: ${this.midNovelOpenFindings.map(f => `${f.id} (${f.severidad}, intentos ${f.intentos})`).join("; ") || "ninguno"}. ${plan.resumen}`,
+      metadata: { fix: "Fix225", pass: passNumber, rewritten: rewrittenThisPass, open: this.midNovelOpenFindings.map(f => f.id) },
+    });
+    this.callbacks.onAgentStatus("editor", "complete",
+      `[Fix225] Reparacion mid-novela (pasada ${passNumber}): ${rewrittenThisPass} capitulo(s) reparados en caliente.`
+    );
   }
 
   async runBetaReview(project: Project, options?: { appliedNotesHistory?: string; regressionWarning?: string }): Promise<BetaReaderResult> {
