@@ -1,0 +1,803 @@
+10:56:57
+i
+[INFO]
+Recalculando puntuación global tras aplicar las notas editoriales...
+10:57:23
+i
+[INFO]
+Reanudando pulido interrumpido (intento 1/8) tras reinicio del servidor.
+10:57:23
+i
+[INFO]
+[Fix81] Auto-revisión Holístico+Beta iniciada (target DUAL: Beta ≥ 9/10 AND Holístico ≥ 7/10, máx 8 iteraciones). [Fix89/Fix158] Metas aceptables si el Holistico alcanza su meta ABSOLUTA (>=7) O sube >=+2 desde inicio, con Beta>=9 ([Fix184]: el Beta ya NO se relaja, exige su target completo); + brazo de reescritura de PROSA ultima-milla para empujar el Beta cuando el cirujano cap-a-cap toca techo.
+10:57:23
+i
+[INFO]
+Iniciando revisión holística de la novela completa (37 capítulos) [Fix76: con 4 acción(es) admin a verificar].
+10:57:23
+i
+[INFO]
+Iniciando lectura beta de la novela completa (37 capítulos) [Fix38: con memoria de lectura previa].
+10:58:29
+i
+[INFO]
+Lectura beta completada: 37 capítulos / 82.253 palabras leídas. Impresiones de 26.406 caracteres generadas (con memoria de lectura previa).
+11:00:02
+i
+[INFO]
+Revisión holística completada: 37 capítulos / 82.253 palabras leídas. Informe de 20.080 caracteres generado (puntuación holística 6/10).
+11:00:02
+C17
+[EDITANDO]
+[Fix207] Accion admin id=4 (merge_chapters sobre Capítulo 17 (absorbe cap 18)) ARCHIVADA COMO SUGERENCIA tras 3 rondas sin acuerdo de los lectores (Holístico=discard, Beta=keep_pending). No se ejecuta automaticamente; puede aplicarse a mano desde el flujo editorial. Detalle:
+11:00:02
+C27
+i
+[INFO]
+Fix76: acción admin id=5 (delete_chapter sobre Capítulo 27) se mantiene pendiente — Holístico=apply, Beta=discard (ronda 1/3 [Fix207]).
+11:00:02
+C33
+i
+[INFO]
+Fix76: acción admin id=6 (delete_chapter sobre Capítulo 33) se mantiene pendiente — Holístico=apply, Beta=discard (ronda 1/3 [Fix207]).
+11:00:02
+C34
+i
+[INFO]
+Fix76: acción admin id=7 (delete_chapter sobre Capítulo 34) se mantiene pendiente — Holístico=apply, Beta=discard (ronda 1/3 [Fix207]).
+11:00:02
+i
+[INFO]
+Fix76: verificación desatendida completada — 0 aplicada(s), 1 descartada(s), 3 pendiente(s).
+11:00:02
+i
+[INFO]
+[Fix81] Iter 1: nuevo mejor snapshot guardado (Holístico=6, Beta=8, 37 capítulos).
+11:01:36
+i
+[INFO]
+[Fix201] Brazo de ritmo del pulido activado: el Beta se queja del tramo central (8/10 segun Act2PacingEditor). Reescritura dirigida de 3 capitulo(s): 16, 25, 12. El bestSnapshot del bucle revierte si el combinado empeora.
+11:01:36
+C16
+[EDITANDO]
+el Capítulo 16: instruccion purgada ANTES del cirujano — sus 2 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "como se miente en un mapa sin que se note…"
+11:01:36
+C25
+[EDITANDO]
+el Capítulo 25: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "como se miente en un mapa sin que se note…"
+11:01:36
+C12
+[EDITANDO]
+el Capítulo 12: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "como se miente en un mapa sin que se note…"
+11:01:36
+i
+[INFO]
+Iniciando revisión holística de la novela completa (37 capítulos) [Fix76: con 3 acción(es) admin a verificar].
+11:01:36
+i
+[INFO]
+Iniciando lectura beta de la novela completa (37 capítulos) [Fix38: con memoria de lectura previa].
+11:02:38
+i
+[INFO]
+Lectura beta completada: 37 capítulos / 82.253 palabras leídas. Impresiones de 25.464 caracteres generadas (con memoria de lectura previa).
+11:03:58
+i
+[INFO]
+Revisión holística completada: 37 capítulos / 82.253 palabras leídas. Informe de 19.122 caracteres generado (puntuación holística 6/10).
+11:03:58
+C27
+i
+[INFO]
+Fix76: acción admin id=5 (delete_chapter sobre Capítulo 27) se mantiene pendiente — Holístico=discard, Beta=keep_pending (ronda 2/3 [Fix207]).
+11:03:58
+C33
+i
+[INFO]
+Fix76: acción admin id=6 (delete_chapter sobre Capítulo 33) se mantiene pendiente — Holístico=discard, Beta=apply (ronda 2/3 [Fix207]).
+11:03:58
+C34
+i
+[INFO]
+Fix76: acción admin id=7 (delete_chapter sobre Capítulo 34) se mantiene pendiente — Holístico=discard, Beta=keep_pending (ronda 2/3 [Fix207]).
+11:03:58
+i
+[INFO]
+Analizando notas editoriales para vista previa (45115 caracteres).
+11:03:58
+i
+[INFO]
+Detectado informe estructurado del sistema con 13 instrucción(es) auto-aplicable(s). Saltando parser LLM y pasando directamente al refiner para anclaje contra canon.
+11:03:58
+i
+[INFO]
+[Fix171] 1 fusión(es) de capítulos sugerida(s) por los lectores se han derivado a verificación por UNANIMIDAD (Holístico+Beta). Si AMBOS lectores las aprueban en la siguiente lectura, el sistema las ejecutará de forma desatendida (integración del contenido + borrado del capítulo fuente, dentro del tope de borrados por novela). No requieren intervención del usuario.
+11:03:58
+i
+[INFO]
+[Fix171] El loop automático DESCARTÓ 1 operación(es) administrativa(s) que el flujo desatendido no puede ejecutar con seguridad (no quedan pendientes ni piden confirmación): • [FUSIÓN SIN DATOS ESTRUCTURADOS] Fusión declarada pero sin merge_into/merge_sources válidos (El epilogo (rescate en Camas) y el cap 35 (cierre en el taller) estan bien, pero la transicion entre ambos es abrupta y el final podria tener mas desarrollo.) → Detalle: Fusionar la escena del rescate (cap -1) con el cap 35 para que el cierre emocional sea mas fluido. Despues de la escena a caballo, anadir una breve escena final en el taller donde Hernan y Melibea hablen del futuro, miren el mapa, y ella pr… El loop continúa con el resto de instrucciones cap-a-cap. Si tras el loop quieres realizar alguna de estas operaciones, hazlo desde el chat editorial o el flujo manual de notas.
+11:05:03
+i
+[INFO]
+Vista previa generada: 13 instrucciones ancladas en el texto y la canon (de 13 borradores).
+11:05:03
+i
+[INFO]
+[Fix81] Iter 2/8: Holístico=6, Beta=8. Aplicando 13 instrucción(es) automáticamente y volviendo a leer...
+11:05:03
+i
+[INFO]
+Aplicando 13 instrucciones editoriales pre-revisadas por el usuario.
+11:05:03
+i
+[INFO]
+Detectadas 4 instrucciones multi-capítulo (arcos). Se coordinarán las reescrituras de los capítulos hermanos: - [TRAMA] caps -1, 31, 32, 34, 33: ✓ con plan distributivo - [RITMO] caps 20, 9, 10, 15, 16: ✓ con plan distributivo - [PERSONAJE] caps 14, 22: ✓ con plan distributivo - [PERSONAJE] caps 34, -1: ✓ con plan distributivo
+11:05:03
+[COMPLETADO]
+Notas editoriales convertidas en 13 instrucciones quirúrgicas para los capítulos: 9, 10, 14, 15, 16, 17, 18, 20, 22, 31, 32, 33, 34, -1.
+11:05:09
+C9
+i
+[INFO]
+el Capítulo 9: cirugía no aplicable (El cirujano clasificó la instrucción como estructural.). Cayendo a reescritura completa con Narrador.
+11:06:29
+C9
+[EDITANDO]
+el Capítulo 9: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:07:02
+C10
+[COMPLETADO]
+el Capítulo 10: cirugía aplicada — 1/1 operaciones puntuales (12068→12327 caracteres, 2.1% de cambio).
+11:07:02
+C10
+[COMPLETADO]
+el Capítulo 10: notas editoriales aplicadas (1 estructural(es) por reescritura). Snapshot anterior guardado para comparación.
+11:07:32
+C14
+[COMPLETADO]
+el Capítulo 14: cirugía aplicada — 1/1 operaciones puntuales (15115→15917 caracteres, 5.3% de cambio).
+11:07:32
+C14
+[COMPLETADO]
+el Capítulo 14: notas editoriales aplicadas (1 estructural(es) por reescritura). Snapshot anterior guardado para comparación.
+11:07:32
+C15
+[EDITANDO]
+el Capítulo 15: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "lo ahorcaron al amanecer. era un espia, no merecia mas.…"; "felipe escupio al agua y dijo: "lo ahorcaron al amanecer. er…"
+11:07:56
+C15
+[COMPLETADO]
+el Capítulo 15: cirugía aplicada — 3/3 operaciones puntuales (17248→16909 caracteres, 2.0% de cambio).
+11:08:29
+C15
+[COMPLETADO]
+el Capítulo 15: cirugía aplicada — 1/1 operaciones puntuales (16909→16922 caracteres, 0.1% de cambio).
+11:08:29
+C15
+[COMPLETADO]
+el Capítulo 15: notas editoriales aplicadas (2 puntual(es) + 1 estructural(es)). Snapshot anterior guardado para comparación.
+11:08:29
+C16
+[EDITANDO]
+el Capítulo 16: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "el golpe le recorrio el brazo derecho, y la rozadura de bala…"
+11:09:36
+C16
+[COMPLETADO]
+el Capítulo 16: cirugía aplicada — 1/1 operaciones puntuales (11032→10466 caracteres, 5.1% de cambio). 1 ancladas por coincidencia normalizada (tildes/comillas/espacios, Fix212).
+11:09:36
+C16
+[COMPLETADO]
+el Capítulo 16: notas editoriales aplicadas (1 puntual(es) + 1 estructural(es)). Snapshot anterior guardado para comparación.
+11:10:27
+C17
+[COMPLETADO]
+el Capítulo 17: cirugía aplicada — 5/5 operaciones puntuales (15658→13700 caracteres, 12.5% de cambio).
+11:10:27
+C17
+[COMPLETADO]
+el Capítulo 17: notas editoriales aplicadas (1 estructural(es) por reescritura). Snapshot anterior guardado para comparación.
+11:11:10
+C18
+[COMPLETADO]
+el Capítulo 18: cirugía aplicada — 2/2 operaciones puntuales (12899→11697 caracteres, 9.3% de cambio).
+11:11:10
+C18
+[COMPLETADO]
+el Capítulo 18: notas editoriales aplicadas (1 puntual(es) por cirugía). Snapshot anterior guardado para comparación.
+11:11:33
+C20
+i
+[INFO]
+el Capítulo 20: cirugía no aplicable (La instrucción 1 (cambiar el desenlace de la emboscada para que los protagonistas escapen) es incompatible con el canon del capítulo 21, donde Melibea aparece capturada. Aplicarla requeriría modificar también el capítulo siguiente, lo que excede las operaciones quirúrgicas locales permitidas.). Cayendo a reescritura completa con Narrador.
+11:13:21
+C20
+[EDITANDO]
+el Capítulo 20: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:14:20
+C22
+[COMPLETADO]
+el Capítulo 22: cirugía aplicada — 1/1 operaciones puntuales (10555→10918 caracteres, 3.4% de cambio).
+11:14:20
+C22
+[COMPLETADO]
+el Capítulo 22: notas editoriales aplicadas (2 estructural(es) por reescritura). Snapshot anterior guardado para comparación.
+11:15:12
+C31
+[COMPLETADO]
+el Capítulo 31: cirugía aplicada — 5/5 operaciones puntuales (20321→20783 caracteres, 2.3% de cambio).
+11:15:12
+C31
+[COMPLETADO]
+el Capítulo 31: notas editoriales aplicadas (2 estructural(es) por reescritura). Snapshot anterior guardado para comparación.
+11:15:12
+C32
+[EDITANDO]
+el Capítulo 32: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "ocampo miro el legajo. conocia a castro desde hacia anos; er…"
+11:15:31
+C32
+i
+[INFO]
+el Capítulo 32: cirugía no aplicable (La instrucción 1 requiere renumerar el capítulo, pero el número de capítulo no forma parte del texto del capítulo. Es un cambio estructural fuera del alcance de las operaciones find/replace.). Cayendo a reescritura completa con Narrador.
+11:16:44
+C32
+[EDITANDO]
+el Capítulo 32: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:17:03
+C33
+i
+[INFO]
+el Capítulo 33: cirugía no aplicable (El cirujano clasificó la instrucción como estructural.). Cayendo a reescritura completa con Narrador.
+11:19:41
+C33
+[COMPLETADO]
+el Capítulo 33: notas editoriales aplicadas (1 estructural(es) por reescritura). Snapshot anterior guardado para comparación.
+11:19:41
+C34
+[EDITANDO]
+el Capítulo 34: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "cata esta con mi hermana en triana. a salvo.…"
+11:20:16
+C34
+[COMPLETADO]
+el Capítulo 34: cirugía aplicada — 2/2 operaciones puntuales (16760→17639 caracteres, 5.2% de cambio). 1 ancladas por coincidencia normalizada (tildes/comillas/espacios, Fix212).
+11:20:16
+C34
+[COMPLETADO]
+el Capítulo 34: notas editoriales aplicadas (1 puntual(es) + 2 estructural(es)). Snapshot anterior guardado para comparación.
+11:21:00
+[COMPLETADO]
+el Epílogo: cirugía aplicada — 3/3 operaciones puntuales (8754→9048 caracteres, 3.4% de cambio).
+11:21:00
+[COMPLETADO]
+el Epílogo: notas editoriales aplicadas (2 estructural(es) por reescritura). Snapshot anterior guardado para comparación.
+11:21:00
+[COMPLETADO]
+Notas editoriales completadas: 11 aplicadas, 3 revertidas (red de seguridad), 0 omitidas.
+11:22:05
+i
+[INFO]
+Puntuación global tras notas editoriales: 9/10 → 9/10 = (0.0)
+11:22:05
+i
+[INFO]
+Iniciando revisión holística de la novela completa (37 capítulos) [Fix76: con 4 acción(es) admin a verificar].
+11:22:05
+i
+[INFO]
+Iniciando lectura beta de la novela completa (37 capítulos) [Fix38: con memoria de lectura previa].
+11:23:36
+i
+[INFO]
+Lectura beta completada: 37 capítulos / 82.068 palabras leídas. Impresiones de 29.277 caracteres generadas (con memoria de lectura previa).
+11:24:05
+i
+[INFO]
+Revisión holística completada: 37 capítulos / 82.068 palabras leídas. Informe de 27.868 caracteres generado (puntuación holística 6/10).
+11:24:05
+C27
+i
+[INFO]
+Fix76: acción admin id=5 (delete_chapter sobre Capítulo 27) DESCARTADA por ambos lectores. Holístico: Cap 27 contiene la carta de Zamora con el legajo de pruebas, material narrativo único e insustituible. La acción delete_chapter está mal dirigida (el motivo habla del epílogo, no de cap 27). Borrar ca | Beta: El cap 27 ('La carta de Zamora') contiene la carta con las pruebas y la ubicacion de La Espera, informacion crucial que no aparece en ningun otro capitulo. Suprimirlo perderia la unica fuente que guia
+11:24:05
+C33
+[EDITANDO]
+[Fix207] Accion admin id=6 (delete_chapter sobre Capítulo 33) ARCHIVADA COMO SUGERENCIA tras 3 rondas sin acuerdo de los lectores (Holístico=discard, Beta=keep_pending). No se ejecuta automaticamente; puede aplicarse a mano desde el flujo editorial. Detalle:
+11:24:05
+C34
+i
+[INFO]
+Fix76: acción admin id=7 (delete_chapter sobre Capítulo 34) DESCARTADA por ambos lectores. Holístico: Cap 34 contiene el juicio, la condena de Castro y la reunión de Hernán y Melibea. Es el clímax y desenlace de la trama principal. Borrarlo destruiría la resolución del conflicto central. El motivo del | Beta: Cap 34 ('El juicio del Consejo') es el climax de la novela: contiene el juicio formal, la condena de Castro y el reencuentro de los protagonistas. Es indispensable. Eliminarlo destruiria la resolucion
+11:24:05
+C24
+i
+[INFO]
+Fix76: acción admin id=8 (merge_chapters sobre Capítulo 24 (absorbe cap 25)) se mantiene pendiente — Holístico=keep_pending, Beta=keep_pending (ronda 1/3 [Fix207]).
+11:24:05
+i
+[INFO]
+Fix76: verificación desatendida completada — 0 aplicada(s), 3 descartada(s), 1 pendiente(s).
+11:24:05
+i
+[INFO]
+Analizando notas editoriales para vista previa (57674 caracteres).
+11:24:05
+i
+[INFO]
+Detectado informe estructurado del sistema con 15 instrucción(es) auto-aplicable(s). Saltando parser LLM y pasando directamente al refiner para anclaje contra canon.
+11:24:05
+i
+[INFO]
+[Fix171] El loop automático DESCARTÓ 1 operación(es) administrativa(s) que el flujo desatendido no puede ejecutar con seguridad (no quedan pendientes ni piden confirmación): • [REESTRUCTURACIÓN ESTRUCTURAL (Fix87)] [Estructural caps 14] Simplificar la escena del espía Ramiro durante la tormenta para evitar el recurso de la oportunidad excesiva. → Detalle: En lugar de que Hernán descubra al espía por casualidad durante la tormenta, que sea el contramaestre Felipe quien le avise tras ver al hombre registrar el cofre. Hernán interroga a Ramiro en cubierta después de la tormenta, no durante. Eli… El loop continúa con el resto de instrucciones cap-a-cap. Si tras el loop quieres realizar alguna de estas operaciones, hazlo desde el chat editorial o el flujo manual de notas.
+11:25:14
+i
+[INFO]
+Vista previa generada: 7 instrucciones ancladas en el texto y la canon (de 15 borradores).
+11:25:14
+i
+[INFO]
+[Fix81] Iter 3/8: Holístico=6 (=), Beta=8 (=). Aplicando 7 instrucción(es) automáticamente y volviendo a leer...
+11:25:14
+i
+[INFO]
+Aplicando 7 instrucciones editoriales pre-revisadas por el usuario.
+11:25:14
+i
+[INFO]
+Detectadas 3 instrucciones multi-capítulo (arcos). Se coordinarán las reescrituras de los capítulos hermanos: - [CONTINUIDAD] caps 33, 34, 35, -1: ✓ con plan distributivo - [TRAMA] caps 30, 31: ✓ con plan distributivo - [PERSONAJE] caps 3, 22: ✓ con plan distributivo
+11:25:14
+[COMPLETADO]
+Notas editoriales convertidas en 7 instrucciones quirúrgicas para los capítulos: 3, 10, 11, 16, 22, 25, 30, 31, 33, 34, 35, -1.
+11:25:14
+C3
+[EDITANDO]
+el Capítulo 3: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "un anillo grueso, con un sello que podria ser un leon rampan…"; "era el mismo anillo que habia visto en el corredor del conse…"
+11:25:14
+C3
+[EDITANDO]
+el Capítulo 3: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:25:14
+C10
+[EDITANDO]
+el Capítulo 10: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "contra la columna central, hacia el hueco de la escalera de …"; "estaba al fondo, a la derecha del estante de los tubos de cu…"
+11:25:14
+C10
+[EDITANDO]
+el Capítulo 10: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:25:14
+C11
+[EDITANDO]
+el Capítulo 11: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "-¿y cata? -pregunto hernan. -esta con mi hermana en triana. …"
+11:25:14
+C11
+[EDITANDO]
+el Capítulo 11: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:25:14
+C16
+[EDITANDO]
+el Capítulo 16: instruccion purgada ANTES del cirujano — sus 2 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "corrieron por el callejon, luego por el descampado. la selva se abrio …"
+11:25:14
+C16
+[EDITANDO]
+el Capítulo 16: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:25:14
+C22
+[EDITANDO]
+el Capítulo 22: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "un anillo grueso, con un sello que podria ser un leon rampan…"; "era el mismo anillo que habia visto en el corredor del conse…"
+11:25:14
+C22
+[EDITANDO]
+el Capítulo 22: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:25:14
+C25
+[EDITANDO]
+el Capítulo 25: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "todavia tenemos el mapa y las coordenadas…"
+11:25:14
+C25
+[EDITANDO]
+el Capítulo 25: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:25:14
+C30
+[EDITANDO]
+el Capítulo 30: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "mientras melibea era arrastrada al esquife, un fraile domini…"
+11:25:14
+C30
+[EDITANDO]
+el Capítulo 30: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:25:14
+C31
+[EDITANDO]
+el Capítulo 31: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "el inquisidor ocampo esta husmeando donde no debe. pero no l…"
+11:25:14
+C31
+[EDITANDO]
+el Capítulo 31: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:25:14
+C33
+[EDITANDO]
+el Capítulo 33: instruccion purgada ANTES del cirujano — sus 3 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "fui secuestrada por orden de don amadeo de castro…"
+11:25:14
+C33
+[EDITANDO]
+el Capítulo 33: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:25:43
+C34
+[COMPLETADO]
+el Capítulo 34: cirugía aplicada — 1/1 operaciones puntuales (17639→17971 caracteres, 1.9% de cambio).
+11:25:43
+C34
+[COMPLETADO]
+el Capítulo 34: notas editoriales aplicadas (1 estructural(es) por reescritura). Snapshot anterior guardado para comparación.
+11:25:43
+C35
+[EDITANDO]
+el Capítulo 35: instruccion purgada ANTES del cirujano — sus 3 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "fui secuestrada por orden de don amadeo de castro…"
+11:25:43
+C35
+[EDITANDO]
+el Capítulo 35: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:25:43
+[EDITANDO]
+el Epílogo: instruccion purgada ANTES del cirujano — sus 3 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "fui secuestrada por orden de don amadeo de castro…"
+11:25:43
+[EDITANDO]
+el Epílogo: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:25:43
+[COMPLETADO]
+Notas editoriales completadas: 1 aplicadas, 11 revertidas (red de seguridad), 0 omitidas.
+11:26:09
+i
+[INFO]
+Puntuación global tras notas editoriales: 9/10 → 9/10 = (0.0)
+11:26:09
+i
+[INFO]
+Iniciando revisión holística de la novela completa (37 capítulos) [Fix76: con 1 acción(es) admin a verificar].
+11:26:10
+i
+[INFO]
+Iniciando lectura beta de la novela completa (37 capítulos) [Fix38: con memoria de lectura previa].
+11:27:29
+i
+[INFO]
+Lectura beta completada: 37 capítulos / 82.129 palabras leídas. Impresiones de 27.489 caracteres generadas (con memoria de lectura previa).
+11:27:58
+i
+[INFO]
+Revisión holística completada: 37 capítulos / 82.129 palabras leídas. Informe de 26.426 caracteres generado (puntuación holística 5/10).
+11:27:58
+C24
+i
+[INFO]
+Fix76: acción admin id=8 (merge_chapters sobre Capítulo 24 (absorbe cap 25)) se mantiene pendiente — Holístico=keep_pending, Beta=keep_pending (ronda 2/3 [Fix207]).
+11:27:58
+[EDITANDO]
+[Fix81] Regresión detectada en iter 4: Holístico=5 (-1), Beta=8 (=) (combinado 13) frente al mejor snapshot (Beta=8, Holístico=6, combinado 14). Restaurados 11 capítulo(s) al estado del snapshot.
+11:27:58
+i
+[INFO]
+[Fix140] Reintentando desde la mejor versión (Beta=8, Holístico=6) con aviso de regresión a los lectores, para no volver a empeorarla. Iteraciones restantes: 4. Rondas sin avance: 1/2.
+11:27:58
+i
+[INFO]
+Iniciando revisión holística de la novela completa (37 capítulos) [Fix76: con 1 acción(es) admin a verificar].
+11:27:58
+i
+[INFO]
+Iniciando lectura beta de la novela completa (37 capítulos) [Fix38: con memoria de lectura previa].
+11:28:54
+i
+[INFO]
+Lectura beta completada: 37 capítulos / 82.253 palabras leídas. Impresiones de 26.029 caracteres generadas (con memoria de lectura previa).
+11:29:21
+i
+[INFO]
+Revisión holística completada: 37 capítulos / 82.253 palabras leídas. Informe de 19.196 caracteres generado (puntuación holística 5/10).
+11:29:21
+C24
+[EDITANDO]
+[Fix207] Accion admin id=8 (merge_chapters sobre Capítulo 24 (absorbe cap 25)) ARCHIVADA COMO SUGERENCIA tras 3 rondas sin acuerdo de los lectores (Holístico=apply, Beta=discard). No se ejecuta automaticamente; puede aplicarse a mano desde el flujo editorial. Detalle:
+11:29:21
+i
+[INFO]
+Fix76: verificación desatendida completada — 0 aplicada(s), 1 descartada(s), 0 pendiente(s).
+11:29:21
+[EDITANDO]
+[Fix81] Regresión detectada en iter 5: Holístico=5 (-1), Beta=8 (=) (combinado 13) frente al mejor snapshot (Beta=8, Holístico=6, combinado 14). Restaurados 0 capítulo(s) al estado del snapshot.
+11:29:21
+i
+[INFO]
+[Fix135-B] Brazo estructural activado: el informe señala decaimiento de la segunda mitad (señales: segundo acto, clímax, climax) que el cirujano cap-a-cap no puede aplicar. Reescritura dirigida de 6 capítulo(s) del tramo flojo: 18, 19, 20, 21, 22, 24.
+11:29:21
+C18
+[EDITANDO]
+el Capítulo 18: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "he pensado en don baltasar de mendoza. es viejo, pero es honrado…"
+11:29:21
+C19
+[EDITANDO]
+el Capítulo 19: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "he pensado en don baltasar de mendoza. es viejo, pero es honrado…"
+11:29:21
+C20
+[EDITANDO]
+el Capítulo 20: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "he pensado en don baltasar de mendoza. es viejo, pero es honrado…"
+11:29:21
+C21
+[EDITANDO]
+el Capítulo 21: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "he pensado en don baltasar de mendoza. es viejo, pero es honrado…"
+11:29:21
+C22
+[EDITANDO]
+el Capítulo 22: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "he pensado en don baltasar de mendoza. es viejo, pero es honrado…"
+11:29:21
+C24
+[EDITANDO]
+el Capítulo 24: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "he pensado en don baltasar de mendoza. es viejo, pero es honrado…"
+11:29:21
+[COMPLETADO]
+[Fix135-B] Reescritura estructural del tramo flojo completada: 6 capítulo(s). Se vuelve a leer Holístico+Beta; si el combinado empeora, el snapshot del bucle restaura la mejor versión.
+11:29:21
+i
+[INFO]
+[Fix158] Brazo de prosa ultima-milla activado: el Lector Beta sigue por debajo de su meta y el cirujano cap-a-cap toco techo. Reescritura de prosa dirigida de 5 capitulo(s) peor valorados: 1, 3, 4, 5, 8. Solo cambia el CRAFT (no hechos ni canon).
+11:29:21
+C1
+[EDITANDO]
+el Capítulo 1: instruccion purgada ANTES del cirujano — sus 2 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "como se miente en un mapa sin que se note…"
+11:29:51
+C3
+[COMPLETADO]
+el Capítulo 3: cirugía aplicada — 5/5 operaciones puntuales (10172→10057 caracteres, 1.1% de cambio).
+11:29:51
+C4
+[EDITANDO]
+el Capítulo 4: instruccion purgada ANTES del cirujano — sus 2 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "como se miente en un mapa sin que se note…"
+11:29:51
+C5
+[EDITANDO]
+el Capítulo 5: instruccion purgada ANTES del cirujano — sus 2 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "como se miente en un mapa sin que se note…"
+11:29:51
+C8
+[EDITANDO]
+el Capítulo 8: instruccion purgada ANTES del cirujano — sus 2 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "como se miente en un mapa sin que se note…"
+11:29:51
+[COMPLETADO]
+[Fix158] Reescritura de prosa ultima-milla completada: 5 capitulo(s). Se vuelve a leer Holistico+Beta; si el combinado empeora, el snapshot del bucle restaura la mejor version (revert por defecto).
+11:29:51
+i
+[INFO]
+[Fix159] Anti-paliza: el parcheo cap-a-cap toco techo (mejor version Beta=8/Holistico=6). Se dispararon los brazos de REESCRITURA (estructural si Holistico<7 / prosa si Beta<9) y se concede UNA relectura extra. Revert-by-default: si empeora, se restaura la mejor version.
+11:29:51
+i
+[INFO]
+Iniciando revisión holística de la novela completa (37 capítulos).
+11:29:51
+i
+[INFO]
+Iniciando lectura beta de la novela completa (37 capítulos) [Fix38: con memoria de lectura previa].
+11:30:55
+i
+[INFO]
+Lectura beta completada: 37 capítulos / 82.229 palabras leídas. Impresiones de 24.966 caracteres generadas (con memoria de lectura previa).
+11:32:04
+i
+[INFO]
+Revisión holística completada: 37 capítulos / 82.229 palabras leídas. Informe de 13.476 caracteres generado (puntuación holística 6/10).
+11:32:04
+[EDITANDO]
+[Fix81] Regresión detectada en iter 6: Holístico=6 (=), Beta=7 (-1) (combinado 13) frente al mejor snapshot (Beta=8, Holístico=6, combinado 14). Restaurados 1 capítulo(s) al estado del snapshot.
+11:32:04
+i
+[INFO]
+[Fix140] Reintentando desde la mejor versión (Beta=8, Holístico=6) con aviso de regresión a los lectores, para no volver a empeorarla. Iteraciones restantes: 2. Rondas sin avance: 1/2.
+11:32:04
+i
+[INFO]
+Iniciando revisión holística de la novela completa (37 capítulos).
+11:32:04
+i
+[INFO]
+Iniciando lectura beta de la novela completa (37 capítulos) [Fix38: con memoria de lectura previa].
+11:33:05
+i
+[INFO]
+Lectura beta completada: 37 capítulos / 82.253 palabras leídas. Impresiones de 23.129 caracteres generadas (con memoria de lectura previa).
+11:33:34
+i
+[INFO]
+Reanudando pulido interrumpido (intento 2/8) tras reinicio del servidor.
+11:33:34
+i
+[INFO]
+[Fix81] Auto-revisión Holístico+Beta iniciada (target DUAL: Beta ≥ 9/10 AND Holístico ≥ 7/10, máx 8 iteraciones). [Fix89/Fix158] Metas aceptables si el Holistico alcanza su meta ABSOLUTA (>=7) O sube >=+2 desde inicio, con Beta>=9 ([Fix184]: el Beta ya NO se relaja, exige su target completo); + brazo de reescritura de PROSA ultima-milla para empujar el Beta cuando el cirujano cap-a-cap toca techo.
+11:33:34
+i
+[INFO]
+Iniciando lectura beta de la novela completa (37 capítulos) [Fix38: con memoria de lectura previa].
+11:33:34
+i
+[INFO]
+Iniciando revisión holística de la novela completa (37 capítulos).
+11:35:19
+i
+[INFO]
+Revisión holística completada: 37 capítulos / 82.253 palabras leídas. Informe de 23.244 caracteres generado (puntuación holística 6/10).
+11:35:34
+i
+[INFO]
+Lectura beta completada: 37 capítulos / 82.253 palabras leídas. Impresiones de 26.641 caracteres generadas (con memoria de lectura previa).
+11:35:34
+i
+[INFO]
+[Fix81] Iter 1: nuevo mejor snapshot guardado (Holístico=6, Beta=8, 37 capítulos).
+11:36:50
+i
+[INFO]
+[Fix201] Brazo de ritmo del pulido activado: el Beta se queja del tramo central (7/10 segun Act2PacingEditor). Reescritura dirigida de 3 capitulo(s): 12, 15, 9. El bestSnapshot del bucle revierte si el combinado empeora.
+11:36:50
+C12
+[EDITANDO]
+el Capítulo 12: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "como se miente en un mapa sin que se note…"
+11:36:50
+C15
+[EDITANDO]
+el Capítulo 15: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "como se miente en un mapa sin que se note…"
+11:36:50
+C9
+[EDITANDO]
+el Capítulo 9: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "como se miente en un mapa sin que se note…"
+11:36:50
+i
+[INFO]
+Iniciando revisión holística de la novela completa (37 capítulos).
+11:36:50
+i
+[INFO]
+Iniciando lectura beta de la novela completa (37 capítulos) [Fix38: con memoria de lectura previa].
+11:38:04
+i
+[INFO]
+Lectura beta completada: 37 capítulos / 82.253 palabras leídas. Impresiones de 23.200 caracteres generadas (con memoria de lectura previa).
+11:39:21
+i
+[INFO]
+Revisión holística completada: 37 capítulos / 82.253 palabras leídas. Informe de 31.762 caracteres generado (puntuación holística 6/10).
+11:39:21
+i
+[INFO]
+Analizando notas editoriales para vista previa (55491 caracteres).
+11:39:21
+i
+[INFO]
+Detectado informe estructurado del sistema con 11 instrucción(es) auto-aplicable(s). Saltando parser LLM y pasando directamente al refiner para anclaje contra canon.
+11:39:21
+i
+[INFO]
+[Fix171] El loop automático DESCARTÓ 1 operación(es) administrativa(s) que el flujo desatendido no puede ejecutar con seguridad (no quedan pendientes ni piden confirmación): • [REESTRUCTURACIÓN ESTRUCTURAL (Fix87)] [Estructural caps 33] Añadir escena puente que explique cómo Mendoza obtiene las copias de Zamora y contacta con Ocampo. → Detalle: Incluir un nuevo capítulo corto (33a) entre la detención de Hernán (32) y el rescate (33). Mostrar a Mendoza recibiendo un mensaje de Zamora desde Sanlúcar: Zamora le ha enviado las copias por un correo de confianza antes de desaparecer. Me… El loop continúa con el resto de instrucciones cap-a-cap. Si tras el loop quieres realizar alguna de estas operaciones, hazlo desde el chat editorial o el flujo manual de notas.
+11:40:52
+i
+[INFO]
+Vista previa generada: 9 instrucciones ancladas en el texto y la canon (de 11 borradores).
+11:40:52
+i
+[INFO]
+[Fix81] Iter 2/8: Holístico=6, Beta=8. Aplicando 9 instrucción(es) automáticamente y volviendo a leer...
+11:40:52
+i
+[INFO]
+Aplicando 9 instrucciones editoriales pre-revisadas por el usuario.
+11:40:52
+i
+[INFO]
+Detectadas 6 instrucciones multi-capítulo (arcos). Se coordinarán las reescrituras de los capítulos hermanos: - [PERSONAJE] caps 24, 25: ✓ con plan distributivo - [CONTINUIDAD] caps 35, -1: ✓ con plan distributivo - [PERSONAJE] caps 27, 35: ✓ con plan distributivo - [PERSONAJE] caps 6, 7, 24, 35: ✓ con plan distributivo - [OTRO] caps 13, 34: ✓ con plan distributivo - [DESCRIPCION] caps 1, 2: ✓ con plan distributivo
+11:40:52
+[COMPLETADO]
+Notas editoriales convertidas en 9 instrucciones quirúrgicas para los capítulos: 1, 2, 6, 7, 13, 24, 25, 27, 31, 33, 34, 35, -1.
+11:41:06
+C1
+i
+[INFO]
+el Capítulo 1: 1 instrucción(es) puntual(es) no resueltas por cirugía se reescriben con el Narrador (cobertura Fix130).
+11:41:06
+C1
+[EDITANDO]
+el Capítulo 1: instruccion purgada ANTES del cirujano — sus 1 cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "hernan observo el sello de plomo en la esquina. el cordel de seda esta…"
+11:41:06
+C1
+[EDITANDO]
+el Capítulo 1: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:41:06
+C2
+[EDITANDO]
+el Capítulo 2: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "hernan observo el sello de plomo en la esquina. el cordel de…"
+11:41:06
+C2
+[EDITANDO]
+el Capítulo 2: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:41:06
+C6
+[EDITANDO]
+el Capítulo 6: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "ve a casa de tia engracia. quedate hasta que yo vaya a busca…"
+11:41:06
+C6
+[EDITANDO]
+el Capítulo 6: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:41:16
+C7
+[EDITANDO]
+el Capítulo 7: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:41:16
+C13
+[EDITANDO]
+el Capítulo 13: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "se que alguien en el consejo ayudo a castro. he oido el nomb…"
+11:41:16
+C13
+[EDITANDO]
+el Capítulo 13: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:41:16
+C24
+[EDITANDO]
+el Capítulo 24: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "y critica la decision de hernan por haberla rescatado en lug…"
+11:41:16
+C24
+[EDITANDO]
+el Capítulo 24: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "la nina esta a salvo. la enviamos con una amiga antes de que…"
+11:41:16
+C24
+[EDITANDO]
+el Capítulo 24: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:41:16
+C25
+[EDITANDO]
+el Capítulo 25: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "y critica la decision de hernan por haberla rescatado en lug…"
+11:41:16
+C25
+[EDITANDO]
+el Capítulo 25: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:41:16
+C27
+[EDITANDO]
+el Capítulo 27: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "ps: he llegado bien a sanlucar. mi primo me esconde. si esto…"; "ps: he llegado bien a sanlucar. mi primo me esconde. rezare …"
+11:41:16
+C27
+[EDITANDO]
+el Capítulo 27: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:42:15
+C31
+[COMPLETADO]
+el Capítulo 31: cirugía aplicada — 2/2 operaciones puntuales (20321→20822 caracteres, 2.5% de cambio). 1 ancladas por coincidencia normalizada (tildes/comillas/espacios, Fix212).
+11:42:15
+C31
+[COMPLETADO]
+el Capítulo 31: notas editoriales aplicadas (1 estructural(es) por reescritura). Snapshot anterior guardado para comparación.
+11:42:59
+C33
+[COMPLETADO]
+el Capítulo 33: cirugía aplicada — 1/1 operaciones puntuales (14044→16110 caracteres, 14.7% de cambio).
+11:42:59
+C33
+[COMPLETADO]
+el Capítulo 33: notas editoriales aplicadas (1 estructural(es) por reescritura). Snapshot anterior guardado para comparación.
+11:42:59
+C34
+[EDITANDO]
+el Capítulo 34: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "y don rodrigo de pineda, miembro de este consejo, ha confesa…"
+11:43:08
+C34
+i
+[INFO]
+el Capítulo 34: cirugía no aplicable (La instrucción 1 requiere una reescritura estructural (dividir el capítulo en dos y crear un nuevo capítulo 34b), no correcciones localizadas. No es viable mediante operaciones find/replace sin exceder el límite permitido de modificación puntual.). Cayendo a reescritura completa con Narrador.
+11:44:25
+C34
+[EDITANDO]
+el Capítulo 34: ningún cambio se aplicó (cirugía sin operaciones válidas y/o reescritura revertida por la red de seguridad).
+11:44:25
+C35
+[EDITANDO]
+el Capítulo 35: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "ps: he llegado bien a sanlucar. mi primo me esconde. si esto…"; "zamora esta vivo. escribe desde sanlucar, dice que volvera c…"
+11:44:25
+C35
+[EDITANDO]
+el Capítulo 35: instrucción puntual descartada ANTES del cirujano — cita un pasaje que ya no existe en el texto actual (instrucción fantasma de un ciclo previo). Citas no encontradas: "cata esta en el convento de santa clara hasta que tengamos u…"
+11:44:29
+C35
+i
+[INFO]
+el Capítulo 35: cirugía no aplicable (El cirujano clasificó la instrucción como estructural.). Cayendo a reescritura completa con Narrador.
