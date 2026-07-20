@@ -62,7 +62,7 @@ QUE ES UN HALLAZGO REPARABLE (entra en tu lista):
 QUE NO ENTRA (dejalo fuera, ya lo cubre la guia de capitulos futuros):
 - Consejos sobre capitulos que aun no existen ("el climax debera...", "en la recta final conviene...").
 - Defectos difusos sin capitulo localizable.
-- Cambios estructurales de escaleta (fusionar/eliminar/reordenar capitulos): eso NO es tuyo.
+- Cambios estructurales de escaleta (fusionar/eliminar/reordenar capitulos): eso NO es tuyo. [Fix233] Si la solucion IDEAL seria fusionar o eliminar capitulos (p.ej. un patron calcado entre 3 caps), NO escribas "fusionar" ni "eliminar" en la instruccion: TRADUCE la intencion a reescrituras por capitulo — di que FUNCION nueva debe cumplir cada cap redundante (que informacion/consecuencia unica aporta tras la reescritura, que ejes de su esqueleto cambian: escenario, oposicion, tactica, coste). El ejecutor SOLO puede reescribir dentro de cada capitulo; una instruccion que pida cirugia se ejecutara mal o no se ejecutara.
 - Ortotipografia y micro-estilo (eso lo cubre el pulido final).
 
 MEMORIA DE HALLAZGOS ABIERTOS:

@@ -10262,6 +10262,26 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           // escena; la reparacion AÑADE una escena completa dramatizada dentro
           // del capitulo (subcapitulo), sin corse de longitud.
           const esEscenaNueva = finding.modo === "escena_nueva";
+          // [Fix233] Red determinista: si la instruccion del planner pide
+          // cirugia prohibida (fusionar/eliminar/dividir caps), el rewriter
+          // recibia ordenes contradictorias (la directiva lo prohibe) y quemaba
+          // intentos/presupuesto en no-ops. Traducimos la intencion a una
+          // reescritura ejecutable dentro del capitulo.
+          // Verbo quirurgico a <=2 palabras de una forma de "capitulo" (evita
+          // falsos positivos como "la fusion de las dos familias" o "elimina
+          // el resumen"). Se normaliza (minusculas + sin tildes) para cazar
+          // "fusión", "elimínalo", "suprímase el capítulo", etc.
+          const SURGERY_RE = /\b(fusion\w*|dividi?\w*|reordena\w*|elimin\w*|suprim\w*)[:,;.]?\s+(?:\S+\s+){0,2}cap(s\b|itulos?\b|\b|\.\s|\s*\d)/i;
+          const instrNormalizada = finding.instruccion
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+          const instruccionEjecutable = SURGERY_RE.test(instrNormalizada)
+            ? `${finding.instruccion}\n\nTRADUCCION OBLIGATORIA [Fix233]: la instruccion anterior menciona fusionar/eliminar/dividir capitulos, pero eso NO esta permitido aqui. Logra el MISMO objetivo REESCRIBIENDO este capitulo: cambia su funcion narrativa para que aporte informacion o consecuencias que ningun otro capitulo aporta (rompe el patron repetido cambiando al menos 2 ejes: escenario, tipo de oposicion, tactica del protagonista, coste pagado). El capitulo debe seguir existiendo como unidad valida.`
+            : finding.instruccion;
+          if (instruccionEjecutable !== finding.instruccion) {
+            console.warn(`[Fix233] Hallazgo ${finding.id}: instruccion con cirugia prohibida detectada; traducida a reescritura ejecutable para el cap ${num}.`);
+          }
           const directiva = esEscenaNueva
             ? [
                 `REPARACION MID-NOVELA — ESCENA NUEVA (hallazgo ${finding.id}: ${finding.titulo}, severidad ${finding.severidad}${finding.intentos > 0 ? ", REINCIDENTE — se intento reparar antes y persiste" : ""}).`,
@@ -10270,7 +10290,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
               ].join("\n\n")
             : [
                 `REPARACION MID-NOVELA (hallazgo ${finding.id}: ${finding.titulo}, severidad ${finding.severidad}${finding.intentos > 0 ? ", REINCIDENTE — se intento reparar antes y persiste, se mas quirurgico" : ""}).`,
-                `QUE REPARAR EN ESTE CAPITULO: ${finding.instruccion}`,
+                `QUE REPARAR EN ESTE CAPITULO: ${instruccionEjecutable}`,
                 `LIMITES: conserva hechos, canon, continuidad, World Bible e hitos de serie; repara el defecto señalado sin alterar la trama establecida. PROHIBIDO fusionar, dividir o eliminar capitulos: repara DENTRO de este capitulo.`,
               ].join("\n\n");
           try {
