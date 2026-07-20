@@ -9865,9 +9865,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // proyecto fresco (pueden haber cambiado tras el último cirujano) y se
     // las pasamos al Holístico para que las verifique mientras lee.
     const freshForAdmin = (await storage.getProject(project.id)) || project;
-    const pendingAdminActions = Array.isArray((freshForAdmin as any).pendingAdminActions)
+    // [Fix236] Las sugerencias archivadas (archived=true) son del usuario:
+    // no se pasan a los lectores para no reevaluarlas ronda tras ronda.
+    const pendingAdminActions = (Array.isArray((freshForAdmin as any).pendingAdminActions)
       ? (freshForAdmin as any).pendingAdminActions as any[]
-      : [];
+      : []).filter(a => a?.archived !== true);
 
     await storage.createActivityLog({
       projectId: project.id,
@@ -10401,8 +10403,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
     // [Fix76] Mismas acciones administrativas pendientes que se pasan al
     // Holístico. Las leemos del freshProject que ya cargamos arriba.
+    // [Fix236] Igual que en el Holistico: las archivadas no se reevaluan.
     const pendingAdminActionsBeta = Array.isArray((freshProject as any).pendingAdminActions)
-      ? ((freshProject as any).pendingAdminActions as any[]).map(a => ({
+      ? ((freshProject as any).pendingAdminActions as any[]).filter(a => a?.archived !== true).map(a => ({
           id: Number(a?.id),
           type: String(a?.type || ""),
           targetChapter: Number(a?.targetChapter),
@@ -13445,6 +13448,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         survivors.push(action);
         continue;
       }
+      // [Fix236] Las sugerencias ya archivadas son del usuario: el bucle no
+      // las reevalua ni las toca. Sobreviven intactas hasta que el usuario
+      // las ejecute o descarte desde la tarjeta del manuscrito.
+      if (action?.archived === true) {
+        survivors.push(action);
+        continue;
+      }
       const h = hMap.get(id);
       const b = bMap.get(id);
 
@@ -13496,12 +13506,26 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         const MAX_ADMIN_EVAL_ROUNDS = 3;
         const rounds = (Number(action?.evalRounds) || 0) + 1;
         if (rounds >= MAX_ADMIN_EVAL_ROUNDS) {
-          discarded++;
-          processedAppliedOrDiscarded.add(id);
+          // [Fix236] Antes se BORRABA del listado y solo quedaba una linea de
+          // log: el usuario no tenia DONDE ver ni aplicar la sugerencia. Ahora
+          // la accion se conserva como sugerencia MANUAL visible en la tarjeta
+          // de acciones administrativas del manuscrito (source distinto de
+          // "auto-review-loop" para que el GET la exponga y la limpieza del
+          // bucle no la borre; archived=true para que los lectores dejen de
+          // reevaluarla y el bucle no la toque).
+          survivors.push({
+            ...action,
+            source: "archived-suggestion",
+            archived: true,
+            archivedAt: new Date().toISOString(),
+            archiveReason: `Sin acuerdo de los lectores tras ${rounds} rondas (${reasonSummary})`,
+            evalRounds: rounds,
+          });
+          keptPending++;
           await storage.createActivityLog({
             projectId,
             level: "warning",
-            message: `[Fix207] Accion admin id=${id} (${action?.type} sobre ${action?.targetLabel || `cap ${action?.targetChapter}`}) ARCHIVADA COMO SUGERENCIA tras ${rounds} rondas sin acuerdo de los lectores (${reasonSummary}). No se ejecuta automaticamente; puede aplicarse a mano desde el flujo editorial. Detalle: ${String(action?.detail || action?.motivo || "").slice(0, 300)}`,
+            message: `[Fix207/Fix236] Accion admin id=${id} (${action?.type} sobre ${action?.targetLabel || `cap ${action?.targetChapter}`}) ARCHIVADA COMO SUGERENCIA tras ${rounds} rondas sin acuerdo de los lectores (${reasonSummary}). No se ejecuta automaticamente; queda VISIBLE en la tarjeta "Acciones administrativas pendientes" del manuscrito, donde puedes ejecutarla o descartarla. Detalle: ${String(action?.detail || action?.motivo || "").slice(0, 300)}`,
             agentRole: "editor",
           });
           continue;
@@ -13546,12 +13570,22 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // registrada en el log; para aplicarla, el usuario usa el flujo editorial
       // manual (que tiene su propio endpoint y confirmacion).
       if (actionType === "delete_chapter" || actionType === "merge_chapters") {
-        discarded++;
-        processedAppliedOrDiscarded.add(id);
+        // [Fix236] Aprobada por UNANIMIDAD pero el pulido autonomo no ejecuta
+        // cirugia estructural (irreversible). Antes se descartaba y solo
+        // quedaba el log; ahora se conserva como sugerencia MANUAL visible en
+        // la tarjeta de acciones administrativas del manuscrito.
+        survivors.push({
+          ...action,
+          source: "archived-suggestion",
+          archived: true,
+          archivedAt: new Date().toISOString(),
+          archiveReason: "Aprobada por ambos lectores; el pulido autonomo no ejecuta cirugia estructural (irreversible)",
+        });
+        keptPending++;
         await storage.createActivityLog({
           projectId,
           level: "info",
-          message: `[Fix185] accion admin id=${id} (${actionType} sobre ${action?.targetLabel || `cap ${action?.targetChapter}`}) NO ejecutada por el pulido automatico: solo aplica cambios REVERSIBLES de prosa (la cirugia estructural es irreversible y causaba regresiones). Sugerencia registrada; aplicable a mano desde el flujo editorial.`,
+          message: `[Fix185/Fix236] accion admin id=${id} (${actionType} sobre ${action?.targetLabel || `cap ${action?.targetChapter}`}) NO ejecutada por el pulido automatico: solo aplica cambios REVERSIBLES de prosa (la cirugia estructural es irreversible y causaba regresiones). Queda VISIBLE en la tarjeta "Acciones administrativas pendientes" del manuscrito para que la ejecutes o descartes a mano.`,
           agentRole: "editor",
         });
         continue;
@@ -13803,10 +13837,14 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // [Fix207] Los supervivientes llevan evalRounds incrementado; la lista
       // fresca de BD aun tiene el valor viejo. Propagamos el contador para
       // que el tope de rondas avance de verdad entre pasadas.
-      const roundsById = new Map<number, number>();
+      // [Fix236] Propagamos el superviviente COMPLETO por id (no solo
+      // evalRounds): las ramas de archivado mutan source/archived/
+      // archivedAt/archiveReason y perderlas aqui reproducia la desaparicion
+      // original (la limpieza del bucle las borraba como auto-review-loop).
+      const survivorById = new Map<number, any>();
       for (const s of survivors) {
         const sid = Number(s?.id);
-        if (Number.isFinite(sid) && Number(s?.evalRounds) > 0) roundsById.set(sid, Number(s.evalRounds));
+        if (Number.isFinite(sid)) survivorById.set(sid, s);
       }
       const finalList = latestList.filter(a => {
         const aid = Number(a?.id);
@@ -13814,7 +13852,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         return !processedAppliedOrDiscarded.has(aid);
       }).map(a => {
         const aid = Number(a?.id);
-        return roundsById.has(aid) ? { ...a, evalRounds: roundsById.get(aid) } : a;
+        return survivorById.has(aid) ? survivorById.get(aid) : a;
       });
       const addedConcurrently = latestList.length - existing.length;
       await storage.updateProject(projectId, { pendingAdminActions: finalList } as any);

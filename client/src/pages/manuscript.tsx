@@ -647,10 +647,20 @@ export default function ManuscriptPage() {
                           → afecta también a Cap. {action.secondaryChapter}
                         </span>
                       )}
+                      {action.archived === true && (
+                        <Badge variant="secondary" className="text-xs" data-testid={`badge-admin-action-archived-${action.id}`}>
+                          Sugerencia del pulido
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-1" data-testid={`text-admin-action-reason-${action.id}`}>
                       {action.reason}
                     </p>
+                    {action.archived === true && action.archiveReason && (
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5" data-testid={`text-admin-action-archive-reason-${action.id}`}>
+                        {action.archiveReason}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     {isExecutableAdminAction(action.type) && (

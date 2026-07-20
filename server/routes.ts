@@ -9416,6 +9416,53 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         }
       }
 
+      // [Fix236] Las fusiones ARCHIVADAS por el pulido autonomo NO tienen la
+      // prosa del cap fuente pre-integrada (el bucle integra en el momento de
+      // ejecutar, y aqui se archivo ANTES de ejecutar). Ejecutar solo el
+      // borrado perderia texto: integramos primero el contenido del cap
+      // fuente al final del destino con separador de escena, igual que hace
+      // el bucle desatendido ([Fix171]).
+      if (type === "merge_chapters" && action.archived === true) {
+        const destNum = Number(action.targetChapter);
+        const dest = allChapters.find(c => Number(c.chapterNumber) === destNum);
+        if (!dest) {
+          return res.status(400).json({ error: `No se puede ejecutar la fusion: el capitulo destino ${destNum} ya no existe.` });
+        }
+        // Fuentes: sourceChapters (array, fusiones del bucle) o secondaryChapter.
+        const srcNums: number[] = (Array.isArray((action as any).sourceChapters) && (action as any).sourceChapters.length > 0
+          ? (action as any).sourceChapters.map((n: any) => Number(n))
+          : [Number(action.secondaryChapter)]
+        ).filter((n: number) => Number.isFinite(n) && n > 0 && n !== destNum);
+        const srcChaps = srcNums
+          .map(n => allChapters.find(c => Number(c.chapterNumber) === n))
+          .filter((c): c is NonNullable<typeof c> => Boolean(c));
+        if (srcChaps.length === 0) {
+          return res.status(400).json({ error: `No se puede ejecutar la fusion: ningun capitulo fuente (${srcNums.join(", ") || action.secondaryChapter}) existe ya.` });
+        }
+        const pieces = srcChaps
+          .map(c => (typeof c.content === "string" ? c.content.trim() : ""))
+          .filter(p => p.length > 0);
+        if (pieces.length > 0) {
+          const mergedContent = [dest.content, ...pieces].join("\n\n* * *\n\n");
+          const mergedWc = mergedContent.split(/\s+/).filter(w => w.length > 0).length;
+          await storage.updateChapter(dest.id, { content: mergedContent, wordCount: mergedWc } as any);
+        }
+        for (const src of srcChaps) {
+          await storage.deleteChapter(src.id);
+        }
+        const renumberedArc = await renumberChaptersSequential(projectId);
+        const freshArc = await storage.getProject(projectId);
+        const freshArcActions: any[] = Array.isArray((freshArc as any)?.pendingAdminActions) ? (freshArc as any).pendingAdminActions : [];
+        await storage.updateProject(projectId, { pendingAdminActions: freshArcActions.filter((a: any) => Number(a?.id) !== actionId) } as any);
+        await storage.createActivityLog({
+          projectId,
+          level: "info",
+          message: `[Fix236] Fusion archivada ejecutada a mano: el contenido de cap ${srcChaps.map(c => c.chapterNumber).join(", ")} se ha integrado al final del cap ${destNum} con separador de escena y los capitulos fuente se han eliminado; ${renumberedArc} cap(s) renumerado(s).`,
+          agentRole: "editor",
+        });
+        return res.json({ success: true, type, merged: true, chaptersDeleted: srcChaps.length, renumbered: renumberedArc });
+      }
+
       // 1) Eliminar el capítulo.
       await storage.deleteChapter(target.id);
       // 2) [Fix182] Renumerar los positivos restantes a una secuencia contigua
