@@ -19701,28 +19701,54 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
     {
       const ghostCheck = groundInstructionInChapter(correctionInstructions, originalContent);
       if (!ghostCheck.grounded) {
-        await storage.createActivityLog({
-          projectId: project.id,
-          level: "warning",
-          message: `${sectionLabel}: instruccion purgada ANTES del cirujano — sus ${ghostCheck.quotes.length} cita(s) literal(es) ya no existen en el texto vigente (instruccion fantasma de un ciclo previo, Fix206). Ejemplo: "${(ghostCheck.missing[0] || "").slice(0, 70)}…"`,
-          agentRole: "surgical-patcher",
-        });
-        const dedupKey = `${chapter.chapterNumber}::${correctionInstructions.slice(0, 200)}`;
-        const already = this.staleInstructionsForFinalReviewer.some(s => `${s.chapter}::${s.instruction.slice(0, 200)}` === dedupKey);
-        if (!already) {
-          this.staleInstructionsForFinalReviewer.push({
-            chapter: chapter.chapterNumber,
-            instruction: correctionInstructions.slice(0, 500),
-            reason: "Cita prosa inexistente en el texto vigente (fantasma, Fix206).",
+        // [Fix234] Antes de purgar la instruccion ENTERA, intentamos rescatar
+        // su intencion semantica retirando SOLO las citas muertas. Caso real:
+        // una instruccion multi-capitulo anclada con una cita que solo existe
+        // en UN capitulo hermano se purgaba en todos los demas — iteraciones
+        // enteras (y el brazo estructural Fix135-B) quedaban en no-op. El
+        // saneado global [Fix230] no lo cubre porque valida contra el pajar
+        // COMBINADO de los caps afectados (la cita esta "viva" en el conjunto,
+        // muerta en ESTE capitulo). Si tras retirar las citas queda sustancia
+        // instructiva suficiente, continuamos con la version saneada; si la
+        // instruccion era esencialmente solo la cita, se purga como antes.
+        const chapterHaystack = normalizeQuoteMatch(originalContent);
+        const strippedResult = stripDeadQuotes(correctionInstructions, chapterHaystack);
+        const semanticRemainder = strippedResult.text
+          .replace(/\[CITA OBSOLETA RETIRADA[^\]]*\]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (strippedResult.removed > 0 && semanticRemainder.length >= 120) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "info",
+            message: `${sectionLabel}: ${strippedResult.removed} cita(s) muerta(s) retiradas de la instruccion (no existen en ESTE capitulo; tipico de instrucciones multi-capitulo o de ciclos previos, Fix234). La intencion semantica se conserva y pasa al cirujano/narrador sobre el texto vigente.`,
+            agentRole: "surgical-patcher",
           });
+          correctionInstructions = `[Fix234: la(s) cita(s) literal(es) originales no existen en este capitulo — aplica la INTENCION de la instruccion sobre el texto vigente; si la instruccion claramente corresponde a OTRO capitulo, declara que no aplica aqui] ${strippedResult.text}`;
+        } else {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `${sectionLabel}: instruccion purgada ANTES del cirujano — sus ${ghostCheck.quotes.length} cita(s) literal(es) ya no existen en el texto vigente y no queda sustancia instructiva sin ellas (instruccion fantasma, Fix206/Fix234). Ejemplo: "${(ghostCheck.missing[0] || "").slice(0, 70)}…"`,
+            agentRole: "surgical-patcher",
+          });
+          const dedupKey = `${chapter.chapterNumber}::${correctionInstructions.slice(0, 200)}`;
+          const already = this.staleInstructionsForFinalReviewer.some(s => `${s.chapter}::${s.instruction.slice(0, 200)}` === dedupKey);
+          if (!already) {
+            this.staleInstructionsForFinalReviewer.push({
+              chapter: chapter.chapterNumber,
+              instruction: correctionInstructions.slice(0, 500),
+              reason: "Cita prosa inexistente en el texto vigente (fantasma, Fix206).",
+            });
+          }
+          await storage.updateChapter(chapter.id, {
+            status: "completed",
+            needsRevision: false,
+            revisionReason: null,
+          });
+          this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+          return;
         }
-        await storage.updateChapter(chapter.id, {
-          status: "completed",
-          needsRevision: false,
-          revisionReason: null,
-        });
-        this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
-        return;
       }
     }
 
