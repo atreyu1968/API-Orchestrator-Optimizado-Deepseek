@@ -18,6 +18,10 @@ export interface MidNovelOpenFinding {
   titulo: string;
   capitulos: number[];
   severidad: "critica" | "alta" | "media";
+  // [Fix227] "reescritura" = cirugia clasica sobre lo escrito; "escena_nueva" =
+  // el defecto es un evento decisivo relatado fuera de escena y la reparacion
+  // AÑADE una escena completa dramatizada (subcapitulo) sin corse de longitud.
+  modo: "reescritura" | "escena_nueva";
   instruccion: string;
   intentos: number;
 }
@@ -42,6 +46,7 @@ export interface MidNovelRepairPlannerResult {
     titulo: string;
     capitulos: number[];
     severidad: "critica" | "alta" | "media";
+    modo: "reescritura" | "escena_nueva";
     instruccion: string;
   }>;
 }
@@ -52,6 +57,7 @@ Eres el PLANIFICADOR DE REPARACION de mitad de novela. Recibes la critica del Le
 QUE ES UN HALLAZGO REPARABLE (entra en tu lista):
 - Un defecto que vive en la PROSA YA ESCRITA de capitulos concretos: un arco abandonado que debio avanzar en el cap N, un personaje que se volvio pasivo en un tramo, una meseta de tension en caps concretos, una promesa de genero incumplida en el arranque, repeticion estructural entre caps ya escritos, una siembra que falta para algo ya revelado.
 - Debe poder repararse REESCRIBIENDO 1-3 capitulos concretos sin tocar el resto.
+- CASO ESPECIAL "escena_nueva": si el defecto es que un EVENTO DECISIVO ocurre fuera de escena y solo se relata a posteriori (p.ej. "la captura decisiva ocurre fuera de escena, lo que resta presencia dramatica"), la reparacion correcta NO es retocar prosa: es AÑADIR una escena completa que dramatice ese evento EN PAGINA dentro del capitulo donde hoy se resume. Marca el hallazgo con "modo": "escena_nueva", UN solo capitulo (donde debe vivir la escena), y una instruccion que describa QUE evento dramatizar, quienes estan presentes y que resultado ya narrado debe respetarse. Quien la ejecute tiene permiso para hacer crecer el capitulo sin limite de extension.
 
 QUE NO ENTRA (dejalo fuera, ya lo cubre la guia de capitulos futuros):
 - Consejos sobre capitulos que aun no existen ("el climax debera...", "en la recta final conviene...").
@@ -79,8 +85,9 @@ Responde UNICAMENTE con un JSON valido con esta forma exacta:
     {
       "id": "<id>",
       "titulo": "<nombre corto del defecto>",
-      "capitulos": [<numeros de capitulos YA ESCRITOS a reescribir, 1-3>],
+      "capitulos": [<numeros de capitulos YA ESCRITOS a reescribir, 1-3; con modo escena_nueva exactamente 1>],
       "severidad": "critica" | "alta" | "media",
+      "modo": "reescritura" | "escena_nueva",
       "instruccion": "<que reparar en esos capitulos, concreto y autocontenido>"
     }
   ]
@@ -153,8 +160,11 @@ Convierte la critica en reparaciones concretas sobre capitulos ya escritos y res
           // Solo capitulos realmente escritos, 1-3 por hallazgo.
           capitulos: h.capitulos.map(Number).filter(n => Number.isFinite(n) && validNums.has(n)).slice(0, 3),
           severidad: (h.severidad === "critica" || h.severidad === "alta" || h.severidad === "media") ? h.severidad : "media",
+          // [Fix227] escena_nueva exige UN capitulo; si vienen varios, se toma el primero.
+          modo: (h.modo === "escena_nueva" ? "escena_nueva" : "reescritura") as "reescritura" | "escena_nueva",
           instruccion: String(h.instruccion || ""),
         }))
+        .map(h => h.modo === "escena_nueva" ? { ...h, capitulos: h.capitulos.slice(0, 1) } : h)
         .filter(h => h.capitulos.length > 0)
         .slice(0, 4);
       return { result: parsed, raw: response };

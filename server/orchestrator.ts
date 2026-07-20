@@ -10252,14 +10252,25 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           const chapter = allChapters.find(c => c.chapterNumber === num && c.status === "completed");
           const sectionData = allSections.find(s => s.numero === num);
           if (!chapter || !sectionData || !chapter.content || chapter.content.trim().length < 200) continue;
-          const directiva = [
-            `REPARACION MID-NOVELA (hallazgo ${finding.id}: ${finding.titulo}, severidad ${finding.severidad}${finding.intentos > 0 ? ", REINCIDENTE — se intento reparar antes y persiste, se mas quirurgico" : ""}).`,
-            `QUE REPARAR EN ESTE CAPITULO: ${finding.instruccion}`,
-            `LIMITES: conserva hechos, canon, continuidad, World Bible e hitos de serie; repara el defecto señalado sin alterar la trama establecida. PROHIBIDO fusionar, dividir o eliminar capitulos: repara DENTRO de este capitulo.`,
-          ].join("\n\n");
+          // [Fix227] Modo escena_nueva: el evento decisivo se relata fuera de
+          // escena; la reparacion AÑADE una escena completa dramatizada dentro
+          // del capitulo (subcapitulo), sin corse de longitud.
+          const esEscenaNueva = finding.modo === "escena_nueva";
+          const directiva = esEscenaNueva
+            ? [
+                `REPARACION MID-NOVELA — ESCENA NUEVA (hallazgo ${finding.id}: ${finding.titulo}, severidad ${finding.severidad}${finding.intentos > 0 ? ", REINCIDENTE — se intento reparar antes y persiste" : ""}).`,
+                `EVENTO A DRAMATIZAR EN PAGINA (hoy solo se relata a posteriori): ${finding.instruccion}`,
+                `AÑADE la escena completa en el punto cronologico correcto de este capitulo (subcapitulo con separador *** si procede) y elimina o reduce el resumen a posteriori que la sustituia. La escena debe respetar exactamente los hechos, resultado y personajes ya narrados. El resto del capitulo queda intacto. El capitulo PUEDE crecer sin limite de extension.`,
+              ].join("\n\n")
+            : [
+                `REPARACION MID-NOVELA (hallazgo ${finding.id}: ${finding.titulo}, severidad ${finding.severidad}${finding.intentos > 0 ? ", REINCIDENTE — se intento reparar antes y persiste, se mas quirurgico" : ""}).`,
+                `QUE REPARAR EN ESTE CAPITULO: ${finding.instruccion}`,
+                `LIMITES: conserva hechos, canon, continuidad, World Bible e hitos de serie; repara el defecto señalado sin alterar la trama establecida. PROHIBIDO fusionar, dividir o eliminar capitulos: repara DENTRO de este capitulo.`,
+              ].join("\n\n");
           try {
             await this.rewriteChapterForQA(
               project, chapter, sectionData, worldBibleData, guiaEstilo, "editorial", directiva,
+              0, 0, esEscenaNueva,
             );
             rewrittenThisPass++;
             this.midNovelRepairsUsed++;
@@ -19423,7 +19434,14 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
     //   _structuralTranslateDepth: incrementado por la traducción estructural
     //     del Hotfix #7. Limita rebotes estructural→estructural.
     _mismatchRerouteDepth: number = 0,
-    _structuralTranslateDepth: number = 0
+    _structuralTranslateDepth: number = 0,
+    // [Fix227] Modo EXPANSION DE ESCENA: cuando el hallazgo es "evento decisivo
+    // relatado fuera de escena", la reparacion debe poder AÑADIR una escena
+    // completa dramatizada dentro del capitulo (subcapitulo), liberada del
+    // corse de longitud (el capitulo puede crecer sustancialmente). Solo lo
+    // activa el brazo de reparacion mid-novela; el resto de flujos QA mantienen
+    // la cirugia estricta de siempre.
+    _sceneExpansion: boolean = false
   ): Promise<{ reroutedTo?: number[] } | void> {
     // [Fix78] Biblia de Serie consolidada también en reescritura quirúrgica:
     // si el QA pide cambios sobre un libro de serie, el Narrador conserva
@@ -20246,7 +20264,9 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
     const originalBelowTarget = originalWordCount < perChapterMinRewrite;
     const originalAboveTarget = originalWordCount > perChapterMaxRewrite;
 
-    const lengthContextNote = originalBelowTarget
+    const lengthContextNote = _sceneExpansion
+      ? `NOTA DE LONGITUD [MODO EXPANSION DE ESCENA]: este capítulo original tiene ${originalWordCount} palabras. La instrucción exige AÑADIR una escena completa dramatizada, así que el capítulo DEBE crecer: no hay techo estricto de extensión (orientativo: la escena nueva suele añadir 800-2.000 palabras). NO contraigas ni recortes el texto existente para "hacer sitio".`
+      : originalBelowTarget
       ? `NOTA DE LONGITUD: este capítulo original tiene ${originalWordCount} palabras y el rango saludable del proyecto es ${perChapterMinRewrite}-${perChapterMaxRewrite}. Está POR DEBAJO del rango. Si la instrucción editorial lo justifica (p.ej. siembra, desarrollo, redistribución de arco), tienes permiso para EXPANDIR hacia el rango del proyecto — pero solo con material que la instrucción demande, no con descripciones o monólogos gratuitos.`
       : originalAboveTarget
         ? `NOTA DE LONGITUD: este capítulo original tiene ${originalWordCount} palabras y el rango saludable del proyecto es ${perChapterMinRewrite}-${perChapterMaxRewrite}. Está POR ENCIMA del rango. Si la instrucción editorial lo justifica, puedes CONTRAER pasajes no esenciales para acercarlo al rango del proyecto.`
@@ -20279,10 +20299,21 @@ PROHIBIDO ABSOLUTAMENTE:
 - Eliminar pasajes que no estén directamente relacionados con el issue.
 - "Mejorar" la prosa de paso (eso ya lo hizo el Estilista).
 
-Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del texto idéntico al original.`;
+Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del texto idéntico al original.${_sceneExpansion ? `
+
+⚡ EXCEPCION [MODO EXPANSION DE ESCENA] ⚡
+La instrucción de arriba exige AÑADIR UNA ESCENA NUEVA COMPLETA dentro de este capítulo (un evento decisivo que hoy se relata a posteriori/fuera de escena y debe ocurrir EN PAGINA). Para ESA escena, y solo para ella, quedan sin efecto la regla 3 (puedes dramatizar el evento con detalle escénico nuevo: acciones, diálogo, sensorial), la regla 5 (el capítulo DEBE crecer) y la prohibición de añadir pasajes. Reglas de la escena nueva:
+- Insértala en el punto CRONOLOGICO correcto del capítulo, separada como subcapítulo con el separador de escena habitual (***) si el corte lo pide.
+- MOSTRAR, no contar: acción en presente dramático de la narración, con los personajes en escena. Elimina o reduce el relato a posteriori que la resumía (esa es la única supresión permitida del texto original).
+- La escena no puede contradecir NADA de lo ya narrado: mismos hechos, mismo resultado, mismos presentes; solo se dramatiza lo que antes se resumía.
+- El resto del capítulo sigue bajo las reglas quirúrgicas: intacto.` : ""}`;
 
     const surgicalMin = allowedLower;
-    const surgicalMax = allowedUpper;
+    // [Fix227] En expansion de escena el techo sube: original + escena nueva
+    // (~2.500 palabras de margen) sin quedar por debajo del techo normal.
+    const surgicalMax = _sceneExpansion
+      ? Math.max(allowedUpper, originalWordCount + 2500)
+      : allowedUpper;
 
     const enrichedWBSurgical = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreadsRewrite, seriesEventsRewrite);
     const resolvedLexicoSurgical = this.resolveLexicoForChapter(worldBibleData, sectionData.numero);
@@ -20352,7 +20383,9 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
       this.callbacks.onAgentStatus("ghostwriter", "writing",
         `${sectionLabel}: longitud ${firstWc} fuera de rango ${firstTryLower}-${firstTryUpper}. Reintentando...`
       );
-      const retryInstructions = surgicalInstructions + `\n\n🚨 REINTENTO — TU INTENTO ANTERIOR TUVO ${firstWc} PALABRAS Y EL RANGO PERMITIDO ES ${firstTryLower}-${firstTryUpper}. Devuelve el capítulo con una extensión ESTRICTAMENTE dentro de ese rango. Copia el original verbatim y modifica SOLO los pasajes que la instrucción editorial requiere.`;
+      const retryInstructions = surgicalInstructions + (_sceneExpansion
+        ? `\n\n🚨 REINTENTO — TU INTENTO ANTERIOR TUVO ${firstWc} PALABRAS. ${firstWc < firstTryLower ? `Has ENCOGIDO el capítulo: está prohibido recortar el texto original (mínimo ${firstTryLower} palabras). Copia el original verbatim y AÑADE la escena nueva completa.` : `La escena añadida es desproporcionada (máximo operativo ${firstTryUpper} palabras). Mantén el original intacto y una escena nueva contenida (~800-2.000 palabras añadidas).`}`
+        : `\n\n🚨 REINTENTO — TU INTENTO ANTERIOR TUVO ${firstWc} PALABRAS Y EL RANGO PERMITIDO ES ${firstTryLower}-${firstTryUpper}. Devuelve el capítulo con una extensión ESTRICTAMENTE dentro de ese rango. Copia el original verbatim y modifica SOLO los pasajes que la instrucción editorial requiere.`);
       const enrichedWBSurgicalRetry = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible, seriesThreadsRewrite, seriesEventsRewrite);
       writerResult = await this.ghostwriter.execute({
         chapterNumber: sectionData.numero,
@@ -20410,7 +20443,12 @@ Devuelve el capítulo COMPLETO con las correcciones aplicadas y el resto del tex
     // original con un margen estricto: si la corrección requiere reescritura más radical,
     // debería ir por otra ruta (no por este fallback).
     const originalCapLower = Math.round(originalWordCount * 0.85);
-    const originalCapUpper = Math.round(originalWordCount * 1.15);
+    // [Fix227] En expansion de escena el capitulo DEBE poder crecer muy por
+    // encima del ±15% del original: el tope absoluto pasa a ser el rango
+    // quirurgico ampliado. El suelo no cambia (nunca debe ENCOGER).
+    const originalCapUpper = _sceneExpansion
+      ? Math.round(surgicalMax * 1.10)
+      : Math.round(originalWordCount * 1.15);
     const hardLower = Math.max(Math.round(surgicalMin * 0.90), originalCapLower);
     const hardUpper = Math.min(Math.round(surgicalMax * 1.10), originalCapUpper);
     if (candidateWordCount < hardLower || candidateWordCount > hardUpper) {
