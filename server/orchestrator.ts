@@ -2664,6 +2664,19 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                       message: `✅ El Arquitecto rediseñó el outline aplicando las correcciones del Crítico de Originalidad.`,
                     });
                   } else {
+                    // [Fix235] Antes de rechazar: si el retry vino TRUNCADO,
+                    // empalmar cabeza revisada + cola de la escaleta previa.
+                    const repaired = this.repairTruncatedEscaleta(project, reviewedData, worldBibleData);
+                    if (repaired) {
+                      worldBibleData = repaired.data;
+                      await storage.createActivityLog({
+                        projectId: project.id,
+                        level: "info",
+                        agentRole: "architect",
+                        message: `[Fix235] Reintento del Arquitecto (originalidad) llegó truncado (${reviewedLen} caps) y se reparó por EMPALME: ${repaired.keptFromRetry} caps revisados + ${repaired.filledFromPrevious} de la escaleta previa. La revisión no se pierde.`,
+                        metadata: { fix: "Fix235", auditor: "originalidad", keptFromRetry: repaired.keptFromRetry, filledFromPrevious: repaired.filledFromPrevious },
+                      });
+                    } else {
                     const rangeLabel = this.formatAcceptableEscaletaRange(project);
                     console.warn(`[Orchestrator] Revisión del Arquitecto (originalidad) RECHAZADA: ${reviewedLen} caps fuera del rango aceptable ${rangeLabel} (o sin personajes). Manteniendo outline original.`);
                     // [Fix104] Visibilidad al usuario.
@@ -2674,6 +2687,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                       message: `[Fix104] Reintento del Arquitecto (originalidad) RECHAZADO: produjo ${reviewedLen} caps fuera del rango aceptable ${rangeLabel}. Se conserva el outline anterior y se continúa el pipeline.`,
                       metadata: { fix: "Fix104", reviewedLen, rangeLabel, auditor: "originalidad" },
                     });
+                    }
                   }
                 } else {
                   console.warn(`[Orchestrator] Revisión del Arquitecto falló: ${retryResult.error || "vacío/timeout"}. Manteniendo outline original.`);
@@ -2853,6 +2867,21 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
                   });
                   continue;
                 } else {
+                  // [Fix235] Antes de rechazar: si el retry vino TRUNCADO,
+                  // empalmar cabeza revisada + cola de la escaleta previa y
+                  // dejar que el auditor re-audite el resultado.
+                  const repaired = this.repairTruncatedEscaleta(project, reviewedData, worldBibleData);
+                  if (repaired) {
+                    worldBibleData = repaired.data;
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "info",
+                      agentRole: "architect",
+                      message: `[Fix235] Reintento del Arquitecto (Integridad Narrativa) llegó truncado (${reviewedLen} caps) y se reparó por EMPALME: ${repaired.keptFromRetry} caps revisados + ${repaired.filledFromPrevious} de la escaleta previa. Se re-audita en vez de perder la revisión.`,
+                      metadata: { fix: "Fix235", auditor: "integridad", keptFromRetry: repaired.keptFromRetry, filledFromPrevious: repaired.filledFromPrevious },
+                    });
+                    continue;
+                  }
                   const rangeLabel = this.formatAcceptableEscaletaRange(project);
                   console.warn(`[Orchestrator] Revisión por Auditor de Integridad RECHAZADA: ${reviewedLen} caps fuera del rango aceptable ${rangeLabel} (o sin personajes). Manteniendo mejor visto.`);
                   // [Fix104] Visibilidad al usuario.
@@ -3866,6 +3895,22 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
                   });
                   continue;
                 } else {
+                  // [Fix235] Antes de rechazar: si el retry vino TRUNCADO,
+                  // empalmar cabeza revisada + cola de la mejor escaleta vista
+                  // (bestSA) o la vigente, y re-auditar en vez de quemar el
+                  // intento (caso real del log: 9 y 32 caps con >=35 esperados).
+                  const repaired = this.repairTruncatedEscaleta(project, reviewedData, bestSA?.data || worldBibleData);
+                  if (repaired) {
+                    worldBibleData = repaired.data;
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "info",
+                      agentRole: "architect",
+                      message: `[Fix235] Reintento del Arquitecto (Auditor Estructural) llegó truncado (${reviewedLen} caps) y se reparó por EMPALME: ${repaired.keptFromRetry} caps revisados + ${repaired.filledFromPrevious} de la escaleta previa. Se re-audita en vez de perder la revisión.`,
+                      metadata: { fix: "Fix235", auditor: "estructural", keptFromRetry: repaired.keptFromRetry, filledFromPrevious: repaired.filledFromPrevious },
+                    });
+                    continue;
+                  }
                   const rangeLabel = this.formatAcceptableEscaletaRange(project);
                   console.warn(`[Orchestrator] Revisión por Auditor Estructural RECHAZADA: ${reviewedLen} caps fuera del rango aceptable ${rangeLabel} (o sin personajes). Manteniendo mejor visto.`);
                   // [Fix104] Visibilidad al usuario.
@@ -4315,6 +4360,22 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
                     // Continúa el for: el siguiente iter analizará la nueva escaleta.
                     continue;
                   } else {
+                    // [Fix235] Antes de rechazar: si el retry vino TRUNCADO,
+                    // empalmar cabeza revisada + cola de la escaleta previa
+                    // (el helper tambien hereda matriz_arcos/estructura_tres_actos
+                    // si el retry los perdio) y re-evaluar con el Lector Beta.
+                    const repairedBeta = this.repairTruncatedEscaleta(project, reviewedData, worldBibleData);
+                    if (repairedBeta) {
+                      worldBibleData = repairedBeta.data;
+                      await storage.createActivityLog({
+                        projectId: project.id,
+                        level: "info",
+                        agentRole: "architect",
+                        message: `[Fix235] Reintento del Arquitecto (Lector Beta, iter ${betaIter}) llegó truncado (${reviewedLen} caps) y se reparó por EMPALME: ${repairedBeta.keptFromRetry} caps revisados + ${repairedBeta.filledFromPrevious} de la escaleta previa. Se re-evalúa en vez de perder la revisión.`,
+                        metadata: { fix: "Fix235", auditor: "beta", betaIter, keptFromRetry: repairedBeta.keptFromRetry, filledFromPrevious: repairedBeta.filledFromPrevious },
+                      });
+                      continue;
+                    }
                     const rangeLabel = this.formatAcceptableEscaletaRange(project);
                     const motivo = !acceptCount
                       ? `${reviewedLen} caps fuera del rango aceptable ${rangeLabel}`
@@ -16233,6 +16294,61 @@ Responde SOLO con un JSON válido con la estructura:
     }
     const expected = project.chapterCount + extras;
     return escaletaLength >= expected - 2;
+  }
+
+  // [Fix235] Reparacion por EMPALME de reintentos truncados del Arquitecto.
+  // En logs reales el retry del bucle SA devolvio 9 y 32 caps (esperados >=35)
+  // y [Fix104] descartaba la revision ENTERA: se quemaban iteraciones del
+  // auditor sin aplicar ninguna correccion y la escaleta cerraba en 6.5/10.
+  // Un retry truncado casi siempre es un corte de salida del LLM: los caps
+  // presentes SI llevan las correcciones. Aqui conservamos la cabeza revisada
+  // y completamos la cola desde la escaleta previa (mejor vista), rellenando
+  // matriz_arcos/estructura_tres_actos si el retry los perdio. El resultado
+  // NO va directo a escritura: vuelve al auditor correspondiente, que decide.
+  // Frenos: minimo 5 caps revisados y al menos ~40% de la escaleta previa
+  // (por debajo, el empalme seria mas costura que revision).
+  private repairTruncatedEscaleta(
+    project: Project,
+    reviewedData: ParsedWorldBible | null,
+    previousData: ParsedWorldBible | null | undefined,
+  ): { data: ParsedWorldBible; keptFromRetry: number; filledFromPrevious: number } | null {
+    if (!reviewedData || !reviewedData.world_bible?.personajes?.length) return null;
+    const reviewed = reviewedData.escaleta_capitulos || [];
+    const previous = previousData?.escaleta_capitulos || [];
+    const reviewedLen = reviewed.length;
+    const prevLen = previous.length;
+    // Solo reparamos TRUNCADOS: el retry trae MENOS caps que el previo
+    // aceptable. Excesos u otras anomalias siguen el rechazo clasico.
+    if (reviewedLen === 0 || prevLen === 0 || reviewedLen >= prevLen) return null;
+    if (!this.isAcceptableEscaletaCount(project, prevLen)) return null;
+    if (reviewedLen < 5 || reviewedLen < Math.ceil(prevLen * 0.4)) return null;
+
+    const tail = previous.slice(reviewedLen);
+    const merged = [...reviewed, ...tail].map((cap: any, idx: number) => {
+      const prevCap: any = previous[idx];
+      // Numeracion continua: heredamos el numero de la posicion equivalente
+      // de la escaleta previa (misma longitud final), evitando huecos o
+      // duplicados si el retry corto a mitad de la lista.
+      if (prevCap && typeof prevCap.numero === "number") {
+        return { ...cap, numero: prevCap.numero };
+      }
+      return cap;
+    });
+    if (!this.isAcceptableEscaletaCount(project, merged.length)) return null;
+
+    const data: ParsedWorldBible = {
+      ...reviewedData,
+      escaleta_capitulos: merged,
+    } as ParsedWorldBible;
+    // Columna vertebral estructural: si el retry truncado la perdio, la
+    // heredamos de la version previa para no crear "escaletas fantasma".
+    if (!(data as any).matriz_arcos && (previousData as any)?.matriz_arcos) {
+      (data as any).matriz_arcos = (previousData as any).matriz_arcos;
+    }
+    if (!(data as any).estructura_tres_actos && (previousData as any)?.estructura_tres_actos) {
+      (data as any).estructura_tres_actos = (previousData as any).estructura_tres_actos;
+    }
+    return { data, keptFromRetry: reviewedLen, filledFromPrevious: tail.length };
   }
 
   private buildSectionsList(project: Project, worldBibleData: ParsedWorldBible): SectionData[] {
