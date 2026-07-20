@@ -3207,7 +3207,7 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
             forma_escena: [], ledger_info: [], dosificacion_revelacion: [],
             arco_secreto: [], falso_aliado: [], escalada_acto2: [],
             deus_ex_machina: [], trauma_protagonista: [], arco_secundario: [],
-            set_piece_clonado: [], propulsion_avance: [],
+            set_piece_clonado: [], propulsion_avance: [], secuencia_macro: [],
           };
           const AREA_TO_COVERAGE_FIELD: Record<string, string> = {
             forma_escena: "forma_dominante_pct",
@@ -3221,6 +3221,7 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
             arco_secundario: "arco_secundario_pct",
             set_piece_clonado: "set_piece_clonado_pct",
             propulsion_avance: "propulsion_avance_pct",
+            secuencia_macro: "secuencia_macro_pct",
           };
           const CHRONIC_ZERO_COVERAGE_ITERS = 3;
 
@@ -3438,12 +3439,13 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
               arco_secundario: "Continuidad de arco de personaje secundario",
               set_piece_clonado: "Set-pieces clonados (variedad real por contenido)",
               propulsion_avance: "Propulsión narrativa (avance material e irreversible del acto 2)",
+              secuencia_macro: "Secuencias macro repetidas (ciclos calcados / tránsito inflado)",
             };
             const dimensionCountsSA: Record<string, number> = {
               forma_escena: 0, ledger_info: 0, dosificacion_revelacion: 0,
               arco_secreto: 0, falso_aliado: 0, escalada_acto2: 0,
               deus_ex_machina: 0, trauma_protagonista: 0, arco_secundario: 0,
-              set_piece_clonado: 0, propulsion_avance: 0,
+              set_piece_clonado: 0, propulsion_avance: 0, secuencia_macro: 0,
             };
             // [Fix102 post-review] Marcador de severidad alta por dimensión.
             // Una "alta" obliga a KO aunque haya un único problema, evitando
@@ -3453,7 +3455,7 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
               forma_escena: false, ledger_info: false, dosificacion_revelacion: false,
               arco_secreto: false, falso_aliado: false, escalada_acto2: false,
               deus_ex_machina: false, trauma_protagonista: false, arco_secundario: false,
-              set_piece_clonado: false, propulsion_avance: false,
+              set_piece_clonado: false, propulsion_avance: false, secuencia_macro: false,
             };
             for (const p of sa.problemas) {
               if (p.area in dimensionCountsSA) {

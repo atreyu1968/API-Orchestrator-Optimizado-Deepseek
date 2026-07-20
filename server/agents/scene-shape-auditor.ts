@@ -132,7 +132,8 @@ export interface StructuralAuditProblem {
     | "trauma_protagonista"
     | "arco_secundario"
     | "set_piece_clonado"
-    | "propulsion_avance";
+    | "propulsion_avance"
+    | "secuencia_macro";
   tipo: string;
   severidad: "alta" | "media" | "baja";
   capitulos: number[];
@@ -152,6 +153,7 @@ export interface StructuralAuditCoverage {
   arco_secundario_pct: number;
   set_piece_clonado_pct: number;
   propulsion_avance_pct: number;
+  secuencia_macro_pct: number;
 }
 
 export interface StructuralAuditResult {
@@ -2032,6 +2034,7 @@ function buildInstructions(problemas: StructuralAuditProblem[]): string {
   renderArea("9) CONTINUIDAD DE ARCO SECUNDARIO (sin abandono ni brechas largas)", byArea["arco_secundario"]);
   renderArea("10) SET-PIECES CLONADOS (mismo tipo con escenario/táctica/oposición/coste calcados)", byArea["set_piece_clonado"]);
   renderArea("11) PROPULSIÓN NARRATIVA (avance material e irreversible del acto 2)", byArea["propulsion_avance"]);
+  renderArea("12) SECUENCIAS MACRO REPETIDAS (ciclos de 3-5 caps calcados / tránsito inflado)", byArea["secuencia_macro"]);
 
   lines.push("REGLA ANTI-RECURRENCIA: en la próxima generación, declara y respeta ESTOS campos por capítulo:");
   lines.push(
@@ -2042,6 +2045,9 @@ function buildInstructions(problemas: StructuralAuditProblem[]): string {
   );
   lines.push(
     `- "propulsion" (bloque obligatorio por capítulo): "cambio_irreversible" (≥25 caracteres, consecuencia que no puede deshacerse sin coste), "coste_pagado", "decision_final" (NUNCA "seguir investigando"/"esperar"/"reflexionar"), "consecuencia_siguiente" y "vectores_modificados" (≥2 de: ${VECTORES_PROPULSION.join(", ")}). En el acto 2: máximo 2 caps consecutivos sin cambio irreversible; en cada ventana de 4 caps al menos uno debe modificar un vector primario (objetivo, relacion o poder).`
+  );
+  lines.push(
+    `- SECUENCIAS MACRO (acto 2): ningún ciclo de 3-5 "tipo_capitulo" puede repetirse 3+ veces (tres secuencias con la misma coreografía = "tres viajes idénticos con distinto decorado"); ningún núcleo funcional (viaje, emboscada, huida...) puede dominar la "funcion_estructural" de más de ceil(N/4) caps; máximo 3 caps consecutivos de tránsito — un viaje largo se cuenta con elipsis/montaje conservando solo los hitos imprescindibles.`
   );
   lines.push(
     `- "revelaciones_dosificadas" (array). Toda revelación con dificultad "alto" debe traer modo_extraccion != "sin_resistencia" y al menos 1 cap en setup_capitulos. Ningún cap puede acumular ≥3 revelaciones de dificultad alta. Ningún personaje antagonista/cómplice puede revelar ≥3 hechos en un único capítulo.`
@@ -2560,6 +2566,163 @@ function auditPropulsionAvance(
   return { problemas, coverage };
 }
 
+// ────────────────────────────────────────────────────────────────────
+// [Fix232] (12) SECUENCIAS MACRO REPETIDAS — anti "tres viajes identicos".
+// Caso real: caps 12-24 con tres tramos (barco / selva / canoa) que repiten
+// el mismo ciclo interno (peligro → descanso → conversacion → nuevo peligro).
+// Todas las defensas previas miran capitulo a capitulo o ventanas de 4 caps;
+// un ciclo que se repite cada 4-5 caps con etiquetas distintas se escapaba.
+// Tres comprobaciones deterministas sobre el acto 2 (gate: acto 2 >= 8 caps):
+//   (a) CICLO ESTRUCTURAL: un n-grama (3-5 letras) de tipo_capitulo que
+//       aparece 3+ veces sin solapar => ALTA (tres secuencias con la misma
+//       coreografia estructural). Requiere cobertura tipo_capitulo >= 80%
+//       en el acto 2 para no castigar escaletas legacy.
+//   (b) FUNCION NUCLEO REPETIDA: un token de contenido de funcion_estructural
+//       ("viaje", "emboscada", "huida"...) presente en > max(3, ceil(N/4))
+//       caps del acto 2 => media (version determinista de la regla 3c).
+//   (c) TRANSITO PROLONGADO: racha de caps de transito (tipo K o vocabulario
+//       de viaje en funcion/titulo/ubicacion) >= 4 seguidos => media;
+//       >= 6 seguidos => ALTA (el lector lleva un cuarto de acto viajando).
+// Pauta conservadora (memoria): alta solo en los casos inequivocos, gates de
+// cobertura, y NO entra en CRITICAL_SECOND_HALF_DIMS.
+// ────────────────────────────────────────────────────────────────────
+const STOPWORDS_FUNCION = new Set([
+  "de", "del", "la", "el", "los", "las", "un", "una", "con", "por", "para",
+  "que", "en", "al", "se", "su", "sus", "hacia", "entre", "sobre", "tras",
+  "primera", "primer", "segundo", "segunda", "tercer", "tercera", "nuevo",
+  "nueva", "gran", "mas", "casi", "protagonista", "personaje", "capitulo",
+  "encuentro", "escena", "momento", "punto", "parte",
+]);
+// Tokens FUERTES: inequivocos de desplazamiento (vehiculos, verbos de viaje);
+// valen en funcion/titulo/ubicacion. Tokens DEBILES ("ruta", "camino"...):
+// demasiado genericos fuera de contexto (post-review del architect), solo
+// cuentan si aparecen en funcion_estructural.
+const TRANSITO_FUERTE_RE = /\b(viaje|viajan|travesia|transito|trayecto|desplazamiento|navegacion|navegan|zarpan|embarcan|barco|canoa|caravana|expedicion|huida|huyen|fuga)\b/;
+const TRANSITO_DEBIL_RE = /\b(ruta|camino|marcha|cruzan|cruce|atraviesan)\b/;
+
+function esCapTransito(c: any): boolean {
+  const tc = String(c?.tipo_capitulo || "").trim().toUpperCase();
+  if (tc === "K") return true;
+  const amplio = normalizeForTokens(
+    [c?.funcion_estructural, c?.titulo, c?.ubicacion].map((x: any) => String(x || "")).join(" ")
+  );
+  if (TRANSITO_FUERTE_RE.test(amplio)) return true;
+  return TRANSITO_DEBIL_RE.test(normalizeForTokens(String(c?.funcion_estructural || "")));
+}
+
+function auditSecuenciaMacro(
+  escaleta: any[]
+): { problemas: StructuralAuditProblem[]; coverage: number } {
+  const { act2, all } = getActSlices(escaleta);
+  const total = all.length;
+  const withTipo = all.filter((c: any) => String(c?.tipo_capitulo || "").trim());
+  const coverage = total > 0 ? withTipo.length / total : 0;
+  const problemas: StructuralAuditProblem[] = [];
+
+  if (act2.length < 8) return { problemas, coverage };
+
+  // (a) Ciclo estructural repetido: n-gramas de tipo_capitulo en el acto 2.
+  const letras = act2.map((c: any) => String(c?.tipo_capitulo || "").trim().toUpperCase());
+  const conLetra = letras.filter(Boolean).length;
+  if (conLetra / act2.length >= 0.8) {
+    // Dedupe por COBERTURA de capitulos (post-review del architect): un ciclo
+    // corto solo se omite si sus caps ya estan cubiertos por uno mas largo ya
+    // reportado; ciclos cortos independientes en otros tramos SI se reportan.
+    const capsYaFlaggeados = new Set<number>();
+    for (let n = 5; n >= 3; n--) {
+      if (letras.length < n * 3) continue;
+      const vistos = new Set<string>();
+      for (let i = 0; i + n <= letras.length; i++) {
+        const gram = letras.slice(i, i + n);
+        if (gram.some((l) => !l)) continue;
+        const key = gram.join("");
+        if (vistos.has(key)) continue;
+        vistos.add(key);
+        // Ocurrencias sin solapamiento del n-grama.
+        const capsAfectados: number[] = [];
+        let count = 0;
+        let j = 0;
+        while (j + n <= letras.length) {
+          if (letras.slice(j, j + n).join("") === key) {
+            count++;
+            for (let k = j; k < j + n; k++) capsAfectados.push(capNum(act2[k]));
+            j += n;
+          } else {
+            j++;
+          }
+        }
+        if (count >= 3) {
+          if (capsAfectados.every((c) => capsYaFlaggeados.has(c))) continue;
+          for (const c of capsAfectados) capsYaFlaggeados.add(c);
+          problemas.push({
+            area: "secuencia_macro",
+            tipo: "ciclo_estructural_repetido",
+            severidad: "alta",
+            capitulos: capsAfectados,
+            descripcion: `El ciclo de tipos de capítulo "${gram.join("→")}" se repite ${count} veces en el acto 2 (caps ${capsAfectados.join(", ")}). Tres o más secuencias con la MISMA coreografía estructural producen la sensación de "tres viajes idénticos con distinto decorado": el lector percibe que la novela repite el mismo tramo aunque cambien escenario y etiquetas.`,
+            sugerencia: `Rompe el ciclo rediseñando al menos una de las secuencias repetidas: condensa dos de ellas en una sola (conserva únicamente los hitos imprescindibles — la información o decisión que ningún otro cap aporta), o cambia la estructura interna de una (que el peligro no se resuelva y arrastre consecuencias, que la conversación reveladora ocurra DURANTE el peligro, que el tramo lo narre otra amenaza). El acto 2 no puede ser la misma secuencia tocada tres veces en tonalidades distintas.`,
+          });
+        }
+      }
+    }
+  }
+
+  // (b) Nucleo de funcion_estructural repetido en demasiados caps del acto 2.
+  const conFuncion = act2.filter((c: any) => String(c?.funcion_estructural || "").trim());
+  if (conFuncion.length / act2.length >= 0.5) {
+    const porToken = new Map<string, number[]>();
+    for (const c of act2) {
+      const tokens = new Set(
+        normalizeForTokens(String(c?.funcion_estructural || ""))
+          .split(" ")
+          .filter((t) => t.length >= 4 && !STOPWORDS_FUNCION.has(t))
+      );
+      for (const t of tokens) {
+        (porToken.get(t) || porToken.set(t, []).get(t)!).push(capNum(c));
+      }
+    }
+    const maxRep = Math.max(3, Math.ceil(act2.length / 4));
+    for (const [token, caps] of porToken.entries()) {
+      if (caps.length > maxRep) {
+        problemas.push({
+          area: "secuencia_macro",
+          tipo: "funcion_nucleo_repetida",
+          severidad: "media",
+          capitulos: caps,
+          descripcion: `El núcleo funcional "${token}" aparece en la "funcion_estructural" de ${caps.length} capítulos del acto 2 (caps ${caps.join(", ")}; máximo tolerado ${maxRep}). Aunque cambien escenario y detalles, el lector recibe ${caps.length} veces la misma función narrativa.`,
+          sugerencia: `Reduce los capítulos cuya función orbita alrededor de "${token}": condensa los redundantes conservando solo los hitos imprescindibles y asigna a los demás funciones estructurales DISTINTAS (confrontación, revelación, pérdida, decisión irreversible, cambio de alianza).`,
+        });
+      }
+    }
+  }
+
+  // (c) Racha de transito prolongada en el acto 2.
+  let rachaInicio = -1;
+  const rachas: Array<{ caps: number[] }> = [];
+  for (let i = 0; i <= act2.length; i++) {
+    const es = i < act2.length && esCapTransito(act2[i]);
+    if (es && rachaInicio < 0) rachaInicio = i;
+    if (!es && rachaInicio >= 0) {
+      const caps = act2.slice(rachaInicio, i).map(capNum);
+      if (caps.length >= 4) rachas.push({ caps });
+      rachaInicio = -1;
+    }
+  }
+  for (const r of rachas) {
+    const alta = r.caps.length >= 6;
+    problemas.push({
+      area: "secuencia_macro",
+      tipo: "transito_prolongado",
+      severidad: alta ? "alta" : "media",
+      capitulos: r.caps,
+      descripcion: `Caps ${r.caps.join(", ")}: ${r.caps.length} capítulos consecutivos del acto 2 son de tránsito (viaje, travesía, huida). ${alta ? "El lector pasa un cuarto del acto viajando: el eje narrativo se disuelve en el desplazamiento." : "El desplazamiento amenaza con convertirse en el contenido del tramo."} El peligro típico: cada etapa repite peligro → descanso → conversación reveladora → nuevo peligro.`,
+      sugerencia: `Condensa el tramo de tránsito: identifica los hitos narrativos imprescindibles (la información o decisión que ningún otro cap aporta) y asígnalos a menos capítulos; elimina o comprime en elipsis/montaje las etapas cuya única función es "seguir avanzando". Un viaje largo puede contarse en 2-3 caps con elipsis declaradas en la cronología.`,
+    });
+  }
+
+  return { problemas, coverage };
+}
+
 export function runArchitectStructuralAudits(
   escaleta: any[],
   worldBible: any,
@@ -2576,6 +2739,7 @@ export function runArchitectStructuralAudits(
   const arcoSec = auditArcoSecundario(escaleta, worldBible, seriesContext);
   const setPiece = auditSetPiecesClonados(escaleta);
   const propulsion = auditPropulsionAvance(escaleta);
+  const secuencia = auditSecuenciaMacro(escaleta);
 
   const problemas = [
     ...forma.problemas,
@@ -2589,6 +2753,7 @@ export function runArchitectStructuralAudits(
     ...arcoSec.problemas,
     ...setPiece.problemas,
     ...propulsion.problemas,
+    ...secuencia.problemas,
   ];
   const altas = problemas.filter((p) => p.severidad === "alta").length;
   const medias = problemas.filter((p) => p.severidad === "media").length;
@@ -2600,7 +2765,7 @@ export function runArchitectStructuralAudits(
   else if (altas <= 1 && medias <= 3) veredicto = "necesita_revision";
   else veredicto = "reescribir";
 
-  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}; Arco secreto: ${arco.problemas.length}; Falso aliado: ${fa.problemas.length}; Escalada acto 2: ${esc.problemas.length}; Deus ex machina: ${dem.problemas.length}; Trauma protagonista: ${trauma.problemas.length}; Arco secundario: ${arcoSec.problemas.length}; Set-pieces clonados: ${setPiece.problemas.length}; Propulsión narrativa: ${propulsion.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}% arco=${Math.round(arco.coverage * 100)}% aliado=${Math.round(fa.coverage * 100)}% apuesta=${Math.round(esc.coverage * 100)}% deus=${Math.round(dem.coverage * 100)}% trauma=${Math.round(trauma.coverage * 100)}% arcoSec=${Math.round(arcoSec.coverage * 100)}% setpiece=${Math.round(setPiece.coverage * 100)}% propulsion=${Math.round(propulsion.coverage * 100)}%.`;
+  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}; Arco secreto: ${arco.problemas.length}; Falso aliado: ${fa.problemas.length}; Escalada acto 2: ${esc.problemas.length}; Deus ex machina: ${dem.problemas.length}; Trauma protagonista: ${trauma.problemas.length}; Arco secundario: ${arcoSec.problemas.length}; Set-pieces clonados: ${setPiece.problemas.length}; Propulsión narrativa: ${propulsion.problemas.length}; Secuencias macro: ${secuencia.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}% arco=${Math.round(arco.coverage * 100)}% aliado=${Math.round(fa.coverage * 100)}% apuesta=${Math.round(esc.coverage * 100)}% deus=${Math.round(dem.coverage * 100)}% trauma=${Math.round(trauma.coverage * 100)}% arcoSec=${Math.round(arcoSec.coverage * 100)}% setpiece=${Math.round(setPiece.coverage * 100)}% propulsion=${Math.round(propulsion.coverage * 100)}% secuencia=${Math.round(secuencia.coverage * 100)}%.`;
 
   return {
     puntuacion_global: Math.round(score * 10) / 10,
@@ -2618,6 +2783,7 @@ export function runArchitectStructuralAudits(
       arco_secundario_pct: Math.round(arcoSec.coverage * 100) / 100,
       set_piece_clonado_pct: Math.round(setPiece.coverage * 100) / 100,
       propulsion_avance_pct: Math.round(propulsion.coverage * 100) / 100,
+      secuencia_macro_pct: Math.round(secuencia.coverage * 100) / 100,
     },
     resumen,
     instrucciones_revision: problemas.length > 0 ? buildInstructions(problemas) : "",
