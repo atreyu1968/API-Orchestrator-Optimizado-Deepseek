@@ -1118,6 +1118,29 @@ ${input.seriesMilestonesAndThreads}
     - Continúa los hilos sueltos que dejaron los volúmenes previos.
     - Tu nueva escaleta debe sentirse como continuación natural, no como un libro independiente.
 
+    ⚠️ PUENTE FÍSICO-TEMPORAL OBLIGATORIO [Fix224]:
+    El lector del volumen anterior abrirá este libro preguntándose CUÁNTO
+    tiempo ha pasado y DÓNDE están los personajes. Es OBLIGATORIO:
+    1. Añadir al world_bible un bloque de nivel superior "puente_inter_volumen":
+       {
+         "tiempo_transcurrido": "cuánto tiempo pasa desde la última escena del volumen anterior (concreto: horas/días/meses/años o 'continuidad inmediata')",
+         "lugar_final_volumen_anterior": "dónde y en qué situación terminó exactamente el volumen previo (dedúcelo del texto íntegro que tienes arriba)",
+         "lugar_arranque": "dónde arranca este volumen",
+         "tipo_de_puente": "continuidad_directa | elipsis_breve | salto_temporal | ruptura_deliberada",
+         "justificacion": "por qué este puente sirve al arco de la serie",
+         "como_se_establece_en_pagina": "cómo el capítulo 1 comunica el tiempo transcurrido y la situación SIN infodump (referencia temporal concreta, estado visible de heridas/relaciones/lugares, línea de diálogo que sitúe)"
+       }
+       Si la guía de serie declara el puente para esta transición (sección
+       "PUENTE FÍSICO-TEMPORAL ENTRE VOLÚMENES"), respétala como canon; si no
+       lo declara, decídelo TÚ y déjalo registrado en este bloque.
+    2. El capítulo 1 de la escaleta debe EJECUTAR ese puente: su
+       "objetivo_narrativo" o "informacion_nueva" debe incluir cómo se
+       establece en página el tiempo transcurrido y la continuidad (o la
+       ruptura deliberada). PROHIBIDO arrancar el volumen en un vacío
+       espacio-temporal donde el lector no pueda situar la acción respecto
+       al libro anterior. Un salto grande NO es un problema — un salto SIN
+       DECLARAR sí lo es.
+
 ${input.previousVolumesFullText}
     ═══════════════════════════════════════════════════════════════════
     ` : ""}

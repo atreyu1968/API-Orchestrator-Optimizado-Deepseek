@@ -529,6 +529,16 @@ Crea una guía EXHAUSTIVA para mantener la coherencia y calidad a lo largo de to
          - Desvíos deliberados de la historia real se declaran como "licencia narrativa" explícita (qué se cambia y por qué).
          - Si la serie es contemporánea o de mundo secundario/inventado: escribe literalmente "Canon histórico-factual: No aplica".
 
+    11.6 **PUENTE FÍSICO-TEMPORAL ENTRE VOLÚMENES** ⚠️ OBLIGATORIO [Fix224]:
+         Uno de los defectos crónicos de las series es que el lector abre el volumen N+1 y no sabe CUÁNTO tiempo ha pasado ni DÓNDE están los personajes respecto al final del volumen N. A veces la continuidad directa no es necesaria — pero la relación debe quedar declarada SIEMPRE, aunque sea para decir que hay un salto deliberado.
+         Para CADA transición entre volúmenes consecutivos (Vol 1→2, Vol 2→3, ...) declara:
+         - **tiempo_transcurrido**: cuánto tiempo pasa entre el final de un volumen y el arranque del siguiente (horas, días, meses, años, o "continuidad inmediata"). Prohibido dejarlo indefinido.
+         - **continuidad_fisica**: dónde termina el volumen anterior y dónde arranca el siguiente; si es el mismo lugar (continuidad directa), un lugar distinto con viaje implícito (elipsis), o un escenario completamente nuevo (salto deliberado).
+         - **tipo_de_puente**: uno de: "continuidad_directa" (retoma la misma escena o sus consecuencias inmediatas) | "elipsis_breve" (días/semanas, mismo hilo) | "salto_temporal" (meses/años, el mundo ha cambiado) | "ruptura_deliberada" (nuevo escenario/época/elenco parcial, conexión temática o de personaje).
+         - **justificacion**: por qué ese puente sirve al arco global (un salto sin motivo se percibe como descuido; un salto motivado es una herramienta).
+         - **como_se_establece_en_pagina**: cómo debe comunicarlo el PRIMER capítulo del volumen nuevo al lector SIN infodump (una referencia temporal concreta, el estado visible de una herida/relación/lugar que cuantifique el tiempo pasado, una línea de diálogo que sitúe). El lector nunca debe tener que deducir a ciegas cuánto tiempo pasó.
+         Si la serie es de volúmenes independientes (antología, mismo mundo sin cronología compartida), decláralo explícitamente aquí: esa TAMBIÉN es una decisión de puente.
+
 12. **VOZ NARRATIVA CANÓNICA DE LA SERIE** (OBLIGATORIO — al FINAL del documento, formato literal)
     Cierra la guía con un bloque EXACTAMENTE en este formato (sin emojis, sin variaciones), declarando la voz que comparten TODOS los volúmenes de la serie:
 

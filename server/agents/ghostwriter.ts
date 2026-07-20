@@ -1213,6 +1213,38 @@ ${input.seriesMilestonesAndThreads}
     `;
     }
 
+    // [Fix224] Puente fisico-temporal entre volumenes: el capitulo 1 del
+    // volumen nuevo debe situar al lector (cuanto tiempo paso, donde estan)
+    // o declarar la ruptura deliberada. Solo aplica al arranque (caps 0-1).
+    const puente = (input.worldBible as any)?.puente_inter_volumen;
+    if (puente && typeof puente === "object" && input.chapterNumber <= 1) {
+      prompt += `
+
+    ═══════════════════════════════════════════════════════════════════
+    PUENTE FÍSICO-TEMPORAL CON EL VOLUMEN ANTERIOR (VINCULANTE, Fix224)
+    ═══════════════════════════════════════════════════════════════════
+    Este capítulo abre un volumen de serie. El lector del libro anterior debe
+    poder situarse SIN esfuerzo en las primeras páginas:
+    ${String(puente.tiempo_transcurrido || "").trim() ? `- TIEMPO TRANSCURRIDO desde el final del volumen anterior: ${String(puente.tiempo_transcurrido).trim()}` : ""}
+    ${String(puente.lugar_final_volumen_anterior || "").trim() ? `- DÓNDE TERMINÓ el volumen anterior: ${String(puente.lugar_final_volumen_anterior).trim()}` : ""}
+    ${String(puente.lugar_arranque || "").trim() ? `- DÓNDE ARRANCA este volumen: ${String(puente.lugar_arranque).trim()}` : ""}
+    ${String(puente.tipo_de_puente || "").trim() ? `- TIPO DE PUENTE: ${String(puente.tipo_de_puente).trim()}` : ""}
+    ${String(puente.como_se_establece_en_pagina || "").trim() ? `- CÓMO ESTABLECERLO EN PÁGINA: ${String(puente.como_se_establece_en_pagina).trim()}` : ""}
+
+    REGLAS:
+    - Comunica el tiempo transcurrido y la situación física con recursos DE
+      ESCENA (una referencia temporal concreta, el estado visible de una
+      herida/relación/lugar, una línea de diálogo que sitúe), NUNCA con un
+      resumen expositivo del libro anterior.
+    - Si el puente es una ruptura deliberada (nuevo escenario/salto grande),
+      hazla sentir INTENCIONADA: ancla pronto una conexión reconocible
+      (personaje, objeto, consecuencia) con el volumen previo.
+    - El lector jamás debe preguntarse "¿cuánto tiempo ha pasado?" más allá
+      de las primeras páginas.
+    ═══════════════════════════════════════════════════════════════════
+    `;
+    }
+
     const prop = input.chapterData.propulsion;
     if (prop && String(prop.cambio_irreversible || "").trim().length > 0) {
       prompt += `
