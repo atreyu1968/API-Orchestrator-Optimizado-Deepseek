@@ -1,3 +1,4 @@
+- [Paridad Replit dev vs Ubuntu produccion](ubuntu-production-parity.md) — pensar cada cambio para el build de produccion en Ubuntu (auth activa, cache de estaticos, proxy); bugs invisibles en Replit dev.
 - [Fuentes de volumenes de una serie](series-volume-sources.md) — una serie vive en 3 tablas (projects/imported/reedit); todo gate de "volumenes previos" debe unir las tres o falla en series desde importados.
 - [Re-edit coverage & selective reverts](reedit-coverage-and-reverts.md) — cobertura por instrucción exige evidencia por-instrucción, no flag global; reverts selectivos solo en puntos de regresión.
 - [Auto-review readers & version memory](review-readers-version-memory.md) — Holístico lee limpio (sin notas previas); Beta sí arrastra su reacción anterior; aviso de regresión = contexto operativo, NO notas de contenido.
