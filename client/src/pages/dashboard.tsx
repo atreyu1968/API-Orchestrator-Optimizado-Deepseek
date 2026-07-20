@@ -178,10 +178,11 @@ export default function Dashboard() {
     refetchInterval: currentProject?.status === "generating" ? 3000 : false,
   });
 
-  const fetchLogs = () => {
-    if (!currentProject?.id) return;
-    
-    fetch(`/api/projects/${currentProject.id}/activity-logs?limit=200`)
+  const fetchLogs = (projectIdOverride?: number) => {
+    const targetId = projectIdOverride ?? currentProject?.id;
+    if (!targetId) return;
+
+    fetch(`/api/projects/${targetId}/activity-logs?limit=200`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -848,9 +849,17 @@ export default function Dashboard() {
           // Silencioso — la recovery es best-effort. AbortError tampoco interesa.
         });
 
-      const eventSource = new EventSource(`/api/projects/${projectId}/stream`);
-      
-      eventSource.onmessage = (event) => {
+      // [Fix228] Reconexion automatica del SSE: antes, en onerror se cerraba el
+      // EventSource y NUNCA se reabria — cada reinicio del servidor (o corte de
+      // red/proxy) dejaba el dashboard sin avance en vivo hasta refrescar a mano.
+      // Ahora reconectamos con backoff y, al reconectar, refrescamos logs y
+      // capitulos para recuperar lo que se perdio durante el corte.
+      let eventSource: EventSource | null = null;
+      let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+      let disposed = false;
+      let reconnectDelay = 2000;
+
+      const onStreamMessage = (event: MessageEvent) => {
         try {
           const data = JSON.parse(event.data);
           
@@ -964,8 +973,8 @@ export default function Dashboard() {
         }
       };
 
-      eventSource.onerror = () => {
-        eventSource.close();
+      const onStreamError = () => {
+        eventSource?.close();
         // Si la conexión SSE se cae a mitad de una lectura full-novel, el resultado
         // se pierde (no hay persistencia ni recuperación). Limpiamos los flags para
         // que la UI no se quede bloqueada esperando un evento que nunca llegará.
@@ -1000,11 +1009,38 @@ export default function Dashboard() {
           }
           return false;
         });
+        // [Fix228] Reintento con backoff (2s → max 30s). Al reconectar se
+        // recargan los logs historicos y se invalidan las queries del proyecto
+        // para recuperar los eventos perdidos durante el corte.
+        if (!disposed && !reconnectTimer) {
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            if (disposed) return;
+            fetchLogs(projectId);
+            queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "chapters"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId] });
+            queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+            connect();
+          }, reconnectDelay);
+          reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+        }
       };
 
+      const connect = () => {
+        eventSource = new EventSource(`/api/projects/${projectId}/stream`);
+        eventSource.onopen = () => {
+          reconnectDelay = 2000;
+        };
+        eventSource.onmessage = onStreamMessage;
+        eventSource.onerror = onStreamError;
+      };
+      connect();
+
       return () => {
+        disposed = true;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
         recoveryAbort.abort();
-        eventSource.close();
+        eventSource?.close();
       };
     }
   }, [currentProject?.id, activeProject?.id]);
