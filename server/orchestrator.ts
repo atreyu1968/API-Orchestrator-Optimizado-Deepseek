@@ -66,7 +66,7 @@ import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, T
 import { ensureChapterNumbers } from "./utils/extract-chapters";
 import { extractStyleDirectives, synthesizeVoiceBlock, type NarrativeVoiceConfig } from "./utils/style-directives";
 import { repairJson } from "./utils/json-repair";
-import { groundInstructionInChapter, extractFlaggedChapters } from "./utils/instruction-grounding";
+import { groundInstructionInChapter, extractFlaggedChapters, stripDeadQuotes, normalizeForMatch as normalizeQuoteMatch } from "./utils/instruction-grounding";
 import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper } from "./utils/series-context-builder";
 import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
 import { tryMarkPolishActive, clearPolishActive, isPolishStopRequested, clearPolishStopRequest } from "./utils/polish-registry";
@@ -9576,7 +9576,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     }
 
     // ── SEGUNDA PASADA: anclaje contra contenido real + canon ───────
-    const refinedInstructions = await this.groundEditorialInstructions(
+    let refinedInstructions = await this.groundEditorialInstructions(
       project,
       notesText,
       draftInstructions,
@@ -9584,6 +9584,10 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       allChapters,
       isSystemReview,
     );
+    // [Fix230] Saneado determinista post-refiner: retira las citas muertas
+    // (prosa de versiones anteriores) conservando la intencion, para que la
+    // purga [Fix206]/[Fix128] no descarte la instruccion entera.
+    refinedInstructions = await this.sanitizeGhostQuoteInstructions(project, refinedInstructions, allChapters);
 
     // ── GATE DETERMINISTA ANTI-FALSO-POSITIVO PARA tipo:"eliminar" ──────────
     // El parser es un LLM y los prompts solo son "instrucciones blandas". Si el
@@ -10712,6 +10716,94 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     }
 
     return Array.from(found).sort((a, b) => a - b);
+  }
+
+  // [Fix230] Saneado determinista de CITAS MUERTAS tras el anclaje del refiner.
+  // El refiner es un LLM y en la practica deja pasar citas literales que los
+  // lectores arrastran de VERSIONES ANTERIORES del texto (Beta con memoria +
+  // reverts al snapshot). Antes, la purga [Fix206]/[Fix128] descartaba la
+  // instruccion ENTERA al no encontrar la cita — la intencion editorial se
+  // perdia y la iteracion (con su relectura de novela completa, lo mas caro
+  // del sistema) se gastaba en nada (log real: iter con 1 aplicada / 11
+  // purgadas). Aqui retiramos SOLO la cita muerta (marcador en su lugar) y la
+  // instruccion sobrevive como semantica: el cirujano/narrador anclan contra
+  // el texto vigente. Si una instruccion "puntual" se queda SIN ninguna cita
+  // viva, se baja a "estructural" (el cirujano find/replace ya no tiene ancla
+  // fiable; la reescritura dirigida si puede aplicar la intencion).
+  private async sanitizeGhostQuoteInstructions(
+    project: Project,
+    instructions: EditorialInstruction[],
+    allChapters: Chapter[],
+  ): Promise<EditorialInstruction[]> {
+    if (!instructions || instructions.length === 0) return instructions;
+    const haystackCache = new Map<number, string>();
+    const getHaystack = (nums: number[]): string => {
+      const parts: string[] = [];
+      for (const n of nums) {
+        if (!haystackCache.has(n)) {
+          const ch = allChapters.find(c => c.chapterNumber === n);
+          haystackCache.set(n, ch?.content ? normalizeQuoteMatch(ch.content) : "");
+        }
+        const h = haystackCache.get(n)!;
+        if (h) parts.push(h);
+      }
+      return parts.join("\n");
+    };
+
+    let sanitizedCount = 0;
+    let removedTotal = 0;
+    let downgraded = 0;
+    const out: EditorialInstruction[] = [];
+    for (const ins of instructions) {
+      const caps = ins.capitulos_afectados || [];
+      const haystack = getHaystack(caps);
+      if (!haystack) { out.push(ins); continue; }
+
+      const desc = stripDeadQuotes(ins.descripcion || "", haystack);
+      const corr = stripDeadQuotes(ins.instrucciones_correccion || "", haystack);
+      let planRemoved = 0;
+      let planAlive = 0;
+      let newPlan: Record<string, string> | undefined = ins.plan_por_capitulo;
+      if (ins.plan_por_capitulo) {
+        newPlan = {};
+        for (const [capKey, planText] of Object.entries(ins.plan_por_capitulo)) {
+          const capNum = parseInt(capKey, 10);
+          const capHaystack = Number.isFinite(capNum) ? (getHaystack([capNum]) || haystack) : haystack;
+          const p = stripDeadQuotes(planText || "", capHaystack);
+          newPlan[capKey] = p.text;
+          planRemoved += p.removed;
+          planAlive += p.alive;
+        }
+      }
+      const removed = desc.removed + corr.removed + planRemoved;
+      if (removed === 0) { out.push(ins); continue; }
+
+      sanitizedCount++;
+      removedTotal += removed;
+      const alive = desc.alive + corr.alive + planAlive;
+      const next: EditorialInstruction = {
+        ...ins,
+        descripcion: desc.text,
+        instrucciones_correccion: corr.text,
+        ...(newPlan !== undefined ? { plan_por_capitulo: newPlan } : {}),
+      };
+      if ((ins.tipo || "estructural") === "puntual" && alive === 0) {
+        next.tipo = "estructural";
+        next.instrucciones_correccion = `[Fix230: la(s) cita(s) literal(es) de esta instruccion ya no existen en el texto vigente — aplicar la INTENCION sobre la version actual del capitulo, sin buscar la prosa citada] ${next.instrucciones_correccion}`;
+        downgraded++;
+      }
+      out.push(next);
+    }
+
+    if (sanitizedCount > 0) {
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "info",
+        message: `[Fix230] Saneado de citas obsoletas tras el anclaje: ${removedTotal} cita(s) muerta(s) retirada(s) de ${sanitizedCount} instrucción(es) (prosa citada de versiones anteriores del texto). La intención editorial se conserva y se aplicará sobre el texto vigente${downgraded > 0 ? `; ${downgraded} puntual(es) sin ancla viva bajan a estructural` : ""}.`,
+        agentRole: "editor",
+      });
+    }
+    return out;
   }
 
   private async groundEditorialInstructions(
@@ -11947,7 +12039,11 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // 4) Instruccion estructural compartida (filosofia Fix132: escalada monotona
     //    pagada con coste tangible e irreversible, sin salvadores sin sembrar).
     const holisticExcerpt = holisticNotes.trim().slice(0, 6000);
-    let rewritten = 0;
+    // [Fix230] Contamos solo capitulos que CAMBIAN de verdad: rewriteChapterForQA
+    // puede terminar en no-op (purga de instruccion fantasma, cirujano que rechaza,
+    // revert interno). Antes se contaba el intento y el brazo declaraba "completada:
+    // N caps" con 0 cambios reales, concediendo relectura extra por nada.
+    const attemptedBefore = new Map<number, string>();
     for (const chapterNum of targets) {
       if (this.aborted) break;
       const chapter = allChapters.find(c => c.chapterNumber === chapterNum);
@@ -11966,6 +12062,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         holisticExcerpt,
       ].join("\n");
 
+      attemptedBefore.set(chapterNum, chapter.content);
       await this.rewriteChapterForQA(
         project,
         chapter,
@@ -11975,15 +12072,24 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         "editorial",
         instruction,
       );
-      rewritten++;
     }
 
+    // [Fix230] Cuenta REAL de cambios: releemos los caps frescos de BD y solo
+    // contamos los que difieren del contenido previo.
+    const rewritten = await this.countActuallyChangedChapters(project.id, attemptedBefore);
     if (rewritten > 0) {
       await storage.createActivityLog({
         projectId: project.id,
         level: "success",
         agentRole: "editor",
-        message: `[Fix135-B] Reescritura estructural del tramo flojo completada: ${rewritten} capítulo(s). Se vuelve a leer Holístico+Beta; si el combinado empeora, el snapshot del bucle restaura la mejor versión.`,
+        message: `[Fix135-B] Reescritura estructural del tramo flojo completada: ${rewritten} capítulo(s) con cambios reales (de ${attemptedBefore.size} intentado(s)). Se vuelve a leer Holístico+Beta; si el combinado empeora, el snapshot del bucle restaura la mejor versión.`,
+      });
+    } else if (attemptedBefore.size > 0) {
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        agentRole: "editor",
+        message: `[Fix230] Brazo estructural (Fix135-B) sin efecto real: se intentaron ${attemptedBefore.size} capitulo(s) pero ninguno cambio (instrucciones purgadas o rechazadas). No se concede relectura extra.`,
       });
     }
     return rewritten;
@@ -12045,7 +12151,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     });
 
     const betaExcerpt = betaNotes.trim().slice(0, 6000);
-    let rewritten = 0;
+    // [Fix230] Solo cuentan los capitulos que CAMBIAN de verdad (ver Fix135-B).
+    const attemptedBefore = new Map<number, string>();
     for (const chapterNum of targets) {
       if (this.aborted) break;
       const chapter = allChapters.find(c => c.chapterNumber === chapterNum);
@@ -12066,6 +12173,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         betaExcerpt,
       ].join("\n");
 
+      attemptedBefore.set(chapterNum, chapter.content);
       await this.rewriteChapterForQA(
         project,
         chapter,
@@ -12075,15 +12183,22 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         "editorial",
         instruction,
       );
-      rewritten++;
     }
 
+    const rewritten = await this.countActuallyChangedChapters(project.id, attemptedBefore);
     if (rewritten > 0) {
       await storage.createActivityLog({
         projectId: project.id,
         level: "success",
         agentRole: "editor",
-        message: `[Fix158] Reescritura de prosa ultima-milla completada: ${rewritten} capitulo(s). Se vuelve a leer Holistico+Beta; si el combinado empeora, el snapshot del bucle restaura la mejor version (revert por defecto).`,
+        message: `[Fix158] Reescritura de prosa ultima-milla completada: ${rewritten} capitulo(s) con cambios reales (de ${attemptedBefore.size} intentado(s)). Se vuelve a leer Holistico+Beta; si el combinado empeora, el snapshot del bucle restaura la mejor version (revert por defecto).`,
+      });
+    } else if (attemptedBefore.size > 0) {
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        agentRole: "editor",
+        message: `[Fix230] Brazo de prosa ultima-milla (Fix158) sin efecto real: se intentaron ${attemptedBefore.size} capitulo(s) pero ninguno cambio (instrucciones purgadas o rechazadas). No se concede relectura extra.`,
       });
     }
     return rewritten;
@@ -12161,7 +12276,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     });
 
     const betaExcerpt = betaNotes.trim().slice(0, 4000);
-    let rewritten = 0;
+    // [Fix230] Solo cuentan los capitulos que CAMBIAN de verdad (ver Fix135-B).
+    const attemptedBefore = new Map<number, string>();
     for (const prob of ordered) {
       if (this.aborted) break;
       const chapter = allChapters.find(c => c.chapterNumber === prob.numero);
@@ -12174,15 +12290,41 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         `LIMITES: conserva hechos, canon, continuidad y World Bible; cambia el RITMO (escalada, coste, tension), no la trama.`,
       ].join("\n\n");
       try {
+        attemptedBefore.set(prob.numero, chapter.content);
         await this.rewriteChapterForQA(
           project, chapter, sectionData, worldBibleData, guiaEstilo, "editorial", directiva,
         );
-        rewritten++;
       } catch (e) {
         console.warn(`[Fix201] Reescritura de ritmo del cap ${prob.numero} fallo (no bloqueante): ${e instanceof Error ? e.message : String(e)}`);
       }
     }
+    const rewritten = await this.countActuallyChangedChapters(project.id, attemptedBefore);
+    if (rewritten === 0 && attemptedBefore.size > 0) {
+      await storage.createActivityLog({
+        projectId: project.id, level: "warning", agentRole: "act2-pacing-editor",
+        message: `[Fix230] Brazo de ritmo (Fix201) sin efecto real: se intentaron ${attemptedBefore.size} capitulo(s) pero ninguno cambio (instrucciones purgadas o rechazadas). No se concede relectura extra.`,
+      });
+    }
     return rewritten;
+  }
+
+  // [Fix230] Cuenta cuantos de los capitulos intentados por un brazo de
+  // reescritura CAMBIARON de verdad, releyendo el contenido fresco de BD y
+  // comparandolo con el snapshot previo. rewriteChapterForQA puede terminar en
+  // no-op silencioso (purga fantasma Fix206, cirujano que rechaza, instruccion
+  // no-op Fix69-A) y antes se contaba el intento como exito.
+  private async countActuallyChangedChapters(
+    projectId: number,
+    beforeByNum: Map<number, string>,
+  ): Promise<number> {
+    if (beforeByNum.size === 0) return 0;
+    const fresh = await storage.getChaptersByProject(projectId);
+    let changed = 0;
+    for (const [num, before] of Array.from(beforeByNum.entries())) {
+      const ch = fresh.find(c => c.chapterNumber === num);
+      if (ch && (ch.content || "") !== (before || "")) changed++;
+    }
+    return changed;
   }
 
   private async runAutoHolisticReviewLoop(project: Project): Promise<void> {
@@ -14132,6 +14274,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           allChapters,
           isSystemReviewApply,
         );
+        // [Fix230] Saneado de citas muertas post-refiner (mismo tratamiento
+        // que en la vista previa): conserva la intencion editorial.
+        instructions = await this.sanitizeGhostQuoteInstructions(project, instructions, allChapters);
 
         if (instructions.length === 0) {
           const summary = parseResult.result?.resumen_general || "El sistema no encontró instrucciones procesables en las notas.";

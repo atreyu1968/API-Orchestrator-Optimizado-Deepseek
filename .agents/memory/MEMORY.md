@@ -22,5 +22,6 @@
 - [Canon de nombres de serie](series-canon-names.md) — hitos/hilos = canon literal en generacion; en texto ya escrito, un nombre divergente puede ser alias/retcon legitimo: auditar contexto antes de corregir.
 - [Capa correcta para guardias de craft](craft-guard-layering.md) — una regla de PROSA (ghostwriter) no recupera un beat que la ESCALETA nunca asigno; los fallos "told-not-shown" de eventos decisivos se guardan en el Arquitecto, no solo en el ghostwriter.
 - [Cambios de trama que arrastran caps posteriores](cascade-plot-changes.md) — reescribir un solo cap esta condenado; cascada coordinada con el origen como puerta, sin lanzarla desatendida.
+- [Citas muertas: sanear, no purgar entero](ghost-instruction-sanitization.md) — retirar solo la cita obsoleta conservando la intencion; brazos cuentan exito por diff real de BD, no por intentos.
 - [Juez que exige material: nunca no-op silencioso](judge-input-availability.md) — si un juez/diagnostico requiere notas u otro material, recuperarlo de su fuente o generarlo fresco antes de rendirse; un no-op silencioso deja UI prometiendo cosas que no llegan.
 - [Reparacion en caliente mid-novela](mid-novel-repair.md) — lecturas intermedias deben reparar lo ya escrito (con memoria de hallazgos y frenos), no solo guiar capitulos futuros.

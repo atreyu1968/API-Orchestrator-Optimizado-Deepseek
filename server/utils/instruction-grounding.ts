@@ -10,7 +10,7 @@
 // [Fix179] Ademas quita acentos (NFD + strip diacriticos) para que una cita con
 // tilde distinta ("corazon"/"corazon") empareje. Es simetrico: cita y texto pasan
 // por la misma normalizacion, asi que el matching sigue siendo fiable.
-function normalizeForMatch(s: string): string {
+export function normalizeForMatch(s: string): string {
   return (s || "")
     .toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -92,6 +92,62 @@ export function extractLiteralQuotes(instruction: string): string[] {
     }
   }
   return out;
+}
+
+// [Fix230] Saneado de CITAS MUERTAS en una instruccion, conservando la intencion
+// editorial. Caso real: los lectores (Beta con memoria) citan prosa de versiones
+// ANTERIORES del capitulo; el refiner LLM las deja pasar como "ancladas" y la
+// purga determinista posterior ([Fix206]/[Fix128]) descartaba la instruccion
+// ENTERA — la intencion editorial se perdia y la iteracion completa (con su
+// relectura de novela) se gastaba en nada. Aqui sustituimos SOLO la cita que ya
+// no existe por un marcador para que la instruccion siga siendo aplicable de
+// forma semantica (el cirujano/narrador anclan contra el texto vigente).
+const DEAD_QUOTE_MARKER = "[CITA OBSOLETA RETIRADA: la prosa citada cambio en un ciclo previo; localiza el pasaje equivalente en el texto vigente y aplica ahi la intencion]";
+
+export interface StripDeadQuotesResult {
+  text: string;
+  // Citas auditables halladas en el texto de la instruccion.
+  totalQuotes: number;
+  // Citas retiradas por no existir ya en el texto vigente.
+  removed: number;
+  // Citas que SI siguen presentes en el texto vigente.
+  alive: number;
+}
+
+export function stripDeadQuotes(instruction: string, haystackNormalized: string): StripDeadQuotesResult {
+  let text = instruction || "";
+  let totalQuotes = 0;
+  let removed = 0;
+  const patterns = [
+    /«([^»]{1,2000})»/g,
+    /“([^”]{1,2000})”/g,
+    /"([^"]{1,2000})"/g,
+    /'([^']{30,2000})'/g,
+  ];
+  for (const re of patterns) {
+    // Reconstruimos el string por spans para no re-escanear texto ya sustituido.
+    let out = "";
+    let last = 0;
+    let m: RegExpExecArray | null;
+    re.lastIndex = 0;
+    while ((m = re.exec(text)) !== null) {
+      const frag = (m[1] || "").trim();
+      if (frag.length >= MIN_QUOTE_LEN && !isLikelyMetaFragment(frag)) {
+        totalQuotes++;
+        const norm = normalizeForMatch(frag);
+        if (!quotePresent(norm, haystackNormalized)) {
+          out += text.slice(last, m.index) + DEAD_QUOTE_MARKER;
+          last = m.index + m[0].length;
+          removed++;
+        }
+      }
+    }
+    if (removed > 0 && last > 0) {
+      out += text.slice(last);
+      text = out;
+    }
+  }
+  return { text, totalQuotes, removed, alive: totalQuotes - removed };
 }
 
 export interface GroundingResult {
