@@ -1,0 +1,73 @@
+12:00:34
+i
+[INFO]
+[Fix81] Auto-revisión Holístico+Beta iniciada (target DUAL: Beta ≥ 9/10 AND Holístico ≥ 7/10, máx 8 iteraciones). [Fix89/Fix158] Metas aceptables si el Holistico alcanza su meta ABSOLUTA (>=7) O sube >=+2 desde inicio, con Beta>=9 ([Fix184]: el Beta ya NO se relaja, exige su target completo); + brazo de reescritura de PROSA ultima-milla para empujar el Beta cuando el cirujano cap-a-cap toca techo.
+12:00:34
+i
+[INFO]
+Iniciando revisión holística de la novela completa (37 capítulos) [Fix76: con 4 acción(es) admin a verificar].
+12:00:34
+i
+[INFO]
+Iniciando lectura beta de la novela completa (37 capítulos) [Fix38: con memoria de lectura previa].
+12:01:36
+i
+[INFO]
+Lectura beta completada: 37 capítulos / 82.620 palabras leídas. Impresiones de 22.935 caracteres generadas (con memoria de lectura previa).
+12:01:56
+i
+[INFO]
+Revisión holística completada: 37 capítulos / 82.620 palabras leídas. Informe de 21.631 caracteres generado (puntuación holística 6/10).
+12:01:56
+C12
+i
+[INFO]
+Fix76: acción admin id=1 (merge_chapters sobre Capítulo 12 (absorbe cap 13, 14, 15)) se mantiene pendiente — Holístico=apply, Beta=discard (ronda 1/3 [Fix207]).
+12:01:56
+C17
+i
+[INFO]
+Fix76: acción admin id=2 (merge_chapters sobre Capítulo 17 (absorbe cap 18, 19, 20)) se mantiene pendiente — Holístico=discard, Beta=keep_pending (ronda 1/3 [Fix207]).
+12:01:56
+C1
+i
+[INFO]
+Fix76: acción admin id=3 (merge_chapters sobre Capítulo 1 (absorbe cap 2)) se mantiene pendiente — Holístico=apply, Beta=discard (ronda 1/3 [Fix207]).
+12:01:56
+C10
+i
+[INFO]
+[Fix185] accion admin id=4 (merge_chapters sobre Capítulo 10 (absorbe cap 11)) NO ejecutada por el pulido automatico: solo aplica cambios REVERSIBLES de prosa (la cirugia estructural es irreversible y causaba regresiones). Sugerencia registrada; aplicable a mano desde el flujo editorial.
+12:01:56
+i
+[INFO]
+Fix76: verificación desatendida completada — 0 aplicada(s), 1 descartada(s), 3 pendiente(s).
+12:01:56
+i
+[INFO]
+[Fix81] Iter 1: nuevo mejor snapshot guardado (Holístico=6, Beta=7, 37 capítulos).
+12:03:09
+i
+[INFO]
+[Fix201] Brazo de ritmo del pulido activado: el Beta se queja del tramo central (8/10 segun Act2PacingEditor). Reescritura dirigida de 3 capitulo(s): 13, 21, 25. El bestSnapshot del bucle revierte si el combinado empeora.
+12:04:06
+C13
+[EDITANDO]
+el Capítulo 13: el cirujano generó 3 operaciones pero ninguna ancló texto literal del capítulo (instrucción mal enrutada, obsoleta o alucinada). Reescritura cancelada para no degradar el capítulo. Vuelve a emitir la nota indicando el capítulo correcto.
+12:04:20
+C21
+[COMPLETADO]
+el Capítulo 21: cirugía aplicada — 1/1 operaciones puntuales (9779→10392 caracteres, 6.3% de cambio).
+12:05:34
+C25
+i
+[INFO]
+el Capítulo 25: cirugía no aplicable (El cirujano clasificó la instrucción como estructural.). Cayendo a reescritura completa con Narrador.
+12:08:08
+i
+[INFO]
+Iniciando revisión holística de la novela completa (37 capítulos) [Fix76: con 3 acción(es) admin a verificar].
+12:08:08
+i
+[INFO]
+Iniciando lectura beta de la novela completa (37 capítulos) [Fix38: con memoria de lectura previa].
