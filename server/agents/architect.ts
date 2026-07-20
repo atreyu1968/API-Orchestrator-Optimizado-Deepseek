@@ -551,6 +551,48 @@ RESTRICCIÓN: en el acto 2/3 no puede haber 2 caps consecutivos con
 "categoria_info_nueva" puede repetirse más de 2 veces. "ninguna" no puede
 aparecer en 2 caps consecutivos jamás.
 
+REGLA P [Fix223] (PROPULSIÓN NARRATIVA — el capítulo debe producir AVANCE,
+no solo tensión):
+El lector distingue entre TENSIÓN LOCAL (parece que algo importante puede
+ocurrir) y AVANCE NARRATIVO (algo importante HA ocurrido y la situación ya
+no puede volver a ser la misma). El defecto crónico del tramo central es la
+"repetición con decoración": cambian la localización, los diálogos y algunos
+datos, pero la novela permanece en el mismo punto. Para impedirlo, CADA
+capítulo regular debe declarar el bloque "propulsion":
+  - "cambio_irreversible": la consecuencia que NO puede deshacerse sin coste
+    (una prueba desaparece, un aliado deja de colaborar, una mentira queda
+    expuesta, se activa un plazo, se cruza una línea moral, se pierde una
+    oportunidad, el antagonista descubre que lo investigan). ≥25 caracteres,
+    NUNCA "ninguno"/"nada". No hace falta una catástrofe: hace falta una
+    HUELLA NARRATIVA PERMANENTE.
+  - "coste_pagado": qué paga el protagonista (o quién) por lo ocurrido.
+  - "decision_final": conducta que desencadena NECESARIAMENTE el capítulo
+    siguiente. PROHIBIDO: "seguir investigando", "esperar", "reflexionar",
+    "hablar con X". Una decisión válida EXCLUYE alternativas.
+  - "consecuencia_siguiente": por qué el capítulo siguiente resulta
+    inevitable como consecuencia de este.
+  - "vectores_modificados": ≥2 de [objetivo, informacion, relacion, poder,
+    recursos, riesgo, decision]. Uno debe ser PRIMARIO (objetivo, relacion
+    o poder). NO cuenta como avance: repetir una sospecha, recordar un
+    trauma ya explicado, una pista que no cambia ninguna conducta, una
+    conversación que confirma lo que el lector ya sabe, o desplazarse a
+    otro lugar para continuar la misma búsqueda.
+RESTRICCIONES DURAS en el acto 2 (25%-75%, la zona de estancamiento):
+  - Máximo 2 capítulos consecutivos sin "cambio_irreversible" real.
+  - El protagonista no puede perseguir el mismo objetivo inmediato durante
+    más de 3 capítulos sin conseguirlo, fracasar o modificarlo.
+  - El antagonista debe ACTUAR (no limitarse a ser investigado o recordado).
+  - Después del punto medio, las alternativas del protagonista deben
+    REDUCIRSE progresivamente.
+PRUEBA DE ELIMINACIÓN (aplícala tú mismo a cada cap del acto 2): si el
+capítulo pudiera eliminarse y los personajes llegarían igual al siguiente,
+NO lo escribas así — fusiónalo con otro, dale una consecuencia irreversible
+o conviértelo en escena breve dentro de un capítulo con función mayor. El
+cliffhanger NO sustituye al avance: debe surgir de una consecuencia, no
+ocultar la falta de progresión. La pregunta correcta por capítulo no es
+"¿es interesante?" sino "¿qué era posible antes de este capítulo que ya no
+lo es después, y qué está obligado a hacer ahora el protagonista?".
+
 REGLA D (DOSIFICACIÓN DE REVELACIONES — anti "el villano se vacía de golpe"):
 En cada capítulo que contenga una revelación importante, declara el array
 "revelaciones_dosificadas": [
@@ -798,6 +840,13 @@ FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
       "tension_objetivo": 7,
       "dias_diegeticos": 1,
       "eventos_pivotales": ["Pivote 1: cambio irreversible que ocurre aquí (vacío si el cap no contiene pivotes)"],
+      "propulsion": {
+        "cambio_irreversible": "Consecuencia que NO puede deshacerse sin coste (≥25 caracteres, NUNCA 'ninguno'). Regla P.",
+        "coste_pagado": "Qué paga el protagonista (o quién) por lo ocurrido en este capítulo",
+        "decision_final": "Conducta que desencadena NECESARIAMENTE el siguiente capítulo (PROHIBIDO 'seguir investigando'/'esperar'/'reflexionar')",
+        "consecuencia_siguiente": "Por qué el capítulo siguiente resulta inevitable como consecuencia de este",
+        "vectores_modificados": ["≥2 de: objetivo | informacion | relacion | poder | recursos | riesgo | decision (uno debe ser objetivo, relacion o poder)"]
+      },
       "siembra": ["IDs cortos de elementos plantados aquí que se cosecharán después (objeto, secreto, atmósfera, capacidad)"],
       "cosecha": ["IDs de elementos sembrados en capítulos previos que se activan aquí"],
       "justificacion_antagonica": "OPCIONAL — si en este capítulo el antagonista pierde control / cede algo crítico / subestima al protagonista, explica en ≥80 caracteres por qué FALLA esta vez (ego, prisa por evento X, presión externa concreta). Si no aplica, vacío.",
@@ -849,6 +898,7 @@ C. RITMO ACTO 3: distribuye "eventos_pivotales" sin que el acto 3 acumule >50% d
 20. [Fix192] CANON DE SERIE INVIOLABLE (si hay HITOS E HILOS DE LA SERIE arriba). Los NOMBRES PROPIOS que aparecen en los hitos/hilos (protagonistas, secundarios, lugares, objetos) son CANÓNICOS: tu escaleta y tu world_bible deben usarlos EXACTAMENTE igual. PROHIBIDO renombrar, sustituir o "mejorar" un personaje citado en un hito (si el hito dice "Leonor", el personaje se llama Leonor, no un equivalente tuyo). Si un personaje de los hilos no encaja en tu diseño, adáptalo — no lo reemplaces por otro con distinto nombre. Antes de responder, recorre cada nombre propio de los hitos y comprueba que aparece literal en tu escaleta.
 21. [Fix193] PICOS EN PÁGINA (nada decisivo ocurre "entre capítulos"). Haz una lista de los EVENTOS DECISIVOS de tu escaleta: muerte, captura, derrota o salida definitiva de cualquier personaje con presencia real (aparece en 3+ caps o tiene arco/rol en el world_bible), la recuperación o pérdida del objeto central de la trama, y toda revelación que recontextualice la historia. Para CADA uno, comprueba que está asignado a una ESCENA EN PÁGINA de un capítulo concreto: o bien el evento ocurre EN ESCENA (declarado en "eventos_pivotales"/"beats" de ese cap), o bien —si el POV no puede presenciarlo— existe una ESCENA DE DESCUBRIMIENTO con peso dramático propio (el POV encuentra el cuerpo, recibe la noticia y reacciona en escena, ve las consecuencias con sus ojos). PROHIBIDO que un antagonista o secundario relevante muera o desaparezca fuera de página y el lector se entere por una mención de pasada ("supieron que había muerto en el incendio"). El GHOSTWRITER solo puede dramatizar lo que TÚ pongas en la escaleta: si el pico no está planificado en un capítulo, se pierde para siempre. Si detectas un evento decisivo sin escena, créala o muévelo dentro de un cap existente.
 22. [Fix200] ESQUELETO DE CAPITULO VARIADO EN EL ACTO 2. Para cada capitulo del acto 2, su FORMA debe quedar declarada como CONTENIDO en la escaleta: escenario (lugar y sus reglas), tipo de oposicion (quien o que presiona al protagonista y de que clase es esa presion), tactica del protagonista (que hace distinto para avanzar) y coste pagado (que pierde o arriesga aqui). PROHIBIDO repetir la MISMA combinacion de esos 4 ejes en capitulos cercanos (ventana de ~3 caps): dos caps consecutivos donde el protagonista llega a un lugar, interroga, obtiene un dato y escapa, son el MISMO esqueleto aunque cambien el lugar y el interlocutor. Si detectas dos caps cercanos con esqueleto clonado, cambia en uno de ellos al menos 2 de los 4 ejes (p. ej. que la informacion venga a buscarle a el con coste imprevisto; que la tactica falle y el cap avance por la consecuencia del fallo; que la oposicion sea interna o social en vez de fisica). El lector percibe la repeticion de FORMA antes que la de contenido: variar el esqueleto es lo que evita el "tramo central que se hace cuesta arriba".
+23. [Fix223] Recorre el acto 2 (caps del 25% al 75%) verificando el bloque "propulsion" de cada cap: (a) ningún tramo de 3+ caps consecutivos sin "cambio_irreversible" real (≥25 caracteres, no relleno); (b) ninguna "decision_final" pasiva ("seguir investigando", "esperar", "reflexionar", "hablar con X") en 2 caps seguidos; (c) en cada ventana de 4 caps, al menos uno modifica un vector primario (objetivo, relacion o poder); (d) aplica la PRUEBA DE ELIMINACIÓN a cada cap del tramo — si puede quitarse y los personajes llegan igual al siguiente, fusiónalo o dale una consecuencia irreversible. Si algo falla, rediseña ACONTECIMIENTOS (costes, decisiones, consecuencias), no el estilo.
 Si algo falla, REGENERA antes de responder. Esto es lo más importante.
 
 Responde ÚNICAMENTE con el JSON.

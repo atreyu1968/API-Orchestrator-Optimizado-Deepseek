@@ -1,0 +1,441 @@
+## Diagnóstico: el sistema produce tensión, pero no produce avance
+
+El problema no se resuelve añadiendo más cliffhangers, más secretos o más escenas de peligro. Tus novelas probablemente ya contienen esos elementos. Lo que está fallando es la **progresión causal de la segunda parte**.
+
+El lector distingue, aunque no lo formule conscientemente, entre dos fenómenos:
+
+* **Tensión local:** parece que algo importante puede ocurrir.
+* **Avance narrativo:** algo importante ha ocurrido y la situación ya no puede volver a ser la misma.
+
+Tu sistema parece generar bien la tensión local, pero durante la zona central encadena capítulos en los que los personajes investigan, conversan, recuerdan, sospechan, viajan o reciben pequeñas pistas sin que cambien realmente sus objetivos, sus relaciones, sus recursos, el equilibrio de poder o el peligro al que se enfrentan.
+
+El resultado es una especie de **repetición con decoración**: cambian la localización, los diálogos y algunos datos, pero la novela permanece en el mismo punto narrativo.
+
+## Por qué aparece especialmente en la segunda parte
+
+En tu pipeline —estructura, escritura, edición, pulido, continuidad, estilo, semántica y corrección final— existen muchas fases destinadas a mejorar el texto, pero falta un controlador especializado en comprobar el **desplazamiento narrativo**.
+
+Las fases de edición pueden mejorar:
+
+* La fluidez.
+* La claridad.
+* Los diálogos.
+* La ambientación.
+* La continuidad.
+* La calidad de la prosa.
+
+Pero no pueden solucionar una arquitectura en la que cuatro capítulos consecutivos cumplen prácticamente la misma función. Incluso pueden empeorar el problema al convertir un capítulo prescindible en un capítulo prescindible muy bien escrito.
+
+La corrección debe realizarse **antes de redactar el capítulo**, no durante el pulido.
+
+---
+
+# Cambio fundamental: añadir un Controlador de Propulsión Narrativa
+
+Debes incorporar una nueva fase obligatoria entre la estructura general y la escritura:
+
+> **Estructura → Control de propulsión → Plan de capítulo → Escritura → Auditoría de avance → Edición**
+
+Este controlador no debe juzgar si el capítulo es interesante, emotivo o elegante. Debe responder a una cuestión mucho más estricta:
+
+> **¿Qué cambia de manera concreta, causal e irreversible como consecuencia de este capítulo?**
+
+Cuando la respuesta sea imprecisa —«aumenta la tensión», «el protagonista empieza a sospechar», «se profundiza en la relación», «conoce una nueva pista»— el capítulo todavía no está preparado para escribirse.
+
+La respuesta válida debe ser verificable:
+
+> «El protagonista descubre que su aliado falsificó la prueba principal, rompe con él, pierde el acceso al archivo y decide entrar ilegalmente esa misma noche».
+
+Aquí sí existe avance porque cambian simultáneamente la información, la relación, los recursos, el riesgo y la siguiente acción.
+
+---
+
+# Los siete vectores de avance
+
+Cada capítulo debe modificar al menos **dos vectores narrativos**, y uno de ellos debe ser obligatoriamente el objetivo, el conflicto, la relación principal o el equilibrio de poder.
+
+| Vector      | Qué debe cambiar                                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------- |
+| Objetivo    | El personaje consigue, modifica, abandona o sustituye su objetivo inmediato.                            |
+| Información | Descubre algo que obliga a actuar de manera diferente.                                                  |
+| Relación    | Se produce una alianza, ruptura, traición, acercamiento, dependencia o cambio de confianza.             |
+| Poder       | Alguien gana o pierde autoridad, ventaja, acceso, influencia, pruebas o capacidad de actuar.            |
+| Recursos    | Se obtiene o pierde dinero, tiempo, protección, documentos, aliados, transporte, reputación o libertad. |
+| Riesgo      | El peligro se vuelve más cercano, personal, concreto o difícil de evitar.                               |
+| Decisión    | El personaje adopta una conducta que desencadena necesariamente el capítulo siguiente.                  |
+
+No se considera avance suficiente:
+
+* Repetir una sospecha.
+* Recordar un trauma ya explicado.
+* Encontrar una pista que no cambia ninguna conducta.
+* Mantener una conversación que confirma lo que el lector ya sabe.
+* Presentar otro personaje que aporta información equivalente.
+* Terminar con una llamada, una sombra o un ruido sin consecuencias.
+* Aumentar la introspección sin modificar una decisión.
+* Desplazar a los personajes a otro lugar para continuar exactamente la misma búsqueda.
+
+---
+
+# Regla de irreversibilidad
+
+Cada capítulo de la segunda parte debe dejar al menos una consecuencia que no pueda deshacerse sin un coste.
+
+Son consecuencias válidas:
+
+* Una prueba desaparece.
+* Un aliado deja de colaborar.
+* El antagonista descubre que está siendo investigado.
+* Una mentira queda expuesta.
+* Un personaje cruza una línea moral.
+* Se pierde una oportunidad.
+* Se rompe una relación.
+* Se activa un plazo.
+* El protagonista queda comprometido públicamente.
+* Se toma una decisión que excluye otras alternativas.
+* Se revela una información que modifica el significado de los capítulos anteriores.
+
+No es necesario que todos los capítulos contengan una catástrofe. Lo que necesitan es una **huella narrativa permanente**.
+
+---
+
+# Estructura recomendada para novelas de 35 capítulos
+
+Manteniendo tu formato habitual de aproximadamente 35 capítulos de entre 2.500 y 3.000 palabras, la segunda parte no debe tratarse como un bloque uniforme. Debe dividirse en secuencias con funciones diferentes.
+
+| Capítulos | Función narrativa                                                                        |
+| --------- | ---------------------------------------------------------------------------------------- |
+| 1-4       | Presentación del desequilibrio, personajes y promesa de género.                          |
+| 5-7       | Incidente desencadenante, resistencia y aceptación del conflicto.                        |
+| 8-11      | Primer plan del protagonista. Debe obtener resultados parciales reales.                  |
+| 12        | Primera inversión importante: el plan genera una consecuencia adversa.                   |
+| 13-16     | Nuevo enfoque, mayor presión y reducción de alternativas.                                |
+| 17-18     | Punto medio irreversible: revelación, victoria falsa, traición o cambio de objetivo.     |
+| 19-21     | Consecuencias del punto medio. El antagonista actúa de forma visible.                    |
+| 22        | Pérdida, ruptura o fracaso que elimina una vía de salida.                                |
+| 23-26     | Compresión narrativa: menos tiempo, menos aliados, más coste y decisiones más difíciles. |
+| 27        | Crisis o punto más bajo que obliga a adoptar el plan definitivo.                         |
+| 28-32     | Ejecución del plan final, revelaciones y confrontaciones.                                |
+| 33-34     | Clímax y resolución del conflicto principal.                                             |
+| 35        | Consecuencias, cierre emocional y posible conexión con la serie.                         |
+
+## La zona más peligrosa: capítulos 8 a 26
+
+Es aquí donde debes imponer reglas más estrictas:
+
+* No pueden existir más de **dos capítulos consecutivos** sin una consecuencia irreversible.
+* Cada tres o cuatro capítulos debe producirse un **giro estructural**, no solo una nueva pista.
+* El protagonista no puede perseguir el mismo objetivo inmediato durante más de tres capítulos sin conseguirlo, fracasar o modificarlo.
+* Después del punto medio, las opciones disponibles deben disminuir.
+* El antagonista debe actuar, no limitarse a ser investigado o recordado.
+* Cada revelación debe alterar una decisión, una relación o un plan.
+* Los capítulos de recuperación emocional deben incluir también una decisión, una ruptura o una nueva obligación.
+
+---
+
+# Contrato obligatorio de capítulo
+
+Antes de generar la prosa, el sistema debe producir una ficha estructural. El escritor no debe empezar hasta que esta ficha haya sido aprobada.
+
+```json
+{
+  "numero_capitulo": 14,
+  "funcion_en_la_novela": "",
+  "estado_inicial": {
+    "objetivo_protagonista": "",
+    "ventaja_antagonista": "",
+    "relacion_principal": "",
+    "riesgo_actual": "",
+    "recursos_disponibles": "",
+    "pregunta_narrativa_activa": ""
+  },
+  "objetivo_concreto_del_capitulo": "",
+  "obstaculo_principal": "",
+  "acciones_del_protagonista": [],
+  "respuesta_del_antagonista_o_del_conflicto": "",
+  "giro_del_capitulo": "",
+  "cambio_irreversible": "",
+  "coste_pagado": "",
+  "decision_final": "",
+  "consecuencia_que_obliga_al_siguiente_capitulo": "",
+  "vectores_modificados": [],
+  "informacion_nueva_que_cambia_la_conducta": "",
+  "elementos_que_no_deben_repetirse": [],
+  "escenas_previstas": [
+    {
+      "objetivo": "",
+      "conflicto": "",
+      "resultado": "",
+      "cambio_producido": ""
+    }
+  ]
+}
+```
+
+La ficha debe rechazarse automáticamente cuando:
+
+1. El «cambio irreversible» pueda eliminarse sin afectar a los capítulos posteriores.
+2. La «decisión final» consista únicamente en seguir investigando, esperar, reflexionar o hablar con otra persona.
+3. El capítulo repita el objetivo del anterior sin éxito, fracaso o modificación.
+4. La nueva información no cambie ninguna conducta.
+5. El antagonista o la fuerza de oposición permanezca pasiva durante varios capítulos.
+6. El capítulo pueda resumirse como «el personaje obtiene otra pista».
+7. La escena final sea un cliffhanger artificial sin relación causal con lo ocurrido.
+8. El capítulo no actualice al menos dos vectores de avance.
+
+---
+
+# Prueba de eliminación
+
+Este debe ser uno de los controles más importantes del sistema:
+
+> **Si eliminamos el capítulo, ¿la novela sigue siendo comprensible y los personajes pueden llegar igualmente al capítulo posterior?**
+
+Cuando la respuesta sea afirmativa, el capítulo debe:
+
+* Eliminarse.
+* Fusionarse con otro.
+* Recibir una consecuencia irreversible.
+* Convertirse en una escena breve dentro de un capítulo con una función más importante.
+
+No debe conservarse simplemente porque tenga buena ambientación, un diálogo atractivo o una reflexión interesante.
+
+---
+
+# El cliffhanger no puede sustituir al avance
+
+Tu sistema probablemente utiliza finales de capítulo destinados a fomentar la lectura continuada. Esto es correcto, pero el cliffhanger debe surgir de una consecuencia, no ocultar la falta de progresión.
+
+### Cliffhanger débil
+
+> Cuando salió del edificio, recibió una llamada inesperada.
+
+No sabemos qué ha cambiado. Solo se retrasa la información.
+
+### Cliffhanger funcional
+
+> Cuando salió del edificio, recibió la fotografía que demostraba que su hermano había estado allí la noche del asesinato. Borró el mensaje antes de que su compañera pudiera verlo y decidió apartarla de la investigación.
+
+Aquí se producen varios cambios:
+
+* Aparece una prueba.
+* El conflicto se vuelve personal.
+* El protagonista oculta información.
+* Se rompe la confianza.
+* Se adopta una decisión peligrosa.
+* El siguiente capítulo queda causado por el anterior.
+
+---
+
+# Auditoría posterior a la escritura
+
+Una vez redactado el capítulo, un modelo distinto debe evaluarlo sin intentar mejorarlo todavía. Debe comprobar si la prosa realmente ha ejecutado el contrato estructural.
+
+## Criterios de evaluación
+
+| Criterio                                         | Puntuación |
+| ------------------------------------------------ | ---------: |
+| Cambio material entre el inicio y el final       |       0-20 |
+| Consecuencia irreversible                        |       0-20 |
+| Relación causal con el capítulo anterior         |       0-15 |
+| Impulso causal hacia el capítulo siguiente       |       0-15 |
+| Escalada del conflicto                           |       0-10 |
+| Participación activa del protagonista            |       0-10 |
+| Novedad respecto a los tres capítulos anteriores |       0-10 |
+| **Total**                                        |    **100** |
+
+El capítulo debe obtener:
+
+* Un mínimo de **75 puntos**.
+* Al menos **12/20** en cambio material.
+* Al menos **12/20** en consecuencia irreversible.
+* Al menos **10/15** en impulso hacia el capítulo siguiente.
+
+Si no supera el control, no debe enviarse directamente a la fase de edición. Primero hay que corregir la ficha estructural y después reescribir únicamente las escenas afectadas.
+
+---
+
+# Auditoría acumulativa cada cuatro capítulos
+
+El problema de ritmo no siempre se detecta examinando capítulos aislados. Cuatro capítulos pueden funcionar individualmente y, sin embargo, repetir el mismo ciclo.
+
+Cada cuatro capítulos, el sistema debe elaborar una tabla como esta:
+
+| Capítulo | Objetivo                       | Resultado              | Coste                       | Cambio irreversible                       | Nuevo rumbo                  |
+| -------- | ------------------------------ | ---------------------- | --------------------------- | ----------------------------------------- | ---------------------------- |
+| 13       | Obtener el informe             | Lo consigue incompleto | Pierde acceso oficial       | Queda identificado                        | Busca una fuente ilegal      |
+| 14       | Contactar con la fuente        | La fuente se niega     | Revela información personal | El antagonista detecta el contacto        | Debe proteger a la fuente    |
+| 15       | Sacar a la fuente de la ciudad | Fracasa                | Pierde a un aliado          | La fuente es detenida                     | Necesita entrar en comisaría |
+| 16       | Recuperar la declaración       | Obtiene una copia      | Comete un delito            | Ya no puede volver al procedimiento legal | Investiga por su cuenta      |
+
+Cuando las cuatro filas contienen expresiones equivalentes como «investiga», «sospecha», «pregunta», «reflexiona» o «encuentra una pista», existe estancamiento aunque los capítulos estén bien escritos.
+
+---
+
+# Prompt maestro para incorporar al sistema
+
+El siguiente bloque puede utilizarse como fase independiente antes de la escritura y como auditor posterior.
+
+ACTÚA COMO CONTROLADOR DE PROPULSIÓN NARRATIVA DE UNA NOVELA COMERCIAL.
+
+Tu función no es escribir prosa ni embellecer el capítulo. Tu función es impedir que la historia se estanque, especialmente durante la segunda parte de la novela.
+
+PRINCIPIO FUNDAMENTAL
+
+Un capítulo solo puede aprobarse cuando los acontecimientos que contiene provocan un cambio material, causal y preferentemente irreversible en la situación narrativa. La tensión, el misterio, la ambientación, la introspección o un cliffhanger no sustituyen al avance.
+
+EVALÚA LOS SIGUIENTES VECTORES
+
+1. Objetivo del protagonista.
+2. Información operativa.
+3. Relaciones y grado de confianza.
+4. Equilibrio de poder.
+5. Recursos disponibles.
+6. Nivel y proximidad del riesgo.
+7. Decisión que determina la acción posterior.
+
+Cada capítulo debe modificar al menos dos vectores. Uno de ellos debe ser el objetivo, el conflicto, la relación principal o el equilibrio de poder.
+
+REGLAS OBLIGATORIAS
+
+* El protagonista debe perseguir un objetivo concreto y verificable.
+* Debe encontrar oposición activa.
+* La acción debe producir un resultado: éxito, fracaso, éxito parcial o consecuencia inesperada.
+* La información descubierta debe modificar una conducta.
+* El final debe contener una decisión, una pérdida, una obligación, una revelación operativa o una consecuencia.
+* El capítulo siguiente debe resultar necesario como consecuencia del actual.
+* No se puede repetir el mismo objetivo durante más de tres capítulos sin conseguirlo, fracasar o modificarlo.
+* No puede haber más de dos capítulos consecutivos sin una consecuencia irreversible.
+* Cada tres o cuatro capítulos debe producirse una alteración del rumbo narrativo.
+* Después del punto medio, las alternativas del protagonista deben reducirse progresivamente.
+* El antagonista o la fuerza de oposición debe actuar y generar consecuencias.
+* No se aprobarán capítulos cuya función principal sea trasladar personajes, reiterar sospechas, recordar información, conversar sin consecuencias o encontrar pistas que no cambien ninguna decisión.
+
+PRUEBA DE ELIMINACIÓN
+
+Responde obligatoriamente:
+
+“¿Podría eliminarse este capítulo sin impedir que los personajes llegaran al capítulo siguiente?”
+
+Si la respuesta es sí, rechaza la propuesta y exige una de estas modificaciones:
+
+* Añadir una consecuencia irreversible.
+* Alterar una relación.
+* Provocar una pérdida.
+* Cambiar el objetivo.
+* Introducir una acción efectiva del antagonista.
+* Obligar al protagonista a tomar una decisión.
+* Fusionar el contenido con otro capítulo.
+* Eliminar el capítulo.
+
+CONTROL DE REPETICIÓN
+
+Compara el capítulo con los tres anteriores e identifica:
+
+* Objetivos repetidos.
+* Conversaciones funcionalmente equivalentes.
+* Nuevas pistas que confirman información ya conocida.
+* Reacciones emocionales ya utilizadas.
+* Escenas de desplazamiento o transición.
+* Falsos cliffhangers.
+* Retrasos artificiales de información.
+* Conflictos que terminan sin consecuencias.
+
+No apruebes el capítulo si repite una función narrativa anterior cambiando únicamente personajes, lugar o formulación.
+
+FORMATO DE RESPUESTA
+
+1. FUNCIÓN DEL CAPÍTULO.
+2. ESTADO INICIAL.
+3. OBJETIVO CONCRETO.
+4. OPOSICIÓN.
+5. GIRO O RESULTADO.
+6. CAMBIO IRREVERSIBLE.
+7. COSTE PAGADO.
+8. VECTORES MODIFICADOS.
+9. DECISIÓN FINAL.
+10. CONSECUENCIA QUE CAUSA EL SIGUIENTE CAPÍTULO.
+11. ELEMENTOS REPETIDOS QUE DEBEN EVITARSE.
+12. PRUEBA DE ELIMINACIÓN.
+13. DICTAMEN: APROBADO, REFORMULAR O ELIMINAR.
+
+Solo podrás utilizar el dictamen APROBADO cuando:
+
+* Exista una diferencia material entre el estado inicial y el final.
+* El cambio haya sido provocado por las acciones del capítulo.
+* Exista al menos una consecuencia que no pueda deshacerse fácilmente.
+* El capítulo impulse causalmente el siguiente.
+* No repita la función de los tres capítulos anteriores.
+* La desaparición del capítulo impida mantener intacta la cadena causal de la novela.
+
+Cuando el dictamen sea REFORMULAR, no propongas mejoras de estilo. Rediseña los acontecimientos, los costes, las decisiones y las consecuencias.
+
+---
+
+# Cambio importante en la generación de escenas
+
+El modelo escritor tampoco debe recibir únicamente el resumen del capítulo. Debe recibir una secuencia de escenas con progresión interna.
+
+Cada escena debe seguir esta cadena:
+
+> **Objetivo → oposición → acción → resultado → consecuencia**
+
+Una escena no debe terminar en el mismo estado en que comenzó.
+
+Para un capítulo de 2.500-3.000 palabras, normalmente bastan dos o tres escenas sustanciales. Añadir más escenas no mejora necesariamente el ritmo. Con frecuencia lo fragmenta y facilita que aparezcan transiciones, conversaciones y explicaciones sin función.
+
+Ejemplo:
+
+### Escena 1
+
+* Objetivo: convencer al testigo.
+* Oposición: teme perder su empleo.
+* Acción: el protagonista le muestra una prueba.
+* Resultado: acepta hablar.
+* Consecuencia: exige que antes protejan a su hija.
+
+### Escena 2
+
+* Objetivo: localizar a la hija.
+* Oposición: ha desaparecido.
+* Acción: revisan sus movimientos.
+* Resultado: descubren que está con el antagonista.
+* Consecuencia: el protagonista debe decidir entre entregar la prueba o ponerla en peligro.
+
+### Escena 3
+
+* Objetivo: negociar.
+* Oposición: el antagonista conoce una mentira del protagonista.
+* Resultado: el protagonista entrega una copia falsa.
+* Consecuencia: gana tiempo, pero el antagonista descubre que sigue investigando.
+
+El capítulo ha avanzado porque cada escena transforma la siguiente.
+
+---
+
+# La corrección prioritaria
+
+No necesitas reducir necesariamente los capítulos ni cambiar el estilo de las novelas. Los capítulos de 2.500-3.000 palabras pueden funcionar perfectamente. El problema aparece cuando el sistema interpreta esa extensión como una cantidad que debe rellenar.
+
+La regla debe ser:
+
+> **Nunca ampliar un capítulo para alcanzar el mínimo mediante introspección, recuerdos, descripción, recapitulación o conversaciones adicionales.**
+
+Cuando una ficha estructural solo permite producir 1.600 palabras sustanciales, existen dos posibilidades:
+
+1. Fusionar el capítulo con el siguiente.
+2. Incorporar una segunda consecuencia que complique realmente la historia.
+
+No debe rellenarse hasta las 2.500 palabras.
+
+## En una frase
+
+La modificación esencial consiste en dejar de preguntar:
+
+> «¿Es este capítulo interesante y tiene un buen cliffhanger?»
+
+Y comenzar a preguntar:
+
+> **«¿Qué era posible antes de este capítulo que ya no lo es después, y qué está obligado a hacer ahora el protagonista?»**
+
+Cuando tu sistema pueda responder con precisión a esas dos preguntas en todos los capítulos de la segunda parte, desaparecerá gran parte de la sensación de estancamiento y disminuirá el riesgo de abandono.

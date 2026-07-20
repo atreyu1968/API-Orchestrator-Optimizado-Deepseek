@@ -41,6 +41,14 @@ interface GhostwriterInput {
       setup_requerido?: string[];
       justificacion_causal?: string;
     };
+    // [Fix223] Contrato de propulsion narrativa por capitulo
+    propulsion?: {
+      cambio_irreversible?: string;
+      coste_pagado?: string;
+      decision_final?: string;
+      consecuencia_siguiente?: string;
+      vectores_modificados?: string[];
+    };
     transicion_ubicacion?: {
       ubicacion_anterior?: string;
       metodo_viaje?: string;
@@ -1201,6 +1209,36 @@ ${input.seriesMilestonesAndThreads}
     conflicto central mientras el protagonista observa pasivo. El protagonista
     debe estar presente en la escena, decidir y ejecutar la acción decisiva con
     sus propios medios. Materialízalo en la PROSA, no solo lo declares.
+    ═══════════════════════════════════════════════════════════════════
+    `;
+    }
+
+    const prop = input.chapterData.propulsion;
+    if (prop && String(prop.cambio_irreversible || "").trim().length > 0) {
+      prompt += `
+
+    ═══════════════════════════════════════════════════════════════════
+    CONTRATO DE PROPULSIÓN NARRATIVA (VINCULANTE, Fix223)
+    ═══════════════════════════════════════════════════════════════════
+    Este capítulo tiene un contrato de avance que la PROSA debe ejecutar EN
+    PÁGINA (dramatizado en escena, no resumido ni aludido):
+    - CAMBIO IRREVERSIBLE que debe ocurrir: ${String(prop.cambio_irreversible || "").trim()}
+    ${String(prop.coste_pagado || "").trim() ? `- COSTE PAGADO: ${String(prop.coste_pagado || "").trim()}` : ""}
+    ${String(prop.decision_final || "").trim() ? `- DECISIÓN FINAL del capítulo: ${String(prop.decision_final || "").trim()}` : ""}
+    ${String(prop.consecuencia_siguiente || "").trim() ? `- CONSECUENCIA que obliga al capítulo siguiente: ${String(prop.consecuencia_siguiente || "").trim()}` : ""}
+    ${Array.isArray(prop.vectores_modificados) && prop.vectores_modificados.length > 0 ? `- VECTORES que deben quedar modificados al cerrar: ${prop.vectores_modificados.join(", ")}` : ""}
+
+    Al terminar el capítulo, la situación NO puede volver a ser la que era al
+    empezar. Cada escena sigue la cadena objetivo → oposición → acción →
+    resultado → consecuencia: una escena no puede terminar en el mismo estado
+    en que comenzó.
+
+    REGLA ANTI-RELLENO (INNEGOCIABLE): NUNCA amplíes el capítulo para alcanzar
+    el mínimo de palabras mediante introspección, recuerdos, descripción,
+    recapitulación de lo ya sabido o conversaciones adicionales sin función.
+    Si el material sustancial se agota, profundiza el coste y las consecuencias
+    del contrato (hazlo doler más), no añadas paja. Para 2.500-3.000 palabras
+    bastan 2-3 escenas SUSTANCIALES; más escenas fragmentan el ritmo.
     ═══════════════════════════════════════════════════════════════════
     `;
     }

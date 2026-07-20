@@ -131,7 +131,8 @@ export interface StructuralAuditProblem {
     | "deus_ex_machina"
     | "trauma_protagonista"
     | "arco_secundario"
-    | "set_piece_clonado";
+    | "set_piece_clonado"
+    | "propulsion_avance";
   tipo: string;
   severidad: "alta" | "media" | "baja";
   capitulos: number[];
@@ -150,6 +151,7 @@ export interface StructuralAuditCoverage {
   trauma_protagonista_pct: number;
   arco_secundario_pct: number;
   set_piece_clonado_pct: number;
+  propulsion_avance_pct: number;
 }
 
 export interface StructuralAuditResult {
@@ -2029,6 +2031,7 @@ function buildInstructions(problemas: StructuralAuditProblem[]): string {
   renderArea("8) TRAUMA ACTIVO DEL PROTAGONISTA (primer 60% de la novela)", byArea["trauma_protagonista"]);
   renderArea("9) CONTINUIDAD DE ARCO SECUNDARIO (sin abandono ni brechas largas)", byArea["arco_secundario"]);
   renderArea("10) SET-PIECES CLONADOS (mismo tipo con escenario/táctica/oposición/coste calcados)", byArea["set_piece_clonado"]);
+  renderArea("11) PROPULSIÓN NARRATIVA (avance material e irreversible del acto 2)", byArea["propulsion_avance"]);
 
   lines.push("REGLA ANTI-RECURRENCIA: en la próxima generación, declara y respeta ESTOS campos por capítulo:");
   lines.push(
@@ -2036,6 +2039,9 @@ function buildInstructions(problemas: StructuralAuditProblem[]): string {
   );
   lines.push(
     `- "categoria_info_nueva" (1 valor de: ${CATEGORIA_INFO_VALORES.join(", ")}). En el acto 2/3 no puede haber 2 caps consecutivos con "informacion_nueva" vacía o de relleno; en ventanas de 4 caps del acto 2 ningún valor puede repetirse más de 2 veces; "ninguna" no puede aparecer 2 veces seguidas.`
+  );
+  lines.push(
+    `- "propulsion" (bloque obligatorio por capítulo): "cambio_irreversible" (≥25 caracteres, consecuencia que no puede deshacerse sin coste), "coste_pagado", "decision_final" (NUNCA "seguir investigando"/"esperar"/"reflexionar"), "consecuencia_siguiente" y "vectores_modificados" (≥2 de: ${VECTORES_PROPULSION.join(", ")}). En el acto 2: máximo 2 caps consecutivos sin cambio irreversible; en cada ventana de 4 caps al menos uno debe modificar un vector primario (objetivo, relacion o poder).`
   );
   lines.push(
     `- "revelaciones_dosificadas" (array). Toda revelación con dificultad "alto" debe traer modo_extraccion != "sin_resistencia" y al menos 1 cap en setup_capitulos. Ningún cap puede acumular ≥3 revelaciones de dificultad alta. Ningún personaje antagonista/cómplice puede revelar ≥3 hechos en un único capítulo.`
@@ -2416,6 +2422,144 @@ function auditSetPiecesClonados(
 // Entry point principal — llamado por el orquestador después del
 // PlotIntegrityAuditor. Determinista (sin coste de tokens).
 // ────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────
+// [Fix223] Propulsion narrativa (avance material del acto 2).
+// El sistema producia tension local sin AVANCE: capitulos que investigan,
+// conversan o encuentran pistas sin cambiar objetivo/relacion/poder.
+// El Arquitecto declara por capitulo un bloque "propulsion" (cambio
+// irreversible, coste, decision final, consecuencia, vectores modificados)
+// y este auditor lo verifica mecanicamente en la zona central (acto 2,
+// 25%-75%), la mas propensa al estancamiento:
+//   (a) cobertura del bloque "propulsion" (<50% => media, como otras dims);
+//   (b) 3+ caps consecutivos del acto 2 sin cambio_irreversible valido
+//       => ALTA (regla dura del doc: maximo 2 consecutivos);
+//   (c) decision_final PASIVA (seguir investigando/esperar/reflexionar/
+//       hablar con alguien) en 2+ caps consecutivos sin irreversible => media;
+//   (d) ventana de 4 caps del acto 2 donde NINGUNO modifica un vector
+//       primario (objetivo/relacion/poder/conflicto) => media.
+// Conservador (pauta de memoria): alta solo para el caso inequivoco (b),
+// gate por tamano minimo, y NO entra en CRITICAL_SECOND_HALF_DIMS.
+// ────────────────────────────────────────────────────────────────────
+export const VECTORES_PROPULSION = [
+  "objetivo", "informacion", "relacion", "poder", "recursos", "riesgo", "decision",
+] as const;
+const VECTORES_PRIMARIOS = new Set(["objetivo", "relacion", "poder", "conflicto"]);
+const RELLENO_IRREVERSIBLE_RE = /^(ninguno|ninguna|nada|no hay|sin cambios?|pendiente|n\/a|no aplica)/i;
+const DECISION_PASIVA_RE = /(seguir|continuar|continua)\s+(investigando|buscando|indagando|la investigacion|la búsqueda|la busqueda|la investigación)|^\s*(esperar|reflexionar|pensar|asimilar|procesar)\b|hablar con\s+\w+\s*\.?\s*$/i;
+
+function propulsionDe(c: any): any {
+  const p = c?.propulsion;
+  return p && typeof p === "object" ? p : null;
+}
+
+function irreversibleValido(c: any): boolean {
+  const p = propulsionDe(c);
+  const v = String(p?.cambio_irreversible || "").trim();
+  if (v.length < 25) return false;
+  return !RELLENO_IRREVERSIBLE_RE.test(v);
+}
+
+function vectoresDe(c: any): string[] {
+  const p = propulsionDe(c);
+  const arr = Array.isArray(p?.vectores_modificados) ? p.vectores_modificados : [];
+  return arr.map((x: any) => String(x || "").toLowerCase().trim()).filter(Boolean);
+}
+
+function auditPropulsionAvance(
+  escaleta: any[]
+): { problemas: StructuralAuditProblem[]; coverage: number } {
+  const { all, act2, total } = getActSlices(escaleta);
+  const problemas: StructuralAuditProblem[] = [];
+  if (total === 0) return { problemas, coverage: 1 };
+
+  const bloqueValido = (c: any): boolean =>
+    irreversibleValido(c) && vectoresDe(c).length >= 2;
+  const conBloque = all.filter((c: any) => propulsionDe(c) !== null);
+  const validos = all.filter(bloqueValido);
+  const coverage = total > 0 ? validos.length / total : 0;
+
+  // (a) Cobertura del bloque propulsion.
+  if (conBloque.length / total < 0.5) {
+    const ausentes = all.filter((c: any) => propulsionDe(c) === null).map(capNum);
+    problemas.push({
+      area: "propulsion_avance",
+      tipo: "propulsion_ausente",
+      severidad: "media",
+      capitulos: ausentes,
+      descripcion: `Solo ${Math.round((conBloque.length / total) * 100)}% de los capítulos declaran el bloque "propulsion". Sin él no se puede verificar que cada capítulo produzca un cambio material, causal e irreversible (no basta la tensión local).`,
+      sugerencia: `Añade a cada capítulo regular el bloque "propulsion" con: "cambio_irreversible" (≥25 caracteres, una consecuencia que NO puede deshacerse sin coste — prueba desaparecida, aliado perdido, mentira expuesta, plazo activado, línea moral cruzada), "coste_pagado", "decision_final" (conducta que desencadena el capítulo siguiente, NUNCA "seguir investigando" ni "esperar"), "consecuencia_siguiente" (por qué el capítulo siguiente resulta NECESARIO) y "vectores_modificados" (≥2 de: ${VECTORES_PROPULSION.join(", ")}; al menos uno debe ser objetivo, relacion o poder).`,
+    });
+  }
+
+  if (act2.length < 6) return { problemas, coverage };
+
+  // (b) Rachas de 3+ caps consecutivos del acto 2 sin irreversible valido.
+  // Solo si hay declaracion suficiente (evita alta masiva sobre escaletas
+  // legacy sin el bloque, que ya penaliza (a)).
+  if (conBloque.length / total >= 0.5) {
+    let run: number[] = [];
+    const rachas: number[][] = [];
+    for (const c of act2) {
+      if (!irreversibleValido(c)) run.push(capNum(c));
+      else { if (run.length >= 3) rachas.push(run); run = []; }
+    }
+    if (run.length >= 3) rachas.push(run);
+    for (const caps of rachas) {
+      problemas.push({
+        area: "propulsion_avance",
+        tipo: "racha_sin_irreversible",
+        severidad: "alta",
+        capitulos: caps,
+        descripcion: `Caps ${caps.join(", ")} del acto 2 encadenan ${caps.length} capítulos consecutivos SIN ninguna consecuencia irreversible declarada. Es la firma exacta del estancamiento: los personajes investigan, conversan o se desplazan pero la novela permanece en el mismo punto narrativo (repetición con decoración). Regla dura: máximo 2 capítulos consecutivos sin huella narrativa permanente.`,
+        sugerencia: `Rediseña al menos uno de cada 3 caps del tramo para que deje una huella permanente: una prueba desaparece, un aliado deja de colaborar, el antagonista descubre que lo investigan, se pierde una oportunidad, se rompe una relación, se activa un plazo o el protagonista cruza una línea moral. Aplica la PRUEBA DE ELIMINACIÓN: si el capítulo puede quitarse y los personajes llegan igual al siguiente, fusiónalo o dale una consecuencia irreversible. No propongas mejoras de estilo: rediseña acontecimientos, costes y decisiones.`,
+      });
+    }
+
+    // (c) decision_final pasiva en 2+ caps consecutivos sin irreversible.
+    let runP: number[] = [];
+    const rachasP: number[][] = [];
+    for (const c of act2) {
+      const p = propulsionDe(c);
+      const dec = String(p?.decision_final || "").trim();
+      const pasiva = dec.length > 0 && DECISION_PASIVA_RE.test(dec) && !irreversibleValido(c);
+      if (pasiva) runP.push(capNum(c));
+      else { if (runP.length >= 2) rachasP.push(runP); runP = []; }
+    }
+    if (runP.length >= 2) rachasP.push(runP);
+    for (const caps of rachasP) {
+      problemas.push({
+        area: "propulsion_avance",
+        tipo: "decision_final_pasiva",
+        severidad: "media",
+        capitulos: caps,
+        descripcion: `Caps ${caps.join(", ")}: la "decision_final" es pasiva ("seguir investigando", "esperar", "reflexionar", "hablar con alguien") y además el capítulo no deja cambio irreversible. Una decisión válida excluye alternativas y obliga al capítulo siguiente.`,
+        sugerencia: `Sustituye la decisión pasiva por una conducta que desencadene necesariamente el capítulo siguiente: entrar ilegalmente esa noche, romper con el aliado, ocultar la prueba a su compañera, aceptar el trato del antagonista. La información descubierta debe MODIFICAR una conducta, no confirmarla.`,
+      });
+    }
+
+    // (d) Ventanas de 4 caps del acto 2 sin ningun vector primario.
+    for (let i = 0; i + 4 <= act2.length; i += 1) {
+      const win = act2.slice(i, i + 4);
+      const declarados = win.filter((c: any) => vectoresDe(c).length > 0);
+      if (declarados.length < 3) continue;
+      const algunPrimario = win.some((c: any) => vectoresDe(c).some((v) => VECTORES_PRIMARIOS.has(v)));
+      if (!algunPrimario) {
+        problemas.push({
+          area: "propulsion_avance",
+          tipo: "ventana_sin_vector_primario",
+          severidad: "media",
+          capitulos: win.map(capNum),
+          descripcion: `Caps ${win.map(capNum).join(", ")}: en 4 capítulos consecutivos del acto 2 ningún capítulo modifica un vector PRIMARIO (objetivo, relacion, poder). Cambiar solo información/recursos/riesgo durante 4 caps produce sensación de meseta: se acumulan pistas sin que cambie la situación estratégica.`,
+          sugerencia: `Haz que al menos un capítulo de la ventana altere el objetivo del protagonista (lo consigue, fracasa o lo sustituye), una relación clave (alianza, ruptura, traición, dependencia) o el equilibrio de poder (alguien gana o pierde acceso, pruebas, autoridad o capacidad de actuar).`,
+        });
+        i += 3;
+      }
+    }
+  }
+
+  return { problemas, coverage };
+}
+
 export function runArchitectStructuralAudits(
   escaleta: any[],
   worldBible: any,
@@ -2431,6 +2575,7 @@ export function runArchitectStructuralAudits(
   const trauma = auditTraumaProtagonista(escaleta, worldBible);
   const arcoSec = auditArcoSecundario(escaleta, worldBible, seriesContext);
   const setPiece = auditSetPiecesClonados(escaleta);
+  const propulsion = auditPropulsionAvance(escaleta);
 
   const problemas = [
     ...forma.problemas,
@@ -2443,6 +2588,7 @@ export function runArchitectStructuralAudits(
     ...trauma.problemas,
     ...arcoSec.problemas,
     ...setPiece.problemas,
+    ...propulsion.problemas,
   ];
   const altas = problemas.filter((p) => p.severidad === "alta").length;
   const medias = problemas.filter((p) => p.severidad === "media").length;
@@ -2454,7 +2600,7 @@ export function runArchitectStructuralAudits(
   else if (altas <= 1 && medias <= 3) veredicto = "necesita_revision";
   else veredicto = "reescribir";
 
-  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}; Arco secreto: ${arco.problemas.length}; Falso aliado: ${fa.problemas.length}; Escalada acto 2: ${esc.problemas.length}; Deus ex machina: ${dem.problemas.length}; Trauma protagonista: ${trauma.problemas.length}; Arco secundario: ${arcoSec.problemas.length}; Set-pieces clonados: ${setPiece.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}% arco=${Math.round(arco.coverage * 100)}% aliado=${Math.round(fa.coverage * 100)}% apuesta=${Math.round(esc.coverage * 100)}% deus=${Math.round(dem.coverage * 100)}% trauma=${Math.round(trauma.coverage * 100)}% arcoSec=${Math.round(arcoSec.coverage * 100)}% setpiece=${Math.round(setPiece.coverage * 100)}%.`;
+  const resumen = `Auditoría estructural: ${altas} problemas altos, ${medias} medios. Forma: ${forma.problemas.length}; Ledger: ${ledger.problemas.length}; Dosificación: ${dos.problemas.length}; Arco secreto: ${arco.problemas.length}; Falso aliado: ${fa.problemas.length}; Escalada acto 2: ${esc.problemas.length}; Deus ex machina: ${dem.problemas.length}; Trauma protagonista: ${trauma.problemas.length}; Arco secundario: ${arcoSec.problemas.length}; Set-pieces clonados: ${setPiece.problemas.length}; Propulsión narrativa: ${propulsion.problemas.length}. Cobertura forma=${Math.round(forma.coverage * 100)}% ledger=${Math.round(ledger.coverage * 100)}% dosif=${Math.round(dos.coverage * 100)}% arco=${Math.round(arco.coverage * 100)}% aliado=${Math.round(fa.coverage * 100)}% apuesta=${Math.round(esc.coverage * 100)}% deus=${Math.round(dem.coverage * 100)}% trauma=${Math.round(trauma.coverage * 100)}% arcoSec=${Math.round(arcoSec.coverage * 100)}% setpiece=${Math.round(setPiece.coverage * 100)}% propulsion=${Math.round(propulsion.coverage * 100)}%.`;
 
   return {
     puntuacion_global: Math.round(score * 10) / 10,
@@ -2471,6 +2617,7 @@ export function runArchitectStructuralAudits(
       trauma_protagonista_pct: Math.round(trauma.coverage * 100) / 100,
       arco_secundario_pct: Math.round(arcoSec.coverage * 100) / 100,
       set_piece_clonado_pct: Math.round(setPiece.coverage * 100) / 100,
+      propulsion_avance_pct: Math.round(propulsion.coverage * 100) / 100,
     },
     resumen,
     instrucciones_revision: problemas.length > 0 ? buildInstructions(problemas) : "",

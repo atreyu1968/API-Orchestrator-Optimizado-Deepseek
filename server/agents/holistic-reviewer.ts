@@ -316,7 +316,15 @@ export class HolisticReviewerAgent extends BaseAgent {
 
     // [Fix200] Foco explicito en repeticion de esqueleto de capitulo (mid-novela).
     const skeletonBlock = input.focoEsqueletoCapitulo
-      ? `\n\n## FOCO ESPECIAL: REPETICION DE ESQUELETO DE CAPITULO (acto 2)\nEsta es una lectura INTERMEDIA: los capitulos restantes aun pueden corregirse. Pregunta obligatoria: en los capitulos leidos, ¿hay dos o mas capitulos cercanos con el MISMO esqueleto (misma combinacion de escenario + tipo de oposicion + tactica del protagonista + coste pagado), aunque cambien el lugar o el interlocutor (p. ej. llegar-interrogar-obtener dato-escapar repetido)? Si la respuesta es SI, dilo explicitamente en tu informe nombrando los capitulos gemelos y que eje deberia variar en los caps RESTANTES.`
+      ? `\n\n## FOCO ESPECIAL: REPETICION DE ESQUELETO DE CAPITULO (acto 2)\nEsta es una lectura INTERMEDIA: los capitulos restantes aun pueden corregirse. Pregunta obligatoria: en los capitulos leidos, ¿hay dos o mas capitulos cercanos con el MISMO esqueleto (misma combinacion de escenario + tipo de oposicion + tactica del protagonista + coste pagado), aunque cambien el lugar o el interlocutor (p. ej. llegar-interrogar-obtener dato-escapar repetido)? Si la respuesta es SI, dilo explicitamente en tu informe nombrando los capitulos gemelos y que eje deberia variar en los caps RESTANTES.
+
+## FOCO ESPECIAL 2 [Fix223]: TABLA DE PROPULSION NARRATIVA (avance vs estancamiento)
+Construye mentalmente esta tabla para CADA capitulo leido: objetivo del protagonista al empezar | resultado obtenido | coste pagado | cambio irreversible producido | decision final tomada. Con la tabla delante responde OBLIGATORIAMENTE en tu informe:
+1. ¿Hay 3+ capitulos consecutivos cuyo "cambio irreversible" es NINGUNO (los personajes investigan, conversan o se desplazan pero la situacion estrategica no cambia)? Nombralos: es la firma de la "repeticion con decoracion" y los caps RESTANTES deben romperla.
+2. ¿El protagonista persigue el MISMO objetivo inmediato durante mas de 3 capitulos sin conseguirlo, fracasar o sustituirlo?
+3. ¿Las decisiones de final de capitulo son pasivas ("seguir investigando", "esperar", "hablar con alguien") en lugar de conductas que obligan al capitulo siguiente?
+4. Aplica la PRUEBA DE ELIMINACION: ¿que capitulos podrian quitarse sin que los personajes dejaran de llegar igual al siguiente? Nombralos.
+Distingue TENSION LOCAL (parece que algo va a pasar) de AVANCE REAL (algo ha pasado y no puede deshacerse). Si detectas estancamiento acumulativo, tu instruccion para los caps restantes debe pedir ACONTECIMIENTOS con coste irreversible, no mejoras de estilo.`
       : "";
 
     // [Fix76] Si hay acciones administrativas pendientes (delete_chapter,

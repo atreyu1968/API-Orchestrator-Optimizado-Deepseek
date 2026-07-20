@@ -164,6 +164,14 @@ interface SectionData {
     setup_requerido?: string[];
     justificacion_causal?: string;
   };
+  // [Fix223] Contrato de propulsion narrativa por capitulo
+  propulsion?: {
+    cambio_irreversible?: string;
+    coste_pagado?: string;
+    decision_final?: string;
+    consecuencia_siguiente?: string;
+    vectores_modificados?: string[];
+  };
 }
 
 function narrativeSortOrder(chapterNumber: number): number {
@@ -3183,7 +3191,7 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
             forma_escena: [], ledger_info: [], dosificacion_revelacion: [],
             arco_secreto: [], falso_aliado: [], escalada_acto2: [],
             deus_ex_machina: [], trauma_protagonista: [], arco_secundario: [],
-            set_piece_clonado: [],
+            set_piece_clonado: [], propulsion_avance: [],
           };
           const AREA_TO_COVERAGE_FIELD: Record<string, string> = {
             forma_escena: "forma_dominante_pct",
@@ -3196,6 +3204,7 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
             trauma_protagonista: "trauma_protagonista_pct",
             arco_secundario: "arco_secundario_pct",
             set_piece_clonado: "set_piece_clonado_pct",
+            propulsion_avance: "propulsion_avance_pct",
           };
           const CHRONIC_ZERO_COVERAGE_ITERS = 3;
 
@@ -3412,12 +3421,13 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
               trauma_protagonista: "Trauma del protagonista como palanca activa",
               arco_secundario: "Continuidad de arco de personaje secundario",
               set_piece_clonado: "Set-pieces clonados (variedad real por contenido)",
+              propulsion_avance: "Propulsión narrativa (avance material e irreversible del acto 2)",
             };
             const dimensionCountsSA: Record<string, number> = {
               forma_escena: 0, ledger_info: 0, dosificacion_revelacion: 0,
               arco_secreto: 0, falso_aliado: 0, escalada_acto2: 0,
               deus_ex_machina: 0, trauma_protagonista: 0, arco_secundario: 0,
-              set_piece_clonado: 0,
+              set_piece_clonado: 0, propulsion_avance: 0,
             };
             // [Fix102 post-review] Marcador de severidad alta por dimensión.
             // Una "alta" obliga a KO aunque haya un único problema, evitando
@@ -3427,7 +3437,7 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
               forma_escena: false, ledger_info: false, dosificacion_revelacion: false,
               arco_secreto: false, falso_aliado: false, escalada_acto2: false,
               deus_ex_machina: false, trauma_protagonista: false, arco_secundario: false,
-              set_piece_clonado: false,
+              set_piece_clonado: false, propulsion_avance: false,
             };
             for (const p of sa.problemas) {
               if (p.area in dimensionCountsSA) {
@@ -6307,6 +6317,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       continuidad_entrada: c.continuidad_entrada,
       continuidad_salida: c.continuidad_salida,
       riesgos_de_verosimilitud: c.riesgos_de_verosimilitud,
+      propulsion: c.propulsion,
       tipo_capitulo: c.tipo_capitulo,
       tipo_cierre: c.tipo_cierre,
       // [Fix18] integridad narrativa.
@@ -7603,6 +7614,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       conflicto_central: plotItem?.conflicto_central,
       giro_emocional: plotItem?.giro_emocional,
       riesgos_de_verosimilitud: plotItem?.riesgos_de_verosimilitud,
+      propulsion: plotItem?.propulsion,
     };
   }
 
@@ -15039,6 +15051,7 @@ Responde SOLO con un JSON válido con la estructura:
           continuidad_entrada: c.continuidad_entrada,
           continuidad_salida: c.continuidad_salida,
           riesgos_de_verosimilitud: c.riesgos_de_verosimilitud,
+          propulsion: c.propulsion,
           tipo_capitulo: c.tipo_capitulo,
           tipo_cierre: c.tipo_cierre,
           // [Fix18] integridad narrativa.
@@ -15438,6 +15451,7 @@ Responde SOLO con un JSON válido con la estructura:
           continuidad_entrada: c.continuidad_entrada,
           continuidad_salida: c.continuidad_salida,
           riesgos_de_verosimilitud: c.riesgos_de_verosimilitud,
+          propulsion: c.propulsion,
         };
       }).filter((c: any) => typeof c.number === "number" && c.number >= fromChapter);
 
@@ -15809,6 +15823,7 @@ Responde SOLO con un JSON válido con la estructura:
         conflicto_central: chapterData.conflicto_central,
         giro_emocional: chapterData.giro_emocional,
         riesgos_de_verosimilitud: chapterData.riesgos_de_verosimilitud,
+        propulsion: chapterData.propulsion,
       };
     });
   }
@@ -15901,6 +15916,7 @@ Responde SOLO con un JSON válido con la estructura:
             continuidad_salida: prologueData.continuidad_salida,
             funcion_estructural: prologueData.funcion_estructural,
             riesgos_de_verosimilitud: prologueData.riesgos_de_verosimilitud,
+            propulsion: prologueData.propulsion,
           });
           sectionCounter++;
         }
@@ -15931,6 +15947,7 @@ Responde SOLO con un JSON válido con la estructura:
             prohibiciones_este_capitulo: chapterData.prohibiciones_este_capitulo,
             arcos_que_avanza: chapterData.arcos_que_avanza,
             riesgos_de_verosimilitud: chapterData.riesgos_de_verosimilitud,
+            propulsion: chapterData.propulsion,
           });
           sectionCounter++;
         }
@@ -15994,6 +16011,7 @@ Responde SOLO con un JSON válido con la estructura:
         conflicto_central: prologueData.conflicto_central,
         giro_emocional: prologueData.giro_emocional,
         riesgos_de_verosimilitud: prologueData.riesgos_de_verosimilitud,
+        propulsion: prologueData.propulsion,
       });
     }
 
@@ -16051,6 +16069,7 @@ Responde SOLO con un JSON válido con la estructura:
         prohibiciones_este_capitulo: chapterData.prohibiciones_este_capitulo,
         arcos_que_avanza: chapterData.arcos_que_avanza,
         riesgos_de_verosimilitud: chapterData.riesgos_de_verosimilitud,
+        propulsion: chapterData.propulsion,
       });
     }
 
@@ -16666,6 +16685,7 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
         continuidad_entrada: c.continuidad_entrada,
         continuidad_salida: c.continuidad_salida,
         riesgos_de_verosimilitud: c.riesgos_de_verosimilitud,
+        propulsion: c.propulsion,
       })),
     };
   }
