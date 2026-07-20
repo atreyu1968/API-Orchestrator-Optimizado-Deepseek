@@ -19441,7 +19441,14 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
     // corse de longitud (el capitulo puede crecer sustancialmente). Solo lo
     // activa el brazo de reparacion mid-novela; el resto de flujos QA mantienen
     // la cirugia estricta de siempre.
-    _sceneExpansion: boolean = false
+    _sceneExpansion: boolean = false,
+    // [Fix229] Profundidad de CASCADA: cuando el cirujano rechaza una
+    // instruccion porque el cambio de trama es incompatible con el canon de
+    // capitulos POSTERIORES, un juez expande la instruccion al conjunto minimo
+    // de capitulos afectados y se reescriben EN ORDEN (ver runCascadeRewrite).
+    // Las reescrituras hijas llegan con _cascadeDepth=1: no pueden abrir otra
+    // cascada ni auto-enrutarse a "otro capitulo" (el plan ya decidio destino).
+    _cascadeDepth: number = 0
   ): Promise<{ reroutedTo?: number[] } | void> {
     // [Fix78] Biblia de Serie consolidada también en reescritura quirúrgica:
     // si el QA pide cambios sobre un libro de serie, el Narrador conserva
@@ -20185,7 +20192,36 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
         // cap 14 → "pide modificar el cap 23" → narrador 4/10 → conservado): puro
         // gasto de IA y riesgo de degradar. El capítulo objetivo se resuelve por
         // separado en la misma cola de issues, así que aquí NO tocamos el actual.
-        if (this.surgeonReasonBelongsToOtherChapter(reason, chapter.chapterNumber)) {
+        // [Fix229] CASCADA: el cirujano dice que el cambio pedido es
+        // incompatible con el canon de capitulos POSTERIORES (caso tipico:
+        // "cambiar el desenlace de la emboscada" pero el cap siguiente arranca
+        // con el personaje capturado). Reescribir SOLO este capitulo esta
+        // condenado: o el Narrador no aplica el cambio (mismas reglas de
+        // continuidad) o deja una contradiccion dura en la costura. Intentamos
+        // una revision coordinada del conjunto minimo de capitulos afectados.
+        if (_cascadeDepth === 0 && this.surgeonReasonRequiresCascade(reason, chapter.chapterNumber)) {
+          // Guard de automatizacion (patron Fix111): en loops desatendidos NO
+          // ampliamos el radio de reescritura a varios capitulos sin ojos
+          // humanos; se documenta y se sigue el flujo clasico.
+          if (this._fromAutoLoop === true) {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              message: `[Fix229] ${sectionLabel}: la corrección exige cambios coordinados con capítulos posteriores (${reason.slice(0, 240)}), pero venimos de un loop automático y la cascada multi-capítulo NO se lanza desatendida. Aplícala como nota editorial manual para que la cascada pueda ejecutarse.`,
+              agentRole: "editor",
+            });
+          } else {
+            const cascade = await this.runCascadeRewrite(
+              project, chapter, worldBibleData, guiaEstilo, qaSource,
+              correctionInstructions, reason, sectionLabel, _structuralTranslateDepth
+            );
+            if (cascade.handled) {
+              return { reroutedTo: cascade.extraChapters };
+            }
+            // No viable o el paso origen no aplico cambios → flujo clasico.
+          }
+        }
+        if (_cascadeDepth === 0 && this.surgeonReasonBelongsToOtherChapter(reason, chapter.chapterNumber)) {
           await storage.createActivityLog({
             projectId: project.id,
             level: "warning",
@@ -20888,6 +20924,214 @@ La instrucción de arriba exige AÑADIR UNA ESCENA NUEVA COMPLETA dentro de este
     ];
 
     return [...noExistencePatterns, ...alreadySatisfiedPatterns].some(re => re.test(r));
+  }
+
+  // [Fix229] Heuristica: la razon del cirujano indica que el cambio de trama
+  // pedido para ESTE capitulo es incompatible con el canon de capitulos
+  // POSTERIORES ya escritos (menciona un capitulo con numero mayor o "el
+  // capitulo siguiente/posteriores" junto a vocabulario de incompatibilidad).
+  // Distinto de surgeonReasonBelongsToOtherChapter: alli el cambio NO va aqui;
+  // aqui el cambio SI va aqui pero arrastra a capitulos posteriores.
+  private surgeonReasonRequiresCascade(surgeonReason: string, currentChapterNumber: number): boolean {
+    const r = (surgeonReason || "").toLowerCase();
+    if (!r) return false;
+    // Cue NEGATIVO: lenguaje claro de reroute ("el cambio NO va en este
+    // capitulo") domina sobre la cascada — eso es un caso de
+    // surgeonReasonBelongsToOtherChapter, no de revision coordinada.
+    if (new RegExp(`\\bno\\b[^.;]{0,25}?\\bcap(?:[íi]tulo)?\\.?\\s*${currentChapterNumber}\\b`).test(r) ||
+        /\bno\b[^.;]{0,25}?\bcap(?:[íi]tulo)?\.?\s*(?:actual|presente|este)\b/.test(r) ||
+        /\b(?:corresponde|pertenece)[n]?\s+a[l]?\s+cap/.test(r)) {
+      return false;
+    }
+    // Señal 1: menciona capitulos posteriores (por numero mayor o literal).
+    let mentionsLater = /cap(?:[íi]tulos?)?\.?\s*(?:siguientes?|posteriores?)/.test(r) ||
+      /(?:siguientes?|posteriores?)\s+cap(?:[íi]tulos?)?\b/.test(r);
+    if (!mentionsLater) {
+      const numRe = /cap(?:[íi]tulos?)?\.?\s*([0-9]+)/g;
+      let m: RegExpExecArray | null;
+      while ((m = numRe.exec(r)) !== null) {
+        if (parseInt(m[1], 10) > currentChapterNumber) { mentionsLater = true; break; }
+      }
+    }
+    if (!mentionsLater) return false;
+    // Señal 2: vocabulario de incompatibilidad de canon / cambio coordinado.
+    return /incompatible|contradice|contradicci[óo]n|contradir[íi]a|\bcanon\b|modificar\s+tambi[ée]n|requerir[íi]a\s+(?:modificar|cambiar|reescribir|ajustar)|afectar[íi]a|romper[íi]a\s+la\s+continuidad|invalidar[íi]a|dejar[íi]a\s+(?:una\s+)?inconsistencia/.test(r);
+  }
+
+  // [Fix229] REVISION EN CASCADA: cuando el cirujano rechaza una instruccion
+  // porque el cambio de trama arrastra a capitulos posteriores, un juez
+  // (CascadePlannerAgent) decide si el impacto queda contenido en el capitulo
+  // origen + hasta 2 posteriores y produce una instruccion autocontenida por
+  // capitulo. Se ejecutan EN ORDEN via rewriteChapterForQA con _cascadeDepth=1
+  // (sin re-cascada ni auto-enrutado); la reescritura del cap N+1 ya carga el
+  // cap anterior FRESCO de BD como continuidad, asi que ve el nuevo canon.
+  // Frenos: max 3 capitulos, solo posteriores completed con contenido real,
+  // una sola cascada por instruccion. Si el juez lo declara no viable, se
+  // vuelve al flujo clasico y queda documentado que hace falta una nota
+  // editorial multi-capitulo manual.
+  private async runCascadeRewrite(
+    project: Project,
+    chapter: Chapter,
+    worldBibleData: ParsedWorldBible,
+    guiaEstilo: string,
+    qaSource: "continuity" | "voice" | "semantic" | "editorial",
+    correctionInstructions: string,
+    surgeonReason: string,
+    sectionLabel: string,
+    _structuralTranslateDepth: number
+  ): Promise<{ handled: boolean; extraChapters: number[] }> {
+    const CASCADE_MAX_CHAPTERS = 3;
+    const notHandled = { handled: false, extraChapters: [] as number[] };
+    try {
+      const allChapters = await storage.getChaptersByProject(project.id);
+      const nextChapters = allChapters
+        .filter(c => c.chapterNumber > chapter.chapterNumber && c.status === "completed" && (c.content || "").length >= 200)
+        .sort((a, b) => a.chapterNumber - b.chapterNumber)
+        .slice(0, CASCADE_MAX_CHAPTERS - 1);
+      if (nextChapters.length === 0) return notHandled;
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "info",
+        message: `[Fix229] ${sectionLabel}: la corrección exige cambios coordinados con capítulos posteriores (razón del cirujano: ${surgeonReason.slice(0, 300)}). Consultando al Planificador de Cascada...`,
+        agentRole: "editor",
+      });
+
+      let seriesContext = "";
+      if (project.seriesId) {
+        try {
+          seriesContext = await this.loadSeriesUnifiedWorldBibleStr(project.seriesId, project.id);
+        } catch { /* best-effort */ }
+      }
+
+      const { CascadePlannerAgent } = await import("./agents/cascade-planner");
+      const planner = new CascadePlannerAgent();
+      const { result: plan } = await planner.plan({
+        title: project.title,
+        genre: project.genre || "",
+        tone: (project as any).tone || undefined,
+        instruction: correctionInstructions,
+        surgeonReason,
+        currentChapter: { numero: chapter.chapterNumber, titulo: chapter.title || "", texto: chapter.content || "" },
+        nextChapters: nextChapters.map(c => ({ numero: c.chapterNumber, titulo: c.title || "", texto: c.content || "" })),
+        seriesContext: seriesContext || undefined,
+        projectId: project.id,
+      });
+
+      const pasos = (plan?.viable && Array.isArray(plan.pasos)) ? [...plan.pasos].sort((a, b) => a.capitulo - b.capitulo) : [];
+      if (!plan || !plan.viable || pasos.length < 2 || pasos[0].capitulo !== chapter.chapterNumber) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          message: `[Fix229] ${sectionLabel}: cascada NO viable${plan?.motivo ? ` — ${plan.motivo}` : " (el juez no devolvió un plan válido)"}. El cambio pedido requiere criterio humano: aplícalo como nota editorial multi-capítulo indicando qué debe cambiar en cada capítulo afectado. Se continúa con el flujo clásico sobre este capítulo.`,
+          agentRole: "editor",
+        });
+        return notHandled;
+      }
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "info",
+        message: `[Fix229] ${sectionLabel}: cascada VIABLE (${plan.motivo}). Plan: ${pasos.map(p => `cap ${p.capitulo}`).join(" → ")}. Reescribiendo en orden...`,
+        agentRole: "editor",
+      });
+
+      const sections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
+      const extraChapters: number[] = [];
+      // Pasos posteriores que no llegaron a cambiar (fallo o guarda interna):
+      // el origen SI cambio, asi que la cascada cuenta como aplicada, pero
+      // estos capitulos quedan documentados para revision manual.
+      const posteriorFailures: number[] = [];
+      for (let i = 0; i < pasos.length; i++) {
+        const paso = pasos[i];
+        const fresh = await storage.getChaptersByProject(project.id);
+        const target = fresh.find(c => c.chapterNumber === paso.capitulo);
+        const targetSec = sections.find((s: any) => s.numero === paso.capitulo);
+        if (!target || !targetSec) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `[Fix229] Cascada: no se encontró el capítulo ${paso.capitulo} o su sección de escaleta; ${i === 0 ? "cascada abortada (era el capítulo origen)" : "paso omitido"}.`,
+            agentRole: "editor",
+          });
+          // Fail-fast: sin capitulo origen no hay cascada — handled:false
+          // garantiza que el flujo clasico intente la correccion original.
+          if (i === 0) return notHandled;
+          continue;
+        }
+        const before = target.content || "";
+        const directive = `[CASCADA ${i + 1}/${pasos.length}] Esta reescritura forma parte de una revisión coordinada de ${pasos.length} capítulos derivada de la instrucción: "${correctionInstructions.slice(0, 240)}". El nuevo desenlace SUSTITUYE al canon anterior en los capítulos de la cascada. ${i === 0
+          ? "Los capítulos posteriores afectados se reescribirán inmediatamente después para mantener la continuidad: aplica el cambio pedido SIN miedo a contradecir lo que hoy dicen esos capítulos."
+          : "Los capítulos anteriores de la cascada YA fueron reescritos con el nuevo canon (los recibes como contexto fresco): adapta este capítulo a ese nuevo canon."}\n\nINSTRUCCIÓN PARA ESTE CAPÍTULO:\n${paso.instruccion}`;
+        let changed = false;
+        try {
+          await this.rewriteChapterForQA(
+            project, target, targetSec, worldBibleData, guiaEstilo, qaSource, directive,
+            1, Math.max(1, _structuralTranslateDepth), false, 1
+          );
+          const after = (await storage.getChaptersByProject(project.id)).find(c => c.id === target.id)?.content || "";
+          changed = after !== before;
+          if (changed && paso.capitulo !== chapter.chapterNumber) {
+            extraChapters.push(paso.capitulo);
+          }
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: changed ? "info" : "warning",
+            message: `[Fix229] Cascada ${i + 1}/${pasos.length}: capítulo ${paso.capitulo} ${changed ? "reescrito" : "sin cambios (guarda interna canceló la reescritura)"}.`,
+            agentRole: "editor",
+          });
+        } catch (err: any) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `[Fix229] Cascada ${i + 1}/${pasos.length}: la reescritura del capítulo ${paso.capitulo} falló (${err?.message || err}).`,
+            agentRole: "editor",
+          });
+        }
+        // El paso ORIGEN es la puerta: si el cambio de trama pedido no llego a
+        // aplicarse, los pasos posteriores adaptarian los capitulos a un canon
+        // que NO existe. Abortamos y devolvemos handled:false para que el
+        // flujo clasico (narrador) intente la correccion original.
+        if (i === 0 && !changed) {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warning",
+            message: `[Fix229] Cascada abortada: el capítulo origen ${chapter.chapterNumber} no llegó a modificarse, así que los pasos posteriores no se ejecutan. Se continúa con el flujo clásico sobre este capítulo.`,
+            agentRole: "editor",
+          });
+          return notHandled;
+        }
+        if (i > 0 && !changed) {
+          posteriorFailures.push(paso.capitulo);
+        }
+      }
+
+      // Fail-safe: si el capitulo origen quedo en "revision" (un fallo a mitad
+      // de su paso), lo liberamos para no bloquear el flujo llamante.
+      try {
+        const finalState = (await storage.getChaptersByProject(project.id)).find(c => c.id === chapter.id);
+        if (finalState && finalState.status !== "completed") {
+          await storage.updateChapter(chapter.id, { status: "completed", needsRevision: false, revisionReason: null });
+          this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+        }
+      } catch { /* best-effort */ }
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: posteriorFailures.length > 0 ? "warning" : "info",
+        message: `[Fix229] Cascada completada para ${sectionLabel}: ${pasos.length} capítulos procesados${extraChapters.length > 0 ? ` (posteriores modificados: ${extraChapters.join(", ")})` : ""}.${posteriorFailures.length > 0 ? ` ATENCIÓN: los capítulos ${posteriorFailures.join(", ")} NO llegaron a adaptarse al nuevo canon — revísalos manualmente o aplícales una nota editorial con la adaptación pendiente.` : ""}`,
+        agentRole: "editor",
+      });
+      return { handled: true, extraChapters };
+    } catch (err: any) {
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warning",
+        message: `[Fix229] Error en la revisión en cascada (${err?.message || err}). Se continúa con el flujo clásico.`,
+        agentRole: "editor",
+      });
+      return notHandled;
+    }
   }
 
   // [Fix141] Detecta que el cirujano declara que la corrección NO va en ESTE
