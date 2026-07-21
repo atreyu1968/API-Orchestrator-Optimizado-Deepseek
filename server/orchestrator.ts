@@ -1956,8 +1956,16 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           try {
             phase1Json = JSON.parse(phase1OnlyResult.content);
           } catch (e) {
-            console.warn(`[Orchestrator] [Fix110] Fase 1 JSON inválido en iter ${wbaIter + 1}: ${(e as Error).message}. Saltamos WBA.`);
-            break;
+            // [Fix242] Antes un JSON con defectos menores (comas colgantes,
+            // comillas simples...) rompia el bucle entero y quemaba las
+            // iteraciones restantes. Intentamos reparar antes de rendirnos.
+            try {
+              phase1Json = repairJson(phase1OnlyResult.content);
+              console.warn(`[Orchestrator] [Fix242] Fase 1 JSON invalido en iter ${wbaIter + 1} pero REPARADO con repairJson; el bucle continua.`);
+            } catch {
+              console.warn(`[Orchestrator] [Fix110] Fase 1 JSON inválido e irreparable en iter ${wbaIter + 1}: ${(e as Error).message}. Saltamos WBA.`);
+              break;
+            }
           }
 
           // [Fix240] Guardia determinista de DEGENERACION: si el retry perdio
@@ -2100,6 +2108,27 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
           if (bestWBA == null || wba.puntuacion_global > bestWBA.score) {
             bestWBA = { score: wba.puntuacion_global, phase1Json, result: wba };
+          } else if (wba.puntuacion_global === bestWBA.score) {
+            // [Fix242] Desempate por MATERIAL en la via de exito: un retry
+            // enriquecido que empata en score con la mejor previa (p.ej. 6/10
+            // vs 6/10 pero con 8 personajes vs 6) antes se descartaba por el
+            // `>` estricto — mismo agujero que Fix241 pero con auditor OK.
+            const nP = Array.isArray(phase1Json?.world_bible?.personajes) ? phase1Json.world_bible.personajes.length : 0;
+            const nS = Array.isArray(phase1Json?.matriz_arcos?.subtramas) ? phase1Json.matriz_arcos.subtramas.length : 0;
+            const bP = Array.isArray(bestWBA.phase1Json?.world_bible?.personajes) ? bestWBA.phase1Json.world_bible.personajes.length : 0;
+            const bS = Array.isArray(bestWBA.phase1Json?.matriz_arcos?.subtramas) ? bestWBA.phase1Json.matriz_arcos.subtramas.length : 0;
+            if (nP >= bP && nS >= bS && (nP > bP || nS > bS)) {
+              bestWBA = { score: wba.puntuacion_global, phase1Json, result: wba };
+              try {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "info",
+                  agentRole: "world-bible-auditor",
+                  message: `[Fix242] Empate de score (${wba.puntuacion_global}/10) resuelto por material: la Fase 1 del retry (${nP} personajes, ${nS} subtramas) sustituye a la previa (${bP}/${bS}).`,
+                  metadata: { fix: "Fix242", iteration: wbaIter + 1, newPers: nP, newSubs: nS, bestPers: bP, bestSubs: bS },
+                });
+              } catch {}
+            }
           }
 
           // [Fix238] Validador determinista de suelos de densidad: cuenta

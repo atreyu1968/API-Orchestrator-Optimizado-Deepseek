@@ -13,3 +13,5 @@ Reglas para cualquier bucle generar → auditar → regenerar-con-feedback:
 **How to apply:** en cualquier bucle de calidad con presupuesto de iteraciones (WBA, auditor estructural, etc.), revisar los tres puntos antes de ampliar presupuestos: mas iteraciones no ayudan si el retry degenera o el bucle rompe temprano.
 
 4. Rama de "fallo tecnico del juez" con salvavidas: si el juez falla y la salida nueva es valida, el salvavidas debe poder SUSTITUIR a la mejor version previa cuando no pierde material — un guard `!best` la descarta en silencio justo cuando el retry venia enriquecido (y el log puede prometer lo contrario al codigo: verificar que mensaje y rama coinciden).
+
+5. La comparacion "mejor version" con `>` estricto pierde retries enriquecidos que EMPATAN en score: desempatar por material (unidades >= en todos los ejes y > en alguno). Y un parse fallido del retry no debe romper el bucle entero: reparar JSON antes de rendirse.
