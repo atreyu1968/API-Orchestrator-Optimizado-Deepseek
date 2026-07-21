@@ -26,7 +26,7 @@ import { calculateRealCost, formatCostForStorage } from "./cost-calculator";
 // `ai_usage_events` sin importar de routes.ts (que crearía ciclos).
 import { recordRawAiUsage } from "./utils/ai-usage";
 import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
-import { renumberChaptersSequential } from "./utils/renumber-chapters";
+import { renumberChaptersSequential, remapPendingAdminActionsForRenumber } from "./utils/renumber-chapters";
 import { forcePolishResume } from "./polish-auto-resume";
 import {
   extractMilestonesAndThreadsFromGuide,
@@ -6497,6 +6497,23 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
         await storage.updateChapter(ch.id, { chapterNumber: ch.chapterNumber + 1 });
       }
 
+      // [Fix237] Las tarjetas admin pendientes apuntan por NUMERO: tras el
+      // desplazamiento +1, se re-mapean para que sigan apuntando al capitulo
+      // correcto (misma fuga que las fusiones encadenadas, version insercion).
+      try {
+        const pendingIns = Array.isArray((project as any).pendingAdminActions)
+          ? (project as any).pendingAdminActions : [];
+        if (pendingIns.length > 0) {
+          const remapIns = remapPendingAdminActionsForRenumber(pendingIns, { insertedAfter: pos - 1 });
+          if (remapIns.changed > 0) {
+            await storage.updateProject(projectId, { pendingAdminActions: remapIns.actions } as any);
+            console.log(`[Fix237] insert-chapter: ${remapIns.changed} tarjeta(s) admin re-mapeada(s) tras desplazar +1 desde el cap ${pos}.`);
+          }
+        }
+      } catch (remapErr) {
+        console.error(`[Fix237] insert-chapter: fallo al re-mapear tarjetas admin (no bloqueante):`, remapErr);
+      }
+
       const worldBible = await storage.getWorldBibleByProject(projectId);
       const styleGuide = project.styleGuideId ? await storage.getStyleGuide(project.styleGuideId) : null;
 
@@ -9333,7 +9350,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           renumberedCount = Number(shiftRes?.rowCount ?? 0);
           await tx.execute(dsql`UPDATE chapters SET content = ${partA}, word_count = ${wcA} WHERE id = ${chap.id}`);
           await tx.execute(dsql`INSERT INTO chapters (project_id, chapter_number, title, content, status, word_count) VALUES (${projectId}, ${targetNum + 1}, ${newTitle}, ${partB}, ${chap.status || "completed"}, ${wcB})`);
-          await tx.execute(dsql`UPDATE projects SET pending_admin_actions = ${JSON.stringify(lockedActions.filter((a: any) => Number(a?.id) !== actionId))}::jsonb WHERE id = ${projectId}`);
+          // [Fix237] Las tarjetas restantes se re-mapean a la numeracion nueva
+          // (los caps posteriores al dividido suben +1).
+          const remapSplit = remapPendingAdminActionsForRenumber(
+            lockedActions.filter((a: any) => Number(a?.id) !== actionId),
+            { insertedAfter: targetNum },
+          );
+          await tx.execute(dsql`UPDATE projects SET pending_admin_actions = ${JSON.stringify(remapSplit.actions)}::jsonb WHERE id = ${projectId}`);
           consumed = true;
         });
         if (!consumed) {
@@ -9453,7 +9476,29 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         const renumberedArc = await renumberChaptersSequential(projectId);
         const freshArc = await storage.getProject(projectId);
         const freshArcActions: any[] = Array.isArray((freshArc as any)?.pendingAdminActions) ? (freshArc as any).pendingAdminActions : [];
-        await storage.updateProject(projectId, { pendingAdminActions: freshArcActions.filter((a: any) => Number(a?.id) !== actionId) } as any);
+        // [Fix237] Las tarjetas restantes apuntan por NUMERO: tras borrar las
+        // fuentes y renumerar, se re-mapean a la numeracion nueva. Las que
+        // referencian un capitulo recien borrado se INVALIDAN con log (antes
+        // quedaban apuntando al capitulo equivocado).
+        const remainingArc = freshArcActions.filter((a: any) => Number(a?.id) !== actionId);
+        const remapArc = remapPendingAdminActionsForRenumber(remainingArc, { deleted: srcChaps.map(c => Number(c.chapterNumber)) });
+        await storage.updateProject(projectId, { pendingAdminActions: remapArc.actions } as any);
+        for (const d of remapArc.dropped) {
+          await storage.createActivityLog({
+            projectId,
+            level: "warning",
+            message: `[Fix237] Tarjeta admin id=${d.id} (${d.type} sobre ${d.label}) INVALIDADA: referenciaba un capitulo que acaba de borrarse en la fusion. Revisa si la intencion sigue vigente y crea una nota editorial nueva si procede.`,
+            agentRole: "editor",
+          });
+        }
+        if (remapArc.changed > 0) {
+          await storage.createActivityLog({
+            projectId,
+            level: "info",
+            message: `[Fix237] ${remapArc.changed} tarjeta(s) admin pendiente(s) re-mapeada(s) a la numeracion nueva tras la fusion.`,
+            agentRole: "editor",
+          });
+        }
         await storage.createActivityLog({
           projectId,
           level: "info",
@@ -9474,8 +9519,27 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       //    pisar acciones nuevas añadidas por otros procesos en paralelo).
       const fresh = await storage.getProject(projectId);
       const freshActions: any[] = Array.isArray((fresh as any)?.pendingAdminActions) ? (fresh as any).pendingAdminActions : [];
-      const nextActions = freshActions.filter((a: any) => Number(a?.id) !== actionId);
-      await storage.updateProject(projectId, { pendingAdminActions: nextActions } as any);
+      // [Fix237] Re-mapea las tarjetas restantes a la numeracion nueva e
+      // invalida las que referencian el capitulo recien borrado.
+      const remaining = freshActions.filter((a: any) => Number(a?.id) !== actionId);
+      const remap = remapPendingAdminActionsForRenumber(remaining, { deleted: [chapterToDelete] });
+      await storage.updateProject(projectId, { pendingAdminActions: remap.actions } as any);
+      for (const d of remap.dropped) {
+        await storage.createActivityLog({
+          projectId,
+          level: "warning",
+          message: `[Fix237] Tarjeta admin id=${d.id} (${d.type} sobre ${d.label}) INVALIDADA: referenciaba el capitulo ${chapterToDelete} que acaba de borrarse. Revisa si la intencion sigue vigente y crea una nota editorial nueva si procede.`,
+          agentRole: "editor",
+        });
+      }
+      if (remap.changed > 0) {
+        await storage.createActivityLog({
+          projectId,
+          level: "info",
+          message: `[Fix237] ${remap.changed} tarjeta(s) admin pendiente(s) re-mapeada(s) a la numeracion nueva tras el borrado.`,
+          agentRole: "editor",
+        });
+      }
 
       const summary = type === "merge_chapters"
         ? `Fusión ejecutada: cap ${action.targetChapter} absorbe a cap ${chapterToDelete}; cap ${chapterToDelete} eliminado; ${renumbered} cap(s) renumerado(s) -1.`

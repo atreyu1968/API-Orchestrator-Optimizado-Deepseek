@@ -15,7 +15,11 @@ Helper compartido: `renumberChaptersSequential(projectId)` compacta los positivo
 
 **How to apply:** ejecutar TODOS los delete/merge del lote primero (resolviendo por numero, sin tocar la numeracion), y llamar a `renumberChaptersSequential` UNA vez al terminar el for, condicionado a `chaptersDeleted > 0`, best-effort (try/catch, un fallo no revierte los borrados; se corrige en la siguiente pasada). El endpoint manual procesa 1 accion por llamada, asi que ahi si puede renumerar justo tras el borrado.
 
-**Alcance:** el helper solo toca `chapter_number` (mas el saneo del encabezado, ver abajo); NO remapea referencias a numeros de capitulo en World Bible ni en pending admin actions (igual que el borrado manual). El bucle autonomo relee el manuscrito limpio cada iteracion, asi que trabaja ya con la numeracion compactada. La ruta editorial Phase-0 (`applyChapterDeletions`) tiene su propio mecanismo con renumberMap que SI actualiza referencias del World Bible — no confundir con este helper ligero.
+**Alcance:** el helper solo toca `chapter_number` (mas el saneo del encabezado, ver abajo); NO remapea referencias del World Bible.
+
+## Toda mutacion de numeracion debe remapear las tarjetas admin pendientes
+
+**Why:** las pending admin actions apuntan por NUMERO de capitulo. Un usuario ejecuto tarjetas encadenadas (delete + fusiones archivadas) y, tras la primera renumeracion, las siguientes fusionaron capitulos EQUIVOCADOS — novela descartada. Cualquier codigo nuevo que borre, fusione, divida o INSERTE capitulos (la insercion desplaza +1) debe remapear las tarjetas vivas justo despues, invalidando (dropped + aviso en log) las que referencian un capitulo borrado. Existe helper compartido junto al de renumeracion; los especiales <=0 nunca se tocan. El bucle autonomo relee el manuscrito limpio cada iteracion, asi que trabaja ya con la numeracion compactada. La ruta editorial Phase-0 (`applyChapterDeletions`) tiene su propio mecanismo con renumberMap que SI actualiza referencias del World Bible — no confundir con este helper ligero.
 
 ## El content arrastra un encabezado meta que hay que sanear al renumerar
 

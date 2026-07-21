@@ -33,7 +33,7 @@ export { BetaReaderAgent, type BetaReaderResult } from "./beta-reader";
 export { OutlineBetaReaderAgent, type OutlineBetaReaderResult, type OutlineBetaProblem, type OutlineBetaProblemType } from "./outline-beta-reader";
 export { PlotIntegrityAuditorAgent, computePlotIntegrityMetrics, type PlotIntegrityResult, type PlotIntegrityIssue, type PlotIntegrityInput, type PlotIntegrityComputedMetrics } from "./plot-integrity-auditor";
 // [Fix110] Auditor de World Bible entre Fase 1 y Fase 2 del Arquitecto.
-export { WorldBibleAuditorAgent, type WorldBibleAuditResult, type WorldBibleAuditProblem, type WorldBibleAuditArea, type WorldBibleAuditInput } from "./world-bible-auditor";
+export { WorldBibleAuditorAgent, enforceDensityFloors, type WorldBibleAuditResult, type WorldBibleAuditProblem, type WorldBibleAuditArea, type WorldBibleAuditInput } from "./world-bible-auditor";
 // [Fix92] Auditor estructural determinista (forma/ledger/dosificación).
 export { runArchitectStructuralAudits, autopatchDecorativeSetupCapitulos, FORMA_ESCENA_VALORES, CATEGORIA_INFO_VALORES, MODO_EXTRACCION_VALORES, type StructuralAuditResult, type StructuralAuditProblem, type StructuralAuditCoverage, type SeriesAuditContext, type FormaEscena, type CategoriaInfoNueva, type ModoExtraccion } from "./scene-shape-auditor";
 export { MidNovelRepairPlannerAgent, type MidNovelRepairPlannerResult, type MidNovelOpenFinding } from "./mid-novel-repair-planner";

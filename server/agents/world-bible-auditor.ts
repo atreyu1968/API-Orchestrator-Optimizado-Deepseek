@@ -110,6 +110,7 @@ LAS 5 ÁREAS QUE AUDITAS (y solo estas)
 3. RESERVAS DE SECRETOS (area: "reservas_secretos")
    - Cuenta los secretos/revelaciones disponibles en la World Bible (no en la escaleta — esa todavía no existe).
    - Para una novela de N capítulos, regla práctica: necesitas N/4 a N/3 revelaciones dosificables (no menos, o el lector se aburrirá; no muchas más, o se vuelve confuso).
+   - [Fix238] REGLA DEL MARGEN: si el recuento "toca el límite inferior" (queda exactamente en N/4 o por debajo), eso NO es apto — es severidad ALTA. La escaleta y la escritura siempre consumen material peor de lo planeado; una base que nace justa produce un acto 2 estancado que se repite (caso real: caps 10-16 repitiendo escenas de refugio por nacer al límite). Apto exige margen: al menos ceil(N/3) secretos distinguibles.
    - Cada secreto debe ser distinguible de los otros (identidad, motivación, evento del pasado, regla del mundo, vínculo emocional oculto).
    - Si hay <3 secretos identificables o todos son del mismo tipo → severidad alta. Sugiere qué secretos añadir y su rol (revelación parcial acto 1, mid-act 2, cerca de clímax).
 
@@ -141,6 +142,18 @@ PUNTUACIÓN
 - 5-6: 1 problema alta o múltiples medios sin solución obvia. veredicto = "necesita_revision".
 - ≤4: 2+ altas o una base estructuralmente débil. veredicto = "reescribir".
 
+[Fix238] PUERTA DURA DE DENSIDAD — PROHIBIDO EL "APTO AL LÍMITE":
+Si en tu resumen o en algún problema describes que una densidad (secretos,
+palancas, arcos) "toca el límite inferior", "está justa", "es el mínimo" o
+equivalente para los N capítulos pedidos, el veredicto NO puede ser "apto":
+marca ese hallazgo como severidad ALTA y emite "necesita_revision" con
+feedback que diga EXACTAMENTE qué unidades de material añadir (qué secreto,
+qué palanca, a qué personaje se vincula y en qué tramo del libro se usa).
+Mínimos con margen para N capítulos: secretos >= ceil(N/3); palancas del
+antagonista >= 4 si N>=30 (3 si no); reversales >= 3; subtramas completas
+>= 3 si N<=20, 4 si N<=30, 5 si N>30. Nacer justo de material es la causa
+raíz de actos 2 estancados que luego solo se "arreglan" borrando capítulos.
+
 ═══════════════════════════════════════════════════════════════════
 FEEDBACK PARA ARQUITECTO
 ═══════════════════════════════════════════════════════════════════
@@ -170,6 +183,52 @@ FORMATO DE SALIDA — JSON ESTRICTO
 
 Responde ÚNICAMENTE con el JSON.
 `;
+
+// [Fix238] Validador DETERMINISTA de suelos de densidad. El prompt ya prohibe
+// el "apto al limite", pero un LLM puede ignorarlo (caso real: aviso de
+// "limite inferior" + apto 7/10). Este helper cuenta el material ESTRUCTURADO
+// de la Fase 1 (subtramas y giros — campos con forma fija) y, si no llega al
+// minimo para N capitulos, DEGRADA un veredicto "apto" a "necesita_revision"
+// con problema alta y feedback sintetico. Secretos/palancas son texto libre y
+// se dejan al juicio del LLM (contarlos deterministicamente daria falsos
+// positivos).
+export function enforceDensityFloors(
+  result: WorldBibleAuditResult,
+  phase1Json: any,
+  chapterCount: number,
+): { demoted: boolean; details: string } {
+  if (!result || result.veredicto !== "apto" || !phase1Json || !chapterCount) {
+    return { demoted: false, details: "" };
+  }
+  const N = chapterCount;
+  const subtramas = Array.isArray(phase1Json?.matriz_arcos?.subtramas)
+    ? phase1Json.matriz_arcos.subtramas.length : 0;
+  const giros = Array.isArray(phase1Json?.momentum_plan?.catalogo_giros)
+    ? phase1Json.momentum_plan.catalogo_giros.length : 0;
+  const subtramasFloor = N <= 20 ? 3 : N <= 30 ? 4 : 5;
+  const girosFloor = Math.ceil(N / 4);
+  const deficits: string[] = [];
+  if (subtramas < subtramasFloor) {
+    deficits.push(`subtramas: ${subtramas} < minimo ${subtramasFloor} para ${N} caps`);
+  }
+  if (giros < girosFloor) {
+    deficits.push(`giros en catalogo_giros: ${giros} < minimo ${girosFloor} para ${N} caps`);
+  }
+  if (deficits.length === 0) return { demoted: false, details: "" };
+
+  const details = deficits.join("; ");
+  result.veredicto = "necesita_revision";
+  result.problemas = Array.isArray(result.problemas) ? result.problemas : [];
+  result.problemas.push({
+    area: "densidad_arcos",
+    severidad: "alta",
+    descripcion: `[Fix238] Recuento determinista por debajo del suelo: ${details}. Una base que nace justa de material produce un acto 2 estancado.`,
+    sugerencia: `Añadir material hasta superar los minimos con margen: ${subtramas < subtramasFloor ? `al menos ${subtramasFloor} subtramas completas (con actores y eje propios). ` : ""}${giros < girosFloor ? `al menos ${girosFloor} giros en catalogo_giros con setup_previo real.` : ""}`,
+  });
+  const extra = `\n[Fix238 — VALIDADOR DETERMINISTA] El recuento numerico de la Fase 1 no alcanza los suelos para ${N} capitulos (${details}). AÑADE el material que falta: cada unidad nueva debe ser distinguible, vinculada a personajes existentes y con su tramo de uso (acto 1 / mitad acto 2 / climax).`;
+  result.feedback_para_arquitecto = ((result.feedback_para_arquitecto || "").trim() + extra).trim();
+  return { demoted: true, details };
+}
 
 export class WorldBibleAuditorAgent extends BaseAgent {
   constructor() {

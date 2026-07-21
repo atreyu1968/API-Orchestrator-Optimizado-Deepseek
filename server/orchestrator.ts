@@ -39,6 +39,7 @@ import {
   computePlotIntegrityMetrics,
   WorldBibleAuditorAgent,
   type WorldBibleAuditResult,
+  enforceDensityFloors,
   runArchitectStructuralAudits,
   type SeriesAuditContext,
   autopatchDecorativeSetupCapitulos,
@@ -71,7 +72,7 @@ import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper 
 import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
 import { tryMarkPolishActive, clearPolishActive, isPolishStopRequested, clearPolishStopRequest } from "./utils/polish-registry";
 import { recordRawAiUsage } from "./utils/ai-usage";
-import { renumberChaptersSequential } from "./utils/renumber-chapters";
+import { renumberChaptersSequential, remapPendingAdminActionsForRenumber } from "./utils/renumber-chapters";
 import { calculateRealCost } from "./cost-calculator";
 import { runWithProjectContext } from "./utils/agent-context";
 import type { AdminActionVerdict } from "./utils/review-score";
@@ -1813,7 +1814,10 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       // Fase 1 no tenía munición dramática suficiente; reescribir la escaleta
       // sobre una base débil tiene techo natural. Skip en volúmenes de serie
       // (la World Bible canónica viene del consolidador y no se debe alterar).
-      const MAX_WBA_ITERATIONS = 3;
+      // [Fix238] Presupuesto ampliado 3→5: el usuario prefiere gastar mas
+      // iteraciones de fortificacion (baratas: solo Fase 1 + audit, sin
+      // escaleta) antes que dejar nacer una novela corta de material.
+      const MAX_WBA_ITERATIONS = 5;
       const WBA_THRESHOLD = 7;
       // [Fix110-rev1] Umbral mínimo para REUSAR la Fase 1 fortificada. Si tras
       // agotar las iteraciones el mejor score sigue siendo <5, la base es
@@ -1821,6 +1825,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       // (Phase 1 + Phase 2 frescos) en lugar de congelar una base subóptima.
       const WBA_MIN_REUSE_SCORE = 5;
       let prefortifiedPhase1Json: any = null;
+      // [Fix238] Si se reusa una Fase 1 que NO alcanzo el apto del WBA, sus
+      // problemas residuales se inyectan a la Fase 2 como instruccion dura
+      // (antes solo quedaban "documentados" en el log y la escaleta nacia
+      // igual de corta de material).
+      let wbaResidualFeedbackForPhase2 = "";
       const isSeriesVolume = !!(seriesUnifiedWorldBibleStr && seriesUnifiedWorldBibleStr.trim().length > 0);
 
       // [Fix115] Si el proyecto viene de "awaiting_structural_guidance" (el
@@ -2032,6 +2041,23 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             bestWBA = { score: wba.puntuacion_global, phase1Json, result: wba };
           }
 
+          // [Fix238] Validador determinista de suelos de densidad: cuenta
+          // subtramas y giros de la Fase 1 y degrada un "apto" del LLM si no
+          // llegan al minimo para N caps (el prompt puede ser ignorado; el
+          // recuento no).
+          const densityCheck = enforceDensityFloors(wba, phase1Json, project.chapterCount);
+          if (densityCheck.demoted) {
+            try {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                agentRole: "world-bible-auditor",
+                message: `[Fix238] Veredicto "apto" DEGRADADO a "necesita_revision" por el validador determinista: ${densityCheck.details}. Se pide al Arquitecto enriquecer la base antes de la escaleta.`,
+                metadata: { fix: "Fix238", iteration: wbaIter + 1, details: densityCheck.details },
+              });
+            } catch {}
+          }
+
           if (wba.puntuacion_global >= WBA_THRESHOLD && wba.veredicto === "apto") {
             try {
               await storage.createActivityLog({
@@ -2060,6 +2086,21 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         if (bestWBA && bestWBA.score >= WBA_MIN_REUSE_SCORE) {
           prefortifiedPhase1Json = bestWBA.phase1Json;
           const passedThreshold = bestWBA.score >= WBA_THRESHOLD && bestWBA.result.veredicto === "apto";
+          if (!passedThreshold) {
+            // [Fix238] Construir la instruccion residual para Fase 2.
+            const problemasTxt = (bestWBA.result.problemas || [])
+              .filter((p: any) => p?.severidad === "alta" || p?.severidad === "media")
+              .slice(0, 6)
+              .map((p: any, i: number) => `${i + 1}. [${p.area}/${p.severidad}] ${p.descripcion} → ${p.sugerencia}`)
+              .join("\n");
+            const fb = (bestWBA.result.feedback_para_arquitecto || "").trim();
+            if (problemasTxt || fb) {
+              wbaResidualFeedbackForPhase2 = `
+[Fix238] DEFICITS DE MATERIAL DETECTADOS POR EL AUDITOR DE WORLD BIBLE (base reusada con ${bestWBA.score}/10, NO apta):
+La base narrativa nacio corta de material. La escaleta DEBE compensarlo activamente: donde el auditor pide un secreto/palanca/arco que falta, INVENTALO ahora (coherente con la World Bible) e integralo en los capitulos correspondientes. PROHIBIDO rellenar el acto 2 con capitulos que repiten la misma situacion (refugio, espera, pasividad) por falta de ideas.
+${problemasTxt ? `PROBLEMAS RESIDUALES:\n${problemasTxt}\n` : ""}${fb ? `FEEDBACK DEL AUDITOR:\n${fb}` : ""}`.trim();
+            }
+          }
           try {
             await storage.createActivityLog({
               projectId: project.id,
@@ -2072,12 +2113,19 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             });
           } catch {}
         } else if (bestWBA) {
+          // [Fix238] Fuga cerrada: el flujo clasico regeneraba Fase 1 SIN
+          // ningun audit posterior. Al menos le inyectamos el feedback del
+          // WBA (sabemos QUE fallaba) como instruccion dura para la regeneracion.
+          const fbClassic = (bestWBA.result.feedback_para_arquitecto || "").trim();
+          if (fbClassic) {
+            wbaResidualFeedbackForPhase2 = `[Fix238] LA BASE ANTERIOR FUE DESCARTADA POR DEBIL (${bestWBA.score}/10). Al regenerar la Fase 1, corrige EXPRESAMENTE estos deficits detectados por el Auditor de World Bible:\n${fbClassic}`;
+          }
           try {
             await storage.createActivityLog({
               projectId: project.id,
               level: "warn",
               agentRole: "architect",
-              message: `[Fix110] Decisión final: DESCARTAR la Fase 1 fortificada (mejor score ${bestWBA.score}/10 < umbral mínimo ${WBA_MIN_REUSE_SCORE}/10). El Arquitecto regenerará Fase 1 desde cero en el flujo clásico para no congelar una base subóptima.`,
+              message: `[Fix110] Decisión final: DESCARTAR la Fase 1 fortificada (mejor score ${bestWBA.score}/10 < umbral mínimo ${WBA_MIN_REUSE_SCORE}/10). El Arquitecto regenerará Fase 1 desde cero en el flujo clásico${fbClassic ? " con el feedback del auditor inyectado como instrucción dura [Fix238]" : ""}.`,
               metadata: { fix: "Fix110", decision: "fallback_classic", bestScore: bestWBA.score, minReuseScore: WBA_MIN_REUSE_SCORE },
             });
           } catch {}
@@ -2087,7 +2135,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
               projectId: project.id,
               level: "warn",
               agentRole: "architect",
-              message: `[Fix110] Decisión final: CAER AL FLUJO CLÁSICO. El bucle WBA no produjo ninguna Fase 1 válida (fallos técnicos en Fase 1 o auditor). El Arquitecto regenerará Fase 1 desde cero.`,
+              message: `[Fix110] Decisión final: CAER AL FLUJO CLÁSICO. El bucle WBA no produjo ninguna Fase 1 válida (fallos técnicos en Fase 1 o auditor). El Arquitecto regenerará Fase 1 desde cero (el presupuesto de material [Fix238] del prompt de Fase 1 sigue vigente).`,
               metadata: { fix: "Fix110", decision: "fallback_classic_no_audit" },
             });
           } catch {}
@@ -2131,7 +2179,8 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             hasPrologue: project.hasPrologue,
             hasEpilogue: project.hasEpilogue,
             hasAuthorNote: project.hasAuthorNote,
-            architectInstructions: project.architectInstructions || undefined,
+            architectInstructions: [project.architectInstructions || "", wbaResidualFeedbackForPhase2]
+              .filter(s => s && s.trim().length > 0).join("\n\n") || undefined,
             kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
             forbiddenNames,
             projectId: project.id,
@@ -13441,6 +13490,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // [Fix164] Borrados REALES ejecutados en esta llamada (storage.deleteChapter).
     // Solo cuenta hacia el tope los borrados efectivos, no los "cap ya ausente".
     let chaptersDeleted = 0;
+    // [Fix237] Numeros (numeracion VIEJA) de los capitulos borrados en este
+    // lote, para re-mapear las tarjetas supervivientes tras la renumeracion.
+    const deletedChapterNumbers: number[] = [];
 
     for (const action of existing) {
       const id = Number(action?.id);
@@ -13631,6 +13683,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           await storage.deleteChapter(target.id);
           applied++;
           chaptersDeleted++; // [Fix164] cuenta hacia el tope por novela
+          deletedChapterNumbers.push(targetChapter); // [Fix237]
           processedAppliedOrDiscarded.add(id);
           // [Fix182] NO renumeramos aqui: las acciones pendientes de este mismo
           // lote referencian el capitulo por NUMERO, asi que renumerar en medio
@@ -13751,6 +13804,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           for (const src of sourcesFound) {
             await storage.deleteChapter(src.id);
             chaptersDeleted++;
+            deletedChapterNumbers.push(Number(src.chapterNumber)); // [Fix237]
           }
           applied++;
           processedAppliedOrDiscarded.add(id);
@@ -13846,7 +13900,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         const sid = Number(s?.id);
         if (Number.isFinite(sid)) survivorById.set(sid, s);
       }
-      const finalList = latestList.filter(a => {
+      const mergedList = latestList.filter(a => {
         const aid = Number(a?.id);
         if (!Number.isFinite(aid)) return true;
         return !processedAppliedOrDiscarded.has(aid);
@@ -13854,6 +13908,30 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         const aid = Number(a?.id);
         return survivorById.has(aid) ? survivorById.get(aid) : a;
       });
+      // [Fix237] Si este lote borro capitulos, las tarjetas que quedan (incl.
+      // las archivadas [Fix236]) apuntan a la numeracion VIEJA. Se re-mapean a
+      // la nueva; las que referencian un capitulo borrado se invalidan con log.
+      let finalList = mergedList;
+      if (deletedChapterNumbers.length > 0 && mergedList.length > 0) {
+        const remap = remapPendingAdminActionsForRenumber(mergedList, { deleted: deletedChapterNumbers });
+        finalList = remap.actions;
+        for (const d of remap.dropped) {
+          await storage.createActivityLog({
+            projectId,
+            level: "warning",
+            message: `[Fix237] Tarjeta admin id=${d.id} (${d.type} sobre ${d.label}) INVALIDADA: referenciaba un capitulo borrado en este lote. Si la intencion sigue vigente, crea una nota editorial nueva.`,
+            agentRole: "editor",
+          });
+        }
+        if (remap.changed > 0) {
+          await storage.createActivityLog({
+            projectId,
+            level: "info",
+            message: `[Fix237] ${remap.changed} tarjeta(s) admin pendiente(s) re-mapeada(s) a la numeracion nueva tras los borrados del lote.`,
+            agentRole: "editor",
+          });
+        }
+      }
       const addedConcurrently = latestList.length - existing.length;
       await storage.updateProject(projectId, { pendingAdminActions: finalList } as any);
       if (addedConcurrently > 0) {

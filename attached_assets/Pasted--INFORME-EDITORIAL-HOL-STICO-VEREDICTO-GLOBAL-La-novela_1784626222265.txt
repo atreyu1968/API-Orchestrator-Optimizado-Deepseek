@@ -1,0 +1,184 @@
+# INFORME EDITORIAL HOLÍSTICO
+
+## VEREDICTO GLOBAL
+La novela funciona en sus grandes líneas: premisa sólida, trama de suspense bien articulada y un arco protagonista que evoluciona de forma creíble de burócrata gris a hombre de acción. Sin embargo, el manuscrito presenta tres heridas estructurales que lastran su potencial: un segundo acto que pierde tensión entre capítulos 11 y 16 por exceso de escenas repetitivas de descifrado, una resolución del clímax que depende en exceso de la intervención de Alén como deus ex machina, y una gestión problemática del villano Ochoa, cuya motivación se revela demasiado tarde para generar tensión sostenida. La prosa es notablemente competente y la ambientación histórica está lograda, pero el ritmo se resiente en tramos donde la acción se detiene para que los personajes procesen información que el lector ya conoce. El manuscrito es publicable con trabajo, pero requiere reestructuración del segundo acto y poda significativa de escenas redundantes.
+
+## PROBLEMAS ESTRUCTURALES (crítico)
+
+1. **Desplome del segundo acto (caps 11-16)**: Tras un arranque potente (prólogo-caps 1-7) y un primer clímax excelente (cap 9, muerte de Trelles), la novela entra en un bucle de escenas de sótano donde Mariano y Aura descifran el código una y otra vez sin que la trama avance. El cap 14 es paradigmático: páginas enteras de "prueba la tercera sílaba", "prueba la métrica inversa", "prueba las letras que se salen del renglón". El lector ya sabe que el código se descifrará; la tensión no está en el método sino en el peligro de ser descubiertos, pero ese peligro brilla por su ausencia durante estos caps. Se diluye la sensación de urgencia que había mantenido el primer tercio.
+
+2. **Clímax resuelto por intervención externa (caps 23-25)**: El enfrentamiento con Arredondo se resuelve porque Alén se interpone y muere, no porque Mariano actúe con agencia propia. El protagonista pasa de ser el motor de la trama a un espectador de su propia historia. Alén decide sacrificarse, Mariano y Aura huyen, y el conflicto se cierra sin que el protagonista haya tomado decisiones narrativamente significativas. La escena de la confrontación (cap 24) está bien construida, pero la resolución (cap 25) es un anticlímax: Mariano firma el exilio, Alén muere, y los protagonistas escapan por un pasadizo que Alén les había preparado. Demasiada dependencia de la previsión de un personaje secundario.
+
+3. **Villano infrautilizado y motivación tardía (caps 23-24)**: Secundino Ochoa aparece en cap 1 como antagonista inmediato (el archivero que vigila a Mariano), pero su motivación profunda —el miedo a Arredondo por un chantaje del 39— no se revela hasta el cap 16 (a través de la nota de Doval) y no se escenifica hasta el cap 23. Durante todo el segundo acto, Ochoa es una figura borrosa: sabemos que es el topo, pero no entendemos por qué. La revelación tardía no genera la tensión que debería porque el lector lleva demasiado tiempo sin comprender qué mueve al villano. Arredondo, en cambio, aparece tan tarde (cap 23) que no da tiempo a construir su amenaza; es un malo de manual con todas las piezas.
+
+## ARCOS DE PERSONAJE (mayor)
+
+**Mariano Sotelo**: Arco completo y convincente. Evoluciona de funcionario gris y paralizado por la culpa (el vecino Valverde, cap 4) a hombre de acción que redime la memoria de su padre. La transición está bien hilvanada: cada pérdida (Trelles, Doval, Alén) forja su determinación. El momento cumbre es cuando escribe su testimonio en cap 32, cerrando el arco emocional. Sin embargo, hay un retroceso en cap 23-24 cuando acepta el trato de Arredondo sin resistencia; el lector no siente que Mariano haya explorado alternativas. Su agencia disminuye justo cuando debería estar en su punto álgido.
+
+**Aura Seoane**: Arco sólido pero desigual. Su motivación es clara (vengar a su padre, proteger la red), pero durante el segundo acto se convierte en una acompañante funcional: descifra códigos, cuida heridas, dice frases de aliento. Su mejor momento es en cap 18-19 cuando confronta a Jacinto Alén, pero pierde protagonismo en la resolución. La decisión de quedarse en Francia en cap 27 es coherente con su personaje (ha perdido todo en España), pero el lector no ve suficiente proceso interno que la lleve a esa decisión; parece más una necesidad de la trama que una elección del personaje.
+
+**Comisario Tarsicio Alén**: Arco excelente, el mejor de la novela. La revelación de que protege a su hermano republicano (cap 6) y que ayudó a Serafín a esconder el archivo (cap 19) resitúa todo lo que sabíamos de él. Su sacrificio en cap 25 es emocionalmente efectivo porque está construido sobre una contradicción interna (el torturador que redime a su hermano). Sin embargo, hay un problema de timing: el arco se resuelve demasiado rápido. Pasamos de conocer su secreto a verlo morir en apenas seis capítulos (19-25). El lector necesita más tiempo para procesar la complejidad del personaje.
+
+**Secundino Ochoa**: Arco roto. Su motivación se revela en una nota (cap 16) pero nunca se escenifica. El lector lo despide sabiendo que tenía miedo de Arredondo, pero sin haberlo visto vulnerable. Su muerte en cap 35 (mencionada en retrospectiva) es insatisfactoria.
+
+**Arcos abandonados**: Rita Barrientos desaparece tras cap 30 —cuando Mariano vuelve de la frontera— y solo sabemos de ella por menciones posteriores. Su muerte en cap 35 se cuenta en la conversación del café, pero el personaje merecía una escena de despedida propia. El hijo de Rita (Marcelo) se menciona en cap 13 y 30, pero nunca aparece como personaje.
+
+## CONTINUIDAD Y COHERENCIA INTERNA (mayor)
+
+1. **La llave del Ministerio**: En cap 1, Mariano la encuentra y no encaja en el armario del sótano. En cap 8, Trelles dice que abre "una caja fuerte en el despacho del archivero jefe". En cap 11, Mariano la usa y el armario está vacío (nota de Ochoa). En cap 19, Alén dice que es una "pista falsa" y que la caja fuerte real está detrás del cuadro de Arredondo. En cap 20, Mariano abre la caja fuerte con la misma llave. El problema: si la llave era una pista falsa, ¿por qué funciona igual para la caja fuerte real? No hay explicación. La trama de la llave cambia tres veces sin que nadie la justifique.
+
+2. **Herida en la nuca de Mariano (caps 4-14)**: Recibe un golpe en la cabeza en cap 4. En cap 5, Rita le limpia y venda la herida. En cap 7, en el tren, "la herida en la nuca le latía". En cap 8, Trelles le habla del dolor. En cap 9, tras la muerte de Trelles, "el dolor en la nuca era un eco constante". Pero a partir de cap 10, la herida desaparece de la narrativa por completo, sin que se mencione curación ni secuela. Aparece de nuevo en cap 22 ("el dolor en la nuca se intensificó") pero sin coherencia con su desaparición.
+
+3. **La bala en el hombro de Mariano (cap 21)**: Le disparan en el hombro derecho en el Ministerio. En cap 22, Aura le venda la herida. En cap 23, se queja del dolor. En cap 26, "la sangre empapaba la venda". En cap 29, en la frontera, la herida sigue presente. Pero entre caps 23 y 26, Mariano corre, pelea, huye y forcejea sin que la herida le limite físicamente. No hay una escena donde el dolor le impida hacer algo narrativamente relevante.
+
+4. **El pasaporte falso de Arredondo (caps 24-25)**: Arredondo da un pasaporte falso a Mariano. Pero este pasaporte nunca se usa: Mariano no cruza la frontera con él (vuelve a España), y en cap 30-32 sigue en Madrid sin que se mencionen problemas documentales. El objeto se introduce y se abandona sin función narrativa.
+
+5. **Teléfono y coartada de Alén en cap 20**: Alén dice que un ordenanza llamará al despacho de Arredondo con la excusa de una fuga de gas. Esta llamada ocurre (cap 20, Mariano la oye desde el pasillo), pero Arredondo no llega a irse; Ochoa sigue en el Ministerio. La coartada funciona para distraer al guardia de la puerta, pero no se integra con la trama principal: la llamada no altera el comportamiento del villano.
+
+6. **El sobre lacrado que Mariano entrega a Xavier (cap 22)**: Alén dice que es para un periodista de Le Monde. En cap 35, cuando Luis Quiroga encuentra el poema, no se menciona que exista una copia en Francia. El sobre queda como un hilo suelto que nunca se resuelve.
+
+## RITMO Y TENSIÓN (mayor)
+
+**Arranque (prólogo - cap 7)**: Excelente. La tensión crece de forma orgánica: el hallazgo de la carta, el encuentro con Aura, la visita a Doval, el ataque en el callejón, la huida a casa de Rita, el interrogatorio de Alén. El prólogo es uno de los mejores tramos del manuscrito: establece el tono, las reglas del mundo y la promesa narrativa. Caps 1-7 mantienen un ritmo de thriller histórico con escenas de acción intercaladas con diálogos de exposición que nunca resultan pesados.
+
+**Desarrollo medio (caps 8-16)**: Pérdida de tensión evidente. Tras el poderoso clímax de la muerte de Trelles (cap 9), la novela entra en un valle de escenas repetitivas. Cap 8 introduce el código, caps 10-14 son variaciones sobre lo mismo: Mariano y Aura sentados en sótanos (sótano de Doval, sótano de Rita, sótano del piso franco) intentando descifrar versos. La amenaza de Alén se siente lejana; no hay presencia del villano durante estos caps. Cap 12 (la lección del topo) se lee como una escena de transición sin conflicto real. Cap 14 es el punto más bajo: diez páginas de "contar sílabas" que podrían resumirse en tres párrafos.
+
+**Tercer acto (caps 17-25)**: Recuperación parcial. La revelación de Jacinto Alén (cap 18) y la confesión del Comisario (cap 19) restauran la tensión. El asalto al Ministerio (cap 20) está bien construido, con la cuenta atrás del reloj. Sin embargo, caps 23-24 (el ultimátum de Arredondo) son demasiado dialogados para la tensión que pretenden generar. La resolución (cap 25) es abrupta: Alén muere, los protagonistas huyen, el conflicto con Arredondo queda en suspenso sin un enfrentamiento directo entre el héroe y el villano.
+
+**Resolución (caps 26-35)**: Tramo final con altibajos. Caps 26-28 narran la huida y la muerte de Alén, y mantienen un ritmo adecuado. Cap 29 (la frontera) es uno de los momentos más logrados de la novela: la despedida de Aura está escrita con contención y emoción genuina. Pero caps 30-33 se alargan innecesariamente: la vuelta a Madrid, el reencuentro con Rita, el escondite del poema, la carta de Aura. Cada escena aporta algo, pero el conjunto peca de redundancia. Cap 35 (la conversación del café) funciona como coda, pero los caps 33-34 podrían fusionarse sin pérdida.
+
+**Clímax**: Ausente. La novela no tiene un enfrentamiento final entre Mariano y Arredondo. El villano no recibe castigo narrativo (muere en 1957, sin que Mariano participe). La resolución es epistolar: el poema se encuentra 25 años después, y la justicia llega por vía académica. Esto es coherente con el tono de la novela (más sobre memoria que sobre venganza), pero deja al lector sin la catarsis que el género promete.
+
+## ESCENAS Y CAPÍTULOS PROBLEMÁTICOS (mayor/menor)
+
+**Cap 14 — El descifrado interminable**: El problema no es que descifren el código (necesario), sino cómo se narra. La escena ocupa 3.000 palabras de prueba-error con cálculos de sílabas que el lector no puede seguir ni le interesa seguir. Propuesta: condensar a 1-2 párrafos que muestren el momento del hallazgo, no todo el proceso.
+
+**Cap 10 — El regreso del condenado**: Mariano y Aura regresan a Madrid y van directos a la librería de Doval. La escena es redundante con cap 3 y cap 12: mismo sótano, mismas preocupaciones, misma amenaza. Podría fusionarse con cap 15 (La delación), que sí aporta información nueva (la muerte de Doval).
+
+**Cap 17 — El viaje hacia el norte**: El tren a León es una escena de transición necesaria, pero ocupa demasiado espacio narrativo (2.500 palabras) para la poca información que aporta: la discusión entre Mariano y Aura sobre el uso de Jacinto. Podría reducirse a la mitad.
+
+**Cap 28 — La redención del Comisario**: Este capítulo narra la muerte de Alén DESPUÉS de que ya la hemos visto en cap 25. Es una elipsis temporal que cuenta lo mismo desde otra perspectiva (la de Arredondo). Es un capítulo redundante que no añade información nueva; la muerte de Alén es más efectiva desde el punto de vista de Mariano en cap 25. Propuesta: eliminar cap 28 y fusionar información relevante (la reacción de Arredondo) con cap 30.
+
+**Cap 31 — El eco de los vivos**: Escena de transición donde Mariano pasea por Madrid y reflexiona. Aporta atmósfera pero no trama. Ocupa 1.800 palabras que podrían comprimirse en un párrafo dentro de cap 30 o 32.
+
+**Cap 33 — El poema en la piedra**: La visita a la tumba del padre es emocionalmente necesaria, pero el capítulo se alarga innecesariamente con descripciones del cementerio. El núcleo (el diálogo con la tumba, la colocación de la piedra) ocupa la mitad del texto; el resto es atmósfera redundante.
+
+## REPETICIONES Y CLICHÉS (menor)
+
+1. **Estructura de sótano repetida**: Mariano y Aura se esconden en sótanos una y otra vez: sótano de Rita (cap 5), sótano de Doval (caps 12-14, 15-16), sótano del piso franco (caps 22-23), sótano de casa de Jacinto (caps 18-19). En cada sótano ocurre lo mismo: hablan en voz baja, alguien baja comida, descifran papeles. La repetición desgasta.
+
+2. **"La luz del candil temblaba"**: Esta imagen aparece literalmente en caps 3, 5, 12, 13, 14, 18, 19, 22, 25. Es una muletilla visual que debería podarse drásticamente.
+
+3. **Las manos que tiemblan**: Mariano tiembla constantemente: "las manos le temblaban" (cap 1), "manos temblorosas" (cap 12), "dedos temblorosos" (cap 20), "manos que no lograba mantener quietas" (cap 14), etc. Más de quince ocurrencias. El recurso pierde eficacia por saturación.
+
+4. **Cliché del "funcionario gris que es un héroe"**: La premisa (el burócrata que resulta tener un pasado heroico) es un clásico del género. La novela lo maneja bien, pero no lo subvierte en ningún momento. La evolución de Mariano es predecible desde el cap 1: sabemos que se convertirá en el héroe que su padre fue.
+
+5. **Arquetipo de la mujer dura con pasado trágico**: Aura es el arquetipo de "mujer que ha perdido todo y no confía en nadie". La novela lo ejecuta con corrección, pero no lo cuestiona ni le da una vuelta. Aura es funcional a la trama, pero no sorprende.
+
+## SUGERENCIAS CONCRETAS DE CORRECCIÓN
+
+1. **En cap 14, reducir el proceso de descifrado a 2-3 párrafos**: En lugar de mostrar todo el proceso de prueba-error (tercera sílaba, métrica inversa, letras que se salen del renglón), mostrar solo el momento del hallazgo. La escena actual podría resumirse así: "Mariano probó la clave que Trelles le había enseñado, una y otra vez, hasta que la cuarta estrofa cedió y los nombres empezaron a emerger de los versos como cuerpos del agua." Lo demás es relleno técnico que el lector salta.
+
+2. **Fusionar caps 10 y 15 (o eliminar cap 10)**: Cap 10 (regreso a la librería) y cap 15 (Doval es detenido) ocurren en el mismo escenario y con personajes similares. Se pueden fusionar en un solo capítulo que comience con Mariano y Aura llegando a la librería, Doval contándoles que Alén ha estrechado el cerco, y la detención inmediata. Esto elimina redundancia y mantiene la tensión.
+
+3. **Añadir una escena de Ochoa vulnerable antes de cap 24**: El lector necesita ver a Ochoa con miedo de Arredondo, no solo leerlo en una nota. Insertar una escena hacia caps 16-18 donde Ochoa recibe una llamada de Arredondo y se le ve sudando, dudando, mostrando su fragilidad. Esto haría que su traición fuera más comprensible y su personaje más complejo.
+
+4. **En cap 19, aligerar la exposición de Alén**: La confesión del Comisario (que ayudó a Serafín a esconder el archivo) es información crucial, pero en la versión actual es un monólogo de 800 palabras sin interrupción. Dividirla con preguntas de Mariano o gestos (Alén bebe coñac, mira la ventana) para que no sea un muro de texto.
+
+5. **Eliminar cap 28 (La redención del Comisario)**: Este capítulo narra en tercera persona lo que ya sabemos (Alén ha muerto) añadiendo la perspectiva de Arredondo. No aporta información nueva que no pueda integrarse en cap 25 (Mariano viendo la reacción de Arredondo a través de la puerta, o deduciéndola) o en cap 30 (comentario de Doval). Mejor contar la muerte de Arredondo en un párrafo retrospectivo en cap 35.
+
+6. **Fusionar caps 33 y 34 en un único capítulo de cierre**: Ambos caps son cortos y temáticamente cercanos (la visita a la tumba y el cierre en el archivo). Juntos formarían un único capítulo que va de la lápida a la mesa de trabajo, mostrando a Mariano en paz con su legado. La transición entre ambas escenas es natural (del cementerio al despacho).
+
+7. **Introducir un recuerdo de Aura en los caps finales (30-35)**: Tras cap 29 (la frontera), Aura desaparece de la narrativa hasta que se menciona su muerte en cap 35 insertada en la conversación. Incluir al menos una escena (no necesariamente larga) donde Mariano recuerde un detalle específico de ella —una frase, un gesto, un olor— para mantener su presencia emocional en el tramo final.
+
+8. **En cap 12, reducir la escena del topo**: La revelación de que Ochoa es el topo a través de la nota de Doval debería ser más impactante. Actualmente se cuenta en un párrafo expositivo. Dovalescribe una lista de datos, pero no hay reacción visceral de Mariano. Añadir que Mariano rompe la nota, o se queda mirando la pared, o algo que muestre que esta revelación lo golpea.
+
+9. **En cap 37, cortar la conversación del café un tercio**: La escena final entre Luis y Mariano es necesaria, pero el diálogo es demasiado extenso. Mariano habla de códigos, de la frontera, de la historia de la red, todo en el mismo bloque. Cortar las explicaciones que Luis ya podría conocer (pues la novela las ha narrado) y dejar solo lo que aporta información nueva (el destino de Ochoa, de Arredondo, de Rita, la carta de Aura). El capítulo ganaría en intensidad y perdería redundancia.
+
+10. **Recalibrar prosa: eliminar la imagen de la luz del candil que tiembla**: Buscar y reemplazar esta imagen en todos los capítulos donde aparezca, salvo en uno o dos usos donde tenga intención narrativa. En los demás, sustituir por descripciones que reflejen el estado emocional del personaje (Mariano ve las sombras moverse, la llama se reduce porque el aceite se acaba).
+
+## LO QUE FUNCIONA (breve)
+
+- La estructura de código poético como McGuffin es original y está bien integrada con el contexto histórico.
+- El personaje de Alén es complejo y creíble; su arco de villano a héroe trágico es lo mejor de la novela.
+- La ambientación del Madrid de posguerra está lograda con olor, textura y tensión política palpable; las descripciones de calles, interiores y objetos son verosímiles sin ser cargantes.
+- El prólogo y los primeros 7 capítulos tienen un ritmo de thriller histórico perfecto.
+- La despedida en la frontera (cap 29) está escrita con contención y funciona emocionalmente sin caer en el melodrama.
+
+## PUNTUACIÓN EDITORIAL (JSON)
+
+<!-- PUNTUACION_HOLISTICA_INICIO -->
+```json
+{"puntuacion_global": 8, "justificacion": "Estructura sólida con dos heridas corregibles: pérdida de tensión en el segundo acto (caps 11-16) y resolución del clímax que resta agencia al protagonista (caps 24-25). Personajes y ambientación notables."}
+```
+<!-- PUNTUACION_HOLISTICA_FIN -->
+
+## INSTRUCCIONES AUTO-APLICABLES (JSON)
+
+<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->
+```json
+{
+  "instrucciones": [
+    {
+      "capitulos_afectados": [14],
+      "categoria": "ritmo",
+      "descripcion": "Reducir el proceso de descifrado del código a 2-3 párrafos mostrando solo el momento del hallazgo.",
+      "instrucciones_correccion": "En cap 14, eliminar todo el proceso de prueba con la tercera sílaba, la métrica inversa, las letras que se salen del renglón y las que se repiten. Reescribir la escena para que Mariano aplique la clave que Trelles le enseñó y obtenga los nombres sin mostrar cada intento fallido. Mantener solo el momento en que encuentra la anotación de Serafín en el margen ('C = 3, D = 4...') y a partir de ahí descifra los 18 nombres en un par de párrafos.",
+      "tipo": "puntual",
+      "prioridad": "alta",
+      "plan_por_capitulo": {
+        "14": "Comprimir la secuencia de descifrado: sustituir las páginas de prueba-error (versión actual: 'La tercera sílaba del segundo verso...', 'Prueba con la métrica inversa...', 'Las letras que se salen del renglón...') por un párrafo que diga: 'Aplicó la clave que Trelles le había enseñado, una y otra vez, hasta que la anotación de Serafín en el margen del poema —C=3, D=4, H=8, Q=17— cobró sentido. En menos de una hora tenía los dieciocho nombres escritos en el margen del cuaderno.'"
+      }
+    },
+    {
+      "capitulos_afectados": [10, 15],
+      "categoria": "trama",
+      "descripcion": "Fusionar caps 10 y 15 eliminando la escena redundante de Mariano y Aura en la librería.",
+      "instrucciones_correccion": "Eliminar cap 10 entero (Mariano y Aura llegan a la librería, Doval les cuenta que Alén ha estrechado el cerco, están hundidos porque han perdido la última estrofa, Aura interroga a Doval sobre la red). El contenido de esa escena (la pérdida de esperanza) ya está cubierto en cap 12. En cap 15, cuando Doval es detenido, añadir una línea de Mariano recordando que acababan de llegar de la sierra y que Doval les había escondido en el sótano.",
+      "tipo": "fusionar",
+      "merge_into": 15,
+      "merge_sources": [10],
+      "prioridad": "alta"
+    },
+    {
+      "capitulos_afectados": [28],
+      "categoria": "trama",
+      "descripcion": "Eliminar cap 28 por redundancia narrativa.",
+      "instrucciones_correccion": "Borrar cap 28 (La redención del Comisario) en su totalidad. Este capítulo narra la muerte de Alén desde la perspectiva de Arredondo, pero esa misma muerte ya se cubrió en cap 25 desde la perspectiva de Mariano. El efecto emocional se diluye al contarlo dos veces. Si se necesita trasladar algún dato (como la amenaza de Alén a Arredondo sobre las 'pruebas escondidas'), incluirlo en caps 30 o 35 como rumor o especulación de Mariano.",
+      "tipo": "eliminar",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [33, 34],
+      "categoria": "ritmo",
+      "descripcion": "Fusionar caps 33 y 34 formando un único capítulo de cierre temático.",
+      "instrucciones_correccion": "Crear un capítulo titulado 'El archivo de los hombres vivos' que comience con Mariano visitando la tumba de su padre (actual cap 33) y continúe con la escena en el archivo donde rechaza al joven funcionario (actual cap 34) y recibe la noticia de que el expediente de Farrero ha sido 'extraviado'. Mantener el encuentro con el joven funcionario. Fundir ambas escenas con una transición natural (del cementerio al despacho). El título del cap debe ser 'El archivo de los hombres vivos'.",
+      "tipo": "fusionar",
+      "merge_into": 33,
+      "merge_sources": [34],
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [16],
+      "categoria": "personaje",
+      "descripcion": "Insertar escena de Ochoa vulnerable antes de cap 24 para justificar su traición.",
+      "instrucciones_correccion": "Entre caps 16 y 18, añadir una escena breve (300-400 palabras) donde Ochoa recibe una llamada de Arredondo en su despacho. Mostrar a Ochoa sudando, dudando, mirando la fotografía de su familiar o el expediente del chantaje. Que Arredondo le recuerde su deuda y le dé instrucciones para tender la trampa a Mariano. Esto humaniza al villano y explica su motivación antes de que Mariano la descubra en la nota de Doval.",
+      "tipo": "puntual",
+      "prioridad": "media",
+      "plan_por_capitulo": {
+        "16": "Insertar una escena nueva: Ochoa sentado en su despacho tras la visita de Mariano. Suena el teléfono; es Arredondo. Ochoa escucha, asiente, suda. Cuelga y abre el cajón donde guarda el expediente de su familiar (el acta de defunción falsificada del 39). Se seca la frente con un pañuelo y murmura: 'Lo siento, Serafín. No tengo elección.'"
+      }
+    },
+    {
+      "
+Lector Beta
+
+8/10
+
+hace 2 h
+
+Sensación de lectura. Target: 9+.
+
+Ver informe (24.000 car.)
+
+Notas del Editor Humano

@@ -55,3 +55,106 @@ export async function renumberChaptersSequential(projectId: number): Promise<num
   }
   return changed;
 }
+
+/**
+ * [Fix237] Re-mapea los numeros de capitulo referenciados por las acciones
+ * administrativas pendientes tras una renumeracion.
+ *
+ * Contexto del bug: las tarjetas apuntan por NUMERO (targetChapter,
+ * secondaryChapter, sourceChapters), y ejecutar una accion renumera los
+ * capitulos pero dejaba las demas tarjetas con la numeracion VIEJA. Caso real
+ * del usuario: ejecuto delete_chapter del cap 10 y acto seguido la fusion
+ * archivada "cap 15 absorbe cap 10" — que ya apuntaba a capitulos
+ * desplazados y fusiono los equivocados.
+ *
+ * Reglas:
+ *  - deleted: lista de numeros (numeracion VIEJA) de capitulos borrados.
+ *    Toda referencia > n baja tantas posiciones como borrados haya por debajo.
+ *    Si una accion referencia un capitulo BORRADO, la accion se INVALIDA
+ *    (se retira del listado; su intencion ya no es representable) y se
+ *    devuelve en `dropped` para que el caller lo registre en el log.
+ *  - insertedAfter: numero tras el cual se inserto un capitulo nuevo (split);
+ *    toda referencia > n sube +1.
+ *
+ * Cuando una accion cambia de numeros se elimina su targetLabel (texto con el
+ * numero viejo incrustado; la UI cae a "Cap. {targetChapter}") y se anota en
+ * el reason que la numeracion fue actualizada.
+ */
+export interface RemapAdminActionsResult {
+  actions: any[];
+  changed: number;
+  dropped: { id: number; type: string; label: string }[];
+}
+
+export function remapPendingAdminActionsForRenumber(
+  actions: any[],
+  opts: { deleted?: number[]; insertedAfter?: number },
+): RemapAdminActionsResult {
+  const deleted = (opts.deleted || []).filter(n => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+  const insertedAfter = Number.isFinite(opts.insertedAfter) ? Number(opts.insertedAfter) : null;
+  const deletedSet = new Set(deleted);
+
+  const mapNum = (n: number): number | null => {
+    if (!Number.isFinite(n) || n <= 0) return n; // especiales (0/-1/-2) no se renumeran
+    if (deletedSet.has(n)) return null;
+    let out = n;
+    if (deleted.length > 0) {
+      let below = 0;
+      for (const d of deleted) { if (d < n) below++; else break; }
+      out -= below;
+    }
+    if (insertedAfter !== null && n > insertedAfter) out += 1;
+    return out;
+  };
+
+  const result: any[] = [];
+  const dropped: { id: number; type: string; label: string }[] = [];
+  let changed = 0;
+
+  for (const a of actions) {
+    if (!a || typeof a !== "object") { result.push(a); continue; }
+    const refsFields: ("targetChapter" | "secondaryChapter")[] = ["targetChapter", "secondaryChapter"];
+    let mutated = false;
+    let invalid = false;
+    const next: any = { ...a };
+    for (const f of refsFields) {
+      const v = Number(a[f]);
+      if (!Number.isFinite(v)) continue;
+      const nv = mapNum(v);
+      if (nv === null) { invalid = true; break; }
+      if (nv !== v) { next[f] = nv; mutated = true; }
+    }
+    if (!invalid && Array.isArray(a.sourceChapters)) {
+      const remapped: number[] = [];
+      for (const s of a.sourceChapters) {
+        const v = Number(s);
+        if (!Number.isFinite(v)) continue;
+        const nv = mapNum(v);
+        if (nv === null) { invalid = true; break; }
+        remapped.push(nv);
+        if (nv !== v) mutated = true;
+      }
+      if (!invalid && mutated) next.sourceChapters = remapped;
+    }
+    if (invalid) {
+      dropped.push({
+        id: Number(a.id),
+        type: String(a.type || ""),
+        label: String(a.targetLabel || `cap ${a.targetChapter}`),
+      });
+      continue;
+    }
+    if (mutated) {
+      changed++;
+      delete next.targetLabel; // texto con numeros viejos; la UI cae al numero remapeado
+      const note = "[Fix237] Numeracion actualizada tras ejecutar otra accion administrativa.";
+      if (typeof next.reason === "string" && !next.reason.includes("[Fix237]")) {
+        next.reason = `${note} ${next.reason}`;
+      }
+      result.push(next);
+    } else {
+      result.push(a);
+    }
+  }
+  return { actions: result, changed, dropped };
+}

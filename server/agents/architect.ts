@@ -419,6 +419,33 @@ Genera un JSON con estas claves:
 
 "premisa": "Premisa central en una oración poderosa"
 
+═══════════════════════════════════════════════════════════════════
+[Fix238] PRESUPUESTO DE MATERIAL NARRATIVO — OBLIGATORIO Y ESCALADO A N
+═══════════════════════════════════════════════════════════════════
+Caso real que motiva esta regla: una novela de 35 capítulos nació con la
+densidad de secretos "tocando el límite inferior" y el resultado fue un acto 2
+estancado (caps 10-16 repitiendo escenas de refugio y pasividad) que los
+lectores solo supieron arreglar proponiendo BORRAR capítulos. La escaleta y la
+escritura SIEMPRE consumen material peor de lo planeado: si la base nace justa,
+la novela nace corta de ideas. Por eso la Fase 1 debe nacer con MARGEN.
+
+Para una novela de N capítulos, la Fase 1 debe contener COMO MÍNIMO:
+- SECRETOS/REVELACIONES dosificables y distinguibles entre sí: ceil(N/3).
+  (35 caps → 12 secretos. No 8 "y ya veremos".) Cada uno con su rol temporal
+  aproximado (acto 1 / primera mitad acto 2 / segunda mitad acto 2 / clímax).
+- PALANCAS DRAMÁTICAS del antagonista (cosas que puede activar/quitar
+  progresivamente): 4 si N>=30, 3 si no. Cada palanca distinta en método.
+- REVERSALES planificados (aliado→traidor, ventaja→trampa, refugio→peligro): >=3.
+- SUBTRAMAS con actores y eje propios: 3 si N<=20, 4 si N<=30, 5 si N>30.
+  (Una más que el mínimo clásico: la de margen existe para rescatar el acto 2.)
+- En catalogo_giros: al menos ceil(N/4) giros con setup_previo REAL.
+
+AUTOCOMPROBACIÓN antes de responder: CUENTA cada categoría. Si alguna queda
+por debajo del mínimo, NO respondas todavía: añade material nuevo (no relleno:
+cada unidad debe ser distinguible y conectada a personajes existentes).
+El Auditor de World Bible va a contar exactamente esto y rechazará una base
+que "toque el límite inferior" — nacer justo de material ya no es apto.
+
 Responde ÚNICAMENTE con el JSON estructurado.
 `;
 
