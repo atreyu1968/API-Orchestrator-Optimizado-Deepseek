@@ -105,7 +105,7 @@ Acabas de leer la novela COMPLETA de una sentada. Vas a redactar tu informe edit
 [Diagnóstico tramo a tramo: arranque (caps 1-X), desarrollo medio, tercer acto, climax, resolución. Marca tramos que pierden tensión.]
 
 ## ESCENAS Y CAPÍTULOS PROBLEMÁTICOS (mayor/menor)
-[Lista de capítulos con problemas concretos. Formato: "Cap N — [problema sintético]". Si un capítulo es huérfano, propón eliminarlo o fundirlo. Si una escena alarga sin aportar, dilo.]
+[Lista de capítulos con problemas concretos. Formato: "Cap N — [problema sintético]". Si un capítulo es huérfano o está estancado, propón su REESCRITURA SEVERA (qué conservar, qué sustituir, qué debe lograr); solo propón eliminarlo o fundirlo si es genuinamente redundante, sin material único [Fix243]. Si una escena alarga sin aportar, dilo.]
 
 ## REPETICIONES Y CLICHÉS (menor)
 [Patrones que se repiten (estructuras de escena, recursos retóricos, soluciones narrativas). Clichés y arquetipos que el autor no subvierte.]
@@ -151,9 +151,9 @@ Después de redactar las secciones anteriores en lenguaje natural, REPITE las su
     {
       "capitulos_afectados": [10],
       "categoria": "trama",
-      "descripcion": "Eliminar Cap 10 y fusionar su información con Cap 15.",
-      "instrucciones_correccion": "Borrar el cap 10 entero y trasladar la conspiración de Tiberio que Aurelia escucha tras la pared al cap 15, integrándola con la visión del altar en el bosque.",
-      "tipo": "eliminar",
+      "descripcion": "Reescribir a fondo el Cap 10: sustituir la espera pasiva por un acontecimiento con coste irreversible.",
+      "instrucciones_correccion": "Reescritura severa del cap 10: conservar la conspiración de Tiberio que Aurelia escucha tras la pared (material único), pero sustituir las escenas de espera en el refugio por una decisión de Aurelia con consecuencias que el cap 11 deba recoger.",
+      "tipo": "estructural",
       "prioridad": "alta"
     }
   ]
@@ -194,9 +194,9 @@ REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
 - **CALIDAD SOBRE CANTIDAD**: emite SOLO instrucciones respaldadas por problemas reales que puedas anclar en el texto. Si el manuscrito está sólido, una lista corta (o vacía) es legítima y preferible a instrucciones de relleno.
 - "tipo" (CRÍTICO — escoge el adecuado, el sistema procesa cada tipo de forma distinta):
   - "puntual": retoque local de 1-2 párrafos sin tocar la estructura del capítulo. Ejemplo: "corregir la mención al frasco roto en cap 23". Es CIRUGÍA find/replace.
-  - "estructural": reescribir escenas enteras, reordenar dentro del capítulo, mover una revelación de un cap a otro, expandir un arco, añadir foreshadowing. Reescritura completa del capítulo afectado.
-  - "eliminar": SOLO si la sugerencia natural dice literalmente "eliminar el cap X", "borrar el cap Y", "fuera el cap Z". Borrado destructivo del capítulo entero, sin absorción en otro.
-  - "fusionar": SOLO para fusionar capítulos enteros (ej: "condensar caps 7-9 en uno solo", "fusionar caps 34, 35 y epílogo en un cierre"). REQUIERE los campos:
+  - "estructural": reescribir escenas enteras, reordenar dentro del capítulo, mover una revelación de un cap a otro, expandir un arco, añadir foreshadowing. Reescritura completa del capítulo afectado. **[Fix243] ES TU HERRAMIENTA PREFERENTE para capítulos problemáticos**: un capítulo estancado, repetitivo o flojo casi siempre se arregla mejor con una REESCRITURA SEVERA (conservando su material único: revelaciones, beats de personaje, info de mundo, y sustituyendo lo que no funciona por acontecimientos con coste irreversible) que borrándolo o fusionándolo. Antes de emitir "eliminar" o "fusionar", pregúntate: ¿una reescritura severa de este cap resolvería el problema conservando su función en la estructura? Si la respuesta es sí (lo habitual), emite "estructural" con instrucciones de reescritura profunda: qué conservar, qué sustituir y qué debe LOGRAR el cap dentro de la novela.
+  - "eliminar": ÚLTIMO RECURSO. SOLO si el capítulo es GENUINAMENTE REDUNDANTE: su contenido narrativo ya está dicho en otros caps y NO contiene ningún material único, de modo que ni una reescritura severa le daría una función propia. Borrado destructivo del capítulo entero, sin absorción en otro. Si el cap tiene material único pero está mal ejecutado → "estructural" (reescritura severa), NO "eliminar".
+  - "fusionar": ÚLTIMO RECURSO, SOLO para fusionar capítulos enteros cuando dos caps contiguos son tan delgados o solapados que ni reescritos por separado sostendrían función propia (ej: "fusionar caps 34, 35 y epílogo en un cierre"). Si cada cap podría funcionar reescrito a fondo → prefiere "estructural" sobre cada uno. REQUIERE los campos:
       • "merge_into": número del capítulo DESTINO (donde se absorben los demás).
       • "merge_sources": array de números de los capítulos ORIGEN (los que serán absorbidos y eliminados).
       • "capitulos_afectados" = [merge_into, ...merge_sources] (todos).
@@ -226,7 +226,7 @@ REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
    - NO inventes problemas si no existen para llenar secciones.
    - NO te disculpes por la severidad.
    - NO menciones tu papel ("como editor te diría que..."). Limítate a editar.
-   - NO sugieras reescrituras totales. Tus sugerencias deben ser quirúrgicas y aplicables.
+   - NO sugieras reescribir la NOVELA entera ni tramos de 5+ capítulos a la vez. La reescritura severa de UN capítulo problemático sí es válida y aplicable (tipo "estructural") — para el resto, sugerencias quirúrgicas y aplicables [Fix243].
    - NO uses citas literales largas del texto (>15 palabras) — referencia por capítulo.
 
 5. **CONTEXTO DE SERIE (CRÍTICO si aplica)**: Si en los datos del manuscrito recibes un bloque "## CONTEXTO DE SERIE", este libro NO es una obra autoconclusiva sino un volumen dentro de una serie planificada. Debes ajustar tu severidad:
@@ -342,7 +342,7 @@ El sistema de cirugía estructural ha emitido ${pendingAdmin.length} acción(es)
 
 - **apply**: la integración de la prosa quedó bien (el contenido del cap origen ya está incorporado en el cap destino, o el cap es genuinamente redundante/innecesario). La acción puede ejecutarse de forma desatendida.
 - **keep_pending**: dudas, no puedes verificarlo desde el texto, o el efecto podría perder información narrativa importante. Se mantiene pendiente para revisión humana.
-- **discard**: la acción es claramente errónea (el cap origen contiene material único e insustituible NO integrado en otra parte; borrarlo destruiría la novela). Se descarta del listado.
+- **discard**: la acción es claramente errónea (el cap origen contiene material único e insustituible NO integrado en otra parte; borrarlo destruiría la novela). Se descarta del listado. [Fix243] Si descartas porque el cap tiene material único pero SIGUE siendo problemático (estancado, repetitivo, flojo), añade además una instrucción normal de tipo "estructural" en tu JSON de instrucciones pidiendo su REESCRITURA SEVERA (qué conservar, qué sustituir): así el problema se arregla sin destruir material.
 
 LISTA DE ACCIONES A EVALUAR:
 ${pendingAdmin.map(a => `- id=${a.id} | tipo=${a.type} | sobre ${a.targetLabel || `cap ${a.targetChapter}`}${typeof a.secondaryChapter === "number" ? ` (afecta también a cap ${a.secondaryChapter})` : ""} | motivo emitido por el cirujano: ${a.reason}`).join("\n")}
@@ -350,7 +350,7 @@ ${pendingAdmin.map(a => `- id=${a.id} | tipo=${a.type} | sobre ${a.targetLabel |
 CRITERIO DE VERIFICACIÓN PARA delete_chapter:
 1. Localiza el cap que se propone borrar (targetChapter).
 2. Si su contenido narrativo (escenas, revelaciones, beats de personaje, info de mundo) ya aparece en otro cap del manuscrito → **apply**.
-3. Si su contenido es redundante con cosas que ya están dichas o es un cap huérfano que no aporta → **apply**.
+3. Si su contenido es redundante con cosas que ya están dichas → **apply**. [Fix243] Un cap "huérfano" (no avanza trama) NO es apply automático: si contiene ALGO único (una revelación, un beat de personaje, atmósfera funcional), prefiere **discard** + instrucción "estructural" de reescritura severa; apply solo si de verdad no aporta NADA que no esté ya en otros caps.
 4. Si contiene material ÚNICO que no está en ningún otro cap (motivación del villano, arco de un personaje, escena clave de mundo) → **discard** y explica qué se perdería.
 5. Si hay duda razonable o el cap mezcla material único con material ya integrado → **keep_pending**.
 

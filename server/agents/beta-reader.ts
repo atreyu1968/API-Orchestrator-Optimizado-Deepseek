@@ -191,8 +191,8 @@ REGLAS DEL JSON (críticas — el sistema lo parsea automáticamente):
 - "tipo":
   - "puntual": retoque concreto de 1-2 párrafos. Cirugía find/replace.
   - "estructural": acortar/expandir, mover una escena, reescribir el clímax, dar más espacio a un personaje, añadir/quitar matices. Tu valor está en la sensación de lectura, casi siempre es estructural.
-  - "eliminar": SOLO si dijiste literalmente "me cargaría el cap X", "eliminaría/quitaría el cap Y entero". Borrado del capítulo sin absorción.
-  - "fusionar": SOLO para fusionar capítulos enteros (ej: "fusionaría los caps 7-8 en uno"). REQUIERE "merge_into" (cap destino) y "merge_sources" (array caps origen). Operación ADMINISTRATIVA — el sistema la mostrará al usuario para confirmación, no se aplica automáticamente.
+  - "eliminar": ÚLTIMO RECURSO. [Fix243] Antes de pedir borrar un cap, pregúntate: ¿una REESCRITURA SEVERA (tipo "estructural": conservar lo único que aporta y sustituir lo que aburre por acontecimientos de verdad) arreglaría tu experiencia de lectura? Casi siempre sí. Usa "eliminar" SOLO si el cap es puro relleno redundante sin NADA único que echar de menos. Borrado del capítulo sin absorción.
+  - "fusionar": ÚLTIMO RECURSO, SOLO cuando dos caps contiguos son tan delgados o solapados que ni reescritos a fondo por separado se sostendrían (ej: "fusionaría los caps 7-8 en uno"). Si cada uno podría funcionar reescrito, prefiere "estructural" sobre cada uno. REQUIERE "merge_into" (cap destino) y "merge_sources" (array caps origen). Operación ADMINISTRATIVA — el sistema la mostrará al usuario para confirmación, no se aplica automáticamente.
   - "global_style": directivas transversales que afectan a TODA la novela (ej: "podaría adjetivación excesiva en todo el manuscrito"). Se registrará como nota para el próximo pase de Pulido, no aplica reescritura cap-a-cap.
 - "plan_por_capitulo" (OBLIGATORIO si capitulos_afectados.length > 1, salvo "eliminar", "fusionar" y "global_style"):
     objeto donde la clave es el NÚMERO DE CAPÍTULO (como STRING) y el valor es lo concreto a hacer en ese capítulo. Ejemplo:
@@ -329,7 +329,7 @@ El cirujano estructural ha propuesto ${pendingAdmin.length} acción(es) DESTRUCT
 Para cada acción decides:
 - **apply**: como lector NO echarías de menos ese cap. Su contenido ya está cubierto en otro cap, o el cap es un sobrante que ralentiza. Puede borrarse de forma desatendida.
 - **keep_pending**: dudas, no te queda claro si se pierde algo. Se queda pendiente para revisión humana.
-- **discard**: ese cap contiene escenas/personajes/revelaciones que NO están en ningún otro sitio. Borrarlo dañaría el libro como lector. Se descarta del listado.
+- **discard**: ese cap contiene escenas/personajes/revelaciones que NO están en ningún otro sitio. Borrarlo dañaría el libro como lector. Se descarta del listado. [Fix243] Si descartas pero ese cap te sigue aburriendo o frenando la lectura, añade además una instrucción "estructural" en tu JSON pidiendo su REESCRITURA SEVERA (conservar lo único, sustituir lo que aburre): mejor arreglarlo que borrarlo.
 
 LISTA DE ACCIONES A EVALUAR:
 ${pendingAdmin.map(a => `- id=${a.id} | tipo=${a.type} | sobre ${a.targetLabel || `cap ${a.targetChapter}`}${typeof a.secondaryChapter === "number" ? ` (afecta también a cap ${a.secondaryChapter})` : ""} | motivo emitido por el cirujano: ${a.reason}`).join("\n")}

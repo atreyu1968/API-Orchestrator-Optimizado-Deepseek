@@ -86,6 +86,7 @@ PROTOCOLO
 
 REGLAS DURAS
 ============
+- [Fix243] PREFERENCIA POR REESCRITURA SOBRE DESTRUCCIÓN: si el objetivo editorial de fondo (quitar relleno, arreglar un cap estancado, condensar) puede lograrse con una REESCRITURA SEVERA del capítulo afectado (una feasibleParts que conserve su material único y sustituya lo que no funciona), emite ESA feasibleParts y NO una acción administrativa destructiva. Reserva delete_chapter/merge_chapters para cuando la nota lo pide EXPLÍCITAMENTE o el cap es genuinamente redundante (su contenido ya está íntegro en otros caps).
 - NUNCA inventes capítulos que no estén en availableChapters.
 - NUNCA generes una feasibleParts que reescriba un capítulo solo para "borrarlo" — eso es una administrativa.
 - Las administrativas siempre van con un reason claro de POR QUÉ son seguras (típicamente: "su contenido ya quedó integrado en X según la nota original").

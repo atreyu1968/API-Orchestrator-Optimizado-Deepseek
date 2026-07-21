@@ -26,3 +26,5 @@ vacíe cualquier instrucción destructiva residual cuando `fromAutoLoop`.
 **Why el flujo manual NO se toca:** el enrutado se activa con un flag
 (`routeDeletesToPending`, default false). El borrado MANUAL conserva su ejecución
 directa porque ahí hay un humano confirmando, no un bucle desatendido.
+
+Politica (decision del usuario, jul 2026): los lectores del pulido deben preferir REESCRITURA SEVERA del capitulo (tipo "estructural", conservar material unico + sustituir lo que no funciona) sobre proponer borrar/fusionar; delete/merge queda como ultimo recurso solo para redundancia genuina sin material unico. Aplica a los prompts de Holistico, Beta y el traductor estructural — mantener esa jerarquia si se tocan esos prompts.
