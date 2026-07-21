@@ -105,6 +105,12 @@ interface ArchitectInput {
   // onlyPhase1=true en el bucle WBA del orquestador.
   worldBibleFeedback?: string;
 
+  // [Fix240] Fase 1 previa (JSON string) como BASE DE ENRIQUECIMIENTO en los
+  // retries del bucle WBA. Sin ella el Arquitecto regeneraba desde cero con
+  // solo el texto del feedback y podia salir esqueletico (caso real: iter 2
+  // con 4 personajes y 0 arcos tras una iter 1 con 6 y 5).
+  previousPhase1Json?: string;
+
   // [Fix78] World Bible consolidada de la serie (personajes con fichas ricas,
   // lugares, léxico, reglas) extraída de TODOS los volúmenes previos. El
   // Arquitecto DEBE usarla como verdad canónica: prohibido renombrar,
@@ -1319,9 +1325,29 @@ ${input.writtenChaptersFullText}
     `
       : "";
 
+    // [Fix240] Base de enriquecimiento: el retry NO regenera desde cero —
+    // parte de la Fase 1 previa y la ENRIQUECE aplicando el feedback.
+    const previousPhase1Block = input.previousPhase1Json && input.worldBibleFeedback
+      ? `
+    📌 BASE DE ENRIQUECIMIENTO OBLIGATORIA [Fix240]:
+    Esta es la Fase 1 previa (la mejor versión hasta ahora). Tu tarea NO es regenerar
+    desde cero: PARTE de esta base, consérvala ÍNTEGRA (todos sus personajes, arcos,
+    subtramas, giros, secretos y estructura) y ENRIQUÉCELA aplicando las correcciones
+    del auditor. PROHIBIDO devolver menos personajes, menos subtramas o menos giros
+    que esta base — solo puedes AÑADIR, PROFUNDIZAR o CORREGIR elementos, nunca
+    vaciarlos. Si una corrección exige reemplazar un elemento, sustitúyelo por uno
+    mejor, no lo elimines sin más.
+
+    --- FASE 1 PREVIA (JSON) ---
+    ${input.previousPhase1Json}
+    --- FIN FASE 1 PREVIA ---
+
+    `
+      : "";
+
     const phase1Prompt = `
     ${commonContext}
-    ${wbaFeedbackBlock}
+    ${wbaFeedbackBlock}${previousPhase1Block}
     FASE 1 DE 2: Genera la World Bible completa, matriz de arcos, plan de momentum, estructura de 3 actos, línea temporal y premisa.
     
     La novela tendrá ${input.chapterCount} capítulos${input.hasPrologue ? " + prólogo" : ""}${input.hasEpilogue ? " + epílogo" : ""}${input.hasAuthorNote ? " + nota del autor" : ""}.

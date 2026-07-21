@@ -1927,6 +1927,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             extendedGuideContent: extendedGuideContent || undefined,
             onlyPhase1: true,
             worldBibleFeedback: wbaFeedback,
+            // [Fix240] los retries parten de la mejor Fase 1 vista y la
+            // ENRIQUECEN — antes regeneraban desde cero con solo el texto del
+            // feedback y podian salir esqueleticos (caso real: 4 personajes,
+            // 0 arcos tras una iter previa con 6 y 5).
+            previousPhase1Json: wbaIter > 0 && bestWBA ? JSON.stringify(bestWBA.phase1Json) : undefined,
           });
 
           if (this.aborted) return;
@@ -1953,6 +1958,31 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           } catch (e) {
             console.warn(`[Orchestrator] [Fix110] Fase 1 JSON inválido en iter ${wbaIter + 1}: ${(e as Error).message}. Saltamos WBA.`);
             break;
+          }
+
+          // [Fix240] Guardia determinista de DEGENERACION: si el retry perdio
+          // material respecto a la mejor Fase 1 vista (menos personajes o
+          // menos subtramas), no gastamos una auditoria en un esqueleto —
+          // se descarta, se refuerza el feedback y se reintenta.
+          if (bestWBA) {
+            const newPers = Array.isArray(phase1Json?.world_bible?.personajes) ? phase1Json.world_bible.personajes.length : 0;
+            const newSubs = Array.isArray(phase1Json?.matriz_arcos?.subtramas) ? phase1Json.matriz_arcos.subtramas.length : 0;
+            const bestPers = Array.isArray(bestWBA.phase1Json?.world_bible?.personajes) ? bestWBA.phase1Json.world_bible.personajes.length : 0;
+            const bestSubs = Array.isArray(bestWBA.phase1Json?.matriz_arcos?.subtramas) ? bestWBA.phase1Json.matriz_arcos.subtramas.length : 0;
+            if (newPers < bestPers || newSubs < bestSubs) {
+              console.warn(`[Orchestrator] [Fix240] Fase 1 degenerada en iter ${wbaIter + 1} (${newPers} pers/${newSubs} subtramas vs mejor ${bestPers}/${bestSubs}). Se descarta sin auditar y se reintenta.`);
+              try {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  agentRole: "architect",
+                  message: `[Fix240] La Fase 1 regenerada PERDIÓ material (${newPers} personajes/${newSubs} subtramas vs ${bestPers}/${bestSubs} de la mejor versión). Se descarta SIN gastar auditoría y se reintenta partiendo de la mejor base.`,
+                  metadata: { fix: "Fix240", iteration: wbaIter + 1, newPers, newSubs, bestPers, bestSubs },
+                });
+              } catch {}
+              wbaFeedback = `${wbaFeedback || ""}\n\nAVISO [Fix240]: tu intento anterior DEVOLVIÓ MENOS material que la base (personajes o subtramas perdidos) y fue descartado. Conserva ÍNTEGRA la base de enriquecimiento y solo AÑADE o PROFUNDIZA.`.trim();
+              continue;
+            }
           }
 
           try {
@@ -2074,8 +2104,23 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
           wbaFeedback = wba.feedback_para_arquitecto || undefined;
           if (!wbaFeedback || wbaFeedback.trim().length === 0) {
-            console.warn(`[Orchestrator] [Fix110] Auditor sin feedback accionable en iter ${wbaIter + 1}, paramos bucle.`);
-            break;
+            // [Fix240] Un no-apto sin feedback ya NO mata el bucle en silencio
+            // (caso real: veredicto "reescribir" 2/10 sin feedback cerro el
+            // bucle en la iter 2/5). Sintetizamos feedback desde los problemas
+            // y el resumen del propio auditor.
+            const problemasFb = (wba.problemas || [])
+              .filter((p: any) => p?.severidad === "alta" || p?.severidad === "media")
+              .slice(0, 6)
+              .map((p: any, i: number) => `${i + 1}. [${p.area}/${p.severidad}] ${p.descripcion}${p.sugerencia ? ` → ${p.sugerencia}` : ""}`)
+              .join("\n");
+            const sinteticFb = [problemasFb, wba.resumen ? `Resumen del auditor: ${wba.resumen}` : ""].filter(Boolean).join("\n\n").trim();
+            if (sinteticFb.length >= 40) {
+              wbaFeedback = `[Fix240] Feedback sintetizado de los problemas del auditor (no emitió feedback directo):\n${sinteticFb}`;
+              console.warn(`[Orchestrator] [Fix240] Auditor sin feedback directo en iter ${wbaIter + 1}; sintetizado desde problemas/resumen para no matar el bucle.`);
+            } else {
+              console.warn(`[Orchestrator] [Fix110] Auditor sin feedback ni problemas accionables en iter ${wbaIter + 1}, paramos bucle.`);
+              break;
+            }
           }
         }
 

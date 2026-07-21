@@ -27,6 +27,7 @@
 - [Citas muertas: sanear, no purgar entero](ghost-instruction-sanitization.md) — retirar solo la cita obsoleta conservando la intencion; brazos cuentan exito por diff real de BD, no por intentos.
 - [Grounding pajar combinado vs por-capitulo](grounding-haystack-scope-mismatch.md) — auditar citas en el mismo ambito donde se ejecuta; validar en conjunto y purgar por-cap anula instrucciones multi-cap.
 - [Retry truncado del LLM: empalmar, no descartar](truncated-llm-retry-splice.md) — un reintento de outline truncado aun trae las correcciones; cabeza revisada + cola previa y re-auditar.
+- [Bucles regenerar-con-feedback](regen-loop-enrichment-base.md) — el retry necesita la mejor version previa como base; guardia de degeneracion antes de auditar; veredicto sin feedback no rompe el bucle.
 - [Detectores cross-capitulo](cross-chapter-detectors.md) — agentes por-capitulo no ven repeticion entre caps; detector global unico + hallazgos filtrados por capitulo; dedupe con fronteras de token.
 - [Juez que exige material: nunca no-op silencioso](judge-input-availability.md) — si un juez/diagnostico requiere notas u otro material, recuperarlo de su fuente o generarlo fresco antes de rendirse; un no-op silencioso deja UI prometiendo cosas que no llegan.
 - [Reparacion en caliente mid-novela](mid-novel-repair.md) — lecturas intermedias deben reparar lo ya escrito (con memoria de hallazgos y frenos), no solo guiar capitulos futuros.
