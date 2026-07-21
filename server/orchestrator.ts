@@ -2032,7 +2032,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 projectId: project.id,
                 level: "warn",
                 agentRole: "world-bible-auditor",
-                message: `[Fix110] El Auditor de World Bible falló en iter ${wbaIter + 1}: ${failureReason}.${phase1LookValid ? " La Fase 1 generada SÍ es estructuralmente válida — se reutilizará sin auditar (no se tira el coste de generarla)." : ` La Fase 1 no es reutilizable (personajes o densidad de arcos insuficiente: ${subtramasCount} arcos, mínimo ${minArcs}) — se cae al flujo clásico.`}`,
+                message: `[Fix110] El Auditor de World Bible falló en iter ${wbaIter + 1}: ${failureReason}.${phase1LookValid ? (bestWBA ? " La Fase 1 generada SÍ es estructuralmente válida — sustituirá a la mejor previa si no pierde material [Fix241]." : " La Fase 1 generada SÍ es estructuralmente válida — se reutilizará sin auditar (no se tira el coste de generarla).") : ` La Fase 1 no es reutilizable (personajes o densidad de arcos insuficiente: ${subtramasCount} arcos, mínimo ${minArcs}) — se cae al flujo clásico.`}`,
                 metadata: { fix: "Fix110", iteration: wbaIter + 1, failureReason, phase1Salvaged: phase1LookValid, subtramasCount, minArcs },
               });
             } catch {}
@@ -2051,6 +2051,36 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                   feedback_para_arquitecto: "",
                 },
               };
+            } else if (phase1LookValid && bestWBA) {
+              // [Fix241] Antes esta rama DESCARTABA la Fase 1 nueva si ya
+              // habia bestWBA, aunque el log prometia "se reutilizara sin
+              // auditar" (caso real: retry enriquecido con 8 personajes/5
+              // arcos perdido; se reuso la vieja de 6). Si la nueva NO pierde
+              // material respecto a la mejor (personajes y subtramas >=),
+              // sustituye la base que se reutiliza — es la misma base + el
+              // enriquecimiento pedido por el feedback, solo que sin auditar.
+              const newPersF = Array.isArray(phase1Json?.world_bible?.personajes) ? phase1Json.world_bible.personajes.length : 0;
+              const bestPersF = Array.isArray(bestWBA.phase1Json?.world_bible?.personajes) ? bestWBA.phase1Json.world_bible.personajes.length : 0;
+              const bestSubsF = Array.isArray(bestWBA.phase1Json?.matriz_arcos?.subtramas) ? bestWBA.phase1Json.matriz_arcos.subtramas.length : 0;
+              if (newPersF >= bestPersF && subtramasCount >= bestSubsF) {
+                bestWBA = {
+                  score: bestWBA.score,
+                  phase1Json,
+                  result: {
+                    ...bestWBA.result,
+                    resumen: `[Fix241] La auditoria fallo (${failureReason}) pero la Fase 1 enriquecida del retry (${newPersF} personajes, ${subtramasCount} subtramas) conserva o amplia el material de la mejor previa (${bestPersF}/${bestSubsF}) y la sustituye sin auditar.`,
+                  },
+                };
+                try {
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "info",
+                    agentRole: "world-bible-auditor",
+                    message: `[Fix241] La Fase 1 enriquecida del retry (${newPersF} personajes, ${subtramasCount} subtramas) SUSTITUYE a la mejor previa (${bestPersF} personajes, ${bestSubsF} subtramas) pese al fallo del auditor: no pierde material y ya incorpora el feedback.`,
+                    metadata: { fix: "Fix241", iteration: wbaIter + 1, newPers: newPersF, newSubs: subtramasCount, bestPers: bestPersF, bestSubs: bestSubsF },
+                  });
+                } catch {}
+              }
             }
             break;
           }

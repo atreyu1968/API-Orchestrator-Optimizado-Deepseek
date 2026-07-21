@@ -243,7 +243,12 @@ export class WorldBibleAuditorAgent extends BaseAgent {
       // Vol. 2" el auditor devolvió null silenciosamente, causa más probable:
       // la respuesta JSON (con feedback_para_arquitecto hasta 600 palabras)
       // se truncaba antes del cierre.
-      maxOutputTokens: 10240,
+      // [Fix241] Subido de 10240 a 20480. El techo es COMBINADO
+      // (razonamiento + contenido): con thinkingBudget 8192 quedaban ~2K
+      // para el JSON. Caso real (EL ARCHIVO DE LOS HOMBRES MUERTOS): con una
+      // Fase 1 enriquecida (8 personajes) el razonamiento crecio y la
+      // respuesta llego VACIA ("respuesta vacía del LLM") en iter 2.
+      maxOutputTokens: 20480,
       includeThoughts: false,
     });
     this.timeoutMs = 6 * 60 * 1000;
