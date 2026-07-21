@@ -99,6 +99,9 @@ export interface ProofreaderInput {
   authorStyle?: string;
   language?: string;
   projectId?: number;
+  // [Fix239] muletillas detectadas en el manuscrito COMPLETO (frases que se
+  // repiten en 4+ capitulos distintos); el corrector debe variarlas aqui.
+  muletillasGlobales?: Array<{ frase: string; capitulos: number[] }>;
 }
 
 export interface ProofreaderChange {
@@ -135,8 +138,19 @@ export class ProofreaderAgent extends BaseAgent {
     const authorContext = input.authorStyle ? `\nESTILO DEL AUTOR/PSEUDÓNIMO: ${input.authorStyle}` : "";
     const langContext = input.language ? `\nIDIOMA DEL TEXTO: ${input.language}` : "";
 
+    // [Fix239] aviso de muletillas globales: solo las que afectan a ESTE capitulo
+    const capNum = parseInt(input.chapterNumber, 10);
+    const muletillasRelevantes = (input.muletillasGlobales || []).filter(m =>
+      Number.isNaN(capNum) ? true : m.capitulos.includes(capNum)
+    );
+    const muletillasContext = muletillasRelevantes.length > 0
+      ? `\n\n⚠️ MULETILLAS DETECTADAS EN EL MANUSCRITO COMPLETO (afectan a este capítulo):\n` +
+        muletillasRelevantes.map(m => `- "${m.frase}" (aparece en ${m.capitulos.length} capítulos)`).join("\n") +
+        `\nEstas frases/imágenes se repiten en demasiados capítulos y desgastan al lector. En ESTE capítulo, reescribe cada aparición con una variación natural (otro verbo, otra imagen, otra formulación) conservando el sentido y el estilo. Si el capítulo contiene la frase más de una vez, varía todas menos como mucho una.`
+      : "";
+
     const prompt = `CAPÍTULO A CORREGIR: ${input.chapterNumber}
-${genreContext}${authorContext}${langContext}
+${genreContext}${authorContext}${langContext}${muletillasContext}
 
 --- INICIO DEL TEXTO ---
 ${input.chapterContent}

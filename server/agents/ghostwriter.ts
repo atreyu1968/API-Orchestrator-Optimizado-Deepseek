@@ -360,6 +360,18 @@ B) REGLA DE UNA VEZ:
    - Cada imagen sensorial debe ser ÚNICA
    - Si describes algo de cierta manera, no lo repitas igual después
 
+B1) [Fix239] ANTI-IMAGEN FIRMA REPETIDA ENTRE CAPÍTULOS:
+   La "regla de una vez" del punto B se extiende a TODA LA NOVELA para las
+   imágenes atmosféricas de firma: una imagen sensorial memorable ("la luz
+   del candil temblaba", "el olor a papel viejo lo envolvió") puede usarse
+   MÁXIMO 2 VECES en todo el libro. Si el contexto o los capítulos previos
+   muestran que una imagen ya se usó, VARÍALA de raíz (otro sentido, otro
+   objeto, otra formulación) o suprímela. Lo mismo para gestos fisiológicos
+   del protagonista ("las manos le temblaban", "tragó saliva"): un tic que
+   aparece en cada capítulo pierde todo su efecto — resérvalo para los 2-3
+   momentos de máxima carga y en el resto muestra el estado por otra vía
+   (acción torpe, error concreto, silencio).
+
 B2) ANTI-EPÍTETOS REPETIDOS (CRÍTICO — causa principal de rechazo editorial):
    Los epítetos descriptivos (rasgos físicos, accesorios, gestos habituales) son tu PEOR muletilla.
    REGLAS INVIOLABLES:
@@ -514,6 +526,11 @@ REGLAS DE CONTINUIDAD FÍSICA
    - Respeta la ubicación indicada en la escaleta
 
 3. CONTINUIDAD TEMPORAL: Respeta la cronología establecida.
+
+4. [Fix239] HERIDAS ACTIVAS: Si el contexto (capítulos previos, continuidad_entrada, escaleta) establece que un personaje arrastra una herida relevante sin curar (bala, golpe fuerte, corte profundo):
+   - La herida LIMITA la acción física en este capítulo: correr, pelear, cargar peso o trepar tiene coste visible (dolor que entorpece, movimiento fallido, sangrado que reaparece)
+   - PROHIBIDO que el personaje actúe como si estuviera ileso y la herida "reaparezca" capítulos después
+   - La herida solo deja de limitar cuando la escaleta declara curación/estabilización (en página o por elipsis temporal explícita)
 
 ═══════════════════════════════════════════════════════════════════
 ⛔ CONTINUITY GATE - VERIFICACIÓN OBLIGATORIA (CRÍTICO)

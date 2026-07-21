@@ -244,6 +244,36 @@ faltaba estructura, y abandona el libro. NUNCA planifiques:
    - El setup debe parecer NATURAL en su momento, no un "anuncio" del
      payoff (Chéjov, no spoiler).
 
+7. ⛔ [Fix239] REGLA DE PAGO (Chéjov INVERSO) — la regla 6 mira del payoff
+   hacia atrás; esta mira del setup hacia DELANTE. Todo objeto, documento,
+   herida o promesa con peso dramático que introduzcas (un pasaporte falso,
+   un sobre lacrado para un tercero, una llave, una copia de un expediente,
+   una herida de bala) DEBE tener declarado en la escaleta su DESTINO: o se
+   usa/paga en un capítulo concreto posterior, o se CIERRA explícitamente en
+   página (se destruye, se descarta con motivo, se revela que era señuelo).
+   PROHIBIDO introducir un elemento cargado y abandonarlo en silencio: el
+   lector lo registra como hilo suelto y lo reprocha en la reseña.
+   - HERIDAS FÍSICAS: una herida relevante (golpe, bala, corte profundo)
+     tiene TRAYECTORIA obligatoria en la escaleta: caps donde duele y LIMITA
+     la acción → cap donde se cura/estabiliza (en página o con elipsis
+     declarada) o cap donde su consecuencia paga (se desmaya, lo delata, le
+     impide algo decisivo). PROHIBIDO que desaparezca de la narrativa y
+     reaparezca capítulos después sin explicación.
+
+8. ⛔ [Fix239] MOTIVACIÓN DE ANTAGONISTAS ESCENIFICADA — la motivación
+   profunda de TODO antagonista o traidor relevante (el villano principal,
+   el topo, el esbirro con historia) debe tener al menos UNA escena EN VIVO
+   donde el lector la VEA (el personaje duda, teme, se muestra vulnerable,
+   actúa contra su interés por su motivación) ANTES o EN el momento de la
+   revelación. PROHIBIDO que la motivación llegue SOLO por documento (carta,
+   nota, informe, conversación referida): el papel confirma, la escena
+   convence. Si la trama exige que la revelación llegue por carta, añade una
+   escena previa donde ese personaje muestre el comportamiento que la carta
+   explicará retroactivamente. Además, el antagonista principal debe
+   proyectar su SOMBRA sobre el acto 2 (actos suyos con consecuencias en
+   página, aunque él no aparezca) — un villano que se presenta en el último
+   cuarto llega tarde por bien construido que esté.
+
 📋 VERIFICACIÓN OBLIGATORIA AL CERRAR LA ESCALETA: recorre los capítulos
 del último tercio (clímax y resolución) y para CADA elemento que resuelve
 un conflicto (personaje que ayuda, objeto que se usa, habilidad que se
@@ -927,6 +957,7 @@ C. RITMO ACTO 3: distribuye "eventos_pivotales" sin que el acto 3 acumule >50% d
 22. [Fix200] ESQUELETO DE CAPITULO VARIADO EN EL ACTO 2. Para cada capitulo del acto 2, su FORMA debe quedar declarada como CONTENIDO en la escaleta: escenario (lugar y sus reglas), tipo de oposicion (quien o que presiona al protagonista y de que clase es esa presion), tactica del protagonista (que hace distinto para avanzar) y coste pagado (que pierde o arriesga aqui). PROHIBIDO repetir la MISMA combinacion de esos 4 ejes en capitulos cercanos (ventana de ~3 caps): dos caps consecutivos donde el protagonista llega a un lugar, interroga, obtiene un dato y escapa, son el MISMO esqueleto aunque cambien el lugar y el interlocutor. Si detectas dos caps cercanos con esqueleto clonado, cambia en uno de ellos al menos 2 de los 4 ejes (p. ej. que la informacion venga a buscarle a el con coste imprevisto; que la tactica falle y el cap avance por la consecuencia del fallo; que la oposicion sea interna o social en vez de fisica). El lector percibe la repeticion de FORMA antes que la de contenido: variar el esqueleto es lo que evita el "tramo central que se hace cuesta arriba".
 23. [Fix223] Recorre el acto 2 (caps del 25% al 75%) verificando el bloque "propulsion" de cada cap: (a) ningún tramo de 3+ caps consecutivos sin "cambio_irreversible" real (≥25 caracteres, no relleno); (b) ninguna "decision_final" pasiva ("seguir investigando", "esperar", "reflexionar", "hablar con X") en 2 caps seguidos; (c) en cada ventana de 4 caps, al menos uno modifica un vector primario (objetivo, relacion o poder); (d) aplica la PRUEBA DE ELIMINACIÓN a cada cap del tramo — si puede quitarse y los personajes llegan igual al siguiente, fusiónalo o dale una consecuencia irreversible. Si algo falla, rediseña ACONTECIMIENTOS (costes, decisiones, consecuencias), no el estilo.
 24. [Fix232] SECUENCIAS MACRO (anti "tres viajes idénticos"). Las reglas anteriores miran capítulo a capítulo; ahora mira el acto 2 por TRAMOS. Segmenta el acto 2 en secuencias (grupos de 3-5 caps unidos por un mismo objetivo inmediato o un mismo desplazamiento: un viaje, una infiltración, una huida). Comprueba: (a) DOS secuencias NO pueden compartir la misma función (dos viajes hacia el mismo destino, dos huidas del mismo perseguidor) NI el mismo ciclo interno (peligro → descanso → conversación reveladora → nuevo peligro repetido con distinto decorado): cambia la estructura interna de una o condénsalas en una sola; (b) ningún desplazamiento hacia un mismo destino puede ocupar más de 3 capítulos — un viaje largo se cuenta con ELIPSIS o montaje declarados en la cronología, conservando SOLO los hitos imprescindibles (la información o decisión que ningún otro cap aporta); (c) aplica la PRUEBA DE ELIMINACIÓN a nivel de SECUENCIA: si un tramo entero puede quitarse y los personajes llegan igual (misma información, mismas pérdidas, misma posición) al tramo siguiente, ese tramo sobra — condénsalo en 1-2 caps o dale consecuencias que los tramos vecinos no aportan. El lector detecta la repetición de secuencia ANTES que la de capítulo: tres tramos funcionalmente idénticos son el "segundo acto inflado" aunque cada cap individual pase todas las reglas.
+25. [Fix239] PAGO Y ESCENIFICACIÓN. (a) Recorre los objetos/documentos/heridas con peso dramático introducidos en la escaleta: cada uno debe tener capítulo de PAGO o de CIERRE explícito en página (usado, destruido, descartado con motivo o revelado como señuelo) — un pasaporte que nunca se usa o un sobre que nunca se resuelve es un hilo suelto PROHIBIDO. (b) Cada herida física relevante tiene trayectoria continua: caps donde limita la acción → cap de curación/estabilización o de consecuencia; prohibido que desaparezca capítulos y reaparezca sin explicación. (c) La motivación de cada antagonista/traidor relevante tiene al menos UNA escena en vivo (vulnerabilidad visible), no solo una carta/nota; y el antagonista principal proyecta sombra sobre el acto 2 con actos de consecuencia en página. Si algo falla, añade la escena o el capítulo de cierre ANTES de responder.
 Si algo falla, REGENERA antes de responder. Esto es lo más importante.
 
 Responde ÚNICAMENTE con el JSON.

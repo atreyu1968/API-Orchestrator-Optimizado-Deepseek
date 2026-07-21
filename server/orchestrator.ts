@@ -68,6 +68,7 @@ import { ensureChapterNumbers } from "./utils/extract-chapters";
 import { extractStyleDirectives, synthesizeVoiceBlock, type NarrativeVoiceConfig } from "./utils/style-directives";
 import { repairJson } from "./utils/json-repair";
 import { groundInstructionInChapter, extractFlaggedChapters, stripDeadQuotes, normalizeForMatch as normalizeQuoteMatch } from "./utils/instruction-grounding";
+import { detectCrossChapterCatchphrases } from "./utils/cross-chapter-catchphrases";
 import { buildSeriesContextForReviewers as buildSeriesContextForReviewersHelper } from "./utils/series-context-builder";
 import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
 import { tryMarkPolishActive, clearPolishActive, isPolishStopRequested, clearPolishStopRequest } from "./utils/polish-registry";
@@ -18722,6 +18723,27 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
       let totalChanges = 0;
       let chaptersProcessed = 0;
 
+      // [Fix239] detectar muletillas de frase repetidas ENTRE capitulos (los
+      // correctores por-capitulo no pueden verlas). Best-effort: un fallo del
+      // detector no bloquea el pase.
+      let muletillasGlobales: Array<{ frase: string; capitulos: number[] }> = [];
+      try {
+        muletillasGlobales = detectCrossChapterCatchphrases(
+          completedChapters.map(c => ({ chapterNumber: c.chapterNumber, content: c.content! }))
+        );
+        if (muletillasGlobales.length > 0) {
+          console.log(`[Fix239] ${muletillasGlobales.length} muletillas globales detectadas: ${muletillasGlobales.map(m => `"${m.frase}" (${m.capitulos.length} caps)`).join("; ")}`);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "info",
+            message: `[Fix239] Muletillas repetidas entre capitulos detectadas (${muletillasGlobales.length}): ${muletillasGlobales.map(m => `"${m.frase}" en ${m.capitulos.length} caps`).join("; ")}. El corrector las variara en cada capitulo afectado.`,
+            agentRole: "proofreader",
+          });
+        }
+      } catch (e) {
+        console.warn(`[Fix239] Detector de muletillas fallo (no bloqueante):`, e);
+      }
+
       for (let i = 0; i < completedChapters.length; i++) {
         if (this.aborted) {
           console.log(`[Orthotypographic] Aborted after ${chaptersProcessed}/${completedChapters.length} chapters (project ${project.id}). Exiting silently.`);
@@ -18764,6 +18786,7 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
             genre: project.genre || undefined,
             language: "es",
             projectId: project.id,
+            muletillasGlobales,
           });
 
           await this.trackTokenUsage(project.id, result.tokenUsage, "Corrector Ortotipográfico", "deepseek-v4-flash", chapter.chapterNumber, "orthotypographic");
