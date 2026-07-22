@@ -133,6 +133,7 @@ export interface IStorage {
   getActivityLogsByProject(projectId: number | null, limit?: number): Promise<ActivityLog[]>;
   getLastActivityLogTime(projectId: number): Promise<Date | null>;
   getLastMeaningfulActivityLogTime(projectId: number): Promise<Date | null>;
+  getLastMeaningfulActivityLog(projectId: number): Promise<{ createdAt: Date; message: string } | null>;
   cleanupOldActivityLogs(projectId: number | null, keepCount: number): Promise<void>;
 
   // Project Queue operations
@@ -726,7 +727,18 @@ export class DatabaseStorage implements IStorage {
   // congelados perpetuamente fresco y la auto-recuperación no dispararía nunca
   // sobre un proyecto realmente muerto.
   async getLastMeaningfulActivityLogTime(projectId: number): Promise<Date | null> {
-    const [log] = await db.select({ createdAt: activityLogs.createdAt })
+    const entry = await this.getLastMeaningfulActivityLog(projectId);
+    return entry?.createdAt ?? null;
+  }
+
+  // [Fix244] Version que devuelve tambien el MENSAJE del ultimo log real: el
+  // guard anti-reanudacion-destructiva (Fix103) necesita saber si ese ultimo
+  // log anuncia una fase larga y SILENCIOSA (p.ej. "Fase 2/2: generando
+  // escaleta... Timeout: 18 min") para ampliar su ventana de frescura al
+  // timeout declarado en vez de los 120s por defecto. Caso real: reanudacion
+  // a los ~10 min de silencio de Fase 2 arraso 30 min de trabajo en curso.
+  async getLastMeaningfulActivityLog(projectId: number): Promise<{ createdAt: Date; message: string } | null> {
+    const [log] = await db.select({ createdAt: activityLogs.createdAt, message: activityLogs.message })
       .from(activityLogs)
       .where(and(
         eq(activityLogs.projectId, projectId),
@@ -736,7 +748,7 @@ export class DatabaseStorage implements IStorage {
       ))
       .orderBy(desc(activityLogs.createdAt))
       .limit(1);
-    return log?.createdAt ?? null;
+    return log ? { createdAt: log.createdAt, message: log.message } : null;
   }
 
   async cleanupOldActivityLogs(projectId: number | null, keepCount: number = 1000): Promise<void> {

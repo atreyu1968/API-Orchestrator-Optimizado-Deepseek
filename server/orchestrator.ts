@@ -5610,17 +5610,35 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // globales) y excluye los logs META que NO indican un worker vivo
       // ("Reanudación ignorada"/"Auto-recovery"). Así solo la actividad REAL de
       // agentes <120s cuenta como "otro orquestador vivo".
-      const lastRealActivity = await storage.getLastMeaningfulActivityLogTime(project.id);
-      if (lastRealActivity) {
-        const ageMs = Date.now() - new Date(lastRealActivity).getTime();
-        if (ageMs < 120_000) {
-          console.warn(`[Orchestrator] [Fix103] resumeNovel invocado pero hay actividad muy reciente del proyecto (${Math.round(ageMs/1000)}s). Probablemente hay otro orquestador vivo para este proyecto. Aborto la reanudación para no destruir su progreso.`);
+      // [Fix244] La ventana de 120s es insuficiente cuando el ultimo log real
+      // anuncia una fase larga y SILENCIOSA del Arquitecto ("Fase 1/2... Timeout:
+      // 12 min" / "Fase 2/2... Timeout: 18 min"): durante esa fase el orquestador
+      // esta vivo pero no emite NADA hasta terminar. Caso real: reanudacion a los
+      // ~10 min de silencio de Fase 2 reinicio desde cero y arraso 30 min de
+      // trabajo (World Bible auditada + escaleta en curso). Si el ultimo log
+      // declara un "Timeout: N min", la ventana de frescura pasa a N+4 min.
+      const lastRealEntry = await storage.getLastMeaningfulActivityLog(project.id);
+      if (lastRealEntry) {
+        const ageMs = Date.now() - new Date(lastRealEntry.createdAt).getTime();
+        let freshnessWindowMs = 120_000;
+        const msg = lastRealEntry.message || "";
+        const isSilentArchitectPhase = /Fase\s*[12]\s*\/\s*2/i.test(msg);
+        const timeoutMatch = isSilentArchitectPhase ? /Timeout:\s*(\d+)\s*min/i.exec(msg) : null;
+        if (timeoutMatch) {
+          const declaredMin = parseInt(timeoutMatch[1], 10);
+          if (Number.isFinite(declaredMin) && declaredMin > 0 && declaredMin <= 60) {
+            freshnessWindowMs = (declaredMin + 4) * 60_000;
+          }
+        }
+        if (ageMs < freshnessWindowMs) {
+          const windowDesc = freshnessWindowMs === 120_000 ? "120s" : `${Math.round(freshnessWindowMs / 60000)} min (fase silenciosa declarada, Fix244)`;
+          console.warn(`[Orchestrator] [Fix103] resumeNovel invocado pero hay actividad muy reciente del proyecto (${Math.round(ageMs/1000)}s, ventana ${windowDesc}). Probablemente hay otro orquestador vivo para este proyecto. Aborto la reanudación para no destruir su progreso.`);
           await storage.createActivityLog({
             projectId: project.id,
             level: "warning",
             agentRole: "orchestrator",
-            message: `[Fix103] Reanudación ignorada: hay actividad muy reciente del proyecto (hace ${Math.round(ageMs/1000)}s). Se conserva el progreso en curso.`,
-            metadata: { fix: "Fix103", ageMs },
+            message: `[Fix103] Reanudación ignorada: hay actividad muy reciente del proyecto (hace ${Math.round(ageMs/1000)}s, ventana ${windowDesc}). Se conserva el progreso en curso.`,
+            metadata: { fix: "Fix103", ageMs, freshnessWindowMs },
           });
           return;
         }
