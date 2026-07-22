@@ -16559,10 +16559,16 @@ Responde SOLO con un JSON válido con la estructura:
     return chapters.map((chapter) => {
       const chapterData: any = findByNumero(chapter.chapterNumber);
       let tipo: "prologue" | "chapter" | "epilogue" | "author_note" = "chapter";
-      
-      if (chapter.title === "Prólogo") tipo = "prologue";
-      else if (chapter.title === "Epílogo") tipo = "epilogue";
-      else if (chapter.title === "Nota del Autor") tipo = "author_note";
+
+      // [Fix246] Resolver el tipo por chapterNumber, NO por titulo exacto:
+      // el prologo/epilogo suelen llevar titulo propio (caso real: epilogo
+      // "El legado de la ceniza") y con el match por titulo quedaban como
+      // tipo "chapter" — todo el pipeline editorial los llamaba
+      // "el Capítulo -1" / "el Capítulo 0". La numeracion es el contrato
+      // estable (0=prologo, -1=epilogo, -2=nota del autor).
+      if (chapter.chapterNumber === 0 || chapter.title === "Prólogo") tipo = "prologue";
+      else if (chapter.chapterNumber === -1 || chapter.title === "Epílogo") tipo = "epilogue";
+      else if (chapter.chapterNumber === -2 || chapter.title === "Nota del Autor") tipo = "author_note";
 
       return {
         numero: chapter.chapterNumber,
@@ -21141,7 +21147,16 @@ La instrucción de arriba exige AÑADIR UNA ESCENA NUEVA COMPLETA dentro de este
     // lo cazara. En modo "cirugía → fallback narrador" preservamos siempre la longitud
     // original con un margen estricto: si la corrección requiere reescritura más radical,
     // debería ir por otra ruta (no por este fallback).
-    const originalCapLower = Math.round(originalWordCount * 0.85);
+    // [Fix246] Una reescritura ESTRUCTURAL (derivada por el Traductor
+    // estructural, _structuralTranslateDepth > 0) puede legitimamente
+    // ENCOGER el capitulo mucho mas del 15% (caso real: reescribir el
+    // epilogo eliminando el 80% de POVs → 2067 palabras vs suelo 2640; la
+    // guarda la anulaba SIEMPRE y la nota jamas podia aplicarse). En ese
+    // modo el suelo pasa a ser el minimo quirurgico del proyecto (con su
+    // holgura del 10%), sin el clamp de original*0.85.
+    const originalCapLower = _structuralTranslateDepth > 0
+      ? Math.round(surgicalMin * 0.90)
+      : Math.round(originalWordCount * 0.85);
     // [Fix227] En expansion de escena el capitulo DEBE poder crecer muy por
     // encima del ±15% del original: el tope absoluto pasa a ser el rango
     // quirurgico ampliado. El suelo no cambia (nunca debe ENCOGER).

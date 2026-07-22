@@ -32,3 +32,4 @@
 - [Juez que exige material: nunca no-op silencioso](judge-input-availability.md) — si un juez/diagnostico requiere notas u otro material, recuperarlo de su fuente o generarlo fresco antes de rendirse; un no-op silencioso deja UI prometiendo cosas que no llegan.
 - [Reparacion en caliente mid-novela](mid-novel-repair.md) — lecturas intermedias deben reparar lo ya escrito (con memoria de hallazgos y frenos), no solo guiar capitulos futuros.
 - [Prohibicion en prompt necesita red determinista](prompt-prohibition-needs-deterministic-net.md) — el planner propone la accion prohibida igual; sin red que la traduzca, el ejecutor quema presupuesto en no-ops.
+- [Secciones por numero, no por titulo](section-type-by-number.md) — prologo/epilogo llevan titulo propio; resolver tipo de seccion por chapterNumber (0/-1/-2), nunca por match de titulo exacto.
