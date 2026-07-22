@@ -3548,7 +3548,33 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
             // el umbral y no haya severidad alta, si una dimension critica de
             // segunda mitad sigue KO forzamos otra iteracion (siempre que el
             // Auditor haya emitido instrucciones accionables).
-            const needsRetry = (sa.puntuacion_global < SA_THRESHOLD || hasAlta || criticalSecondHalfKO) && sa.instrucciones_revision.trim().length > 0;
+            // [Fix245] Mismo agujero que el Lector Beta: si el SA pide revision
+            // (score bajo / alta / dim critica KO) pero llega SIN
+            // instrucciones_revision, needsRetry quedaba en false y el score bajo
+            // se aceptaba en SILENCIO. Sintetizamos instrucciones desde sus
+            // problemas (que si traen descripcion + sugerencia) antes de decidir.
+            const wantsRetrySA = sa.puntuacion_global < SA_THRESHOLD || hasAlta || criticalSecondHalfKO;
+            if (wantsRetrySA && !sa.instrucciones_revision.trim()) {
+              if (problemsSummary.trim()) {
+                sa.instrucciones_revision = problemsSummary;
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  agentRole: "architect",
+                  message: `[Fix245] El Auditor Estructural pidió revisión (${sa.puntuacion_global}/10) sin instrucciones de revisión; se sintetizaron desde sus problemas detectados para no perder el reintento.`,
+                  metadata: { fix: "Fix245", iteration: saIter + 1, score: sa.puntuacion_global },
+                });
+              } else {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  agentRole: "architect",
+                  message: `[Fix245] El Auditor Estructural pidió revisión (${sa.puntuacion_global}/10) pero sin instrucciones de revisión NI problemas accionables. No hay material para reintentar: se continúa con la escaleta actual.`,
+                  metadata: { fix: "Fix245", iteration: saIter + 1, score: sa.puntuacion_global },
+                });
+              }
+            }
+            const needsRetry = wantsRetrySA && sa.instrucciones_revision.trim().length > 0;
             const lastIter = saIter === MAX_SA_ITERATIONS - 1;
             // [Fix109d] Early-stop por regresión consecutiva: si llevamos
             // ≥2 iters seguidas por debajo del best, el Arquitecto está
@@ -4361,6 +4387,14 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
             const beta = betaOutcome.result;
             if (!beta) {
               console.warn(`[Orchestrator] Lector Beta de Escaletas (iter ${betaIter}) no devolvió resultado válido. Saliendo del bucle.`);
+              // [Fix245] Visibilidad en el activity log de una salida antes silenciosa.
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                agentRole: "architect",
+                message: `[Fix245] El Lector Beta de Escaletas (iter ${betaIter}) no devolvió un resultado válido. Se continúa con la escaleta vigente sin su evaluación.`,
+                metadata: { fix: "Fix245", betaIter },
+              });
               break;
             }
 
@@ -4421,9 +4455,41 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
 
             // Si no es la última iteración, re-ejecutar Arquitecto con feedback.
             if (betaIter < MAX_BETA_ITERATIONS) {
+              // [Fix245] Antes: un veredicto bajo SIN instrucciones_revision rompia
+              // el bucle en SILENCIO (solo console.warn, invisible en el activity
+              // log) y la escaleta seguia a escritura con problemas mayores sin
+              // intentar ni un retry. Caso real: Beta 7/10 con 1 problema mayor y
+              // "Estructura narrativa completada" en el MISMO segundo. Mismo patron
+              // que Fix240 causa B en el bucle WBA: ahora sintetizamos las
+              // instrucciones desde los problemas detectados (mayores primero) y
+              // solo rompemos si tampoco hay problemas accionables — con aviso
+              // visible en el activity log.
               if (!beta.instrucciones_revision?.trim()) {
-                console.warn(`[Orchestrator] Lector Beta dio score bajo pero sin instrucciones_revision. Saliendo del bucle.`);
-                break;
+                const accionables = beta.problemas
+                  .filter(p => (p.descripcion || "").trim() || (p.sugerencia_concreta || "").trim())
+                  .sort((a, b) => (a.severidad === "mayor" ? -1 : 0) - (b.severidad === "mayor" ? -1 : 0));
+                if (accionables.length > 0) {
+                  beta.instrucciones_revision = accionables.slice(0, 8)
+                    .map((p, i) => `${i + 1}. [${p.severidad}] ${p.descripcion}${p.sugerencia_concreta ? ` — Corrige asi: ${p.sugerencia_concreta}` : ""}`)
+                    .join("\n");
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warn",
+                    agentRole: "architect",
+                    message: `[Fix245] El Lector Beta dio ${beta.puntuacion_global}/10 sin instrucciones de revisión; se sintetizaron ${Math.min(accionables.length, 8)} instrucción(es) desde sus problemas detectados para no perder el reintento.`,
+                    metadata: { fix: "Fix245", betaIter, score: beta.puntuacion_global, synthesized: Math.min(accionables.length, 8) },
+                  });
+                } else {
+                  console.warn(`[Orchestrator] Lector Beta dio score bajo pero sin instrucciones_revision ni problemas accionables. Saliendo del bucle.`);
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warn",
+                    agentRole: "architect",
+                    message: `[Fix245] Lector Beta dio ${beta.puntuacion_global}/10 (< ${BETA_THRESHOLD}) pero sin instrucciones de revisión NI problemas accionables. No hay material para reintentar: se continúa con la escaleta actual.`,
+                    metadata: { fix: "Fix245", betaIter, score: beta.puntuacion_global },
+                  });
+                  break;
+                }
               }
 
               console.log(`[Orchestrator] Lector Beta pidió revisión (score ${beta.puntuacion_global}/10 < ${BETA_THRESHOLD}). Re-ejecutando Arquitecto con feedback...`);
@@ -4549,10 +4615,27 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
                   }
                 } else {
                   console.warn(`[Orchestrator] Revisión del Arquitecto (beta-reader) falló: ${retryResult.error || "vacío/timeout"}. Manteniendo mejor versión vista.`);
+                  // [Fix245] Visibilidad en el activity log de una salida antes silenciosa.
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warn",
+                    agentRole: "architect",
+                    message: `[Fix245] El reintento del Arquitecto tras el feedback del Lector Beta falló (${retryResult.error || "vacío/timeout"}). Se conserva la mejor escaleta vista.`,
+                    metadata: { fix: "Fix245", betaIter },
+                  });
                   break;
                 }
               } catch (retryErr) {
                 console.error(`[Orchestrator] Excepción en revisión del Arquitecto (beta-reader): ${(retryErr as Error).message}. Manteniendo mejor versión vista.`);
+                try {
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warn",
+                    agentRole: "architect",
+                    message: `[Fix245] Excepción en el reintento del Arquitecto tras el feedback del Lector Beta: ${(retryErr as Error).message}. Se conserva la mejor escaleta vista.`,
+                    metadata: { fix: "Fix245", betaIter },
+                  });
+                } catch {}
                 break;
               }
             } else {
@@ -4585,6 +4668,16 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
         }
       } catch (betaErr) {
         console.error(`[Orchestrator] Lector Beta de Escaletas falló (no bloqueante): ${(betaErr as Error).message}`);
+        // [Fix245] Visibilidad en el activity log de un fallo antes silencioso.
+        try {
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warn",
+            agentRole: "architect",
+            message: `[Fix245] El Lector Beta de Escaletas falló (no bloqueante): ${(betaErr as Error).message}. La escaleta continúa sin su evaluación.`,
+            metadata: { fix: "Fix245" },
+          });
+        } catch {}
       }
 
       // [Fix152][Puerta 2/3] Estampa la GUÍA VIVA en el worldBibleData final ANTES
