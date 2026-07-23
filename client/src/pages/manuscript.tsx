@@ -36,6 +36,8 @@ export default function ManuscriptPage() {
   const [autoEditCritique, setAutoEditCritique] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  // [Fix249] Sugerencias de titulo por IA para la novela
+  const [titleSuggestions, setTitleSuggestions] = useState<string[] | null>(null);
   const [reeditAssessment, setReeditAssessment] = useState<any>(null);
   const [rewriteWarningAcknowledged, setRewriteWarningAcknowledged] = useState(false);
   const { currentProject, isLoading: projectsLoading } = useProject();
@@ -128,6 +130,20 @@ export default function ManuscriptPage() {
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // [Fix249] Pide a la IA titulos alternativos para la novela
+  const suggestTitlesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/projects/${currentProject!.id}/title-suggestions`, {});
+      return res.json();
+    },
+    onSuccess: (data: { suggestions: string[] }) => {
+      setTitleSuggestions(data.suggestions || []);
+    },
+    onError: (err: Error) => {
+      toast({ title: "No se pudieron generar sugerencias", description: err.message, variant: "destructive" });
     },
   });
 
@@ -311,6 +327,17 @@ export default function ManuscriptPage() {
                 onClick={() => { setTitleDraft(currentProject.title); setEditingTitle(true); }}
               >
                 <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                data-testid="button-suggest-project-titles"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                title="Sugerir títulos con IA"
+                onClick={() => suggestTitlesMutation.mutate()}
+                disabled={suggestTitlesMutation.isPending}
+              >
+                {suggestTitlesMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               </Button>
             </div>
           )}
@@ -743,6 +770,52 @@ export default function ManuscriptPage() {
           />
         )}
       </div>
+
+      {/* [Fix249] Dialogo de sugerencias de titulo por IA para la novela */}
+      <Dialog open={titleSuggestions !== null} onOpenChange={(open) => { if (!open) setTitleSuggestions(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              Sugerencias de título
+            </DialogTitle>
+            <DialogDescription>
+              Haz clic en una sugerencia para usarla como nuevo título de la novela.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {(titleSuggestions || []).map((s, i) => (
+              <Button
+                key={i}
+                variant="outline"
+                className="w-full justify-start text-left h-auto py-2 whitespace-normal"
+                onClick={() => {
+                  renameMutation.mutate(s);
+                  setTitleSuggestions(null);
+                }}
+                disabled={renameMutation.isPending}
+                data-testid={`button-title-suggestion-${i}`}
+              >
+                {s}
+              </Button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => suggestTitlesMutation.mutate()}
+              disabled={suggestTitlesMutation.isPending}
+              data-testid="button-regenerate-title-suggestions"
+            >
+              {suggestTitlesMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
+              Otras sugerencias
+            </Button>
+            <Button variant="outline" onClick={() => setTitleSuggestions(null)} data-testid="button-close-title-suggestions">
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

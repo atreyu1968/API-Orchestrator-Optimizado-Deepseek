@@ -2408,6 +2408,126 @@ export async function registerRoutes(
     }
   });
 
+  // [Fix249] Edicion manual del titulo de un capitulo desde la pagina de manuscrito.
+  app.patch("/api/projects/:id/chapters/:chapterId/title", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const chapterId = parseInt(req.params.chapterId);
+      const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+      if (!title) return res.status(400).json({ error: "El título no puede estar vacío" });
+      if (title.length > 200) return res.status(400).json({ error: "El título es demasiado largo (máx. 200 caracteres)" });
+      const chapters = await storage.getChaptersByProject(projectId);
+      const chapter = chapters.find(c => c.id === chapterId);
+      if (!chapter) return res.status(404).json({ error: "Capítulo no encontrado en este proyecto" });
+      const updated = await storage.updateChapter(chapterId, { title });
+      res.json(updated);
+    } catch (error) {
+      console.error("[Fix249] Error updating chapter title:", error);
+      res.status(500).json({ error: "No se pudo actualizar el título del capítulo" });
+    }
+  });
+
+  // [Fix249] Sugerencias de titulo por IA. Sin chapterId en el body sugiere
+  // titulos para la NOVELA; con chapterId sugiere titulos para ese capitulo.
+  app.post("/api/projects/:id/title-suggestions", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      // [Fix249] chapterId invalido en el body = 400, no caer al modo novela en silencio
+      let chapterId: number | null = null;
+      if (req.body?.chapterId !== undefined && req.body?.chapterId !== null && req.body?.chapterId !== "") {
+        chapterId = parseInt(String(req.body.chapterId));
+        if (!Number.isInteger(chapterId) || chapterId <= 0) {
+          return res.status(400).json({ error: "chapterId inválido" });
+        }
+      }
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      const chapters = await storage.getChaptersByProject(projectId);
+
+      let prompt: string;
+      if (chapterId) {
+        const chapter = chapters.find(c => c.id === chapterId);
+        if (!chapter) return res.status(404).json({ error: "Capítulo no encontrado" });
+        const label = chapter.chapterNumber === 0 ? "Prólogo" : chapter.chapterNumber === -1 ? "Epílogo" : chapter.chapterNumber === -2 ? "Nota del Autor" : `Capítulo ${chapter.chapterNumber}`;
+        const preview = (chapter.content || "").substring(0, 6000);
+        prompt = `Eres un editor literario experto en titular capítulos de novela en español.
+
+NOVELA: "${project.title}" (género: ${project.genre}, tono: ${project.tone})
+SECCIÓN A TITULAR: ${label}${chapter.title ? ` (título actual: "${chapter.title}")` : ""}
+
+TEXTO DEL CAPÍTULO (inicio):
+${preview}
+
+Propón 6 títulos evocadores y distintos entre sí para esta sección. Deben:
+- Ser breves (2-6 palabras), sin spoilers del final del libro.
+- Encajar con el tono de la novela y sonar a novela ${project.genre} publicada.
+- NO repetir el título actual ni variaciones triviales de él.
+
+RESPONDE ÚNICAMENTE CON JSON:
+{"sugerencias": ["...", "...", "...", "...", "...", "..."]}`;
+      } else {
+        const chapterTitles = chapters
+          .filter(c => c.title)
+          .slice(0, 40)
+          .map(c => `- ${c.title}`)
+          .join("\n");
+        const firstChapter = chapters.find(c => c.chapterNumber === 1) || chapters[0];
+        const preview = (firstChapter?.content || "").substring(0, 4000);
+        prompt = `Eres un editor literario experto en titular novelas en español para el mercado editorial.
+
+NOVELA ACTUAL: "${project.title}" (género: ${project.genre}, tono: ${project.tone})
+PREMISA: ${project.premise || "(sin premisa)"}
+
+TÍTULOS DE SUS CAPÍTULOS (dan pistas del contenido y los motivos recurrentes):
+${chapterTitles || "(sin títulos de capítulo)"}
+
+INICIO DE LA NOVELA:
+${preview}
+
+Propón 6 títulos alternativos para la novela, comerciales y evocadores. Deben:
+- Sonar a novela ${project.genre} publicada (piensa en portadas reales del género).
+- Capturar el tema o motivo central sin destripar el final.
+- Ser distintos entre sí (mezcla: alguno corto y contundente, alguno más lírico).
+- NO repetir el título actual ni variaciones triviales de él.
+
+RESPONDE ÚNICAMENTE CON JSON:
+{"sugerencias": ["...", "...", "...", "...", "...", "..."]}`;
+      }
+
+      const { default: OpenAI } = await import("openai");
+      const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
+      const response = await ai.chat.completions.create({
+        model: "deepseek-v4-flash",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.9,
+        top_p: 0.95,
+        max_tokens: 2048,
+        ...({ thinking: { type: "disabled" } } as any),
+      });
+      await recordRawAiUsage(response, { agentName: "title-suggester", model: "deepseek-v4-flash", projectId, operation: chapterId ? "chapter-title-suggestions" : "project-title-suggestions" });
+
+      const responseText = response.choices?.[0]?.message?.content || "";
+      let parsed: any = null;
+      try {
+        const { repairJson } = await import("./utils/json-repair.js");
+        parsed = repairJson(responseText);
+      } catch {
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) { try { parsed = JSON.parse(jsonMatch[0]); } catch {} }
+      }
+      const suggestions = Array.isArray(parsed?.sugerencias)
+        ? parsed.sugerencias.filter((s: any) => typeof s === "string" && s.trim()).map((s: string) => s.trim()).slice(0, 8)
+        : [];
+      if (suggestions.length === 0) {
+        return res.status(502).json({ error: "La IA no devolvió sugerencias válidas. Inténtalo de nuevo." });
+      }
+      res.json({ suggestions });
+    } catch (error) {
+      console.error("[Fix249] Error generating title suggestions:", error);
+      res.status(500).json({ error: "No se pudieron generar sugerencias de título" });
+    }
+  });
+
   app.get("/api/projects/:id/world-bible", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
