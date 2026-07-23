@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FileText, Clock, Loader2, Pencil, Check, X, Sparkles, Wand2 } from "lucide-react";
+import { FileText, Clock, Loader2, Pencil, Check, X, Sparkles, Wand2, ShieldCheck, AlertTriangle, HelpCircle, CheckCircle2 } from "lucide-react";
 import type { Chapter } from "@shared/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -20,6 +20,15 @@ import { useToast } from "@/hooks/use-toast";
 
 interface ChapterViewerProps {
   chapter: Chapter | null;
+}
+
+// [Fix252] Hallazgo del verificador de datos
+interface FactFinding {
+  afirmacion: string;
+  categoria: string;
+  veredicto: "incorrecto" | "dudoso" | "correcto";
+  explicacion: string;
+  sugerencia: string;
 }
 
 function splitLongParagraphs(content: string): string {
@@ -191,6 +200,27 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
     },
   });
 
+  // [Fix252] Verificador de datos del capitulo (fechas, geografia, nombres,
+  // cifras). Resultado ligado al id del capitulo para no mostrar el de otro.
+  const [factCheck, setFactCheck] = useState<{ chapterId: number; summary: string; findings: FactFinding[] } | null>(null);
+  const [factCheckOpen, setFactCheckOpen] = useState(false);
+
+  const factCheckMutation = useMutation({
+    mutationFn: async () => {
+      if (!chapter) throw new Error("Sin capítulo");
+      const res = await apiRequest("POST", `/api/projects/${chapter.projectId}/chapters/${chapter.id}/fact-check`, {});
+      const data = await res.json();
+      return { chapterId: chapter.id, summary: (data.summary || "") as string, findings: (data.findings || []) as FactFinding[] };
+    },
+    onSuccess: (data) => {
+      setFactCheck(data);
+      setFactCheckOpen(true);
+    },
+    onError: (err: any) => {
+      toast({ title: "No se pudo verificar el capítulo", description: err?.message || "Error desconocido", variant: "destructive" });
+    },
+  });
+
   const saveContentMutation = useMutation({
     mutationFn: async () => {
       if (!chapter) throw new Error("Sin capítulo");
@@ -334,6 +364,27 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => {
+                if (factCheck && factCheck.chapterId === chapter.id) {
+                  setFactCheckOpen(true);
+                } else {
+                  factCheckMutation.mutate();
+                }
+              }}
+              disabled={factCheckMutation.isPending}
+              title="Verifica fechas, datos históricos, geografía, nombres y cifras de este capítulo"
+              data-testid="button-fact-check-chapter"
+            >
+              {factCheckMutation.isPending
+                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                : <ShieldCheck className="h-4 w-4 mr-2" />}
+              {factCheckMutation.isPending ? "Verificando..." : "Verificar datos"}
+            </Button>
+          )}
+          {!isLoading && !!chapter.content && !isEditing && (
+            <Button
+              variant="outline"
+              size="sm"
               onClick={startEditing}
               data-testid="button-edit-chapter-content"
             >
@@ -410,6 +461,82 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
           )}
         </ScrollArea>
       )}
+
+      {/* [Fix252] Dialogo de resultados del verificador de datos */}
+      <Dialog open={factCheckOpen} onOpenChange={setFactCheckOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5" />
+              Verificación de datos del capítulo
+            </DialogTitle>
+            <DialogDescription>
+              Fechas, datos históricos, geografía, nombres reales y cifras. Los elementos ficticios de la novela no se señalan.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="flex-1 min-h-0 pr-3">
+            {factCheck?.summary && (
+              <p className="text-sm mb-4" data-testid="text-fact-check-summary">{factCheck.summary}</p>
+            )}
+            {factCheck && factCheck.findings.length === 0 && (
+              <div className="flex flex-col items-center py-8 text-center">
+                <CheckCircle2 className="h-10 w-10 text-green-600 dark:text-green-400 mb-2" />
+                <p className="text-sm text-muted-foreground">No se detectaron datos problemáticos en este capítulo.</p>
+              </div>
+            )}
+            <div className="space-y-3">
+              {(factCheck?.findings || []).map((f, i) => {
+                const isBad = f.veredicto === "incorrecto";
+                const isDoubt = f.veredicto === "dudoso";
+                return (
+                  <div
+                    key={i}
+                    className={`rounded-md border p-3 ${isBad ? "border-destructive/50 bg-destructive/5" : isDoubt ? "border-amber-500/50 bg-amber-500/5" : "border-green-500/40 bg-green-500/5"}`}
+                    data-testid={`card-fact-finding-${i}`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {isBad ? (
+                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+                      ) : isDoubt ? (
+                        <HelpCircle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-green-600 dark:text-green-400" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant={isBad ? "destructive" : "secondary"} className="text-[10px] uppercase">
+                            {f.veredicto}
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px]">{f.categoria}</Badge>
+                        </div>
+                        <p className="text-sm font-medium mt-1.5">{f.afirmacion}</p>
+                        {f.explicacion && <p className="text-sm text-muted-foreground mt-1">{f.explicacion}</p>}
+                        {f.sugerencia && f.veredicto !== "correcto" && (
+                          <p className="text-sm mt-1"><span className="font-medium">Sugerencia:</span> {f.sugerencia}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => factCheckMutation.mutate()}
+              disabled={factCheckMutation.isPending}
+              data-testid="button-rerun-fact-check"
+            >
+              {factCheckMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
+              Volver a verificar
+            </Button>
+            <Button variant="outline" onClick={() => setFactCheckOpen(false)} data-testid="button-close-fact-check">
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* [Fix251] Dialogo de sugerencias de titulo por IA (movido desde la lista) */}
       <Dialog open={suggestions !== null} onOpenChange={(open) => { if (!open) setSuggestions(null); }}>

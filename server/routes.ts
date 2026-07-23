@@ -2567,6 +2567,101 @@ RESPONDE ÚNICAMENTE CON JSON:
     }
   });
 
+  // [Fix252] Verificador de datos del capitulo: fechas, geografia, nombres
+  // reales, cifras y afirmaciones verificables del mundo real. Ignora los
+  // elementos ficticios propios de la novela.
+  app.post("/api/projects/:id/chapters/:chapterId/fact-check", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const chapterId = parseInt(req.params.chapterId);
+      if (isNaN(projectId) || isNaN(chapterId)) {
+        return res.status(400).json({ error: "Identificadores inválidos" });
+      }
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      const chapters = await storage.getChaptersByProject(projectId);
+      const chapter = chapters.find(c => c.id === chapterId);
+      if (!chapter) return res.status(404).json({ error: "Capítulo no encontrado en este proyecto" });
+
+      const MARKER = "---CONTINUITY_STATE---";
+      let prose = chapter.content || "";
+      if (prose.includes(MARKER)) prose = prose.split(MARKER)[0];
+      prose = prose.trim();
+      if (!prose) return res.status(400).json({ error: "El capítulo no tiene texto que verificar todavía" });
+      // Techo defensivo de entrada: capitulos de novela rondan 2-4k palabras
+      const proseForCheck = prose.substring(0, 60000);
+
+      const label = chapter.chapterNumber === 0 ? "Prólogo" : chapter.chapterNumber === -1 ? "Epílogo" : chapter.chapterNumber === -2 ? "Nota del Autor" : `Capítulo ${chapter.chapterNumber}`;
+      const prompt = `Eres un verificador de datos (fact-checker) editorial para novelas en español. Tu trabajo es revisar el texto de un capítulo y detectar ERRORES VERIFICABLES DEL MUNDO REAL.
+
+NOVELA: "${project.title}" (género: ${project.genre}). SECCIÓN: ${label}${chapter.title ? ` — "${chapter.title}"` : ""}.
+
+QUÉ VERIFICAR (solo afirmaciones sobre el mundo REAL):
+- FECHAS Y CRONOLOGÍA HISTÓRICA: años de guerras, reinados, inventos, muertes de personajes históricos reales, anacronismos (objetos/tecnología/palabras que no existían en la época en que transcurre la escena).
+- GEOGRAFÍA: ubicaciones, distancias, ríos, montañas, clima, fronteras de la época, direcciones de viaje imposibles.
+- NOMBRES Y TÍTULOS REALES: personajes históricos, cargos, instituciones, obras, topónimos (grafía correcta).
+- CIFRAS Y HECHOS FÍSICOS: números, unidades, velocidades, duraciones, procesos naturales o técnicos descritos de forma imposible.
+- CULTURA MATERIAL: vestimenta, armas, comida, moneda, idiomas coherentes con la época y el lugar.
+
+QUÉ NO SEÑALAR:
+- Elementos claramente FICTICIOS de la novela (personajes, lugares, organizaciones inventados): son intencionados.
+- Licencias narrativas subjetivas (metáforas, exageraciones del narrador o de un personaje al hablar).
+- Un personaje puede EQUIVOCARSE a propósito en un diálogo; señálalo solo como "dudoso" y dilo.
+
+Para cada hallazgo asigna un veredicto: "incorrecto" (error claro y verificable), "dudoso" (posible error o dato no confirmable con seguridad) o "correcto" (dato real notable que has comprobado y está bien; incluye SOLO los más relevantes, máximo 5). Máximo 20 hallazgos en total, ordenados: incorrectos primero, luego dudosos, luego correctos.
+
+TEXTO DEL CAPÍTULO:
+${proseForCheck}
+
+RESPONDE ÚNICAMENTE CON JSON:
+{"resumen": "1-2 frases con la valoración global", "hallazgos": [{"afirmacion": "cita breve o paráfrasis del dato en el texto", "categoria": "historia|geografia|nombres|cifras|cultura", "veredicto": "incorrecto|dudoso|correcto", "explicacion": "por qué, con el dato real correcto si aplica", "sugerencia": "cómo corregirlo en el texto (vacío si veredicto=correcto)"}]}`;
+
+      const { default: OpenAI } = await import("openai");
+      const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
+      const response = await ai.chat.completions.create({
+        model: "deepseek-v4-flash",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        max_tokens: 8192,
+        ...({ thinking: { type: "disabled" } } as any),
+      });
+      await recordRawAiUsage(response, { agentName: "fact-checker", model: "deepseek-v4-flash", projectId, operation: "chapter-fact-check" });
+
+      const responseText = response.choices?.[0]?.message?.content || "";
+      let parsed: any = null;
+      try {
+        const { repairJson } = await import("./utils/json-repair.js");
+        parsed = repairJson(responseText);
+      } catch {
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) { try { parsed = JSON.parse(jsonMatch[0]); } catch {} }
+      }
+      const VALID_VERDICTS = ["incorrecto", "dudoso", "correcto"];
+      const findings = Array.isArray(parsed?.hallazgos)
+        ? parsed.hallazgos
+            .filter((h: any) => h && typeof h.afirmacion === "string" && h.afirmacion.trim() && VALID_VERDICTS.includes(h.veredicto))
+            .map((h: any) => ({
+              afirmacion: String(h.afirmacion).trim(),
+              categoria: typeof h.categoria === "string" ? h.categoria : "otros",
+              veredicto: h.veredicto as string,
+              explicacion: typeof h.explicacion === "string" ? h.explicacion.trim() : "",
+              sugerencia: typeof h.sugerencia === "string" ? h.sugerencia.trim() : "",
+            }))
+            .slice(0, 20)
+        : [];
+      const summary = typeof parsed?.resumen === "string" && parsed.resumen.trim()
+        ? parsed.resumen.trim()
+        : (findings.length === 0 ? "No se detectaron datos verificables problemáticos en este capítulo." : "");
+      if (!parsed) {
+        return res.status(502).json({ error: "La IA no devolvió un resultado válido. Inténtalo de nuevo." });
+      }
+      res.json({ summary, findings });
+    } catch (error) {
+      console.error("[Fix252] Error fact-checking chapter:", error);
+      res.status(500).json({ error: "No se pudo verificar el capítulo" });
+    }
+  });
+
   app.get("/api/projects/:id/world-bible", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
