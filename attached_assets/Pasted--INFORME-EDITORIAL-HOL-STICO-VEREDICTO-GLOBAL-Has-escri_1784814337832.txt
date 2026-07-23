@@ -1,0 +1,193 @@
+# INFORME EDITORIAL HOLÍSTICO
+
+## VEREDICTO GLOBAL
+
+Has escrito una novela histórica de pulso firme, con una ambientación sólida y un conflicto central potente que sostiene la lectura durante los primeros dos tercios. El pergamino como McGuffin funciona, la Inquisición como antagonista sistémico está bien caracterizada, y los arcos de Lisardo, Jericó y Efraín tienen la densidad necesaria para el género. Sin embargo, la novela arrastra problemas estructurales que lastran su recta final: el segundo acto pierde tensión entre los capítulos 11 y 16 por un exceso de exposición y planificación, la subtrama del gremio de plateros y Rodrigo de Valderrama se introduce con fuerza pero se abandona sin resolución narrativa, y el epílogo, aunque necesario, se alarga en múltiples perspectivas que diluyen el impacto del cierre. El clímax de la ejecución de Efraín es el punto más alto, pero la posterior negociación con Jericó y la huida se extienden en una resolución agridulce que pide más síntesis. Con una cirugía centrada en ritmo, cierre de subtramas y poda de repeticiones, la novela puede alcanzar un nivel publicable.
+
+## PROBLEMAS ESTRUCTURALES (crítico)
+
+1. **Segundo acto desinflado (caps 11-16)**: Tras el clímax de la cripta en cap 15, la novela se toma un respiro prolongado con la planificación del rescate y la traducción del pergamino. Los caps 12, 13 y 14 acumulan mucha exposición sin que ocurra un acontecimiento que eleve la tensión. La conversación de Lisardo con Áurea (cap 12), la traducción de Laila (cap 13) y el trazado del plano (cap 14) son necesarios para la trama, pero su ejecución es estática: los personajes hablan y planifican, pero no sucede nada que los ponga en peligro inminente. Esto rompe la inercia que venía de la huida por los tejados (cap 9) y la pelea a cuchillo (cap 10). El lector siente que la novela frena en seco.
+
+2. **Subtrama del gremio de plateros y Rodrigo de Valderrama abandonada**: La marca de platero (tres líneas bajo una luna) se presenta como una pista clave en caps 6-7 y se vincula al delator en caps 13-14. Se llega a la cripta, se encuentra un cofre con documentos y el nombre de Valderrama. Pero a partir de ahí, esta línea narrativa muere. Nunca se explica qué ocurrió con la familia del delator, si el nombre se hizo público, ni cómo afectó a la trama más allá de la cripta. Es un hilo que se tiende y se corta, dejando la sensación de que fue un recurso mecánico para llevar a los personajes al subsuelo.
+
+3. **Clímax múltiple con resolución alargada**: La muerte de Efraín en la hoguera (cap 30) es un clímax emocional devastador. Sin embargo, la novela continúa durante cinco capítulos más (31-35) más un epílogo, con la huida a Génova, la adaptación al exilio, la visita de Lorenzo y la despedida final. Esto crea una secuencia de anticlímax que diluye la fuerza del momento central. La historia de Lisardo se cierra bien, pero la profusión de escenas finales (Laila enseñando, el secretario del cardenal, Diego copiando, Isabel leyendo) convierte el cierre en una colección de estampas que podrían haberse comprimido en un único epílogo más ceñido.
+
+## ARCOS DE PERSONAJE (mayor)
+
+- **Lisardo de Cuéllar**: Arco completo y convincente. Pasa de escribano cobarde a fugitivo que mata a un hombre, resiste la tortura y acepta el exilio para proteger a su familia. Su evolución es gradual y creíble. La escena en cap 34, cuando entrega el pergamino a Lorenzo, es el clímax de su transformación: de depositario de la verdad a transmisor de un legado. Buen trabajo.
+
+- **Fray Jericó de Soria**: El arco más logrado de la novela. Pasa de inquisidor implacable a hombre roto por su pasado, que mata a su propio subordinado para salvar a Lisardo. El flashback de Wittenberg (cap 23) es necesario y está bien insertado. Su derrumbe final en cap 28 (quema del pergamino y desmayo) es coherente con la acumulación de contradicciones. La ambigüedad moral de Jericó eleva el conjunto.
+
+- **Laila al-Qurtubí**: Arco funcional. Pasa de librera desconfiada a líder de la resistencia morisca. Su decisión de quedarse en Sevilla mientras Lisardo huye (cap 32) es coherente con su carácter. Sin embargo, su resolución final en el epílogo (enseñando en la Alpujarra) es necesaria pero esquemática: se nos dice que sigue luchando, pero no hay un desafío nuevo que la ponga a prueba. Podría haber tenido una última escena de conflicto para sellar su arco.
+
+- **Efraín de Buelna**: Arco trágico y emocionante. Su cobardía inicial, su colaboración forzada y su ejecución en la hoguera están bien construidas. La escena del juicio (cap 20) es una de las mejores de la novela. Su muerte genera el peso emocional que impulsa el tercer acto. Correcto.
+
+- **Áurea de Cuéllar**: Arco de transformación notable. Pasa de esposa sumisa a mujer que miente bajo juramento (cap 22), amenaza a sicarios (cap 31) y lidera la huida. Su confrontación con Jericó y su declaración jurada son puntos álgidos. Sin embargo, durante la segunda mitad de la novela (caps 25-31) queda reducida a acompañante de Lisardo, perdiendo iniciativa. Se echa en falta un momento de acción propia en el tramo final.
+
+- **Azucena**: Personaje funcional, más símbolo de lo que está en juego que figura con agencia propia. Su aparición en cap 24 (reencuentro) es conmovedora, pero luego desaparece hasta el epílogo. Su función está cumplida, pero es un personaje plano dentro de una novela que busca densidad.
+
+- **Justino de Bedoya**: Villano unidimensional pero efectivo. Su muerte a manos de Jericó (cap 26) es un punto de giro necesario. No hay problema en su arco, aunque su motivación (odio a los conversos) es genérica.
+
+- **Problema**: La subtrama de **Rodrigo de Valderrama** y el gremio de plateros se introduce, se usa como pista, y se abandona sin que ningún personaje (ni siquiera Jericó o el Arzobispo) reaccione a ella. Es un arco de personaje (el delator) que queda sin cerrar: nunca sabemos si su nombre se reveló, si su familia fue deshonrada o si la Inquisición lo encubrió. Esto es un hilo roto.
+
+## CONTINUIDAD Y COHERENCIA INTERNA (mayor)
+
+- **Heridas del protagonista**: En general coherentes. Recibe un roce de arcabuz en el hombro izquierdo (cap 8), luego la herida es tratada (cap 11), le duele en la cripta (cap 15), se disloca en el potro (cap 16), y sigue doliéndole en el exilio. Sin embargo, hay una posible incongruencia: en cap 10, cuando pelea con Justino, usa el brazo izquierdo (el hombro herido) para clavar el punzón; debería dolerle más de lo que se describe. También en cap 21 recibe un balazo en la pierna izquierda; en cap 31 cabalga durante horas y luego se menciona la herida, pero no hay señales de infección o fiebre en el trayecto a Cádiz, lo que resulta poco realista.
+
+- **El plazo de 48 horas**: Jericó da un ultimátum de 48 horas en cap 3. Se menciona en caps 4, 5 y 7 como una cuenta atrás. Sin embargo, en cap 10 la acción ocurre al menos al tercer día, y en cap 16 Jericó dice «tienes un día». El plazo se rompe sin que la novela lo justifique narrativamente. Las 48 horas debieran haber expirado, pero Jericó extiende el plazo _ad hoc_ sin que el lector vea una razón clara. Es un desajuste temporal que conviene anclar con alguna referencia (por ejemplo, que Jericó espera deliberadamente para quebrar a Lisardo).
+
+- **Número de copias del pergamino**: Puede confundir al lector. En cap 24, Jericó quema una copia; en cap 25, el Arzobispo dice que guardaba otra copia; en cap 28, el Arzobispo quema una tercera copia; en cap 34, Lisardo entrega una copia a Lorenzo. Aunque la novela maneja esta ambigüedad como parte del juego de engaños (la verdad se multiplica), el lector puede perderse. Sería útil que algún personaje explicara que todas son transcripciones del mismo original destruido.
+
+- **Desaparición de personajes secundarios**: La viuda de la calle del Agua aparece en cap 19 (refugio de Laila) y luego se menciona en cap 7 (traducción del monje) y en cap 18 (la viuda ha desaparecido). En cap 21 se dice que los familiares la capturaron, pero nunca más se sabe de ella. Cierra su arco fuera de escena. Lo mismo ocurre con el carcelero Ruiz (cap 12 y 21): ayuda a la fuga, pero luego no se sabe si fue descubierto o recompensado. Yusuf, el herrero (cap 19), aparece solo para dar una contraseña y desaparece.
+
+## RITMO Y TENSIÓN (mayor)
+
+- **Arranque (prólogo – cap 3)**: Excelente. El prólogo es atmosférico y plantea el misterio. Los caps 1-3 establecen conflicto, personajes y amenaza con gran eficacia. Tensión alta.
+
+- **Desarrollo medio (caps 4-10)**: Buen ritmo, con alternancia de escenas de persecución (cap 8 tejados, cap 9 interrogatorio de Áurea, cap 10 pelea a cuchillo) y momentos de respiro (cap 4 confesión, cap 5 encuentro con Laila, cap 6 taberna, cap 7 traducción). La tensión se mantiene gracias al peligro constante.
+
+- **Segundo acto (caps 11-16)**: **Punto débil**. Tras la pelea del cap 10, los caps 11-14 son predominantemente expositivos: curación, plano, traducción, planificación. No hay acción externa que amenace a los personajes (excepto el registro en cap 14, que es breve y no tiene consecuencias). La tensión cae notablemente. Cap 15 (cripta) recupera el pulso, pero los cuatro caps anteriores se sienten lastrados.
+
+- **Tercer acto (caps 16-23)**: Ritmo excelente. La tortura de Lisardo (cap 16), la oferta de Jericó (cap 17), la delación de Efraín (cap 18), la fuga de Laila (cap 19), el juicio y ejecución (caps 20-21), la declaración de Áurea (cap 22) y el flashback de Jericó (cap 23) mantienen una tensión creciente y bien dosificada. Es el tramo más logrado.
+
+- **Clímax y resolución (caps 24-30)**: La tensión se sostiene, pero se alarga. Los caps 24-27 (pacto con Jericó, encuentro con el Arzobispo, asesinato de Justino, nuevo salvoconducto) son necesarios pero se sienten como _varios finales_ antes del final. La huida en carro (cap 28) y el combate en la venta (cap 31) añaden acción, pero la sensación de anticlímax es inevitable porque el clímax emocional ya ocurrió con la muerte de Efraín.
+
+- **Epílogo (caps 32-35 + epílogo)**: Demasiado extenso. La historia de Lisardo se cierra bien en cap 35. Los caps 32 (Laila), 33 (Génova), 34 (entrega a Lorenzo) y el epílogo (múltiples perspectivas) son necesarios para mostrar el legado, pero podrían haberse sintetizado en un solo capítulo final que combinara todas las voces. Actualmente, el lector puede sentir que la novela termina varias veces.
+
+## ESCENAS Y CAPÍTULOS PROBLEMÁTICOS (mayor/menor)
+
+- **Cap 14 — Redundancia expositiva**: Escena en la posada donde se traza el plano y se discuten los símbolos. Gran parte de la información ya está en cap 13 (la traducción del pergamino). El registro del Santo Oficio al inicio (golpe en la puerta) es un buen añadido de tensión, pero se desaprovecha porque no tiene consecuencias. La escena se alarga con detalles del soplete y las trampas que podrían integrarse de forma más dinámica. **Propuesta**: reescritura severa. Conservar el material único (registro, símbolos, discusión de trampas) pero reestructurar para que ocurra mientras los personajes están en movimiento, con mayor sensación de peligro.
+
+- **Cap 12 — Conversación estática**: Lisardo y Áurea en el corralillo. Necesaria para la confesión del pasado y la planificación, pero se siente como una escena de «descarga de información». Puede acortarse intercalando recuerdos de la infancia de Lisardo (que ya están en cap 4) o añadiendo un elemento de peligro (por ejemplo, que se oigan pasos de patrullas). **Propuesta**: reescribir para que la confesión ocurra mientras Lisardo se venda la herida, dando movimiento físico a la escena.
+
+- **Cap 33 — Exceso de reflexión**: Escena de Lisardo en Génova; la carta a Laila, los recuerdos del limonero y la contemplación del mar se alargan más de lo necesario. La información clave (que ha decidido no enviar la carta) puede transmitirse en dos párrafos. **Propuesta**: reducir a la mitad, manteniendo solo la reflexión sobre el precio de la verdad y la decisión de callar.
+
+- **Caps 32, 34 y epílogo — Multiplicidad de cierres**: La novela ofrece una escena para Laila (cap 32), una para Lisardo (caps 33-35), una para la transmisión del legado (cap 34), y luego el epílogo con Lorenzo, el secretario del cardenal, Diego, Isabel... Aunque todas son hermosas por separado, juntas producen saturación. **Propuesta**: fusionar cap 32, 34 y el epílogo en un único capítulo final que combine las voces de Laila, Lorenzo e Isabel, manteniendo solo la esencia de cada una.
+
+- **Cap 11 — Oportunidad perdida**: La curación de Lisardo por Laila es necesaria, pero la escena es muy estática. El momento en que ella le dice que Hamid ha muerto podría tener más impacto si ocurriera mientras forcejean con la herida (por ejemplo, al aplicar el aguardiente). **Propuesta**: reescribir para que la información se transmita en un contexto de mayor urgencia.
+
+## REPETICIONES Y CLICHÉS (menor)
+
+- **Frase «la verdad no se quema, se esparce»**: Aparece dicha por el mártir (prólogo), Jericó (cap 17, cap 24), el cardenal (cap 28) y Lisardo (cap 34). Cuatro veces es excesivo. La variante «la verdad perdura» o «la verdad renace de sus cenizas» podría usarse para evitar la repetición literal.
+
+- **Cliché del inquisidor con un pasado trágico**: Jericó (familia asesinada por luteranos) es un arquetipo bien ejecutado, pero reconocible. No es un problema grave, pero subvierte poco el lugar común.
+
+- **Arquetipo del erudito borracho redimido**: Efraín es funcional y su muerte le da peso, pero el «monje borracho que termina traicionando» es un recurso conocido.
+
+- **Estructura de persecución repetida**: Lisardo es perseguido en caps 8 (tejados), 10 (callejones), 15 (pozo), 21 (río), 31 (venta). Si bien cada escena tiene su identidad, la sensación de _dejà vu_ puede aparecer. La del cap 21 (alcantarillas) es la más original.
+
+- **Descripciones atmosféricas reiteradas**: El olor a humedad, a podrido, a brea, el frío de la piedra, el calor del sol aparecen con frecuencia y en contextos similares (celdas, alcantarillas, criptas). Funcionan para crear ambiente, pero podrían dosificarse para no saturar.
+
+## SUGERENCIAS CONCRETAS DE CORRECCIÓN
+
+1. En cap 14, reescribir a fondo la escena de la posada: conservar el registro del Santo Oficio, los símbolos dibujados por Efraín y la mención de las trampas, pero reestructurar para que la tensión aumente gradualmente, integrando la información del plano mientras los personajes discuten bajo la amenaza de ser descubiertos. Eliminar la repetición de información ya dicha en cap 13 (la transcripción del hebreo, la ubicación del pozo).
+
+2. En el epílogo (cap -1), añadir un párrafo que cierre la subtrama de Rodrigo de Valderrama: por ejemplo, que Lorenzo descubre que el nombre fue borrado de los registros del gremio, o que la familia sigue siendo poderosa, o que la verdad salió a la luz en algún círculo erudito. No necesita ser una escena, basta con una línea narrativa.
+
+3. En caps 3, 5, 7, 10, 16 y 24, anclar temporalmente el plazo de 48 horas. En cap 3, Jericó dice «cuarenta y ocho horas». En cap 5, añadir una referencia tipo «el primer día había pasado». En cap 7, «quedaban solo doce horas». En cap 10, que alguien diga «el plazo ha expirado». En cap 16, Jericó puede decir «extendí el plazo esperando tu arrepentimiento». En cap 24, Lisardo reflexiona que las horas se rompieron hace días. Esto unifica el cronómetro.
+
+4. En caps 13, 17, 27 y 34, sustituir la frase «la verdad no se quema» por variaciones. Propuestas: «la verdad perdura como brasa bajo la ceniza» (cap 13), «la verdad no muere aunque la entierren» (cap 17), «la verdad se filtra como el agua entre las piedras» (cap 27), «la verdad se transforma, no se destruye» (cap 34).
+
+5. En cap 33, reducir a la mitad la extensión. Eliminar la escena de la carta a Laila (ya está despedida en cap 32) y la reflexión sobre el limonero seco. Conservar la decisión de no enviar la carta, la contemplación del mar y la aceptación del exilio. La extensión actual (unas 1.200 palabras) puede comprimirse a 600.
+
+6. Fusionar o reducir los caps 32, 34 y el epílogo a un único bloque final que combine la escena de Laila enseñando, la entrega a Lorenzo y la niña Isabel leyendo, en un mismo capítulo (por ejemplo, como parte del epílogo). Así se evitan cuatro cierres separados. Propuesta concreta: eliminar cap 32 como capítulo independiente y fundir su contenido con el epílogo; cap 34 (entrega a Lorenzo) mantenerlo como está, pero cortar el exceso de reflexión. El epílogo actual acortarlo a las tres voces (Lorenzo escribe, Laila enseña, Isabel lee) y eliminar la escena del cardenal y el secretario.
+
+## LO QUE FUNCIONA
+
+- La ambientación histórica es rica y verosímil: Sevilla en 1570, la Inquisición, los conversos, el gremio de plateros. Se nota la investigación y el mundo se siente vivo.
+- El conflicto central (el pergamino) es un McGuffin de primer orden, con suficiente peso histórico y emocional para sostener toda la novela.
+- Los arcos de Lisardo y Jericó están trazados con mano firme: ambos personajes evolucionan de forma creíble y su relación de antagonismo-respeto-pacto es el eje moral de la obra.
+- La estructura de persecución y huida funciona cuando la tensión está alta (caps 1-10, 16-23). Las escenas de acción están bien coreografiadas y mantienen al lector en vilo.
+- El clímax de la ejecución de Efraín (cap 30) es emocionalmente devastador y está muy bien construido (juicio, delación, hoguera). Es, sin duda, la escena más lograda de la novela.
+
+## PUNTUACIÓN EDITORIAL (JSON)
+<!-- PUNTUACION_HOLISTICA_INICIO -->
+```json
+{"puntuacion_global": 7, "justificacion": "Novela sólida con buenos personajes y ambientación, pero el segundo acto pierde tensión (caps 11-16), la subtrama del gremio de plateros queda abierta y la resolución se alarga en exceso."}
+```
+<!-- PUNTUACION_HOLISTICA_FIN -->
+
+## INSTRUCCIONES AUTO-APLICABLES (JSON)
+<!-- INSTRUCCIONES_AUTOAPLICABLES_INICIO -->
+```json
+{
+  "instrucciones": [
+    {
+      "capitulos_afectados": [14],
+      "categoria": "trama",
+      "descripcion": "Reescribir a fondo el cap 14 para eliminar redundancia con cap 13 y aumentar la tensión mediante una reestructuración de la escena.",
+      "instrucciones_correccion": "Reescribir cap 14: conservar el material único (registro del Santo Oficio, discusión de los símbolos, mención de las trampas) pero reestructurar para que la tensión sea creciente. Eliminar la repetición de la información sobre el pozo y la entrada que ya aparece en cap 13. Integrar los datos del plano mientras los personajes están en peligro (por ejemplo, que el registro los obligue a esconderse y desde allí susurren los detalles). Convertir la escena en un crescendo que concluya con la decisión de bajar esa misma noche.",
+      "tipo": "estructural",
+      "prioridad": "alta",
+      "plan_por_capitulo": {
+        "14": "Reescribir la secuencia completa: abrir con el registro del Santo Oficio golpeando la puerta (conservar la tensión), luego el silencio y la reanudación de la planificación en voz baja. Reducir la exposición del plano a lo indispensable; la información sobre la Giralda ya está en cap 13. Cerrar con la decisión de bajar esa noche, reforzada por la amenaza del registro."
+      }
+    },
+    {
+      "capitulos_afectados": [-1],
+      "categoria": "trama",
+      "descripcion": "Cerrar la subtrama de Rodrigo de Valderrama en el epílogo.",
+      "instrucciones_correccion": "En el epílogo, añadir un párrafo (máximo 5 líneas) que sugiera el destino del nombre de Rodrigo de Valderrama: por ejemplo, que Lorenzo descubre que la Inquisición borró el nombre del gremio en 1505, o que la verdad sobre el delator solo circula en círculos eruditos. La subtrama no exige una resolución extensa, pero sí un reconocimiento de que existió.",
+      "tipo": "estructural",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [3, 5, 7, 10, 16, 24],
+      "categoria": "continuidad",
+      "descripcion": "Anclar temporalmente el plazo de 48 horas para que tenga un recorrido creíble a lo largo de la novela.",
+      "instrucciones_correccion": "Añadir referencias temporales consistentes: en cap 3 Jericó da el ultimátum ('cuarenta y ocho horas'); en cap 5 añadir 'el primer día había pasado y Azucena seguía presa'; en cap 7 añadir 'quedaban apenas doce horas'; en cap 10, tras la pelea, que Lisardo piense 'el plazo había expirado la noche anterior'; en cap 16, Jericó dice 'he extendido el plazo porque confiaba en tu arrepentimiento'; en cap 24, Lisardo reflexiona 'las cuarenta y ocho horas se rompieron hacía días'. Esto unifica el cronómetro y justifica la flexibilidad de Jericó.",
+      "tipo": "estructural",
+      "prioridad": "alta",
+      "plan_por_capitulo": {
+        "3": "Mantener el ultimátum de Jericó: 'cuarenta y ocho horas'.",
+        "5": "Añadir una línea de pensamiento de Lisardo: 'el primer día se había consumido y Azucena seguía en la celda'.",
+        "7": "Añadir una línea de diálogo o narración: 'quedaban menos de doce horas para el plazo de Jericó'.",
+        "10": "Añadir una línea tras la pelea: 'el plazo había expirado la noche anterior; ahora solo importaba sobrevivir'.",
+        "16": "En el diálogo de Jericó, añadir: 'he extendido el plazo, escribano, porque esperaba tu arrepentimiento'.",
+        "24": "En la reflexión de Lisardo, añadir: 'las cuarenta y ocho horas de Jericó se rompieron hacía días; ya no había plazo, solo un pacto'."
+      }
+    },
+    {
+      "capitulos_afectados": [13, 17, 27, 34],
+      "categoria": "estilo",
+      "descripcion": "Sustituir las repeticiones literales de la frase 'la verdad no se quema, se esparce' por variaciones.",
+      "instrucciones_correccion": "En cap 13, cambiar la frase de Laila por 'la verdad perdura como brasa bajo la ceniza, pero nunca se apaga del todo'. En cap 17, cambiar la frase de Jericó por 'la verdad no muere aunque la entierren; se filtra como el agua entre las piedras'. En cap 27, cambiar la frase del cardenal por 'la verdad no se destruye, se transforma'. En cap 34, cambiar la frase de Lisardo por 'la verdad se esparce sola, como el polen, aunque no la siembres'.",
+      "tipo": "puntual",
+      "prioridad": "baja"
+    },
+    {
+      "capitulos_afectados": [33],
+      "categoria": "ritmo",
+      "descripcion": "Acortar el cap 33 eliminando la escena de la carta y la reflexión sobre el limonero, que ralentizan el cierre sin aportar información nueva.",
+      "instrucciones_correccion": "Reducir el cap 33 a la mitad: eliminar el párrafo en que Lisardo escribe y guarda la carta (no se envía, ya se despidió de Laila en cap 32). Eliminar la reflexión sobre el limonero seco (ya se aludió en cap 24). Conservar únicamente la contemplación del mar, la aceptación del exilio y la decisión de no enviar la carta, en no más de 600 palabras. La función del cap es mostrar la paz interior de Lisardo, no reiterar pérdidas pasadas.",
+      "tipo": "estructural",
+      "prioridad": "media"
+    },
+    {
+      "capitulos_afectados": [-1, 32, 34],
+      "categoria": "estructura",
+      "descripcion": "Fusionar los caps 32, 34 y el epílogo en un único bloque final que evite la saturación de cierres.",
+      "instrucciones_correccion": "Eliminar el cap 32 como capítulo independiente y trasladar su contenido (Laila enseñando en la Alpujarra) al epílogo, como una de las voces. Mantener el cap 34 (entrega a Lorenzo) como capítulo independiente, pero cortar el exceso de reflexión de Lisardo (ya hay suficiente en cap 33 y 35). El epílogo actual debe acortarse: conservar las voces de Lorenzo (escribiendo), Laila (enseñando) e Isabel (leyendo); eliminar la escena del secretario del cardenal y la del estudiante Diego; son redundantes. El epílogo no debe superar los 800 palabras.",
+      "tipo": "fusionar",
+      "prioridad": "alta",
+      "merge_into": -1,
+      "merge_sources": [32, 34]
+    }
+  ]
+}
+```
+<!-- INSTRUCCIONES_AUTOAPLICABLES_FIN -->
+
+## VEREDICTO DE REPARABILIDAD AUTOMÁTICA (JSON)
+<!-- VEREDICTO_GAT
+Lector Beta
+
+8/10
+
+hace 2 h
+
+Sensación de lectura. Target: 9+.
+
+Ver informe (23.457 car.)
+
+Notas del Editor 
