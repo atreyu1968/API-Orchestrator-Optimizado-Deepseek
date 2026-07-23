@@ -2427,6 +2427,45 @@ export async function registerRoutes(
     }
   });
 
+  // [Fix250] Edicion manual del TEXTO de un capitulo desde el visor. Preserva
+  // el bloque de continuidad (---CONTINUITY_STATE---) del contenido guardado:
+  // el usuario edita solo la prosa; la cola tecnica se reengancha al guardar.
+  app.patch("/api/projects/:id/chapters/:chapterId/content", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const chapterId = parseInt(req.params.chapterId);
+      const newContent = typeof req.body?.content === "string" ? req.body.content : "";
+      if (!newContent.trim()) {
+        return res.status(400).json({ error: "El texto del capítulo no puede quedar vacío" });
+      }
+      const chapters = await storage.getChaptersByProject(projectId);
+      const chapter = chapters.find(c => c.id === chapterId);
+      if (!chapter) return res.status(404).json({ error: "Capítulo no encontrado en este proyecto" });
+      // [Fix250] No pisar un capitulo que los agentes estan escribiendo/editando
+      if (chapter.status === "writing" || chapter.status === "editing") {
+        return res.status(409).json({ error: "El capítulo se está generando ahora mismo; espera a que termine para editarlo" });
+      }
+
+      const MARKER = "---CONTINUITY_STATE---";
+      let finalContent = newContent.trimEnd();
+      const oldContent = chapter.content || "";
+      if (oldContent.includes(MARKER) && !finalContent.includes(MARKER)) {
+        const tail = oldContent.substring(oldContent.indexOf(MARKER));
+        finalContent = `${finalContent}\n\n${tail}`;
+      }
+      const proseOnly = finalContent.includes(MARKER)
+        ? finalContent.split(MARKER)[0]
+        : finalContent;
+      const wordCount = proseOnly.trim().split(/\s+/).filter(Boolean).length;
+
+      const updated = await storage.updateChapter(chapterId, { content: finalContent, wordCount });
+      res.json(updated);
+    } catch (error) {
+      console.error("[Fix250] Error updating chapter content:", error);
+      res.status(500).json({ error: "No se pudo guardar el texto del capítulo" });
+    }
+  });
+
   // [Fix249] Sugerencias de titulo por IA. Sin chapterId en el body sugiere
   // titulos para la NOVELA; con chapterId sugiere titulos para ese capitulo.
   app.post("/api/projects/:id/title-suggestions", async (req: Request, res: Response) => {

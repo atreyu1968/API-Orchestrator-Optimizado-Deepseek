@@ -1,7 +1,13 @@
+import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Clock, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { FileText, Clock, Loader2, Pencil, Check, X } from "lucide-react";
 import type { Chapter } from "@shared/schema";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface ChapterViewerProps {
   chapter: Chapter | null;
@@ -108,6 +114,18 @@ function cleanContentForDisplay(raw: string): string {
   return content.trim();
 }
 
+// [Fix250] Extrae la prosa editable (sin el bloque tecnico de continuidad).
+// A diferencia de cleanContentForDisplay, NO reparte parrafos ni borra lineas:
+// lo que el usuario edita es el texto real guardado.
+function getEditableProse(raw: string): string {
+  const MARKER = "---CONTINUITY_STATE---";
+  let content = raw;
+  if (content.includes(MARKER)) {
+    content = content.split(MARKER)[0];
+  }
+  return content.trimEnd();
+}
+
 function getChapterLabel(chapterNumber: number): string {
   if (chapterNumber === 0) return "Prólogo";
   if (chapterNumber === -1) return "Epílogo";
@@ -116,6 +134,37 @@ function getChapterLabel(chapterNumber: number): string {
 }
 
 export function ChapterViewer({ chapter }: ChapterViewerProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  // [Fix250] Edicion manual del texto del capitulo. Se guarda el id del
+  // capitulo en edicion para que cambiar de capitulo no arrastre el borrador.
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
+  const isEditing = editingId !== null && editingId === chapter?.id;
+  const setIsEditing = (v: boolean) => setEditingId(v && chapter ? chapter.id : null);
+
+  const saveContentMutation = useMutation({
+    mutationFn: async () => {
+      if (!chapter) throw new Error("Sin capítulo");
+      const res = await apiRequest(
+        "PATCH",
+        `/api/projects/${chapter.projectId}/chapters/${chapter.id}/content`,
+        { content: draft },
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      setIsEditing(false);
+      if (chapter) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", chapter.projectId, "chapters"] });
+      }
+      toast({ title: "Texto guardado", description: "El capítulo se ha actualizado." });
+    },
+    onError: (err: any) => {
+      toast({ title: "No se pudo guardar", description: err?.message || "Error desconocido", variant: "destructive" });
+    },
+  });
+
   if (!chapter) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-16">
@@ -129,6 +178,19 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
 
   const isLoading = chapter.status === "writing" || chapter.status === "editing";
   const displayContent = chapter.content ? cleanContentForDisplay(chapter.content) : null;
+
+  const startEditing = () => {
+    setDraft(getEditableProse(chapter.content || ""));
+    setIsEditing(true);
+  };
+
+  const cancelEditing = () => {
+    if (draft !== getEditableProse(chapter.content || "")) {
+      if (!window.confirm("Hay cambios sin guardar. ¿Descartarlos?")) return;
+    }
+    setIsEditing(false);
+    setDraft("");
+  };
 
   return (
     <div className="h-full flex flex-col" data-testid={`viewer-chapter-${chapter.id}`}>
@@ -155,34 +217,86 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
               En progreso
             </Badge>
           )}
+          {!isLoading && !!chapter.content && !isEditing && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={startEditing}
+              data-testid="button-edit-chapter-content"
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              Editar texto
+            </Button>
+          )}
+          {isEditing && (
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => saveContentMutation.mutate()}
+                disabled={saveContentMutation.isPending || !draft.trim()}
+                data-testid="button-save-chapter-content"
+              >
+                {saveContentMutation.isPending
+                  ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  : <Check className="h-4 w-4 mr-2" />}
+                Guardar
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={cancelEditing}
+                disabled={saveContentMutation.isPending}
+                data-testid="button-cancel-chapter-content"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Cancelar
+              </Button>
+            </div>
+          )}
         </div>
       </div>
-      
-      <ScrollArea className="flex-1">
-        {displayContent ? (
-          <article className="prose prose-lg dark:prose-invert max-w-prose mx-auto leading-7 font-serif">
-            <div 
-              dangerouslySetInnerHTML={{ 
-                __html: displayContent
-                  .replace(/\n\n/g, '</p><p>')
-                  .replace(/\n/g, '<br />')
-                  .replace(/^/, '<p>')
-                  .replace(/$/, '</p>')
-              }} 
-            />
-          </article>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Clock className="h-12 w-12 text-muted-foreground/30 mb-4" />
-            <p className="text-muted-foreground">
-              El contenido se está generando...
-            </p>
-            <p className="text-xs text-muted-foreground/60 mt-2">
-              El capítulo aparecerá aquí cuando esté listo
-            </p>
-          </div>
-        )}
-      </ScrollArea>
+
+      {isEditing ? (
+        <div className="flex-1 flex flex-col min-h-0">
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="flex-1 resize-none font-serif text-base leading-7 min-h-0"
+            placeholder="Texto del capítulo..."
+            data-testid="textarea-chapter-content"
+          />
+          <p className="text-xs text-muted-foreground mt-2">
+            {draft.trim() ? draft.trim().split(/\s+/).filter(Boolean).length.toLocaleString() : 0} palabras
+            {" · "}Los metadatos técnicos del capítulo se conservan automáticamente al guardar.
+          </p>
+        </div>
+      ) : (
+        <ScrollArea className="flex-1">
+          {displayContent ? (
+            <article className="prose prose-lg dark:prose-invert max-w-prose mx-auto leading-7 font-serif">
+              <div
+                dangerouslySetInnerHTML={{
+                  __html: displayContent
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/\n/g, '<br />')
+                    .replace(/^/, '<p>')
+                    .replace(/$/, '</p>')
+                }}
+              />
+            </article>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Clock className="h-12 w-12 text-muted-foreground/30 mb-4" />
+              <p className="text-muted-foreground">
+                El contenido se está generando...
+              </p>
+              <p className="text-xs text-muted-foreground/60 mt-2">
+                El capítulo aparecerá aquí cuando esté listo
+              </p>
+            </div>
+          )}
+        </ScrollArea>
+      )}
     </div>
   );
 }
