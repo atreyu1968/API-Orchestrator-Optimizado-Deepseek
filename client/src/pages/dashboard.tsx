@@ -1614,6 +1614,31 @@ export default function Dashboard() {
                       </div>
                     )}
 
+                    {/* [Fix248b] Boton de relanzar pulido SIEMPRE visible en proyectos
+                        completados con lectores bajo meta, aunque el proyecto no tenga
+                        aun los flags de convergencia (escritos por versiones nuevas).
+                        Se oculta solo si la rama ambar de convergencia ya lo muestra. */}
+                    {currentProject.status === "completed" &&
+                      (((fullProjectDetail as any)?.holisticScore != null && (fullProjectDetail as any).holisticScore < 7) ||
+                       ((fullProjectDetail as any)?.betaScore != null && (fullProjectDetail as any).betaScore < 9)) &&
+                      !((fullProjectDetail?.finalReviewResult as any)?._issuesConverged &&
+                        !(fullProjectDetail?.finalReviewResult as any)?._readersMetTargets) && (
+                      <div className="mt-4 pt-4 border-t border-border/50">
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mb-2" data-testid="text-readers-below-target">
+                          ⚠️ Lectores bajo meta (Holístico {(fullProjectDetail as any).holisticScore ?? "?"}/10 de 7, Beta {(fullProjectDetail as any).betaScore ?? "?"}/10 de 9). Puedes relanzar el pulido Holístico+Beta: retoma la mejor versión con el contador de estancamiento a cero.
+                        </p>
+                        <Button
+                          size="sm"
+                          className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+                          onClick={() => resumePolishMutation.mutate(currentProject.id)}
+                          disabled={resumePolishMutation.isPending}
+                          data-testid="button-resume-polish-standalone"
+                        >
+                          {resumePolishMutation.isPending ? "Relanzando..." : "Relanzar pulido Holístico+Beta"}
+                        </Button>
+                      </div>
+                    )}
+
                     {/* Notas del Editor Humano — corrección quirúrgica a partir de texto libre */}
                     {currentProject.status === "completed" && (
                       <div className="mt-4 pt-4 border-t border-border/50">
