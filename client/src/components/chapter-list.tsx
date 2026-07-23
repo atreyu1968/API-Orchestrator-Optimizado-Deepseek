@@ -11,8 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { FileText, CheckCircle, Loader2, Clock, Wand2, Pencil, Sparkles, Check, X } from "lucide-react";
+import { FileText, CheckCircle, Loader2, Clock, Wand2 } from "lucide-react";
 import type { Chapter } from "@shared/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -35,63 +34,11 @@ const statusConfig = {
   completed: { icon: CheckCircle, color: "bg-green-500/20 text-green-600 dark:text-green-400", label: "Completado" },
 };
 
-// [Fix249] Fila que se renderiza como button normalmente y como div en modo
-// edicion de titulo, para no anidar botones dentro de un button (HTML invalido).
-function RowWrapper({ asButton, onClick, className, children, ...rest }: {
-  asButton: boolean;
-  onClick: () => void;
-  className: string;
-  children: React.ReactNode;
-  [key: string]: any;
-}) {
-  if (asButton) {
-    return <button onClick={onClick} className={className} {...rest}>{children}</button>;
-  }
-  return <div className={className} {...rest}>{children}</div>;
-}
-
 export function ChapterList({ chapters, selectedChapterId, onSelectChapter, projectId }: ChapterListProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [redesignChapter, setRedesignChapter] = useState<number | null>(null);
   const [redesignInstructions, setRedesignInstructions] = useState("");
-  // [Fix249] Edicion de titulo de capitulo + sugerencias IA
-  const [editingChapterId, setEditingChapterId] = useState<number | null>(null);
-  const [titleDraft, setTitleDraft] = useState("");
-  const [suggestionsFor, setSuggestionsFor] = useState<{ chapterId: number; suggestions: string[] } | null>(null);
-
-  const renameChapterMutation = useMutation({
-    mutationFn: async ({ chapterId, title }: { chapterId: number; title: string }) => {
-      if (!projectId) throw new Error("Sin projectId");
-      const res = await apiRequest("PATCH", `/api/projects/${projectId}/chapters/${chapterId}/title`, { title });
-      return res.json();
-    },
-    onSuccess: () => {
-      setEditingChapterId(null);
-      setTitleDraft("");
-      if (projectId) {
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "chapters"] });
-      }
-      toast({ title: "Título actualizado" });
-    },
-    onError: (err: any) => {
-      toast({ title: "No se pudo renombrar", description: err?.message || "Error desconocido", variant: "destructive" });
-    },
-  });
-
-  const suggestChapterTitlesMutation = useMutation({
-    mutationFn: async (chapterId: number) => {
-      if (!projectId) throw new Error("Sin projectId");
-      const res = await apiRequest("POST", `/api/projects/${projectId}/title-suggestions`, { chapterId });
-      const data = await res.json();
-      return { chapterId, suggestions: (data.suggestions || []) as string[] };
-    },
-    onSuccess: (data) => setSuggestionsFor(data),
-    onError: (err: any) => {
-      toast({ title: "No se pudieron generar sugerencias", description: err?.message || "Error desconocido", variant: "destructive" });
-    },
-  });
-
   const regenerateMutation = useMutation({
     mutationFn: async ({ fromChapter, instructions }: { fromChapter: number; instructions: string }) => {
       if (!projectId) throw new Error("Sin projectId");
@@ -154,9 +101,7 @@ export function ChapterList({ chapters, selectedChapterId, onSelectChapter, proj
                   hover-elevate active-elevate-2
                   ${isSelected ? "bg-sidebar-accent" : "bg-card"}`}
               >
-                {/* [Fix249] En modo edicion la fila es un div para no anidar botones dentro de un button */}
-                <RowWrapper
-                  asButton={editingChapterId !== chapter.id}
+                <button
                   onClick={() => onSelectChapter(chapter)}
                   className="w-full text-left p-3"
                   data-testid={`button-chapter-${chapter.id}`}
@@ -173,103 +118,32 @@ export function ChapterList({ chapters, selectedChapterId, onSelectChapter, proj
                       {config.label}
                     </Badge>
                   </div>
-                  {editingChapterId === chapter.id ? (
-                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                      <Input
-                        value={titleDraft}
-                        onChange={(e) => setTitleDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && titleDraft.trim()) {
-                            renameChapterMutation.mutate({ chapterId: chapter.id, title: titleDraft.trim() });
-                          }
-                          if (e.key === "Escape") { setEditingChapterId(null); setTitleDraft(""); }
-                        }}
-                        className="h-7 text-sm"
-                        autoFocus
-                        data-testid={`input-chapter-title-${chapter.id}`}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 shrink-0"
-                        onClick={() => titleDraft.trim() && renameChapterMutation.mutate({ chapterId: chapter.id, title: titleDraft.trim() })}
-                        disabled={renameChapterMutation.isPending || !titleDraft.trim()}
-                        data-testid={`button-save-chapter-title-${chapter.id}`}
-                      >
-                        {renameChapterMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 shrink-0"
-                        onClick={() => { setEditingChapterId(null); setTitleDraft(""); }}
-                        data-testid={`button-cancel-chapter-title-${chapter.id}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ) : chapter.title ? (
+                  {chapter.title && (
                     <p className="text-sm text-muted-foreground line-clamp-1">
                       {chapter.title}
                     </p>
-                  ) : null}
+                  )}
                   {chapter.wordCount && chapter.wordCount > 0 && (
                     <p className="text-xs text-muted-foreground/70 mt-1">
                       {chapter.wordCount.toLocaleString()} palabras
                     </p>
                   )}
-                </RowWrapper>
-                <div className="absolute right-2 top-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                  {!!projectId && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        title="Editar título del capítulo"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingChapterId(chapter.id);
-                          setTitleDraft(chapter.title || "");
-                        }}
-                        data-testid={`button-edit-chapter-title-${chapter.id}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        title="Sugerir títulos con IA"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          suggestChapterTitlesMutation.mutate(chapter.id);
-                        }}
-                        disabled={suggestChapterTitlesMutation.isPending}
-                        data-testid={`button-suggest-chapter-titles-${chapter.id}`}
-                      >
-                        {suggestChapterTitlesMutation.isPending && suggestChapterTitlesMutation.variables === chapter.id
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : <Sparkles className="h-3.5 w-3.5" />}
-                      </Button>
-                    </>
-                  )}
-                  {canRedesignFromHere && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      title={`Rediseñar trama desde el capítulo ${chapter.chapterNumber}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRedesignChapter(chapter.chapterNumber);
-                      }}
-                      data-testid={`button-redesign-from-${chapter.chapterNumber}`}
-                    >
-                      <Wand2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
+                </button>
+                {canRedesignFromHere && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-2 top-2 h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                    title={`Rediseñar trama desde el capítulo ${chapter.chapterNumber}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRedesignChapter(chapter.chapterNumber);
+                    }}
+                    data-testid={`button-redesign-from-${chapter.chapterNumber}`}
+                  >
+                    <Wand2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </div>
             );
           })}
@@ -340,53 +214,6 @@ export function ChapterList({ chapters, selectedChapterId, onSelectChapter, proj
         </DialogContent>
       </Dialog>
 
-      {/* [Fix249] Dialogo de sugerencias de titulo por IA para un capitulo */}
-      <Dialog open={suggestionsFor !== null} onOpenChange={(open) => { if (!open) setSuggestionsFor(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5" />
-              Sugerencias de título del capítulo
-            </DialogTitle>
-            <DialogDescription>
-              Haz clic en una sugerencia para usarla como título del capítulo.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            {(suggestionsFor?.suggestions || []).map((s, i) => (
-              <Button
-                key={i}
-                variant="outline"
-                className="w-full justify-start text-left h-auto py-2 whitespace-normal"
-                onClick={() => {
-                  if (suggestionsFor) {
-                    renameChapterMutation.mutate({ chapterId: suggestionsFor.chapterId, title: s });
-                    setSuggestionsFor(null);
-                  }
-                }}
-                disabled={renameChapterMutation.isPending}
-                data-testid={`button-chapter-title-suggestion-${i}`}
-              >
-                {s}
-              </Button>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => suggestionsFor && suggestChapterTitlesMutation.mutate(suggestionsFor.chapterId)}
-              disabled={suggestChapterTitlesMutation.isPending}
-              data-testid="button-regenerate-chapter-title-suggestions"
-            >
-              {suggestChapterTitlesMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
-              Otras sugerencias
-            </Button>
-            <Button variant="outline" onClick={() => setSuggestionsFor(null)} data-testid="button-close-chapter-title-suggestions">
-              Cerrar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

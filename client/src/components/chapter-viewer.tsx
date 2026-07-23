@@ -3,7 +3,16 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { FileText, Clock, Loader2, Pencil, Check, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { FileText, Clock, Loader2, Pencil, Check, X, Sparkles, Wand2 } from "lucide-react";
 import type { Chapter } from "@shared/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -142,6 +151,45 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
   const [draft, setDraft] = useState("");
   const isEditing = editingId !== null && editingId === chapter?.id;
   const setIsEditing = (v: boolean) => setEditingId(v && chapter ? chapter.id : null);
+  // [Fix251] Edicion del titulo del capitulo + sugerencias IA, movidas aqui
+  // desde la tarjeta de la lista (peticion del usuario). Ligadas al id.
+  const [titleEditingId, setTitleEditingId] = useState<number | null>(null);
+  const [titleDraft, setTitleDraft] = useState("");
+  const isTitleEditing = titleEditingId !== null && titleEditingId === chapter?.id;
+  const [suggestions, setSuggestions] = useState<string[] | null>(null);
+
+  const renameChapterMutation = useMutation({
+    mutationFn: async (title: string) => {
+      if (!chapter) throw new Error("Sin capítulo");
+      const res = await apiRequest("PATCH", `/api/projects/${chapter.projectId}/chapters/${chapter.id}/title`, { title });
+      return res.json();
+    },
+    onSuccess: () => {
+      setTitleEditingId(null);
+      setTitleDraft("");
+      setSuggestions(null);
+      if (chapter) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", chapter.projectId, "chapters"] });
+      }
+      toast({ title: "Título actualizado" });
+    },
+    onError: (err: any) => {
+      toast({ title: "No se pudo renombrar", description: err?.message || "Error desconocido", variant: "destructive" });
+    },
+  });
+
+  const suggestTitlesMutation = useMutation({
+    mutationFn: async () => {
+      if (!chapter) throw new Error("Sin capítulo");
+      const res = await apiRequest("POST", `/api/projects/${chapter.projectId}/title-suggestions`, { chapterId: chapter.id });
+      const data = await res.json();
+      return (data.suggestions || []) as string[];
+    },
+    onSuccess: (s) => setSuggestions(s),
+    onError: (err: any) => {
+      toast({ title: "No se pudieron generar sugerencias", description: err?.message || "Error desconocido", variant: "destructive" });
+    },
+  });
 
   const saveContentMutation = useMutation({
     mutationFn: async () => {
@@ -195,14 +243,79 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
   return (
     <div className="h-full flex flex-col" data-testid={`viewer-chapter-${chapter.id}`}>
       <div className="flex items-center justify-between gap-4 pb-4 border-b mb-4">
-        <div>
+        <div className="min-w-0 flex-1">
           <h2 className="text-xl font-semibold font-serif">
             {getChapterLabel(chapter.chapterNumber)}
           </h2>
-          {chapter.title && (
-            <p className="text-lg text-muted-foreground font-serif mt-1">
-              {chapter.title}
-            </p>
+          {isTitleEditing ? (
+            <div className="flex items-center gap-1 mt-1 max-w-xl">
+              <Input
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && titleDraft.trim()) {
+                    renameChapterMutation.mutate(titleDraft.trim());
+                  }
+                  if (e.key === "Escape") { setTitleEditingId(null); setTitleDraft(""); }
+                }}
+                className="h-8 font-serif"
+                autoFocus
+                data-testid="input-chapter-title"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={() => titleDraft.trim() && renameChapterMutation.mutate(titleDraft.trim())}
+                disabled={renameChapterMutation.isPending || !titleDraft.trim()}
+                data-testid="button-save-chapter-title"
+              >
+                {renameChapterMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={() => { setTitleEditingId(null); setTitleDraft(""); }}
+                data-testid="button-cancel-chapter-title"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 mt-1">
+              {chapter.title && (
+                <p className="text-lg text-muted-foreground font-serif truncate" data-testid="text-chapter-title">
+                  {chapter.title}
+                </p>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                title="Editar título del capítulo"
+                onClick={() => {
+                  setTitleDraft(chapter.title || "");
+                  setTitleEditingId(chapter.id);
+                }}
+                data-testid="button-edit-chapter-title"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                title="Sugerir títulos con IA"
+                onClick={() => suggestTitlesMutation.mutate()}
+                disabled={suggestTitlesMutation.isPending || !chapter.content}
+                data-testid="button-suggest-chapter-titles"
+              >
+                {suggestTitlesMutation.isPending
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Sparkles className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
           )}
         </div>
         <div className="flex items-center gap-3">
@@ -297,6 +410,49 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
           )}
         </ScrollArea>
       )}
+
+      {/* [Fix251] Dialogo de sugerencias de titulo por IA (movido desde la lista) */}
+      <Dialog open={suggestions !== null} onOpenChange={(open) => { if (!open) setSuggestions(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              Sugerencias de título del capítulo
+            </DialogTitle>
+            <DialogDescription>
+              Haz clic en una sugerencia para usarla como título del capítulo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {(suggestions || []).map((s, i) => (
+              <Button
+                key={i}
+                variant="outline"
+                className="w-full justify-start text-left h-auto py-2 whitespace-normal"
+                onClick={() => renameChapterMutation.mutate(s)}
+                disabled={renameChapterMutation.isPending}
+                data-testid={`button-chapter-title-suggestion-${i}`}
+              >
+                {s}
+              </Button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => suggestTitlesMutation.mutate()}
+              disabled={suggestTitlesMutation.isPending}
+              data-testid="button-regenerate-chapter-title-suggestions"
+            >
+              {suggestTitlesMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
+              Otras sugerencias
+            </Button>
+            <Button variant="outline" onClick={() => setSuggestions(null)} data-testid="button-close-chapter-title-suggestions">
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
