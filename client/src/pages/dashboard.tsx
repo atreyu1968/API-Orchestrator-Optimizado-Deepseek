@@ -1536,17 +1536,36 @@ export default function Dashboard() {
                           })}
                         </div>
                         {(fullProjectDetail?.finalReviewResult as any)?.issues?.length > 0 && (
-                          <Button
-                            variant="default"
-                            size="sm"
-                            onClick={() => resolveIssuesMutation.mutate(currentProject.id)}
-                            disabled={resolveIssuesMutation.isPending}
-                            data-testid="button-resolve-issues"
-                            className="mt-3 w-full bg-amber-600 hover:bg-amber-700 text-white"
-                          >
-                            <Wrench className="h-4 w-4 mr-2" />
-                            {resolveIssuesMutation.isPending ? "Resolviendo..." : `Resolver ${(fullProjectDetail.finalReviewResult as any).issues.length} Issues`}
-                          </Button>
+                          (fullProjectDetail?.finalReviewResult as any)?._issuesConverged ? (
+                            <>
+                              <p className="mt-3 text-xs text-muted-foreground" data-testid="text-issues-converged">
+                                ✅ Manuscrito TERMINADO ({fullProjectDetail.finalScore ?? 9}/10). El Revisor siempre encontrará matices nuevos en cada relectura; estos issues son pulido opcional.
+                              </p>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => resolveIssuesMutation.mutate(currentProject.id)}
+                                disabled={resolveIssuesMutation.isPending}
+                                data-testid="button-resolve-issues"
+                                className="mt-2 w-full"
+                              >
+                                <Wrench className="h-4 w-4 mr-2" />
+                                {resolveIssuesMutation.isPending ? "Resolviendo..." : "Pulir de todos modos (opcional)"}
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => resolveIssuesMutation.mutate(currentProject.id)}
+                              disabled={resolveIssuesMutation.isPending}
+                              data-testid="button-resolve-issues"
+                              className="mt-3 w-full bg-amber-600 hover:bg-amber-700 text-white"
+                            >
+                              <Wrench className="h-4 w-4 mr-2" />
+                              {resolveIssuesMutation.isPending ? "Resolviendo..." : `Resolver ${(fullProjectDetail.finalReviewResult as any).issues.length} Issues`}
+                            </Button>
+                          )
                         )}
                       </div>
                     )}

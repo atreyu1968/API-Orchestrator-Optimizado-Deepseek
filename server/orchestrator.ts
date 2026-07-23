@@ -9584,17 +9584,46 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const newScore = reviewResult.result?.puntuacion_global || 0;
       const scoreForDb = newScore != null ? Math.round(newScore) : null;
 
+      const newIssueCount = reviewResult.result?.issues?.length || 0;
+
+      // [Fix247] Freno de convergencia: la re-evaluacion SIEMPRE encuentra algo
+      // nuevo (caso real: cada pasada resolvia 2 issues y el Revisor devolvia
+      // otros 2 → el boton "Resolver N Issues" nunca desaparecia y el usuario
+      // percibia que "esto no se termina nunca"). Contamos las pasadas de
+      // resolucion dentro del propio JSON (sin migracion) y, cuando el
+      // manuscrito ya esta en 9+/10 y (a) llevamos 2+ pasadas o (b) los issues
+      // no bajan, declaramos CONVERGENCIA: los issues restantes pasan a ser
+      // pulido OPCIONAL y la UI deja de empujar a seguir. El boton manual
+      // sigue disponible (nunca cerrar la via manual).
+      const prevResolvePasses = Number((finalReviewResult as any)?._resolvePasses) || 0;
+      const resolvePasses = prevResolvePasses + 1;
+      const issuesConverged =
+        newScore >= 9 && (resolvePasses >= 2 || newIssueCount >= issues.length);
+
+      const resultToPersist = {
+        ...(reviewResult.result as any),
+        _resolvePasses: resolvePasses,
+        _issuesConverged: issuesConverged,
+      };
+
       await storage.updateProject(project.id, {
         status: "completed",
         finalScore: scoreForDb,
-        finalReviewResult: reviewResult.result as any,
+        finalReviewResult: resultToPersist as any,
         finalScoreAt: new Date(), // [Fix82]
       } as any);
 
-      const newIssueCount = reviewResult.result?.issues?.length || 0;
+      if (issuesConverged && newIssueCount > 0) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `[Fix247] Convergencia alcanzada tras ${resolvePasses} pasada(s) de resolución: el manuscrito está en ${newScore}/10 y el Revisor Final siempre encontrará matices nuevos en cada relectura. Los ${newIssueCount} issue(s) restantes quedan como pulido OPCIONAL — el manuscrito está TERMINADO y listo para exportar. Puedes seguir puliendo desde el botón si lo deseas.`,
+          agentRole: "final-reviewer",
+        });
+      }
 
       this.callbacks.onAgentStatus("final-reviewer", "completed",
-        `Issues resueltos. ${resolvedCount} capítulos corregidos. Nueva puntuación: ${newScore}/10${newIssueCount > 0 ? ` (${newIssueCount} issues restantes)` : " — sin issues pendientes"}.`
+        `Issues resueltos. ${resolvedCount} capítulos corregidos. Nueva puntuación: ${newScore}/10${newIssueCount > 0 ? (issuesConverged ? ` (${newIssueCount} issues restantes, ahora pulido OPCIONAL — manuscrito TERMINADO)` : ` (${newIssueCount} issues restantes)`) : " — sin issues pendientes"}.`
       );
 
       await storage.createActivityLog({

@@ -33,3 +33,4 @@
 - [Reparacion en caliente mid-novela](mid-novel-repair.md) — lecturas intermedias deben reparar lo ya escrito (con memoria de hallazgos y frenos), no solo guiar capitulos futuros.
 - [Prohibicion en prompt necesita red determinista](prompt-prohibition-needs-deterministic-net.md) — el planner propone la accion prohibida igual; sin red que la traduzca, el ejecutor quema presupuesto en no-ops.
 - [Secciones por numero, no por titulo](section-type-by-number.md) — prologo/epilogo llevan titulo propio; resolver tipo de seccion por chapterNumber (0/-1/-2), nunca por match de titulo exacto.
+- [Bucles de re-evaluacion sin freno](reevaluation-treadmill.md) — un juez que re-lee tras cada correccion SIEMPRE encuentra algo nuevo; todo boton/bucle "resolver issues" necesita freno de convergencia (nota alta + pasadas/no-mejora) que declare TERMINADO.
