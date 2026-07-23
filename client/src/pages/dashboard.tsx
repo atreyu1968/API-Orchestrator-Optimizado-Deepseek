@@ -364,6 +364,33 @@ export default function Dashboard() {
     },
   });
 
+  // [Fix248] Boton para relanzar el pulido Holistico+Beta (endpoint Fix177 que
+  // hasta ahora no tenia UI): via real para subir las notas de los lectores
+  // cuando el flujo de issues ya convergio pero siguen bajo meta.
+  const resumePolishMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/resume-polish`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Pulido relanzado", description: "El bucle Holístico+Beta vuelve a trabajar sobre la mejor versión (contador de estancamiento reseteado)." });
+      addLog("thinking", "Pulido Holístico+Beta relanzado manualmente...", "orchestrator");
+    },
+    onError: (error: any) => {
+      const raw = String(error?.message || "");
+      const is409 = raw.startsWith("409");
+      let desc = "No se pudo relanzar el pulido";
+      if (is409) {
+        desc = "Ya hay un pulido en marcha o pendiente para este proyecto.";
+      } else {
+        const m = raw.match(/\{.*\}/s);
+        if (m) { try { desc = JSON.parse(m[0]).error || desc; } catch {} }
+      }
+      toast({ title: is409 ? "Pulido ya activo" : "Error", description: desc, variant: "destructive" });
+    },
+  });
+
   const [editorialNotes, setEditorialNotes] = useState("");
   const [editorialNotesOpen, setEditorialNotesOpen] = useState(false);
 
@@ -1538,9 +1565,26 @@ export default function Dashboard() {
                         {(fullProjectDetail?.finalReviewResult as any)?.issues?.length > 0 && (
                           (fullProjectDetail?.finalReviewResult as any)?._issuesConverged ? (
                             <>
-                              <p className="mt-3 text-xs text-muted-foreground" data-testid="text-issues-converged">
-                                ✅ Manuscrito TERMINADO ({fullProjectDetail.finalScore ?? 9}/10). El Revisor siempre encontrará matices nuevos en cada relectura; estos issues son pulido opcional.
-                              </p>
+                              {(fullProjectDetail?.finalReviewResult as any)?._readersMetTargets ? (
+                                <p className="mt-3 text-xs text-muted-foreground" data-testid="text-issues-converged">
+                                  ✅ Manuscrito TERMINADO ({fullProjectDetail.finalScore ?? 9}/10, lectores en meta). El Revisor siempre encontrará matices nuevos en cada relectura; estos issues son pulido opcional.
+                                </p>
+                              ) : (
+                                <>
+                                  <p className="mt-3 text-xs text-amber-600 dark:text-amber-400" data-testid="text-issues-converged">
+                                    ⚠️ Este flujo de issues ya convergió (Revisor Final {fullProjectDetail.finalScore ?? 9}/10), pero los lectores siguen bajo meta (Holístico {(fullProjectDetail as any).holisticScore ?? "?"}/10 de 7, Beta {(fullProjectDetail as any).betaScore ?? "?"}/10 de 9): publicable con reservas. Para subir esas notas, relanza el pulido Holístico+Beta o ataca sus quejas por el chat editorial — repetir la resolución de issues no las moverá.
+                                  </p>
+                                  <Button
+                                    size="sm"
+                                    className="mt-2 mr-2 bg-amber-600 hover:bg-amber-700 text-white"
+                                    onClick={() => resumePolishMutation.mutate(currentProject.id)}
+                                    disabled={resumePolishMutation.isPending}
+                                    data-testid="button-resume-polish"
+                                  >
+                                    {resumePolishMutation.isPending ? "Relanzando..." : "Relanzar pulido Holístico+Beta"}
+                                  </Button>
+                                </>
+                              )}
                               <Button
                                 variant="outline"
                                 size="sm"

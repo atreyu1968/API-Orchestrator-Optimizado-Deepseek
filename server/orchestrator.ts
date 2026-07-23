@@ -9600,10 +9600,24 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const issuesConverged =
         newScore >= 9 && (resolvePasses >= 2 || newIssueCount >= issues.length);
 
+      // [Fix247b] Honestidad editorial: "TERMINADO" solo si ADEMAS los
+      // lectores del pulido alcanzaron sus metas (Holistico >= 7 y Beta >= 9,
+      // el target dual del bucle). Si no (caso real: Revisor Final 9/10 pero
+      // Holistico=6/Beta=8 estancados), la convergencia sigue frenando la
+      // cinta de correr pero el mensaje dice claramente que los lectores NO
+      // aprobaron y que la novela es publicable CON RESERVAS.
+      const freshProject = await storage.getProject(project.id);
+      const holScore = freshProject?.holisticScore ?? null;
+      const betaScore = freshProject?.betaScore ?? null;
+      const readersMetTargets =
+        holScore != null && betaScore != null && holScore >= 7 && betaScore >= 9;
+
       const resultToPersist = {
         ...(reviewResult.result as any),
         _resolvePasses: resolvePasses,
         _issuesConverged: issuesConverged,
+        _readersMetTargets: readersMetTargets,
+        _readerScores: { holistic: holScore, beta: betaScore },
       };
 
       await storage.updateProject(project.id, {
@@ -9614,16 +9628,19 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       } as any);
 
       if (issuesConverged && newIssueCount > 0) {
+        const readerNote = readersMetTargets
+          ? `el manuscrito está TERMINADO y listo para exportar (Revisor Final ${newScore}/10; lectores en meta: Holístico ${holScore}/10, Beta ${betaScore}/10).`
+          : `OJO: el Revisor Final da ${newScore}/10, pero los lectores del pulido NO alcanzaron sus metas (Holístico ${holScore ?? "?"}/10 de meta 7, Beta ${betaScore ?? "?"}/10 de meta 9). La novela es publicable CON RESERVAS: este flujo de issues ya no la mejorará más — si quieres subir la nota de los lectores, relanza el pulido Holístico+Beta o ataca sus quejas por el chat editorial.`;
         await storage.createActivityLog({
           projectId: project.id,
-          level: "info",
-          message: `[Fix247] Convergencia alcanzada tras ${resolvePasses} pasada(s) de resolución: el manuscrito está en ${newScore}/10 y el Revisor Final siempre encontrará matices nuevos en cada relectura. Los ${newIssueCount} issue(s) restantes quedan como pulido OPCIONAL — el manuscrito está TERMINADO y listo para exportar. Puedes seguir puliendo desde el botón si lo deseas.`,
+          level: readersMetTargets ? "info" : "warning",
+          message: `[Fix247] Convergencia alcanzada tras ${resolvePasses} pasada(s) de resolución: el Revisor Final siempre encontrará matices nuevos en cada relectura, así que los ${newIssueCount} issue(s) restantes quedan como pulido OPCIONAL. ${readerNote}`,
           agentRole: "final-reviewer",
         });
       }
 
       this.callbacks.onAgentStatus("final-reviewer", "completed",
-        `Issues resueltos. ${resolvedCount} capítulos corregidos. Nueva puntuación: ${newScore}/10${newIssueCount > 0 ? (issuesConverged ? ` (${newIssueCount} issues restantes, ahora pulido OPCIONAL — manuscrito TERMINADO)` : ` (${newIssueCount} issues restantes)`) : " — sin issues pendientes"}.`
+        `Issues resueltos. ${resolvedCount} capítulos corregidos. Nueva puntuación: ${newScore}/10${newIssueCount > 0 ? (issuesConverged ? (readersMetTargets ? ` (${newIssueCount} issues restantes, pulido OPCIONAL — manuscrito TERMINADO)` : ` (${newIssueCount} issues restantes, este flujo convergió — pero los lectores siguen bajo meta: Holístico ${holScore ?? "?"}/10, Beta ${betaScore ?? "?"}/10)`) : ` (${newIssueCount} issues restantes)`) : " — sin issues pendientes"}.`
       );
 
       await storage.createActivityLog({
