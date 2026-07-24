@@ -2752,6 +2752,116 @@ RESPONDE ÚNICAMENTE CON JSON:
     }
   });
 
+  // [Fix255] Aplica automaticamente las correcciones del verificador de datos
+  // al texto del capitulo: la IA reescribe SOLO los pasajes afectados por los
+  // hallazgos (incorrectos/dudosos con sugerencia) y se guarda preservando la
+  // cola tecnica CONTINUITY_STATE y recalculando wordCount (mismas reglas Fix250).
+  app.post("/api/projects/:id/chapters/:chapterId/fact-check/apply", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const chapterId = parseInt(req.params.chapterId);
+      if (isNaN(projectId) || isNaN(chapterId)) {
+        return res.status(400).json({ error: "Identificadores inválidos" });
+      }
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      const chapters = await storage.getChaptersByProject(projectId);
+      const chapter = chapters.find(c => c.id === chapterId);
+      if (!chapter) return res.status(404).json({ error: "Capítulo no encontrado en este proyecto" });
+      if (chapter.status === "writing" || chapter.status === "editing") {
+        return res.status(409).json({ error: "El capítulo se está generando ahora mismo; espera a que termine para corregirlo" });
+      }
+
+      const rawFindings = Array.isArray(req.body?.findings) ? req.body.findings : [];
+      const findings = rawFindings
+        .filter((f: any) => f && typeof f.afirmacion === "string" && f.afirmacion.trim() &&
+          (f.veredicto === "incorrecto" || f.veredicto === "dudoso") &&
+          typeof f.sugerencia === "string" && f.sugerencia.trim())
+        .map((f: any) => ({
+          afirmacion: String(f.afirmacion).trim().substring(0, 500),
+          veredicto: String(f.veredicto),
+          explicacion: typeof f.explicacion === "string" ? f.explicacion.trim().substring(0, 800) : "",
+          sugerencia: String(f.sugerencia).trim().substring(0, 800),
+        }))
+        .slice(0, 20);
+      if (findings.length === 0) {
+        return res.status(400).json({ error: "No hay hallazgos corregibles (incorrectos o dudosos con sugerencia)" });
+      }
+
+      const MARKER = "---CONTINUITY_STATE---";
+      const fullContent = chapter.content || "";
+      let prose = fullContent.includes(MARKER) ? fullContent.split(MARKER)[0] : fullContent;
+      prose = prose.replace(/\s+$/, "");
+      if (!prose.trim()) return res.status(400).json({ error: "El capítulo no tiene texto que corregir" });
+      // [Fix255] Techo defensivo: la IA debe devolver el capitulo ENTERO; con
+      // textos gigantes el output se truncaria y corromperia el capitulo.
+      if (prose.length > 60000) {
+        return res.status(413).json({ error: "El capítulo es demasiado largo para la corrección automática; corrige a mano los pasajes señalados" });
+      }
+
+      const issuesList = findings
+        .map((f: any, i: number) => `${i + 1}. [${f.veredicto.toUpperCase()}] Dato en el texto: "${f.afirmacion}"${f.explicacion ? `\n   Problema: ${f.explicacion}` : ""}\n   Corrección a aplicar: ${f.sugerencia}`)
+        .join("\n");
+
+      const prompt = `Eres un corrector editorial de datos para novelas en español. Recibirás el texto COMPLETO de un capítulo y una lista de errores de datos verificados (históricos, geográficos, nombres, cifras, cultura material) con su corrección.
+
+TU TAREA: devolver el capítulo COMPLETO con esas correcciones aplicadas de la forma MÁS QUIRÚRGICA posible.
+
+REGLAS DURAS:
+- Aplica SOLO las correcciones de la lista. NO cambies nada más: ni estilo, ni puntuación, ni párrafos ajenos a los errores.
+- Conserva la voz, el tiempo verbal y el formato exactos del texto original (saltos de párrafo, rayas de diálogo, cursivas).
+- Cada corrección debe integrarse de forma natural en la frase; reescribe lo mínimo imprescindible alrededor del dato.
+- Si un dato de la lista NO aparece en el texto (o ya está corregido), ignóralo sin inventar nada.
+- NO añadas notas, comentarios, encabezados ni marcas de ningún tipo.
+- Devuelve ÚNICAMENTE el texto corregido del capítulo, sin fences de código ni comillas envolventes.
+
+ERRORES A CORREGIR:
+${issuesList}
+
+TEXTO DEL CAPÍTULO:
+${prose}`;
+
+      const { default: OpenAI } = await import("openai");
+      const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
+      const response = await ai.chat.completions.create({
+        model: "deepseek-v4-flash",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3,
+        max_tokens: 32768,
+        ...({ thinking: { type: "disabled" } } as any),
+      });
+      await recordRawAiUsage(response, { agentName: "fact-corrector", model: "deepseek-v4-flash", projectId, operation: "chapter-fact-apply" });
+
+      let corrected = (response.choices?.[0]?.message?.content || "").trim();
+      // Defensa contra fences y comillas envolventes (mismo patron Fix253)
+      corrected = corrected.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/, "").trim();
+      if ((corrected.startsWith('"') && corrected.endsWith('"')) || (corrected.startsWith("«") && corrected.endsWith("»"))) {
+        corrected = corrected.slice(1, -1).trim();
+      }
+      if (!corrected) {
+        return res.status(502).json({ error: "La IA no devolvió el texto corregido. Inténtalo de nuevo." });
+      }
+      // [Fix255] Guarda de integridad: si el resultado es sospechosamente corto
+      // frente al original, probablemente esta truncado — NO guardamos.
+      if (corrected.length < prose.length * 0.7) {
+        console.warn(`[Fix255] Correccion descartada por posible truncado: original ${prose.length} chars, corregido ${corrected.length} chars`);
+        return res.status(502).json({ error: "La corrección devuelta parece incompleta y no se ha guardado. Inténtalo de nuevo." });
+      }
+
+      let finalContent = corrected;
+      if (fullContent.includes(MARKER)) {
+        const tail = fullContent.substring(fullContent.indexOf(MARKER));
+        finalContent = `${corrected}\n\n${tail}`;
+      }
+      const wordCount = corrected.trim().split(/\s+/).filter(Boolean).length;
+      const updated = await storage.updateChapter(chapterId, { content: finalContent, wordCount });
+      res.json({ chapter: updated, appliedCount: findings.length });
+    } catch (error) {
+      console.error("[Fix255] Error applying fact-check corrections:", error);
+      res.status(500).json({ error: "No se pudieron aplicar las correcciones" });
+    }
+  });
+
   app.get("/api/projects/:id/world-bible", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);

@@ -221,6 +221,32 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
     },
   });
 
+  // [Fix255] Correccion automatica de los errores detectados por el verificador
+  const applyFactFixMutation = useMutation({
+    mutationFn: async () => {
+      if (!chapter || !factCheck) throw new Error("Sin capítulo");
+      const fixable = factCheck.findings.filter(f => f.veredicto !== "correcto" && f.sugerencia.trim());
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/${chapter.projectId}/chapters/${chapter.id}/fact-check/apply`,
+        { findings: fixable },
+      );
+      return res.json() as Promise<{ appliedCount: number }>;
+    },
+    onSuccess: (data) => {
+      if (chapter) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", chapter.projectId, "chapters"] });
+      }
+      // El resultado cacheado ya no refleja el texto: se descarta para forzar re-verificacion
+      setFactCheck(null);
+      setFactCheckOpen(false);
+      toast({ title: "Correcciones aplicadas", description: `Se han corregido ${data.appliedCount} dato(s) en el texto del capítulo. Puedes volver a verificar para confirmar.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "No se pudieron aplicar las correcciones", description: err?.message || "Error desconocido", variant: "destructive" });
+    },
+  });
+
   const saveContentMutation = useMutation({
     mutationFn: async () => {
       if (!chapter) throw new Error("Sin capítulo");
@@ -646,7 +672,9 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
               Fechas, datos históricos, geografía, nombres reales y cifras. Los elementos ficticios de la novela no se señalan.
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 min-h-0 pr-3">
+          {/* [Fix255] div con overflow-y-auto en lugar de ScrollArea: dentro de un
+              DialogContent flex, ScrollArea no recibe altura acotada y no hace scroll */}
+          <div className="flex-1 min-h-0 overflow-y-auto pr-3" data-testid="scroll-fact-check-findings">
             {factCheck?.summary && (
               <p className="text-sm mb-4" data-testid="text-fact-check-summary">{factCheck.summary}</p>
             )}
@@ -692,12 +720,27 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
                 );
               })}
             </div>
-          </ScrollArea>
-          <DialogFooter>
+          </div>
+          <DialogFooter className="gap-2 flex-wrap">
+            {(factCheck?.findings || []).some(f => f.veredicto !== "correcto" && f.sugerencia.trim()) && (
+              <Button
+                onClick={() => {
+                  const n = (factCheck?.findings || []).filter(f => f.veredicto !== "correcto" && f.sugerencia.trim()).length;
+                  if (window.confirm(`Se van a corregir automáticamente ${n} dato(s) en el texto del capítulo. El cambio se guarda directamente. ¿Continuar?`)) {
+                    applyFactFixMutation.mutate();
+                  }
+                }}
+                disabled={applyFactFixMutation.isPending || factCheckMutation.isPending}
+                data-testid="button-apply-fact-fixes"
+              >
+                {applyFactFixMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
+                {applyFactFixMutation.isPending ? "Corrigiendo..." : "Corregir errores automáticamente"}
+              </Button>
+            )}
             <Button
               variant="ghost"
               onClick={() => factCheckMutation.mutate()}
-              disabled={factCheckMutation.isPending}
+              disabled={factCheckMutation.isPending || applyFactFixMutation.isPending}
               data-testid="button-rerun-fact-check"
             >
               {factCheckMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
