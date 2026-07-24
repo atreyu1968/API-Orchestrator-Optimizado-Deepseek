@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2, Sparkles, Pencil, Check, X, Search, AlertTriangle, CheckCircle2, RotateCcw, Trash2, ShieldAlert } from "lucide-react";
+import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2, Sparkles, Pencil, Check, X, Search, AlertTriangle, CheckCircle2, RotateCcw, Trash2, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { useProject } from "@/lib/project-context";
@@ -43,6 +43,28 @@ export default function ManuscriptPage() {
   const { currentProject, isLoading: projectsLoading } = useProject();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+
+  // [Fix259] Verificacion de datos de TODA la novela: estado del runner
+  const [factCheckReportOpen, setFactCheckReportOpen] = useState(false);
+  const { data: novelFactCheck } = useQuery<any>({
+    queryKey: ["/api/projects", currentProject?.id, "fact-check-novel", "status"],
+    enabled: !!currentProject,
+    refetchInterval: (query) => (query.state.data as any)?.status === "running" ? 4000 : false,
+  });
+  const novelFactCheckRunning = novelFactCheck?.status === "running";
+  const startNovelFactCheckMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/fact-check-novel`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "fact-check-novel", "status"] });
+      toast({ title: "Verificación iniciada", description: "El Verificador de Datos revisará toda la novela capítulo a capítulo. Sigue el progreso aquí o en el registro de actividad." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "No se pudo iniciar la verificación", variant: "destructive" });
+    },
+  });
 
   const agentLabels = {
     architect: "Arquitecto",
@@ -435,6 +457,30 @@ export default function ManuscriptPage() {
           )}
           {completedChapters.length > 0 && (
             <Button
+              variant="outline"
+              onClick={() => {
+                if (novelFactCheckRunning || novelFactCheck?.status === "completed" || novelFactCheck?.status === "failed" || novelFactCheck?.status === "cancelled") {
+                  setFactCheckReportOpen(true);
+                } else if (currentProject) {
+                  startNovelFactCheckMutation.mutate(currentProject.id);
+                }
+              }}
+              disabled={startNovelFactCheckMutation.isPending}
+              title="Verifica datos reales, continuidad y lógica de toda la novela y corrige automáticamente los errores objetivos"
+              data-testid="button-fact-check-novel"
+            >
+              {novelFactCheckRunning || startNovelFactCheckMutation.isPending
+                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                : <ShieldCheck className="h-4 w-4 mr-2" />}
+              {novelFactCheckRunning
+                ? `Verificando ${novelFactCheck?.chaptersDone ?? 0}/${novelFactCheck?.chaptersTotal ?? "?"}...`
+                : novelFactCheck?.status === "completed"
+                  ? "Informe de verificación"
+                  : "Verificar novela"}
+            </Button>
+          )}
+          {completedChapters.length > 0 && (
+            <Button
               variant="default"
               onClick={() => setShowAutoEditDialog(true)}
               data-testid="button-auto-reedit"
@@ -445,6 +491,87 @@ export default function ManuscriptPage() {
           )}
         </div>
       </div>
+
+      {/* [Fix259] Informe de verificacion de datos de toda la novela */}
+      <Dialog open={factCheckReportOpen} onOpenChange={setFactCheckReportOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5" />
+              Verificación de datos de la novela
+            </DialogTitle>
+            <DialogDescription>
+              {novelFactCheckRunning
+                ? `En marcha: ${novelFactCheck?.chaptersDone ?? 0} de ${novelFactCheck?.chaptersTotal ?? "?"} capítulos revisados${novelFactCheck?.currentChapterLabel ? ` (ahora: ${novelFactCheck.currentChapterLabel})` : ""}.`
+                : novelFactCheck?.status === "completed"
+                  ? `Completada: ${novelFactCheck?.chaptersDone ?? 0} capítulos revisados, ${novelFactCheck?.correctionsApplied ?? 0} corrección(es) objetiva(s) aplicada(s), ${novelFactCheck?.cleanChapters ?? 0} capítulos limpios${(novelFactCheck?.failedChapters ?? 0) > 0 ? `, ${novelFactCheck.failedChapters} capítulo(s) no verificados por error` : ""}.`
+                  : novelFactCheck?.status === "cancelled"
+                    ? "Cancelada por el usuario. Las correcciones ya aplicadas se conservan."
+                    : novelFactCheck?.status === "failed"
+                      ? `Falló: ${novelFactCheck?.error || "error desconocido"}. Puedes relanzarla; lo ya corregido se conserva.`
+                      : "Sin datos de verificación."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
+            {novelFactCheckRunning && (
+              <Progress value={novelFactCheck?.chaptersTotal ? (novelFactCheck.chaptersDone / novelFactCheck.chaptersTotal) * 100 : 0} />
+            )}
+            {(novelFactCheck?.pending?.length ?? 0) > 0 ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Hallazgos que requieren tu decisión (dudosos o sin corrección automática). Corrígelos ficha a ficha desde el visor del capítulo con "Verificar datos":
+                </p>
+                {novelFactCheck.pending.map((f: any, i: number) => (
+                  <div key={i} className="border rounded-md p-3 text-sm space-y-1" data-testid={`card-novel-finding-${i}`}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant={f.veredicto === "incorrecto" ? "destructive" : "secondary"}>{f.veredicto}</Badge>
+                      <Badge variant="outline">{f.categoria}</Badge>
+                      <span className="text-xs text-muted-foreground">{f.chapterLabel}</span>
+                    </div>
+                    <p className="font-medium">"{f.afirmacion}"</p>
+                    {f.explicacion && <p className="text-muted-foreground">{f.explicacion}</p>}
+                    {f.sugerencia && <p className="text-muted-foreground"><span className="font-medium">Sugerencia:</span> {f.sugerencia}</p>}
+                  </div>
+                ))}
+              </>
+            ) : !novelFactCheckRunning && novelFactCheck?.status === "completed" ? (
+              <p className="text-sm text-muted-foreground flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                No quedan hallazgos pendientes: todos los errores objetivos detectados fueron corregidos.
+              </p>
+            ) : null}
+          </div>
+          <DialogFooter className="gap-2">
+            {novelFactCheckRunning ? (
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    await apiRequest("POST", `/api/projects/${currentProject?.id}/fact-check-novel/cancel`);
+                    queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "fact-check-novel", "status"] });
+                  } catch (e: any) {
+                    toast({ title: "Error", description: e.message || "No se pudo cancelar", variant: "destructive" });
+                  }
+                }}
+                data-testid="button-cancel-novel-fact-check"
+              >
+                Cancelar verificación
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => currentProject && startNovelFactCheckMutation.mutate(currentProject.id)}
+                disabled={startNovelFactCheckMutation.isPending}
+                data-testid="button-restart-novel-fact-check"
+              >
+                {startNovelFactCheckMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-2" />}
+                Volver a verificar
+              </Button>
+            )}
+            <Button onClick={() => setFactCheckReportOpen(false)} data-testid="button-close-novel-fact-check">Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Auto Re-edit Dialog */}
       <Dialog open={showAutoEditDialog} onOpenChange={(open) => {

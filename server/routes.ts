@@ -2898,6 +2898,54 @@ ${prose}`;
     }
   });
 
+  // [Fix259] Verificacion de datos de TODA la novela: arranque, estado y
+  // cancelacion. Runner en segundo plano (services/novel-fact-check) que
+  // reutiliza los endpoints por-capitulo de Fix252/255 via self-fetch.
+  app.post("/api/projects/:id/fact-check-novel", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Identificador inválido" });
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      if (project.status === "generating" || project.status === "reviewing") {
+        return res.status(409).json({ error: "La novela se está generando ahora mismo; la verificación global correrá automáticamente antes de la revisión final, o lánzala manualmente cuando termine" });
+      }
+      const { startNovelFactCheck } = await import("./services/novel-fact-check");
+      const result = startNovelFactCheck(projectId);
+      if (!result.success) return res.status(409).json({ error: result.message });
+      res.status(202).json({ message: result.message });
+    } catch (error) {
+      console.error("[Fix259] Error starting novel fact-check:", error);
+      res.status(500).json({ error: "No se pudo iniciar la verificación" });
+    }
+  });
+
+  app.get("/api/projects/:id/fact-check-novel/status", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Identificador inválido" });
+      const { getNovelFactCheckStatus } = await import("./services/novel-fact-check");
+      const state = getNovelFactCheckStatus(projectId);
+      if (!state) return res.json({ status: "idle" });
+      res.json(state);
+    } catch (error) {
+      res.status(500).json({ error: "No se pudo consultar el estado" });
+    }
+  });
+
+  app.post("/api/projects/:id/fact-check-novel/cancel", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Identificador inválido" });
+      const { cancelNovelFactCheck } = await import("./services/novel-fact-check");
+      const ok = cancelNovelFactCheck(projectId);
+      if (!ok) return res.status(409).json({ error: "No hay ninguna verificación en marcha para esta novela" });
+      res.json({ message: "Cancelación solicitada; se detendrá al terminar el capítulo en curso" });
+    } catch (error) {
+      res.status(500).json({ error: "No se pudo cancelar" });
+    }
+  });
+
   app.get("/api/projects/:id/world-bible", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);

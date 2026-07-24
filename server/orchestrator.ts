@@ -8157,6 +8157,27 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // formaldehído, cap 26 cromato — repetidos en ciclos 3 y 5 sin avanzar).
     this.staleInstructionsForFinalReviewer = [];
 
+    // [Fix259] Pasada de verificacion factual de TODA la novela ANTES del
+    // gate del Holistico: corrige los errores objetivos (mundo real,
+    // continuidad, logica con sugerencia) para que el Holistico y el Revisor
+    // Final lean el texto ya corregido y no gasten ciclos en ellos.
+    // Best-effort: si falla, el pipeline continua igual. Si ya se completo
+    // una pasada en esta sesion (o hay una manual en marcha), no se repite.
+    try {
+      this.callbacks.onAgentStatus("fact-checker", "reviewing",
+        `[Fix259] El Verificador de Datos está revisando toda la novela (datos reales, continuidad y lógica) antes del Lector Holístico...`
+      );
+      const { runNovelFactCheckBeforeReview } = await import("./services/novel-fact-check.js");
+      const fcState = await runNovelFactCheckBeforeReview(project.id);
+      if (fcState) {
+        this.callbacks.onAgentStatus("fact-checker", "complete",
+          `[Fix259] Verificación global terminada: ${fcState.correctionsApplied} corrección(es) aplicada(s), ${fcState.pending.length} hallazgo(s) para revisión manual.`
+        );
+      }
+    } catch (fcErr) {
+      console.warn(`[Orchestrator] [Fix259] Verificacion global fallo (best-effort, se continua): ${(fcErr as Error).message}`);
+    }
+
     // [Fix29] Gate del Lector Holístico ANTES del primer ciclo del Final
     // Reviewer. El FR es caro (1M ctx + hasta 10 ciclos) y a veces descubre
     // problemas estructurales mayores en el ciclo 3-4, quemando los previos
