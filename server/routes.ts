@@ -2958,6 +2958,44 @@ ${prose}`;
     }
   });
 
+  // [Fix265] Tramas colgantes pendientes: listado y resolucion manual. Via de
+  // salida obligatoria del estado "completed_with_issues" cuando el usuario
+  // corrige (o acepta) las tramas por su cuenta.
+  app.get("/api/projects/:id/plot-threads-pending", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Identificador inválido" });
+      const { getPlotThreadsPending } = await import("./services/completion-status");
+      const pendientes = await getPlotThreadsPending(projectId);
+      res.json({ pendientes, count: pendientes.length });
+    } catch (error) {
+      console.error("[Fix265] Error fetching plot threads pending:", error);
+      res.status(500).json({ error: "No se pudieron leer las tramas pendientes" });
+    }
+  });
+
+  app.post("/api/projects/:id/plot-threads-pending/resolve", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Identificador inválido" });
+      const nombres = Array.isArray(req.body?.nombres) ? req.body.nombres.filter((n: any) => typeof n === "string") : undefined;
+      const { resolvePlotThreadsPending } = await import("./services/completion-status");
+      const removed = await resolvePlotThreadsPending(projectId, nombres);
+      if (removed > 0) {
+        await storage.createActivityLog({
+          projectId,
+          level: "info",
+          agentRole: "orchestrator",
+          message: `[Fix265] ${removed} trama(s) colgante(s) marcada(s) como resuelta(s) manualmente por el usuario.`,
+        });
+      }
+      res.json({ removed });
+    } catch (error) {
+      console.error("[Fix265] Error resolving plot threads pending:", error);
+      res.status(500).json({ error: "No se pudieron resolver las tramas pendientes" });
+    }
+  });
+
   app.get("/api/projects/:id/world-bible", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);

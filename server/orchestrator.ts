@@ -79,7 +79,8 @@ import { recordRawAiUsage } from "./utils/ai-usage";
 import { renumberChaptersSequential, remapPendingAdminActionsForRenumber } from "./utils/renumber-chapters";
 import { calculateRealCost } from "./cost-calculator";
 import { runWithProjectContext } from "./utils/agent-context";
-import { recomputeCompletionStatus } from "./services/completion-status";
+import { recomputeCompletionStatus, persistPlotThreadsPending } from "./services/completion-status";
+import { PlotThreadClosureAuditorAgent, type PlotThread } from "./agents/plot-thread-closure-auditor";
 import type { AdminActionVerdict } from "./utils/review-score";
 
 interface OrchestratorCallbacks {
@@ -8423,6 +8424,20 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       console.warn(`[Orchestrator] [Fix259] Verificacion global fallo (best-effort, se continua): ${(fcErr as Error).message}`);
     }
 
+    // [Fix265] Auditoria de CIERRE DE TRAMAS + reparacion automatica ANTES del
+    // gate del Holistico. El PlotThreadClosureAuditor (Fix32) solo corria en el
+    // pipeline de reedicion; en generacion nadie inventariaba los hilos y las
+    // tramas secundarias abandonadas llegaban a la novela final (el ArcCheck
+    // posterior solo loguea). Aqui: auditar -> reescribir capitulos objetivo
+    // para cerrar los hilos colgantes -> re-auditar una vez -> lo que siga
+    // colgando se persiste como issue pendiente (regla dura Fix263: la novela
+    // queda "completed_with_issues"). Best-effort: si falla, se continua.
+    try {
+      await this.runPlotThreadClosureRescue(project);
+    } catch (ptErr) {
+      console.warn(`[Orchestrator] [Fix265] Auditoria de cierre de tramas fallo (best-effort, se continua): ${(ptErr as Error).message}`);
+    }
+
     // [Fix29] Gate del Lector Holístico ANTES del primer ciclo del Final
     // Reviewer. El FR es caro (1M ctx + hasta 10 ciclos) y a veces descubre
     // problemas estructurales mayores en el ciclo 3-4, quemando los previos
@@ -12891,6 +12906,244 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       });
     }
     return rewritten;
+  }
+
+  // [Fix265] Auditoria de cierre de tramas + reparacion automatica en el
+  // pipeline de GENERACION. El auditor (Fix32) inventaria todos los hilos de
+  // la novela completa; los "abierta_colgante" (y los "cierre_parcial" de
+  // tramas principales/secundarias) se intentan cerrar reescribiendo el
+  // capitulo objetivo con expansion de escena (Fix227). Frenos: max 5 hilos
+  // por run, UNA pasada de reparacion + UNA re-auditoria (no perseguimos a un
+  // juez oscilante), one-shot por proyecto y sesion. Lo que siga colgando se
+  // persiste como issue pendiente (__plot_threads_pending) para la regla dura
+  // de Fix263.
+  private plotClosureRescueDone: Set<number> = new Set();
+
+  private async runPlotThreadClosureRescue(project: Project): Promise<void> {
+    // One-shot por sesion, PERO si quedo una rule de pendientes activa de una
+    // pasada anterior, se permite el rerun: el usuario puede haber corregido
+    // las tramas a mano y una nueva revision final debe poder re-auditar y
+    // limpiar la rule (leccion terminal-status-manual-resume: un estado
+    // "con issues" siempre necesita via de salida).
+    if (this.plotClosureRescueDone.has(project.id)) {
+      const { getPlotThreadsPending } = await import("./services/completion-status");
+      const stillPending = await getPlotThreadsPending(project.id);
+      if (stillPending.length === 0) return;
+    }
+    this.plotClosureRescueDone.add(project.id);
+
+    const worldBible = await storage.getWorldBibleByProject(project.id);
+    if (!worldBible) return;
+    const worldBibleData = this.reconstructWorldBibleData(worldBible, project);
+    const allChapters = await storage.getChaptersByProject(project.id);
+    const allSections = this.buildSectionsListFromChapters(allChapters, worldBibleData);
+
+    // Lectura saneada: los lectores no deben ver el bloque CONTINUITY_STATE
+    // (leccion reader-vs-exporter: artefactos crudos sesgan al juez).
+    const buildReviewerChapters = async () => {
+      const fresh = await storage.getChaptersByProject(project.id);
+      return fresh
+        .filter(c => c.content && c.content.trim().length > 100)
+        .map(c => ({
+          numero: c.chapterNumber,
+          titulo: c.title || "",
+          contenido: (c.content || "").split("---CONTINUITY_STATE---")[0],
+        }));
+    };
+    const reviewerChapters = await buildReviewerChapters();
+    if (reviewerChapters.length < 5) return;
+
+    // Volumen intermedio de serie: hilos abiertos pueden ser ganchos legitimos.
+    // Precuela = intermedio por definicion (Fix68). Volumenes posteriores pueden
+    // vivir en projects, imported o reedit (leccion series-volume-sources).
+    let esVolumenIntermedio = false;
+    if (project.seriesId) {
+      try {
+        const currentOrder = Number((project as any).seriesOrder ?? 1);
+        if ((project as any).projectSubtype === "prequel" || currentOrder === 0) {
+          esVolumenIntermedio = true;
+        } else {
+          const sid = Number(project.seriesId);
+          const [projs, reedits] = await Promise.all([
+            storage.getProjectsBySeries(sid).catch(() => [] as any[]),
+            storage.getAllReeditProjects().catch(() => [] as any[]),
+          ]);
+          const hasLater = (arr: any[]) => arr.some((p: any) =>
+            Number(p?.seriesId ?? 0) === sid && Number(p?.seriesOrder ?? 0) > currentOrder);
+          esVolumenIntermedio = hasLater(projs as any[]) || hasLater(reedits as any[]);
+        }
+      } catch { esVolumenIntermedio = false; }
+    }
+
+    const closureAgent = new PlotThreadClosureAuditorAgent();
+    this.callbacks.onAgentStatus("plot-closure-auditor", "reviewing",
+      `[Fix265] El Auditor de Cierre de Tramas está inventariando todos los hilos narrativos de la novela...`
+    );
+    const audit = await closureAgent.runAudit({
+      projectTitle: project.title,
+      chapters: reviewerChapters,
+      generoObjetivo: project.genre || undefined,
+      esVolumenIntermedio,
+    }, project.id);
+
+    const pickFixables = (tramas: PlotThread[]): PlotThread[] => {
+      const priority: Record<string, number> = { principal: 0, secundaria: 1, subtrama: 2, arco_personaje: 3 };
+      return tramas
+        .filter(t => t.estado === "abierta_colgante"
+          || (t.estado === "cierre_parcial" && (t.tipo === "principal" || t.tipo === "secundaria")))
+        .sort((a, b) => (priority[a.tipo] ?? 9) - (priority[b.tipo] ?? 9));
+    };
+    const toPendingRecord = (t: PlotThread) => ({
+      nombre: t.nombre,
+      tipo: t.tipo,
+      estado: t.estado,
+      introducida_en_cap: t.introducida_en_cap,
+      ultima_aparicion_cap: t.ultima_aparicion_cap,
+      fix_sugerido: t.fix_sugerido || "",
+    });
+
+    let fixables = pickFixables(audit.tramas || []);
+    if (fixables.length === 0) {
+      // Limpio: retirar cualquier pendiente previo y salir.
+      await persistPlotThreadsPending(project.id, []);
+      await storage.createActivityLog({
+        projectId: project.id, level: "success", agentRole: "plot-closure-auditor",
+        message: `[Fix265] Auditoría de cierre de tramas: ${audit.total_tramas} trama(s) inventariada(s), todas cerradas o abiertas con intención (puntuación ${audit.puntuacion_cierre}/10). Sin hilos colgantes.`,
+      });
+      this.callbacks.onAgentStatus("plot-closure-auditor", "complete",
+        `[Fix265] Cierre de tramas verificado: sin hilos colgantes (${audit.puntuacion_cierre}/10).`);
+      return;
+    }
+
+    const MAX_CLOSURE_THREADS = 5;
+    const overflow = fixables.slice(MAX_CLOSURE_THREADS);
+    fixables = fixables.slice(0, MAX_CLOSURE_THREADS);
+
+    await storage.createActivityLog({
+      projectId: project.id, level: "warn", agentRole: "plot-closure-auditor",
+      message: `[Fix265] Auditoría de cierre de tramas (${audit.puntuacion_cierre}/10): ${fixables.length} hilo(s) colgante(s) a reparar automáticamente${overflow.length > 0 ? ` (+${overflow.length} más quedan para revisión manual por tope de coste)` : ""}: ${fixables.map(t => `"${t.nombre}" (${t.tipo}, ${t.estado})`).join("; ")}.`,
+      metadata: { fix: "Fix265", puntuacion: audit.puntuacion_cierre, hilos: fixables.map(t => t.nombre) },
+    });
+
+    // Capitulo objetivo por hilo: el que cite el fix_sugerido; si no, la
+    // ultima aparicion del hilo; si no es valido, el ultimo capitulo positivo.
+    const positives = reviewerChapters.filter(c => c.numero > 0).map(c => c.numero).sort((a, b) => a - b);
+    const lastPositive = positives[positives.length - 1];
+    const resolveTargetChapter = (t: PlotThread): number => {
+      const m = (t.fix_sugerido || "").match(/cap(?:[íi]tulo)?\.?\s+(\d{1,3})/i);
+      const fromFix = m ? Number(m[1]) : NaN;
+      if (Number.isFinite(fromFix) && positives.includes(fromFix)) return fromFix;
+      const last = Number(t.ultima_aparicion_cap);
+      if (Number.isFinite(last) && positives.includes(last)) return last;
+      return lastPositive;
+    };
+
+    // Agrupar hilos por capitulo objetivo y reescribir en orden ascendente.
+    const byChapter = new Map<number, PlotThread[]>();
+    for (const t of fixables) {
+      const target = resolveTargetChapter(t);
+      if (!byChapter.has(target)) byChapter.set(target, []);
+      byChapter.get(target)!.push(t);
+    }
+
+    let styleGuideContent = "";
+    if (project.styleGuideId) {
+      const sg = await storage.getStyleGuide(project.styleGuideId);
+      if (sg) styleGuideContent = sg.content;
+    }
+    const guiaEstilo = styleGuideContent
+      ? `Género: ${project.genre}, Tono: ${project.tone}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+      : `Género: ${project.genre}, Tono: ${project.tone}`;
+
+    const attemptedBefore = new Map<number, string>();
+    const targetsSorted = Array.from(byChapter.keys()).sort((a, b) => a - b);
+    for (const chapterNum of targetsSorted) {
+      if (this.aborted) break;
+      const freshChapters = await storage.getChaptersByProject(project.id);
+      const chapter = freshChapters.find(c => c.chapterNumber === chapterNum);
+      const sectionData = allSections.find(s => s.numero === chapterNum);
+      if (!chapter || !sectionData || !chapter.content) continue;
+
+      const threads = byChapter.get(chapterNum)!;
+      const threadBlocks = threads.map((t, i) => [
+        `HILO ${i + 1}: "${t.nombre}" (${t.tipo}, estado actual: ${t.estado === "abierta_colgante" ? "ABANDONADO sin cierre" : "cierre insuficiente"})`,
+        `  - Personajes implicados: ${(t.personajes_implicados || []).join(", ") || "(sin especificar)"}`,
+        `  - Se abre en: ${t.evidencia_apertura}`,
+        `  - Cierre actual: ${t.evidencia_cierre || "ninguna"}`,
+        t.fix_sugerido ? `  - Reparación sugerida por el auditor: ${t.fix_sugerido}` : "",
+      ].filter(Boolean).join("\n")).join("\n\n");
+
+      const instruction = [
+        `CIERRE DE TRAMAS ABANDONADAS — REESCRITURA DIRIGIDA [Fix265].`,
+        `El Auditor de Cierre de Tramas ha leído la novela COMPLETA y certifica que lo(s) siguiente(s) hilo(s) narrativo(s) quedaron sin resolver. Este capítulo (${this.getSectionLabel(sectionData)}) es el lugar elegido para cerrarlos. Reescríbelo para dar a cada hilo una resolución EXPLÍCITA y dramatizada:`,
+        ``,
+        threadBlocks,
+        ``,
+        `REGLAS DE LA REPARACIÓN:`,
+        `1. Cada hilo debe quedar RESUELTO EN ESCENA (mostrado, no relatado en una frase de pasada): el lector debe ver qué pasó con la promesa y qué coste o consecuencia tuvo.`,
+        `2. Integra el cierre de forma ORGÁNICA en el capítulo existente: puedes añadir una escena o subescena completa si hace falta, pero respeta los hechos, el tono y los eventos que el capítulo ya contiene.`,
+        `3. PROHIBIDO resolver con deus ex machina o personajes/recursos no sembrados antes en la novela: usa solo elementos ya presentes en el texto.`,
+        `4. NO abras hilos nuevos ni alteres la trama principal, los nombres ni el canon: cierra lo que está abierto, nada más.`,
+        `5. Si un hilo realmente NO puede cerrarse en este capítulo sin romper la lógica, ciérralo con una resolución mínima honesta (una decisión, una renuncia explícita, una consecuencia visible) — nunca lo dejes en silencio.`,
+      ].join("\n");
+
+      if (!attemptedBefore.has(chapterNum)) {
+        attemptedBefore.set(chapterNum, chapter.content);
+      }
+      await this.rewriteChapterForQA(
+        project,
+        chapter,
+        sectionData,
+        worldBibleData,
+        guiaEstilo,
+        "editorial",
+        instruction,
+        0,
+        0,
+        true, // [Fix227] expansion de escena: el cierre puede necesitar escena nueva
+      );
+    }
+
+    const rewritten = await this.countActuallyChangedChapters(project.id, attemptedBefore);
+
+    // Re-auditoria UNICA solo si hubo cambios reales; si no, los hallazgos
+    // originales quedan como pendientes tal cual.
+    let remaining: PlotThread[] = fixables;
+    if (rewritten > 0) {
+      try {
+        this.callbacks.onAgentStatus("plot-closure-auditor", "reviewing",
+          `[Fix265] Re-verificando el cierre de los ${fixables.length} hilo(s) tras la reparación (${rewritten} capítulo(s) reescritos)...`);
+        const reaudit = await closureAgent.runAudit({
+          projectTitle: project.title,
+          chapters: await buildReviewerChapters(),
+          generoObjetivo: project.genre || undefined,
+          esVolumenIntermedio,
+        }, project.id);
+        remaining = pickFixables(reaudit.tramas || []);
+      } catch (e) {
+        console.warn(`[Fix265] Re-auditoria fallo, se conservan los hallazgos originales: ${(e as Error).message}`);
+      }
+    }
+
+    const pendingFinal = [...remaining, ...overflow].map(toPendingRecord);
+    await persistPlotThreadsPending(project.id, pendingFinal);
+
+    if (pendingFinal.length === 0) {
+      await storage.createActivityLog({
+        projectId: project.id, level: "success", agentRole: "plot-closure-auditor",
+        message: `[Fix265] Reparación de tramas colgantes completada: ${fixables.length} hilo(s) cerrado(s) reescribiendo ${rewritten} capítulo(s). La re-auditoría confirma que no quedan hilos abandonados.`,
+      });
+      this.callbacks.onAgentStatus("plot-closure-auditor", "complete",
+        `[Fix265] Tramas colgantes cerradas (${rewritten} capítulo(s) reescritos).`);
+    } else {
+      await storage.createActivityLog({
+        projectId: project.id, level: "warn", agentRole: "plot-closure-auditor",
+        message: `[Fix265] Reparación de tramas colgantes: ${rewritten} capítulo(s) reescritos, pero quedan ${pendingFinal.length} hilo(s) sin cierre confirmado: ${pendingFinal.map(p => `"${p.nombre}"`).join(", ")}. Quedan registrados como issues pendientes (la novela terminará como "completada con issues"); resuélvelos vía notas editoriales o reedición.`,
+        metadata: { fix: "Fix265", pendientes: pendingFinal.map(p => p.nombre) },
+      });
+      this.callbacks.onAgentStatus("plot-closure-auditor", "complete",
+        `[Fix265] Reparación parcial: quedan ${pendingFinal.length} hilo(s) colgante(s) registrados como pendientes.`);
+    }
   }
 
   // [Fix158] Brazo de PROSA ultima-milla para el Beta: cuando el editor quirurgico

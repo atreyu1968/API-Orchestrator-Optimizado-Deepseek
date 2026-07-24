@@ -54,7 +54,84 @@ export async function collectKnownPendingIssues(projectId: number): Promise<Pend
     }
   } catch (_e) {}
 
+  // 4. [Fix265] Tramas colgantes que la reparacion automatica no pudo cerrar
+  try {
+    const wb = await storage.getWorldBibleByProject(projectId);
+    const rules = ((wb?.worldRules || []) as any[]);
+    const ptRule = rules.find((r: any) => r?.category === "__plot_threads_pending");
+    const ptCount = Array.isArray(ptRule?.pendientes) ? ptRule.pendientes.length : 0;
+    if (ptCount > 0) {
+      pendientes.push({
+        source: "tramas_colgantes",
+        count: ptCount,
+        detail: `${ptCount} trama(s) secundaria(s) colgante(s) sin cerrar`,
+      });
+    }
+  } catch (_e) {}
+
   return pendientes;
+}
+
+// [Fix265] Persiste (o limpia, si el array llega vacio) las tramas colgantes
+// que el auditor de cierre detecto y la reparacion automatica no pudo cerrar,
+// y recalcula el estado del proyecto (regla dura Fix263).
+export async function persistPlotThreadsPending(projectId: number, pending: any[]): Promise<void> {
+  try {
+    const wb = await storage.getWorldBibleByProject(projectId);
+    if (wb) {
+      const rules = ((wb.worldRules || []) as any[]).filter((r: any) => r?.category !== "__plot_threads_pending");
+      if (pending.length > 0) {
+        rules.push({ category: "__plot_threads_pending", pendientes: pending, updatedAt: new Date().toISOString() });
+      }
+      await storage.updateWorldBible(wb.id, { worldRules: rules } as any);
+    }
+    await recomputeCompletionStatus(projectId);
+  } catch (e) {
+    console.warn(`[Fix265] persistPlotThreadsPending fallo para proyecto ${projectId}: ${(e as Error).message}`);
+  }
+}
+
+// [Fix265] Retira tramas pendientes ya resueltas por el usuario (identificadas
+// por nombre; sin nombres = retirar todas) y recalcula el estado del proyecto.
+// Paralelo a resolveFactCheckPending: la via MANUAL de salida obligatoria para
+// que el estado "completed_with_issues" nunca quede sin salida.
+export async function resolvePlotThreadsPending(projectId: number, nombres?: string[]): Promise<number> {
+  try {
+    const wb = await storage.getWorldBibleByProject(projectId);
+    if (!wb) return 0;
+    const rules = (wb.worldRules || []) as any[];
+    const rule = rules.find((r: any) => r?.category === "__plot_threads_pending");
+    if (!rule || !Array.isArray(rule.pendientes)) return 0;
+    const before = rule.pendientes.length;
+    rule.pendientes = (nombres && nombres.length > 0)
+      ? rule.pendientes.filter((p: any) => !nombres.includes(p?.nombre))
+      : [];
+    const removed = before - rule.pendientes.length;
+    if (removed > 0) {
+      const next = rule.pendientes.length > 0
+        ? rules
+        : rules.filter((r: any) => r?.category !== "__plot_threads_pending");
+      rule.updatedAt = new Date().toISOString();
+      await storage.updateWorldBible(wb.id, { worldRules: next } as any);
+      await recomputeCompletionStatus(projectId);
+    }
+    return removed;
+  } catch (e) {
+    console.warn(`[Fix265] resolvePlotThreadsPending fallo para proyecto ${projectId}: ${(e as Error).message}`);
+    return 0;
+  }
+}
+
+// [Fix265] Lee las tramas colgantes pendientes persistidas (para UI/endpoint).
+export async function getPlotThreadsPending(projectId: number): Promise<any[]> {
+  try {
+    const wb = await storage.getWorldBibleByProject(projectId);
+    const rules = ((wb?.worldRules || []) as any[]);
+    const rule = rules.find((r: any) => r?.category === "__plot_threads_pending");
+    return Array.isArray(rule?.pendientes) ? rule.pendientes : [];
+  } catch (_e) {
+    return [];
+  }
 }
 
 /**

@@ -52,6 +52,27 @@ export default function ManuscriptPage() {
     refetchInterval: (query) => (query.state.data as any)?.status === "running" ? 4000 : false,
   });
   const novelFactCheckRunning = novelFactCheck?.status === "running";
+
+  // [Fix265] Tramas colgantes pendientes (auditor de cierre) + resolucion manual
+  const { data: plotThreadsPendingData } = useQuery<{ pendientes: any[]; count: number }>({
+    queryKey: ["/api/projects", currentProject?.id, "plot-threads-pending"],
+    enabled: !!currentProject,
+  });
+  const plotThreadsPending = plotThreadsPendingData?.pendientes || [];
+  const resolvePlotThreadMutation = useMutation({
+    mutationFn: async (nombres: string[]) => {
+      const res = await apiRequest("POST", `/api/projects/${currentProject!.id}/plot-threads-pending/resolve`, { nombres });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "plot-threads-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Trama marcada como resuelta", description: "Si era la última pendiente, la novela pasará a \"completada\"." });
+    },
+    onError: () => {
+      toast({ title: "No se pudo marcar la trama como resuelta", variant: "destructive" });
+    },
+  });
   const startNovelFactCheckMutation = useMutation({
     mutationFn: async (projectId: number) => {
       const res = await apiRequest("POST", `/api/projects/${projectId}/fact-check-novel`);
@@ -769,6 +790,58 @@ export default function ManuscriptPage() {
       {/* [Fix40] Card de acciones administrativas pendientes. Solo visible si
            hay acciones emitidas por el StructuralInstructionTranslator que el
            sistema NO aplicó automáticamente por ser destructivas. */}
+      {/* [Fix265] Tramas colgantes que la reparacion automatica no pudo cerrar:
+           el usuario puede corregirlas (notas editoriales / reedicion) o
+           aceptarlas y marcarlas resueltas — al vaciarse, el estado pasa a
+           "completada" automaticamente. */}
+      {plotThreadsPending.length > 0 && (
+        <Card className="mb-4 border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20" data-testid="card-plot-threads-pending">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2 text-amber-900 dark:text-amber-200">
+              <AlertTriangle className="h-5 w-5" />
+              Tramas colgantes sin cerrar ({plotThreadsPending.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              El Auditor de Cierre de Tramas detectó estos hilos narrativos sin resolución y la reparación automática no pudo cerrarlos. Mientras queden pendientes, la novela figura como <strong>"completada con issues"</strong>. Puedes corregirlos (notas editoriales o reedición) o, si consideras que el hilo está bien como está, marcarlo como resuelto.
+            </p>
+            <div className="space-y-1.5">
+              {plotThreadsPending.map((t: any, idx: number) => (
+                <div
+                  key={`${t.nombre}-${idx}`}
+                  className="flex items-start justify-between gap-3 p-2 rounded border border-amber-200 dark:border-amber-800 bg-background"
+                  data-testid={`row-plot-thread-pending-${idx}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-xs">{t.tipo}</Badge>
+                      <span className="text-sm font-medium" data-testid={`text-plot-thread-name-${idx}`}>{t.nombre}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {t.estado === "abierta_colgante" ? "abandonada" : "cierre insuficiente"} · caps {t.introducida_en_cap}–{t.ultima_aparicion_cap}
+                      </span>
+                    </div>
+                    {t.fix_sugerido && (
+                      <p className="text-xs text-muted-foreground mt-1">{t.fix_sugerido}</p>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={resolvePlotThreadMutation.isPending}
+                    onClick={() => resolvePlotThreadMutation.mutate([t.nombre])}
+                    data-testid={`button-resolve-plot-thread-${idx}`}
+                  >
+                    <Check className="h-4 w-4 mr-1" />
+                    Marcar resuelta
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {pendingAdminActions.length > 0 && (
         <Card className="mb-4 border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20" data-testid="card-pending-admin-actions">
           <CardHeader className="pb-2">
