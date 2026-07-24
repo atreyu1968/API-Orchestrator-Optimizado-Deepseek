@@ -133,8 +133,12 @@ export class VoiceRhythmAuditorAgent extends BaseAgent {
       role: "voice-rhythm-auditor",
       systemPrompt: SYSTEM_PROMPT,
       model: "deepseek-v4-flash",
-      useThinking: false,
-      maxOutputTokens: 4096,
+      // [Fix264] Thinking activado: juzgar deriva de voz/ritmo entre capitulos
+      // es comparacion sutil que mejora con razonamiento. Techo combinado
+      // subido en consecuencia.
+      useThinking: true,
+      thinkingBudget: 4096,
+      maxOutputTokens: 16384,
     });
   }
 

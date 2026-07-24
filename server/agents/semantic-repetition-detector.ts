@@ -151,8 +151,12 @@ export class SemanticRepetitionDetectorAgent extends BaseAgent {
       role: "semantic-repetition-detector",
       systemPrompt: SYSTEM_PROMPT,
       model: "deepseek-v4-flash",
-      useThinking: false,
-      maxOutputTokens: 4096,
+      // [Fix264] Thinking activado: distinguir eco DELIBERADO (motivo
+      // literario) de repeticion accidental requiere razonamiento. Techo
+      // combinado subido en consecuencia.
+      useThinking: true,
+      thinkingBudget: 4096,
+      maxOutputTokens: 16384,
     });
   }
 

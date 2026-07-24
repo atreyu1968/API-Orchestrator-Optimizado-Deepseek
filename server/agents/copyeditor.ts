@@ -17,6 +17,11 @@ interface CopyEditorInput {
     registro_linguistico?: string;
     notas_voz_historica?: string;
   } | null;
+  // [Fix264] Muletillas de frase detectadas deterministicamente en los
+  // capitulos YA ESCRITOS (patron Fix239 del proofreader): el Estilista
+  // trabaja capitulo a capitulo y no puede ver tics acumulados; con esta
+  // lista sabe que frases ya estan gastadas y debe variarlas si reaparecen.
+  muletillasGlobales?: Array<{ frase: string; capitulos: number[] }>;
 }
 
 export interface CopyEditorResult {
@@ -450,6 +455,23 @@ export class CopyEditorAgent extends BaseAgent {
 `;
     }
 
+    // [Fix264] Aviso de muletillas ya gastadas en capitulos anteriores.
+    const muletillas = input.muletillasGlobales || [];
+    const muletillasSection = muletillas.length > 0
+      ? `
+    ═══════════════════════════════════════════════════════════════════
+    MULETILLAS YA GASTADAS EN CAPÍTULOS ANTERIORES DE ESTA NOVELA
+    ═══════════════════════════════════════════════════════════════════
+    Estas frases ya se han repetido en varios capítulos previos:
+    ${muletillas.slice(0, 12).map(m => `- "${m.frase}" (ya usada en ${m.capitulos.length} capítulos)`).join("\n    ")}
+
+    Si alguna de estas frases (o una variante casi idéntica) aparece en el
+    capítulo que vas a pulir, REESCRÍBELA con una imagen o formulación
+    DISTINTA que conserve el sentido. Si no aparece, no toques nada por esto.
+    ═══════════════════════════════════════════════════════════════════
+`
+      : "";
+
     const prompt = `
     ⚠️ INSTRUCCIÓN CRÍTICA: NO TRADUCIR. Mantén el texto en su idioma original.
     
@@ -458,7 +480,7 @@ export class CopyEditorAgent extends BaseAgent {
     ${languageRules}
     
     ${fluencyRules}
-    ${lexicoSection}
+    ${lexicoSection}${muletillasSection}
     Por favor, toma el siguiente texto y aplícale el protocolo de Corrección de Élite, Maquetado para Ebook y MEJORA DE FLUIDEZ NATURAL.
     
     IMPORTANTE: 

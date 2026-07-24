@@ -132,8 +132,12 @@ export class ContinuitySentinelAgent extends BaseAgent {
       role: "continuity-sentinel",
       systemPrompt: SYSTEM_PROMPT,
       model: "deepseek-v4-flash",
-      useThinking: false,
-      maxOutputTokens: 4096,
+      // [Fix264] Thinking activado: es un juez que debe detectar derivas
+      // temporales y contradicciones sutiles entre tramos; sin razonamiento
+      // se le escapaban. Techo combinado subido en consecuencia.
+      useThinking: true,
+      thinkingBudget: 4096,
+      maxOutputTokens: 16384,
     });
   }
 

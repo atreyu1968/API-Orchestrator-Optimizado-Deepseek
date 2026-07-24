@@ -324,7 +324,10 @@ export class EditorAgent extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 4096,
-      maxOutputTokens: 8192,
+      // [Fix264] 8192 -> 16384: el techo es COMBINADO (razonamiento + JSON).
+      // Con capitulos largos el thinking se comia el techo y el JSON llegaba
+      // truncado o vacio (mismo patron que ya mordio a otros jueces).
+      maxOutputTokens: 16384,
     });
   }
 

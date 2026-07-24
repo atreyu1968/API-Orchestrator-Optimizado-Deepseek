@@ -374,7 +374,21 @@ REGLAS DEL VEREDICTO (críticas — el sistema lo parsea automáticamente):
       ? `\n\n═══════════════════════════════════════════════════════════════════\n## NOTAS DE TU LECTURA ANTERIOR (referencia de evolución — versión PASADA, NO actual)\n═══════════════════════════════════════════════════════════════════\n\n${input.previousBetaNotes.slice(0, 24000)}\n\n[Fix133] FUENTE DE VERDAD: el manuscrito que tienes MÁS ABAJO es la ÚNICA versión real y ACTUAL. Las notas de arriba son una lectura PASADA y el autor YA ha podido corregir parte de lo que señalaste, así que NO asumas que ningún problema antiguo sigue existiendo: cada uno hay que RE-COMPROBARLO en el texto de hoy antes de volver a mencionarlo. No mezcles lo que recuerdas de la versión anterior con lo que de verdad lees ahora.\n\nCómo usar esas notas SIN mezclar versiones:\n- Antes de repetir CUALQUIER pega antigua, localízala en el manuscrito ACTUAL y cita el (cap N) concreto donde SIGUE presente HOY. Si la confirmas vigente, REPÍTELA en el JSON con prioridad subida y una instrucción más concreta y accionable que la vez anterior.\n- Si NO la encuentras en el texto actual (porque ya se corrigió), dala por RESUELTA: dilo en una frase de prosa ("la pega del cap 12 ya no está") y NO emitas instrucción para ella. PROHIBIDO emitir una instrucción sobre un problema concreto que no puedas señalar HOY en el texto con su cita de capítulo — eso es referirse a una versión que ya no existe.\n- EXCEPCIÓN para pegas GLOBALES de verdad (ritmo general, tono de conjunto, sensación de relleno difusa) que sigues percibiendo HOY pero que no puedes anclar a UN capítulo concreto: NO la dejes caer en silencio. Recógela como observación en prosa (no como instrucción accionable del JSON) describiéndola como impresión global del manuscrito actual; así el autor la ve sin que el cirujano la aplique a ciegas.\n- El umbral comercial deseable es Beta >= 9. Si vienes de un 7 o un 8, identifica qué cambios REALES sobre el texto actual cerrarían ese gap. Si vienes ya de un 9, identifica qué llevaría la obra al 10.\n- NO hay minimo de instrucciones: TODAS las que emitas deben ser pegas CONFIRMADAS en el texto actual, evoluciones reales de las viejas, o mejoras incrementales nuevas con pasaje concreto — nunca recuerdos de una versión que ya no existe ni relleno para cubrir cuota. Si el texto actual ya está sólido, \`{"instrucciones": []}\` es una respuesta legítima.`
       : "";
 
-    const metaBlock = `## DATOS DEL MANUSCRITO
+    // [Fix264] Perfil de lector ESPECIALIZADO en el genero objetivo: el perfil
+    // generico ("lees mucho") desperdiciaba criterio; anclamos su vara de medir
+    // al canon del genero concreto de esta novela.
+    const perfilLectorBlock = (input.generoObjetivo && input.generoObjetivo.trim())
+      ? `## TU PERFIL DE LECTOR ESPECIALIZADO
+Para esta lectura NO eres un lector generalista: eres un lector VETERANO del género "${input.generoObjetivo.trim()}". Lees decenas de novelas de este género al año, conoces sus convenciones y sus códigos, sabes qué clichés están quemados en el mercado actual y qué "momentos obligados" espera (y paga por encontrar) el público de este género. Lee y puntúa DESDE ese criterio de especialista:
+- Compara mentalmente esta novela con lo mejor del género que has leído: di dónde queda POR DEBAJO del estándar y dónde lo SUPERA.
+- Exige los momentos obligados del género; si falta alguno o llega descafeinado, dilo con nombre y apellidos.
+- Señala los clichés del género que esta novela usa sin darles una vuelta propia.
+- Tu nota final es la de un especialista del género, no la de un lector casual: un 9 significa "compite con lo mejor que se publica hoy en este género".
+
+`
+      : "";
+
+    const metaBlock = `${perfilLectorBlock}## DATOS DEL MANUSCRITO
 Título: ${input.projectTitle}
 Género objetivo: ${input.generoObjetivo || "(no especificado)"}
 Longitud objetivo: ${input.longitudObjetivo || "(no especificado)"}

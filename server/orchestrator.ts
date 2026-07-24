@@ -5475,6 +5475,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           chapterTitle: sectionData.titulo,
           guiaEstilo: styleGuideContent || undefined,
           lexicoHistorico: this.resolveLexicoForChapter(worldBibleData, sectionData.numero),
+          // [Fix264] muletillas de capitulos previos para que el Estilista las varie
+          muletillasGlobales: await this.computeGenerationMuletillas(project.id, sectionData.numero),
         });
 
         await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "deepseek-v4-flash", sectionData.numero, "polish");
@@ -6518,6 +6520,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           chapterTitle: sectionData.titulo,
           guiaEstilo: styleGuideContent || undefined,
           lexicoHistorico: this.resolveLexicoForChapter(worldBibleData, sectionData.numero),
+          // [Fix264] muletillas de capitulos previos para que el Estilista las varie
+          muletillasGlobales: await this.computeGenerationMuletillas(project.id, sectionData.numero),
         });
 
         await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "deepseek-v4-flash", sectionData.numero, "polish");
@@ -6882,6 +6886,29 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     }
 
     return root;
+  }
+
+  // [Fix264] Muletillas de frase repetidas en los capitulos YA COMPLETADOS
+  // (excluyendo el actual), para que el Estilista las varie si reaparecen.
+  // Determinista y best-effort: cualquier fallo devuelve lista vacia.
+  private async computeGenerationMuletillas(
+    projectId: number,
+    excludeChapterNumber: number,
+  ): Promise<Array<{ frase: string; capitulos: number[] }>> {
+    try {
+      const chapters = await storage.getChaptersByProject(projectId);
+      const previous = chapters
+        .filter(c => c.chapterNumber !== excludeChapterNumber && c.status === "completed" && c.content)
+        .map(c => ({
+          chapterNumber: c.chapterNumber,
+          content: (c.content || "").split("---CONTINUITY_STATE---")[0],
+        }));
+      if (previous.length < 3) return [];
+      return detectCrossChapterCatchphrases(previous, 3, 12);
+    } catch (e) {
+      console.warn("[Fix264] computeGenerationMuletillas fallo:", e);
+      return [];
+    }
   }
 
   /**
