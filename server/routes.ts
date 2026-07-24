@@ -2567,6 +2567,96 @@ RESPONDE ÚNICAMENTE CON JSON:
     }
   });
 
+  // [Fix253] Reescritura de un pasaje seleccionado con IA (Mejorar / Expandir /
+  // Acortar / Simplificar / instruccion libre). Devuelve SOLO el texto reescrito;
+  // el frontend lo aplica sobre la seleccion dentro del editor (el usuario guarda).
+  app.post("/api/projects/:id/chapters/:chapterId/rewrite-passage", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const chapterId = parseInt(req.params.chapterId);
+      if (isNaN(projectId) || isNaN(chapterId)) {
+        return res.status(400).json({ error: "Identificadores inválidos" });
+      }
+      const passage = typeof req.body?.passage === "string" ? req.body.passage : "";
+      const action = typeof req.body?.action === "string" ? req.body.action : "";
+      const instructions = typeof req.body?.instructions === "string" ? req.body.instructions.trim() : "";
+      const VALID_ACTIONS = ["improve", "expand", "shorten", "simplify", "custom"];
+      if (!passage.trim()) return res.status(400).json({ error: "No hay texto seleccionado que reescribir" });
+      if (passage.length > 20000) return res.status(400).json({ error: "La selección es demasiado larga (máx. ~20.000 caracteres); selecciona un pasaje más corto" });
+      if (!VALID_ACTIONS.includes(action)) return res.status(400).json({ error: "Acción de reescritura no válida" });
+      if (action === "custom" && !instructions) return res.status(400).json({ error: "Escribe la instrucción para la reescritura personalizada" });
+
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      const chapters = await storage.getChaptersByProject(projectId);
+      const chapter = chapters.find(c => c.id === chapterId);
+      if (!chapter) return res.status(404).json({ error: "Capítulo no encontrado en este proyecto" });
+
+      // Contexto: prosa del capitulo alrededor del pasaje (si se localiza)
+      const MARKER = "---CONTINUITY_STATE---";
+      let prose = chapter.content || "";
+      if (prose.includes(MARKER)) prose = prose.split(MARKER)[0];
+      let contextBlock = "";
+      const idx = prose.indexOf(passage.trim().substring(0, 400));
+      if (idx >= 0) {
+        const before = prose.substring(Math.max(0, idx - 1200), idx).trim();
+        const after = prose.substring(idx + passage.length, idx + passage.length + 1200).trim();
+        contextBlock = `CONTEXTO INMEDIATAMENTE ANTERIOR AL PASAJE:\n${before || "(inicio del capítulo)"}\n\nCONTEXTO INMEDIATAMENTE POSTERIOR:\n${after || "(final del capítulo)"}\n\n`;
+      }
+
+      const ACTION_BRIEFS: Record<string, string> = {
+        improve: "MEJORA el pasaje: prosa más viva y precisa, verbos más fuertes, sin clichés ni repeticiones, mostrando en vez de contar. Mantén longitud similar (±20%).",
+        expand: "EXPANDE el pasaje: desarrolla la escena con más detalle sensorial, interioridad del personaje o tensión, según pida el momento. Apunta a 1.5x-2x la longitud original, sin relleno.",
+        shorten: "ACORTA el pasaje: conserva la información y los beats esenciales, elimina redundancias y rodeos. Apunta a la mitad de la longitud, sin perder voz.",
+        simplify: "SIMPLIFICA el pasaje: frases más claras y directas, vocabulario más llano, sin perder el tono literario. Longitud similar o menor.",
+        custom: `Sigue esta instrucción del autor al reescribir el pasaje: ${instructions}`,
+      };
+
+      const prompt = `Eres un escritor literario profesional en español. Reescribe UN PASAJE de una novela siguiendo una instrucción concreta.
+
+NOVELA: "${project.title}" (género: ${project.genre}, tono: ${project.tone}).
+
+${contextBlock}PASAJE A REESCRIBIR:
+${passage}
+
+INSTRUCCIÓN: ${ACTION_BRIEFS[action]}
+
+REGLAS DURAS:
+- Conserva los HECHOS del pasaje (quién hace qué, qué se revela): no inventes giros nuevos ni contradigas el contexto.
+- Conserva la voz narrativa, el tiempo verbal y la persona gramatical del pasaje original.
+- El resultado debe empalmar de forma natural con el contexto anterior y posterior.
+- Usa raya (—) SOLO en las líneas de diálogo, como en el original; NUNCA conviertas narración en diálogo ni añadas rayas donde el original no las tiene.
+- NO añadas títulos, notas, comillas envolventes ni comentarios: responde ÚNICAMENTE con el texto reescrito del pasaje.`;
+
+      const { default: OpenAI } = await import("openai");
+      const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
+      const response = await ai.chat.completions.create({
+        model: "deepseek-v4-flash",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.8,
+        top_p: 0.95,
+        max_tokens: 8192,
+        ...({ thinking: { type: "disabled" } } as any),
+      });
+      await recordRawAiUsage(response, { agentName: "passage-rewriter", model: "deepseek-v4-flash", projectId, operation: `rewrite-passage-${action}` });
+
+      let rewritten = (response.choices?.[0]?.message?.content || "").trim();
+      // Defensa: quitar comillas envolventes o fences que a veces cuela el LLM
+      rewritten = rewritten.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/, "").trim();
+      if ((rewritten.startsWith('"') && rewritten.endsWith('"')) || (rewritten.startsWith("«") && rewritten.endsWith("»"))) {
+        const inner = rewritten.substring(1, rewritten.length - 1).trim();
+        if (!passage.trim().startsWith('"') && !passage.trim().startsWith("«")) rewritten = inner;
+      }
+      if (!rewritten) {
+        return res.status(502).json({ error: "La IA no devolvió texto. Inténtalo de nuevo." });
+      }
+      res.json({ rewritten });
+    } catch (error) {
+      console.error("[Fix253] Error rewriting passage:", error);
+      res.status(500).json({ error: "No se pudo reescribir el pasaje" });
+    }
+  });
+
   // [Fix252] Verificador de datos del capitulo: fechas, geografia, nombres
   // reales, cifras y afirmaciones verificables del mundo real. Ignora los
   // elementos ficticios propios de la novela.

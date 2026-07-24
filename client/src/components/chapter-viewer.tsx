@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -243,6 +243,71 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
     },
   });
 
+  // [Fix253] Reescritura de un pasaje seleccionado con IA dentro del editor.
+  // La seleccion se captura del textarea; el resultado se previsualiza y solo
+  // se aplica al borrador si el usuario acepta (guardar sigue siendo manual).
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [selRange, setSelRange] = useState<{ start: number; end: number } | null>(null);
+  const [customInstr, setCustomInstr] = useState("");
+  const [rewriteAction, setRewriteAction] = useState<string | null>(null);
+  const [rewritePreview, setRewritePreview] = useState<{ original: string; rewritten: string; start: number; end: number } | null>(null);
+
+  const updateSelection = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    setSelRange(end > start ? { start, end } : null);
+  };
+
+  const rewriteMutation = useMutation({
+    mutationFn: async ({ action }: { action: string }) => {
+      if (!chapter || !selRange) throw new Error("Sin selección");
+      const passage = draft.substring(selRange.start, selRange.end);
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/${chapter.projectId}/chapters/${chapter.id}/rewrite-passage`,
+        { passage, action, instructions: action === "custom" ? customInstr.trim() : undefined },
+      );
+      const data = await res.json();
+      return { original: passage, rewritten: (data.rewritten || "") as string, start: selRange.start, end: selRange.end };
+    },
+    onSuccess: (data) => {
+      setRewritePreview(data);
+      setRewriteAction(null);
+    },
+    onError: (err: any) => {
+      setRewriteAction(null);
+      toast({ title: "No se pudo reescribir el pasaje", description: err?.message || "Error desconocido", variant: "destructive" });
+    },
+  });
+
+  const startRewrite = (action: string) => {
+    setRewriteAction(action);
+    rewriteMutation.mutate({ action });
+  };
+
+  const applyRewrite = () => {
+    if (!rewritePreview) return;
+    // Guarda de integridad: si el borrador cambio desde que se lanzo la
+    // reescritura, el rango ya no es fiable y no se debe reemplazar a ciegas.
+    if (draft.substring(rewritePreview.start, rewritePreview.end) !== rewritePreview.original) {
+      setRewritePreview(null);
+      setSelRange(null);
+      toast({
+        title: "El texto cambió mientras se reescribía",
+        description: "No se aplicó nada para no corromper el borrador. Vuelve a seleccionar el pasaje.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setDraft(draft.substring(0, rewritePreview.start) + rewritePreview.rewritten + draft.substring(rewritePreview.end));
+    setRewritePreview(null);
+    setSelRange(null);
+    setCustomInstr("");
+    toast({ title: "Pasaje reescrito", description: "Aplicado al borrador. Recuerda Guardar para conservarlo." });
+  };
+
   if (!chapter) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-16">
@@ -423,12 +488,79 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
       {isEditing ? (
         <div className="flex-1 flex flex-col min-h-0">
           <Textarea
+            ref={textareaRef}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => { setDraft(e.target.value); setSelRange(null); }}
+            onSelect={updateSelection}
+            readOnly={rewriteMutation.isPending}
             className="flex-1 resize-none font-serif text-base leading-7 min-h-0"
             placeholder="Texto del capítulo..."
             data-testid="textarea-chapter-content"
           />
+          {/* [Fix253] Panel de reescritura IA sobre la seleccion */}
+          <div className="mt-2 rounded-md border bg-muted/30 p-2" data-testid="panel-rewrite-ai">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-medium flex items-center gap-1 text-muted-foreground shrink-0">
+                <Wand2 className="h-3.5 w-3.5" />
+                Reescribir con IA
+              </span>
+              {!selRange && (
+                <span className="text-xs text-muted-foreground/70">Selecciona un pasaje en el editor y elige una acción.</span>
+              )}
+              {selRange && (
+                <>
+                  <span className="text-xs text-muted-foreground/70" data-testid="text-rewrite-selection-words">
+                    {draft.substring(selRange.start, selRange.end).trim().split(/\s+/).filter(Boolean).length} palabras seleccionadas
+                  </span>
+                  {[
+                    { action: "improve", label: "Mejorar" },
+                    { action: "expand", label: "Expandir" },
+                    { action: "shorten", label: "Acortar" },
+                    { action: "simplify", label: "Simplificar" },
+                  ].map(({ action, label }) => (
+                    <Button
+                      key={action}
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={rewriteMutation.isPending}
+                      onClick={() => startRewrite(action)}
+                      data-testid={`button-rewrite-${action}`}
+                    >
+                      {rewriteMutation.isPending && rewriteAction === action && (
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      )}
+                      {label}
+                    </Button>
+                  ))}
+                  <div className="flex items-center gap-1 flex-1 min-w-[220px]">
+                    <Input
+                      value={customInstr}
+                      onChange={(e) => setCustomInstr(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && customInstr.trim() && !rewriteMutation.isPending) startRewrite("custom");
+                      }}
+                      placeholder="Instrucción personalizada... (ej. hazlo más tenso)"
+                      className="h-7 text-xs"
+                      disabled={rewriteMutation.isPending}
+                      data-testid="input-rewrite-custom"
+                    />
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs shrink-0"
+                      disabled={rewriteMutation.isPending || !customInstr.trim()}
+                      onClick={() => startRewrite("custom")}
+                      data-testid="button-rewrite-custom"
+                    >
+                      {rewriteMutation.isPending && rewriteAction === "custom"
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : <Sparkles className="h-3 w-3" />}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
           <p className="text-xs text-muted-foreground mt-2">
             {draft.trim() ? draft.trim().split(/\s+/).filter(Boolean).length.toLocaleString() : 0} palabras
             {" · "}Los metadatos técnicos del capítulo se conservan automáticamente al guardar.
@@ -461,6 +593,46 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
           )}
         </ScrollArea>
       )}
+
+      {/* [Fix253] Vista previa de la reescritura del pasaje */}
+      <Dialog open={!!rewritePreview} onOpenChange={(open) => { if (!open) setRewritePreview(null); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 className="h-5 w-5" />
+              Vista previa de la reescritura
+            </DialogTitle>
+            <DialogDescription>
+              Compara el pasaje original con la versión reescrita antes de aplicarla al borrador.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="flex-1 min-h-0 pr-3">
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Original ({rewritePreview ? rewritePreview.original.trim().split(/\s+/).filter(Boolean).length : 0} palabras)</p>
+                <div className="rounded-md border bg-muted/30 p-3 text-sm font-serif whitespace-pre-wrap" data-testid="text-rewrite-original">
+                  {rewritePreview?.original}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Reescrito ({rewritePreview ? rewritePreview.rewritten.trim().split(/\s+/).filter(Boolean).length : 0} palabras)</p>
+                <div className="rounded-md border border-primary/40 bg-primary/5 p-3 text-sm font-serif whitespace-pre-wrap" data-testid="text-rewrite-result">
+                  {rewritePreview?.rewritten}
+                </div>
+              </div>
+            </div>
+          </ScrollArea>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRewritePreview(null)} data-testid="button-rewrite-discard">
+              Descartar
+            </Button>
+            <Button onClick={applyRewrite} data-testid="button-rewrite-apply">
+              <Check className="h-4 w-4 mr-2" />
+              Aplicar al borrador
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* [Fix252] Dialogo de resultados del verificador de datos */}
       <Dialog open={factCheckOpen} onOpenChange={setFactCheckOpen}>
