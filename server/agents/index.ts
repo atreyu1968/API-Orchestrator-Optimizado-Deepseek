@@ -32,6 +32,8 @@ export { HolisticReviewerAgent, type HolisticReviewerResult } from "./holistic-r
 export { BetaReaderAgent, type BetaReaderResult } from "./beta-reader";
 export { OutlineBetaReaderAgent, type OutlineBetaReaderResult, type OutlineBetaProblem, type OutlineBetaProblemType } from "./outline-beta-reader";
 export { PlotIntegrityAuditorAgent, computePlotIntegrityMetrics, type PlotIntegrityResult, type PlotIntegrityIssue, type PlotIntegrityInput, type PlotIntegrityComputedMetrics } from "./plot-integrity-auditor";
+// [Fix261] Auditor de la Curva de Tension.
+export { TensionCurveAuditorAgent, computeTensionCurveMetrics, type TensionCurveResult, type TensionCurveIssue, type TensionCurveInput, type TensionCurveComputedMetrics } from "./tension-curve-auditor";
 // [Fix110] Auditor de World Bible entre Fase 1 y Fase 2 del Arquitecto.
 export { WorldBibleAuditorAgent, enforceDensityFloors, type WorldBibleAuditResult, type WorldBibleAuditProblem, type WorldBibleAuditArea, type WorldBibleAuditInput } from "./world-bible-auditor";
 // [Fix92] Auditor estructural determinista (forma/ledger/dosificación).

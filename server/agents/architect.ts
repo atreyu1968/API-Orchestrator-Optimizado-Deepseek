@@ -79,6 +79,12 @@ interface ArchitectInput {
   // desenlace para que la agencia recaiga en el protagonista, sin romper lo aprobado.
   agencyFeedback?: string;
 
+  // [Fix261] Feedback del Auditor de la Curva de Tension: se inyecta cuando el
+  // juez detecta mesetas planas, acto 2 sin escalada, climax sin pico, picos
+  // prematuros, falta de valles o zigzag ilogico. Los cambios deben tocar
+  // CONTENIDO (beats, eventos, apuestas), no solo maquillar tension_objetivo.
+  tensionCurveFeedback?: string;
+
   // [Fix106] World Bible reutilizable (Fase 1 ya generada en un intento previo).
   // Cuando el orquestador re-ejecuta al Arquitecto tras un auditor (Estructural/
   // Integridad/Beta), pasa aquí el outline anterior PARSEADO (objeto con
@@ -528,6 +534,7 @@ REGLAS DE VARIEDAD (ANTI-MONOTONÍA — OBLIGATORIAS):
 REGLAS DE CALIDAD GENERAL:
 8. Cada capítulo debe tener "objetivo_narrativo" OBLIGATORIO: párrafo de 100-200 palabras que cuente qué ocurre realmente (sinopsis en prosa, no metadatos). Sin esto el Narrador escribe a ciegas.
 9. Cada capítulo debe tener AL MENOS 5 beats sustanciales (cada beat 1-3 oraciones). Algunos tipos (set_piece, persecucion) pueden llevar 7-10 beats; otros (intimo, calma_engañosa) bastan con 4-5.
+9b. [Fix260] CONTRATO DE ESCENAS — cada capítulo debe declarar "escenas": 2-4 escenas que agrupan los beats. Cada escena es una UNIDAD DRAMÁTICA con cambio de valor obligatorio: la carga emocional con la que ENTRA el protagonista (o el lector) debe ser DISTINTA de la carga con la que SALE (esperanza→humillación, miedo→determinación, control→pérdida). Una escena donde el valor no cambia NO es una escena — es relleno: elimínala o fusiónala. Cada escena declara además su "conflicto" (qué fuerza se opone en ESA escena; sin oposición no hay escena) y su "cierre" (qué emoción o decisión concreta le queda al protagonista). Los campos son de 1 oración cada uno — concisión, no ensayos. El zigzag de valores entre escenas consecutivas ES el ritmo del capítulo: no encadenes dos escenas con el mismo valor de salida.
 10. Cada "informacion_nueva" debe ser GENUINAMENTE NUEVA — no repetir de capítulos anteriores.
 11. Los conflictos deben escalar progresivamente a lo largo del acto 2, NO mantenerse en meseta.
 
@@ -899,6 +906,14 @@ FORMATO COMPACTO — Genera un JSON con "escaleta_capitulos":
         "Beat 4: descripción concisa",
         "Beat 5: descripción concisa (último; no obligatoriamente cliffhanger)"
       ],
+      "escenas": [
+        {
+          "proposito": "Qué consigue esta escena en la historia (1 oración)",
+          "valor": "de [carga emocional de entrada] a [carga de salida] — DEBEN ser distintas",
+          "conflicto": "Quién o qué se opone aquí y cómo (1 oración)",
+          "cierre": "Con qué se queda el protagonista al cerrar la escena (emoción/decisión, 1 oración)"
+        }
+      ],
       "tipo_cierre": "cliffhanger | pregunta_abierta | escena_reposada | revelacion_silenciosa | cambio_pov | ambiguo",
       "tension_objetivo": 7,
       "dias_diegeticos": 1,
@@ -1070,6 +1085,21 @@ export class ArchitectAgent extends BaseAgent {
     conservando lo aprobado por críticas previas.
 
     ${input.agencyFeedback}
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    ${input.tensionCurveFeedback ? `
+    ═══════════════════════════════════════════════════════════════════
+    FEEDBACK DEL AUDITOR DE LA CURVA DE TENSIÓN (PRIORIDAD MÁXIMA)
+    ═══════════════════════════════════════════════════════════════════
+    Tu escaleta anterior tiene una curva de tensión defectuosa (mesetas planas,
+    acto 2 sin escalada, clímax sin pico, picos prematuros, falta de valles o
+    zigzag sin lógica dramática). DEBES rediseñar aplicando LITERALMENTE las
+    correcciones siguientes. REGLA CRÍTICA: los cambios deben tocar el CONTENIDO
+    de los capítulos (beats, eventos, apuestas dramáticas) — está PROHIBIDO
+    limitarte a cambiar el número de tension_objetivo sin cambiar lo que ocurre.
+    Conserva los capítulos aprobados; modifica solo lo señalado.
+
+    ${input.tensionCurveFeedback}
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     ${input.betaReaderFeedback ? `
@@ -1568,6 +1598,7 @@ ${input.writtenChaptersFullText}
       ? `El total debe estar DENTRO del rango [${minRange}, ${maxRange}]. Fuera del rango la respuesta es INVÁLIDA.`
       : `Si no hay EXACTAMENTE ${input.chapterCount} capítulos, tu respuesta es INVÁLIDA.`}
     Verifica también que CADA capítulo tenga "objetivo_narrativo" con >= ${referenceCount > 25 ? "60" : "100"} palabras de prosa y "beats" con >= ${referenceCount > 25 ? "4" : "6"} entradas. Sin esto la respuesta es INVÁLIDA.
+    [Fix260] Verifica que CADA capítulo tenga "escenas" con 2-4 entradas y que en cada escena la carga de entrada y la de salida del campo "valor" sean DISTINTAS (una escena sin cambio de valor es relleno).
 
     Responde ÚNICAMENTE con el JSON que contenga "escaleta_capitulos"${isRangeMode ? " y \"decision_numero_capitulos\"" : ""}.
     `;

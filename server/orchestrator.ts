@@ -37,6 +37,8 @@ import {
   OutlineBetaReaderAgent,
   PlotIntegrityAuditorAgent,
   computePlotIntegrityMetrics,
+  TensionCurveAuditorAgent,
+  computeTensionCurveMetrics,
   WorldBibleAuditorAgent,
   type WorldBibleAuditResult,
   enforceDensityFloors,
@@ -152,6 +154,13 @@ interface SectionData {
     emocion_inicio?: string;
     emocion_final?: string;
   };
+  // [Fix260] Contrato de escenas: unidades dramaticas con cambio de valor
+  escenas?: Array<{
+    proposito?: string;
+    valor?: string;
+    conflicto?: string;
+    cierre?: string;
+  }>;
   recursos_literarios_sugeridos?: string[];
   tono_especifico?: string;
   prohibiciones_este_capitulo?: string[];
@@ -226,6 +235,8 @@ export class Orchestrator {
   private betaReader = new BetaReaderAgent();
   private outlineBetaReader = new OutlineBetaReaderAgent();
   private plotIntegrityAuditor = new PlotIntegrityAuditorAgent();
+  // [Fix261] Juez semantico de la curva de tension de la escaleta.
+  private tensionCurveAuditor = new TensionCurveAuditorAgent();
   // [Fix147][Puerta 1] Editor de Desarrollo del plan / Regla de Agencia.
   private agencyCritic = new AgencyCriticAgent();
   // [Fix148][Puerta 4] Editor de Prosa de Agencia (juez de la PROSA escrita).
@@ -3289,6 +3300,209 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
         }
       } catch (agErr) {
         console.error(`[Orchestrator] Editor de Desarrollo (Agencia) falló (no bloqueante): ${(agErr as Error).message}`);
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      // [Fix261] AUDITOR DE LA CURVA DE TENSION — juez semantico de la forma
+      // dramatica de la curva (mesetas planas, acto 2 sin escalada, climax
+      // sin pico, picos prematuros, falta de valles, zigzag ilogico) ANTES
+      // de escribir prosa. Complementa al Auditor de Integridad (que solo
+      // mira el ritmo del tercer acto). Bucle 100% autonomo: sale por
+      // calidad, best-effort (fallo => pipeline sigue), reusa Fase 1 en los
+      // retries del Arquitecto. Los cambios exigidos tocan CONTENIDO, no
+      // solo el numero de tension_objetivo.
+      // ═══════════════════════════════════════════════════════════════
+      try {
+        if (!this.aborted) {
+          const MAX_TC_ITERATIONS = 3;
+          const TC_THRESHOLD = 7;
+          let bestTC: { data: ParsedWorldBible; score: number } | null = null;
+          let lastSeenScoreTC = 0;
+          let prevScoreTC: number | null = null;
+          let prevProblemsSummaryTC = "";
+
+          for (let tcIter = 0; tcIter < MAX_TC_ITERATIONS; tcIter++) {
+            if (this.aborted) break;
+            this.callbacks.onAgentStatus("architect", "thinking", "El Auditor de la Curva de Tensión está revisando la escalada dramática...");
+            const tcMetrics = computeTensionCurveMetrics(worldBibleData.escaleta_capitulos as any[]);
+            const tcOutcome = await this.tensionCurveAuditor.analyze({
+              title: project.title,
+              genre: project.genre,
+              tone: project.tone,
+              premise: effectivePremise,
+              chapterCount: project.chapterCount,
+              escaletaCapitulos: worldBibleData.escaleta_capitulos as any[],
+              projectId: project.id,
+              computedMetrics: tcMetrics,
+            });
+
+            if (tcOutcome.raw?.tokenUsage) {
+              await this.trackTokenUsage(project.id, tcOutcome.raw.tokenUsage, "El Auditor de la Curva de Tensión", "deepseek-v4-flash", undefined, "tension_curve_check");
+            }
+
+            const audit = tcOutcome.result;
+            if (!audit) {
+              console.warn(`[Orchestrator] Auditor de Curva de Tension no devolvio resultado valido (iter ${tcIter + 1}). Continuando.`);
+              break;
+            }
+
+            const altasTC = audit.problemas.filter(p => p.severidad === "alta").length;
+            const mediasTC = audit.problemas.filter(p => p.severidad === "media").length;
+            const problemsSummaryTC = audit.problemas.slice(0, 10)
+              .map((p, i) => `${i + 1}. [${p.severidad}] (${p.tipo}, caps ${p.capitulos?.join(",") || "?"}) ${p.descripcion}`)
+              .join("\n");
+            console.log(`[Orchestrator] Auditor de Curva de Tension — iter ${tcIter + 1}/${MAX_TC_ITERATIONS}: score ${audit.puntuacion_curva}/10, veredicto "${audit.veredicto}", ${altasTC} altas + ${mediasTC} medias.`);
+
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: audit.veredicto === "reescribir" ? "warn" : "info",
+              agentRole: "architect",
+              message: `📈 Auditor de la Curva de Tensión — iter ${tcIter + 1}/${MAX_TC_ITERATIONS} — Score ${audit.puntuacion_curva}/10 (${audit.veredicto}). ${altasTC} problemas altos, ${mediasTC} medios. ${audit.resumen}`,
+              metadata: { fix: "Fix261", tensionCurveScore: audit.puntuacion_curva, veredicto: audit.veredicto, problemas: audit.problemas as any, iteration: tcIter + 1 },
+            });
+
+            lastSeenScoreTC = audit.puntuacion_curva;
+            if (!bestTC || audit.puntuacion_curva > bestTC.score) {
+              bestTC = { data: worldBibleData, score: audit.puntuacion_curva };
+            }
+
+            // [Fix261] Si el juez pide revision pero olvido las instrucciones,
+            // sintetizamos un fallback desde los problemas (sugerencias) para
+            // no cortar los retries prematuramente (objecion del architect).
+            if (audit.puntuacion_curva < TC_THRESHOLD && !audit.instrucciones_revision?.trim() && audit.problemas.length > 0) {
+              audit.instrucciones_revision = audit.problemas
+                .filter(p => p.sugerencia?.trim())
+                .slice(0, 10)
+                .map((p, i) => `${i + 1}. [${p.severidad}] (caps ${p.capitulos?.join(",") || "?"}) ${p.sugerencia}`)
+                .join("\n");
+            }
+            const needsRetryTC = audit.puntuacion_curva < TC_THRESHOLD && audit.instrucciones_revision?.trim();
+            const lastIterTC = tcIter === MAX_TC_ITERATIONS - 1;
+            if (!needsRetryTC || lastIterTC) {
+              if (lastIterTC && needsRetryTC) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  agentRole: "architect",
+                  message: `[Fix261] El Auditor de la Curva de Tensión agotó ${MAX_TC_ITERATIONS} iteraciones sin alcanzar el umbral ${TC_THRESHOLD}/10. Mejor score: ${bestTC?.score}/10. Se continúa con la mejor escaleta vista (advisory, no bloquea).`,
+                  metadata: { fix: "Fix261", bestScore: bestTC?.score, threshold: TC_THRESHOLD },
+                });
+              }
+              break;
+            }
+
+            prevScoreTC = audit.puntuacion_curva;
+            prevProblemsSummaryTC = problemsSummaryTC;
+
+            console.log(`[Orchestrator] Auditor de Curva de Tension pidio revision. Re-ejecutando Arquitecto con tensionCurveFeedback...`);
+            this.callbacks.onAgentStatus("architect", "thinking", `Curva de tensión defectuosa (${audit.puntuacion_curva}/10). El Arquitecto está rediseñando la escalada dramática...`);
+
+            const historyBlockTC = `═══════════════════════════════════════════════════════════════════
+CONTEXTO DE TU INTENTO ANTERIOR — ANTI-REGRESIÓN
+═══════════════════════════════════════════════════════════════════
+Tu pasada anterior fue evaluada por el Auditor de la Curva de Tensión y obtuvo ${prevScoreTC}/10. Problemas detectados entonces (NO los reintroduzcas y NO rompas lo que ya funcionaba):
+
+${prevProblemsSummaryTC || "(sin detalle textual; ve a las instrucciones de revisión abajo)"}
+
+REGLA CRÍTICA: conserva todas las decisiones narrativas que NO estuvieran marcadas como problemáticas. Modifica solo lo que el feedback siguiente indica. Objetivo: PROGRESO MONOTÓNICO.
+═══════════════════════════════════════════════════════════════════
+
+`;
+            try {
+              const retryResult = await this.architect.execute({
+                title: project.title,
+                premise: effectivePremise,
+                genre: project.genre,
+                tone: project.tone,
+                chapterCount: project.chapterCount,
+                minChapterCount: (project as any).minChapterCount ?? null,
+                maxChapterCount: (project as any).maxChapterCount ?? null,
+                hasPrologue: project.hasPrologue,
+                hasEpilogue: project.hasEpilogue,
+                hasAuthorNote: project.hasAuthorNote,
+                architectInstructions: project.architectInstructions || undefined,
+                tensionCurveFeedback: historyBlockTC + audit.instrucciones_revision,
+                // [Fix261] Reusa la Fase 1 estable: el feedback de curva solo
+                // toca la escaleta (Fase 2), no las entidades base.
+                reusePhase1Json: worldBibleData || undefined,
+                seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+                seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
+                kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+                forbiddenNames,
+                projectId: project.id,
+                previousVolumesFullText,
+                pseudonymCatalog,
+                extendedGuideContent: extendedGuideContent || undefined,
+              });
+
+              if (retryResult.tokenUsage) {
+                await this.trackTokenUsage(project.id, retryResult.tokenUsage, "El Arquitecto (revisión curva de tensión)", "deepseek-v4-flash", undefined, "world_bible");
+              }
+
+              if (!retryResult.error && !retryResult.timedOut && retryResult.content?.trim()) {
+                const reviewedData = this.parseArchitectOutput(retryResult.content);
+                const reviewedLen = reviewedData?.escaleta_capitulos?.length || 0;
+                const acceptCount = this.isAcceptableEscaletaCount(project, reviewedLen);
+                if (reviewedData && reviewedData.world_bible?.personajes?.length && acceptCount) {
+                  console.log(`[Orchestrator] Arquitecto rediseno tras Auditor de Curva de Tension: ${reviewedLen} caps. Sustituyendo y re-auditando.`);
+                  worldBibleData = reviewedData;
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "info",
+                    agentRole: "architect",
+                    message: `✅ El Arquitecto rediseñó la escalada dramática aplicando las correcciones del Auditor de la Curva de Tensión.`,
+                  });
+                  continue;
+                } else {
+                  // [Fix235] Empalme si vino truncado.
+                  const repaired = this.repairTruncatedEscaleta(project, reviewedData, worldBibleData);
+                  if (repaired) {
+                    worldBibleData = repaired.data;
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "info",
+                      agentRole: "architect",
+                      message: `[Fix261] Reintento del Arquitecto (Curva de Tensión) llegó truncado (${reviewedLen} caps) y se reparó por EMPALME: ${repaired.keptFromRetry} caps revisados + ${repaired.filledFromPrevious} previos. Se re-audita.`,
+                      metadata: { fix: "Fix261", keptFromRetry: repaired.keptFromRetry, filledFromPrevious: repaired.filledFromPrevious },
+                    });
+                    continue;
+                  }
+                  const rangeLabel = this.formatAcceptableEscaletaRange(project);
+                  console.warn(`[Orchestrator] Revision por Auditor de Curva de Tension RECHAZADA: ${reviewedLen} caps fuera del rango ${rangeLabel} (o sin personajes). Manteniendo mejor visto.`);
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warning",
+                    agentRole: "architect",
+                    message: `[Fix261] Reintento del Arquitecto (Curva de Tensión) RECHAZADO: produjo ${reviewedLen} caps fuera del rango aceptable ${rangeLabel}. Se conserva la mejor escaleta vista y se continúa.`,
+                    metadata: { fix: "Fix261", reviewedLen, rangeLabel },
+                  });
+                  break;
+                }
+              } else {
+                console.warn(`[Orchestrator] Revision por Auditor de Curva de Tension fallo: ${retryResult.error || "vacio/timeout"}. Manteniendo mejor visto.`);
+                break;
+              }
+            } catch (retryErr) {
+              console.error(`[Orchestrator] Excepcion en revision por Auditor de Curva de Tension: ${(retryErr as Error).message}. Manteniendo mejor visto.`);
+              break;
+            }
+          }
+
+          // Best-effort: restaurar la mejor escaleta vista si la ultima es peor.
+          if (bestTC && bestTC.data !== worldBibleData && bestTC.score > lastSeenScoreTC) {
+            console.log(`[Orchestrator] Recuperando mejor escaleta vista por Auditor de Curva de Tension (${bestTC.score} > ${lastSeenScoreTC}).`);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "architect",
+              message: `[Fix261] Se restaura la mejor escaleta vista por el Auditor de la Curva de Tensión (${bestTC.score}/10) sobre la última (${lastSeenScoreTC}/10).`,
+              metadata: { fix: "Fix261", bestScore: bestTC.score, lastScore: lastSeenScoreTC },
+            });
+            worldBibleData = bestTC.data;
+          }
+        }
+      } catch (tcErr) {
+        console.error(`[Orchestrator] Auditor de Curva de Tension fallo (no bloqueante): ${(tcErr as Error).message}`);
       }
 
       // ═══════════════════════════════════════════════════════════════
@@ -6723,6 +6937,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       pregunta_dramatica: c.pregunta_dramatica,
       conflicto_central: c.conflicto_central,
       giro_emocional: c.giro_emocional,
+      escenas: c.escenas,
       recursos_literarios_sugeridos: c.recursos_literarios_sugeridos,
       tono_especifico: c.tono_especifico,
       prohibiciones_este_capitulo: c.prohibiciones_este_capitulo,
@@ -8026,6 +8241,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       mandato_agencia: plotItem?.mandato_agencia,
       conflicto_central: plotItem?.conflicto_central,
       giro_emocional: plotItem?.giro_emocional,
+      escenas: plotItem?.escenas,
       riesgos_de_verosimilitud: plotItem?.riesgos_de_verosimilitud,
       propulsion: plotItem?.propulsion,
     };
@@ -12536,34 +12752,89 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // revert interno). Antes se contaba el intento y el brazo declaraba "completada:
     // N caps" con 0 cambios reales, concediendo relectura extra por nada.
     const attemptedBefore = new Map<number, string>();
+
+    // [Fix262] Agrupar los targets en TRAMOS de capitulos CONSECUTIVOS (2-3
+    // caps por tramo). Antes cada capitulo recibia una instruccion identica y
+    // aislada: el cap N+1 no sabia que el N acababa de subir la apuesta, y el
+    // resultado eran picos sueltos en vez de una escalada sostenida. Ahora
+    // cada tramo comparte un plan de escalada (siembra -> escalada -> pago
+    // parcial) y cada capitulo conoce su posicion dentro del tramo. La
+    // ejecucion sigue siendo en serie y rewriteChapterForQA relee vecinos
+    // frescos de BD, asi que el cap N+1 SI ve la cola recien reescrita del N.
+    // El revert por capitulo (snapshot del bucle + conteo Fix230) queda intacto.
+    const tramos: number[][] = [];
     for (const chapterNum of targets) {
-      if (this.aborted) break;
-      const chapter = allChapters.find(c => c.chapterNumber === chapterNum);
-      const sectionData = allSections.find(s => s.numero === chapterNum);
-      if (!chapter || !sectionData || !chapter.content) continue;
+      const last = tramos[tramos.length - 1];
+      if (last && chapterNum === last[last.length - 1] + 1 && last.length < 3) {
+        last.push(chapterNum);
+      } else {
+        tramos.push([chapterNum]);
+      }
+    }
 
-      const instruction = [
-        `REESCRITURA ESTRUCTURAL DIRIGIDA — ELEVAR LA TENSIÓN DE LA SEGUNDA MITAD (acto 2 / tramo flojo).`,
-        `El Lector Holístico detecta que este tramo del manuscrito decae: las apuestas no escalan, el ritmo se aplana y/o el avance hacia el clímax no se paga con coste real. Reescribe ESTE capítulo (${this.getSectionLabel(sectionData)}) para corregirlo SIN romper la continuidad ni el World Bible:`,
-        `1. SUBE la apuesta dramática respecto al capítulo anterior (escalada monótona): el protagonista debe arriesgar o perder más que antes.`,
-        `2. PAGA esa subida con un coste TANGIBLE E IRREVERSIBLE dentro de la escena (una herida o pérdida, una decisión sin vuelta atrás, una exposición pública, la rotura de un recurso o aliado). Nada de tensión que se resuelve gratis.`,
-        `3. PROHIBIDO introducir salvadores, informantes o soluciones que no estén ya sembrados antes en la novela (anti deus ex machina): trabaja solo con elementos ya presentes.`,
-        `4. CONSERVA los hechos canónicos, los nombres, las revelaciones ya dosificadas y la trama; cambia la INTENSIDAD y las consecuencias, no los hechos.`,
+    const tramoRoleLine = (tramo: number[], idx: number): string => {
+      if (tramo.length === 1) return "";
+      const pos = idx + 1;
+      const roles: string[] = [];
+      if (pos === 1) roles.push("ABRE la escalada del tramo: siembra la nueva amenaza/complicacion y sube la apuesta un primer escalon");
+      if (pos > 1 && pos < tramo.length) roles.push("CONTINUA la escalada iniciada en el capitulo anterior del tramo (NO la reinicies ni la resuelvas): agrava lo sembrado y sube otro escalon");
+      if (pos === tramo.length) roles.push("CIERRA el tramo pagando la escalada con el coste mas alto (perdida/decision irreversible) y deja la puerta abierta hacia el climax — sin resolver la trama global");
+      return [
         ``,
-        `INFORME DEL LECTOR HOLÍSTICO (contexto del problema global):`,
-        holisticExcerpt,
+        `COORDINACIÓN DE TRAMO [Fix262]: este capítulo es el ${pos} de ${tramo.length} de un tramo de reescritura CONSECUTIVA (caps ${tramo.join(", ")}). Los capítulos anteriores del tramo YA fueron reescritos con esta misma directriz — el final del capítulo anterior que ves en los extractos de vecinos es la versión NUEVA y debes continuarla con total coherencia.`,
+        `TU PAPEL EN EL TRAMO: ${roles.join("; ")}.`,
+        `La tensión debe ser ESTRICTAMENTE creciente a lo largo del tramo: nunca por debajo del capítulo anterior del tramo.`,
       ].join("\n");
+    };
 
-      attemptedBefore.set(chapterNum, chapter.content);
-      await this.rewriteChapterForQA(
-        project,
-        chapter,
-        sectionData,
-        worldBibleData,
-        guiaEstilo,
-        "editorial",
-        instruction,
-      );
+    for (const tramo of tramos) {
+      if (this.aborted) break;
+      if (tramo.length > 1) {
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          agentRole: "editor",
+          message: `[Fix262] Reescribiendo tramo consecutivo de ${tramo.length} capítulos (${tramo.join(", ")}) con escalada coordinada: siembra → escalada → pago.`,
+          metadata: { fix: "Fix262", tramo },
+        });
+      }
+      for (let ti = 0; ti < tramo.length; ti++) {
+        if (this.aborted) break;
+        const chapterNum = tramo[ti];
+        // [Fix262] Releer el capitulo FRESCO de BD: dentro de un tramo el cap
+        // anterior acaba de cambiar y allChapters quedo obsoleto.
+        const freshChapters = await storage.getChaptersByProject(project.id);
+        const chapter = freshChapters.find(c => c.chapterNumber === chapterNum)
+          || allChapters.find(c => c.chapterNumber === chapterNum);
+        const sectionData = allSections.find(s => s.numero === chapterNum);
+        if (!chapter || !sectionData || !chapter.content) continue;
+
+        const instruction = [
+          `REESCRITURA ESTRUCTURAL DIRIGIDA — ELEVAR LA TENSIÓN DE LA SEGUNDA MITAD (acto 2 / tramo flojo).`,
+          `El Lector Holístico detecta que este tramo del manuscrito decae: las apuestas no escalan, el ritmo se aplana y/o el avance hacia el clímax no se paga con coste real. Reescribe ESTE capítulo (${this.getSectionLabel(sectionData)}) para corregirlo SIN romper la continuidad ni el World Bible:`,
+          `1. SUBE la apuesta dramática respecto al capítulo anterior (escalada monótona): el protagonista debe arriesgar o perder más que antes.`,
+          `2. PAGA esa subida con un coste TANGIBLE E IRREVERSIBLE dentro de la escena (una herida o pérdida, una decisión sin vuelta atrás, una exposición pública, la rotura de un recurso o aliado). Nada de tensión que se resuelve gratis.`,
+          `3. PROHIBIDO introducir salvadores, informantes o soluciones que no estén ya sembrados antes en la novela (anti deus ex machina): trabaja solo con elementos ya presentes.`,
+          `4. CONSERVA los hechos canónicos, los nombres, las revelaciones ya dosificadas y la trama; cambia la INTENSIDAD y las consecuencias, no los hechos.`,
+          tramoRoleLine(tramo, ti),
+          ``,
+          `INFORME DEL LECTOR HOLÍSTICO (contexto del problema global):`,
+          holisticExcerpt,
+        ].join("\n");
+
+        if (!attemptedBefore.has(chapterNum)) {
+          attemptedBefore.set(chapterNum, chapter.content);
+        }
+        await this.rewriteChapterForQA(
+          project,
+          chapter,
+          sectionData,
+          worldBibleData,
+          guiaEstilo,
+          "editorial",
+          instruction,
+        );
+      }
     }
 
     // [Fix230] Cuenta REAL de cambios: releemos los caps frescos de BD y solo
@@ -15942,6 +16213,7 @@ Responde SOLO con un JSON válido con la estructura:
           pregunta_dramatica: c.pregunta_dramatica,
           conflicto_central: c.conflicto_central,
           giro_emocional: c.giro_emocional,
+          escenas: c.escenas,
           recursos_literarios_sugeridos: c.recursos_literarios_sugeridos,
           tono_especifico: c.tono_especifico,
           prohibiciones_este_capitulo: c.prohibiciones_este_capitulo,
@@ -16342,6 +16614,7 @@ Responde SOLO con un JSON válido con la estructura:
           pregunta_dramatica: c.pregunta_dramatica,
           conflicto_central: c.conflicto_central,
           giro_emocional: c.giro_emocional,
+          escenas: c.escenas,
           recursos_literarios_sugeridos: c.recursos_literarios_sugeridos,
           tono_especifico: c.tono_especifico,
           prohibiciones_este_capitulo: c.prohibiciones_este_capitulo,
@@ -16726,6 +16999,7 @@ Responde SOLO con un JSON válido con la estructura:
         mandato_agencia: chapterData.mandato_agencia,
         conflicto_central: chapterData.conflicto_central,
         giro_emocional: chapterData.giro_emocional,
+        escenas: chapterData.escenas,
         riesgos_de_verosimilitud: chapterData.riesgos_de_verosimilitud,
         propulsion: chapterData.propulsion,
       };
@@ -16901,6 +17175,7 @@ Responde SOLO con un JSON válido con la estructura:
             pregunta_dramatica: chapterData.pregunta_dramatica,
             conflicto_central: chapterData.conflicto_central,
             giro_emocional: chapterData.giro_emocional,
+            escenas: chapterData.escenas,
             recursos_literarios_sugeridos: chapterData.recursos_literarios_sugeridos,
             tono_especifico: chapterData.tono_especifico,
             prohibiciones_este_capitulo: chapterData.prohibiciones_este_capitulo,
@@ -16969,6 +17244,7 @@ Responde SOLO con un JSON válido con la estructura:
         informacion_nueva: prologueData.informacion_nueva,
         conflicto_central: prologueData.conflicto_central,
         giro_emocional: prologueData.giro_emocional,
+        escenas: prologueData.escenas,
         riesgos_de_verosimilitud: prologueData.riesgos_de_verosimilitud,
         propulsion: prologueData.propulsion,
       });
@@ -17023,6 +17299,7 @@ Responde SOLO con un JSON válido con la estructura:
         mandato_agencia: chapterData.mandato_agencia,
         conflicto_central: chapterData.conflicto_central,
         giro_emocional: chapterData.giro_emocional,
+        escenas: chapterData.escenas,
         recursos_literarios_sugeridos: chapterData.recursos_literarios_sugeridos,
         tono_especifico: chapterData.tono_especifico,
         prohibiciones_este_capitulo: chapterData.prohibiciones_este_capitulo,
@@ -17047,6 +17324,7 @@ Responde SOLO con un JSON válido con la estructura:
         funcion_estructural: epilogueData.funcion_estructural,
         conflicto_central: epilogueData.conflicto_central,
         giro_emocional: epilogueData.giro_emocional,
+        escenas: epilogueData.escenas,
       });
     }
 
@@ -17637,6 +17915,7 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
         pregunta_dramatica: c.pregunta_dramatica,
         conflicto_central: c.conflicto_central,
         giro_emocional: c.giro_emocional,
+        escenas: c.escenas,
         recursos_literarios_sugeridos: c.recursos_literarios_sugeridos,
         tono_especifico: c.tono_especifico,
         prohibiciones_este_capitulo: c.prohibiciones_este_capitulo,

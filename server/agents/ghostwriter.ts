@@ -28,6 +28,13 @@ interface GhostwriterInput {
       emocion_inicio?: string;
       emocion_final?: string;
     };
+    // [Fix260] Contrato de escenas: unidades dramaticas con cambio de valor
+    escenas?: Array<{
+      proposito?: string;
+      valor?: string;
+      conflicto?: string;
+      cierre?: string;
+    }>;
     recursos_literarios_sugeridos?: string[];
     tono_especifico?: string;
     prohibiciones_este_capitulo?: string[];
@@ -1555,6 +1562,33 @@ ${input.seriesMilestonesAndThreads}
       }
     }).join("\n\n")}
     
+    ${chapterData.escenas && chapterData.escenas.length > 0 ? `
+    ═══════════════════════════════════════════════════════════════════
+    [Fix260] CONTRATO DE ESCENAS (VINCULANTE — el ritmo y la emoción del capítulo dependen de esto):
+    El capítulo se organiza en ${chapterData.escenas.length} escenas. Cada una es una UNIDAD DRAMÁTICA
+    con un cambio de valor emocional OBLIGATORIO: el estado con el que se entra debe ser distinto
+    del estado con el que se sale, y ese cambio debe SENTIRSE en la prosa (en las reacciones,
+    decisiones e interioridad del personaje — no narrado en abstracto).
+    ${chapterData.escenas.map((esc, i) => {
+      let t = `ESCENA ${i + 1}:`;
+      if (esc.proposito) t += `\n      - Propósito: ${esc.proposito}`;
+      if (esc.valor) t += `\n      - Cambio de valor (OBLIGADO): ${esc.valor}`;
+      if (esc.conflicto) t += `\n      - Fuerza en oposición: ${esc.conflicto}`;
+      if (esc.cierre) t += `\n      - Al cerrar, el protagonista queda con: ${esc.cierre}`;
+      return t;
+    }).join("\n\n    ")}
+    REGLAS DEL CONTRATO:
+    - PROHIBIDO cerrar una escena en el mismo estado emocional en que abrió: si al releer tu
+      borrador una escena no ha movido el valor declarado, reescríbela hasta que lo haga.
+    - El cambio de valor se DRAMATIZA (acción, diálogo, reacción física, decisión), nunca se
+      despacha con un resumen ("se sintió derrotado").
+    - El "cierre" de cada escena es el estado real del personaje al empezar la siguiente:
+      respétalo como continuidad emocional interna del capítulo.
+    - Marca las transiciones entre escenas con un cambio claro de momento, lugar o foco
+      (sin separadores tipográficos salvo que el estilo del proyecto los use).
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+
     ${chapterData.pregunta_dramatica ? `
     PREGUNTA DRAMÁTICA (debe quedar planteada al final):
     ${chapterData.pregunta_dramatica}
