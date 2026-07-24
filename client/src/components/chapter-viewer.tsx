@@ -247,6 +247,36 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
     },
   });
 
+  // [Fix258] Correccion individual de UNA ficha del verificador (boton por ficha)
+  const [applyingFindingIdx, setApplyingFindingIdx] = useState<number | null>(null);
+  const applySingleFactFixMutation = useMutation({
+    mutationFn: async ({ finding }: { finding: FactFinding; index: number }) => {
+      if (!chapter) throw new Error("Sin capítulo");
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/${chapter.projectId}/chapters/${chapter.id}/fact-check/apply`,
+        { findings: [finding] },
+      );
+      return res.json() as Promise<{ appliedCount: number }>;
+    },
+    onMutate: ({ index }) => setApplyingFindingIdx(index),
+    onSuccess: (_data, { finding }) => {
+      if (chapter) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", chapter.projectId, "chapters"] });
+      }
+      // Se retira SOLO la ficha corregida, por IDENTIDAD (no por indice): si el
+      // resultado se hubiera reemplazado entre tanto, esto es un no-op seguro
+      setFactCheck(prev => prev
+        ? { ...prev, findings: prev.findings.filter(f => f !== finding) }
+        : prev);
+      toast({ title: "Ficha corregida", description: "El dato se ha corregido en el texto del capítulo." });
+    },
+    onError: (err: any) => {
+      toast({ title: "No se pudo corregir la ficha", description: err?.message || "Error desconocido", variant: "destructive" });
+    },
+    onSettled: () => setApplyingFindingIdx(null),
+  });
+
   const saveContentMutation = useMutation({
     mutationFn: async () => {
       if (!chapter) throw new Error("Sin capítulo");
@@ -714,6 +744,24 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
                         {f.sugerencia && f.veredicto !== "correcto" && (
                           <p className="text-sm mt-1"><span className="font-medium">Sugerencia:</span> {f.sugerencia}</p>
                         )}
+                        {/* [Fix258] Boton independiente para corregir SOLO esta ficha */}
+                        {f.veredicto !== "correcto" && f.sugerencia.trim() && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-2"
+                            onClick={() => {
+                              if (window.confirm(`Se va a corregir este dato en el texto del capítulo:\n\n"${f.afirmacion}"\n→ ${f.sugerencia}\n\nEl cambio se guarda directamente. ¿Continuar?`)) {
+                                applySingleFactFixMutation.mutate({ finding: f, index: i });
+                              }
+                            }}
+                            disabled={applySingleFactFixMutation.isPending || applyFactFixMutation.isPending || factCheckMutation.isPending}
+                            data-testid={`button-apply-single-fact-fix-${i}`}
+                          >
+                            {applyingFindingIdx === i ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5 mr-1.5" />}
+                            {applyingFindingIdx === i ? "Corrigiendo..." : "Corregir esta ficha"}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -730,7 +778,7 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
                     applyFactFixMutation.mutate();
                   }
                 }}
-                disabled={applyFactFixMutation.isPending || factCheckMutation.isPending}
+                disabled={applyFactFixMutation.isPending || factCheckMutation.isPending || applySingleFactFixMutation.isPending}
                 data-testid="button-apply-fact-fixes"
               >
                 {applyFactFixMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
@@ -740,7 +788,7 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
             <Button
               variant="ghost"
               onClick={() => factCheckMutation.mutate()}
-              disabled={factCheckMutation.isPending || applyFactFixMutation.isPending}
+              disabled={factCheckMutation.isPending || applyFactFixMutation.isPending || applySingleFactFixMutation.isPending}
               data-testid="button-rerun-fact-check"
             >
               {factCheckMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
