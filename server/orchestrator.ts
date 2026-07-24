@@ -17746,10 +17746,128 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
     }
   }
 
+  // [Fix257] Dossier documental de investigacion previa (situacion historica,
+  // socioeconomica, geografica, etnografica y de vida cotidiana). Se genera
+  // UNA sola vez por proyecto, se persiste como worldRule "__research_dossier"
+  // y se inyecta al Narrador en TODOS los caminos de escritura via
+  // getEnrichedWorldBible. Para novelas contemporaneas o de mundo secundario
+  // la IA devuelve aplica=false y no se vuelve a intentar.
+  private dossierPromises: Map<number, Promise<any | null>> = new Map();
+
+  private async ensureResearchDossier(projectId: number, baseWorldBible: any, dbWorldBible: any): Promise<any | null> {
+    const rules = (dbWorldBible.worldRules || []) as any[];
+    const existing = rules.find((r: any) => r.category === "__research_dossier");
+    if (existing) return existing.aplica === false ? null : existing.dossier || null;
+
+    // Cache de promesa por proyecto para no lanzar dos generaciones en paralelo
+    if (this.dossierPromises.has(projectId)) return this.dossierPromises.get(projectId)!;
+
+    const promise = (async (): Promise<any | null> => {
+      try {
+        const project = await storage.getProject(projectId);
+        if (!project) return null;
+        const wb = baseWorldBible || {};
+        const epoca = wb.epoca || wb.setting_epoca || wb.lexico_historico?.epoca || "";
+        const lugar = wb.lugar || wb.setting || wb.ambientacion || "";
+        const premise = (project as any).premise || (project as any).synopsis || "";
+
+        const prompt = `Eres un DOCUMENTALISTA editorial para una novela en español. Tu trabajo es preparar un dossier de investigación FACTUAL para que el escritor no cometa errores históricos, geográficos, socioeconómicos ni etnográficos.
+
+NOVELA: "${project.title}" (género: ${project.genre}).
+PREMISA: ${String(premise).substring(0, 2000) || "(sin premisa registrada)"}
+ÉPOCA DECLARADA: ${typeof epoca === "string" ? epoca : JSON.stringify(epoca) || "(no declarada)"}
+LUGAR/AMBIENTACIÓN: ${typeof lugar === "string" ? lugar : JSON.stringify(lugar) || "(no declarado)"}
+
+PRIMERO decide si el dossier APLICA:
+- APLICA si la novela transcurre (total o parcialmente) en el mundo REAL, en cualquier época, en lugares reales o con trasfondo histórico/actual verificable.
+- NO aplica solo si es un mundo COMPLETAMENTE inventado (fantasía de mundo secundario) sin anclaje en la realidad.
+
+Si aplica, escribe un dossier CONCRETO Y VERIFICABLE (nada de generalidades). Cada entrada debe ser un DATO utilizable: fechas, nombres reales con grafía correcta, distancias y tiempos de viaje con los transportes de la época, monedas y precios orientativos, estructura social, oficios, comidas, vestimenta, lenguas y etnias de la región, instituciones y cargos vigentes, tecnología disponible y NO disponible todavía.
+
+RESPONDE ÚNICAMENTE CON JSON:
+{
+  "aplica": true|false,
+  "epoca_lugar": "resumen de 1 frase de época y lugar",
+  "contexto_historico": ["8-15 datos: sucesos, gobernantes, conflictos, marco legal de la época EXACTA de la novela"],
+  "situacion_socioeconomica": ["6-12 datos: clases sociales, economía, moneda y precios, oficios, propiedad, comercio"],
+  "geografia": ["6-12 datos: lugares reales relevantes con grafía correcta, distancias/tiempos de viaje realistas para la época, clima, relieve, rutas"],
+  "etnografia_cultura": ["6-12 datos: etnias, lenguas y dialectos, religión, costumbres, ritos, gastronomía, vestimenta de la región y época"],
+  "vida_cotidiana": ["5-10 datos: horarios, higiene, medicina, iluminación, comunicaciones, transporte del día a día"],
+  "errores_a_evitar": ["5-10 anacronismos u errores TÍPICOS que un escritor cometería en esta ambientación (tecnología posterior, topónimos modernos, instituciones aún inexistentes...)"]
+}`;
+
+        const { default: OpenAI } = await import("openai");
+        const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });
+        const response = await ai.chat.completions.create({
+          model: "deepseek-v4-flash",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.2,
+          max_tokens: 8192,
+          ...({ thinking: { type: "disabled" } } as any),
+        });
+        const { recordRawAiUsage } = await import("./utils/ai-usage");
+        await recordRawAiUsage(response, { agentName: "documentalist", model: "deepseek-v4-flash", projectId, operation: "research-dossier" });
+
+        const responseText = response.choices?.[0]?.message?.content || "";
+        let parsed: any = null;
+        try {
+          const { repairJson } = await import("./utils/json-repair");
+          parsed = repairJson(responseText);
+        } catch {
+          const m = responseText.match(/\{[\s\S]*\}/);
+          if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
+        }
+        if (!parsed || typeof parsed.aplica !== "boolean") {
+          console.warn(`[Fix257] Dossier documental: la IA no devolvio JSON valido para proyecto ${projectId}; se reintentara en el proximo capitulo`);
+          return null;
+        }
+
+        // Persistir (aplica=false tambien, para no re-pagar la llamada)
+        const fresh = await storage.getWorldBibleByProject(projectId);
+        if (fresh) {
+          const freshRules = ((fresh.worldRules || []) as any[]).filter((r: any) => r.category !== "__research_dossier");
+          freshRules.push({ category: "__research_dossier", aplica: parsed.aplica, dossier: parsed.aplica ? parsed : null, generatedAt: new Date().toISOString() });
+          await storage.updateWorldBible(fresh.id, { worldRules: freshRules } as any);
+        }
+
+        if (parsed.aplica) {
+          const totalDatos = ["contexto_historico", "situacion_socioeconomica", "geografia", "etnografia_cultura", "vida_cotidiana", "errores_a_evitar"]
+            .reduce((n, k) => n + (Array.isArray(parsed[k]) ? parsed[k].length : 0), 0);
+          await storage.createActivityLog({
+            projectId,
+            level: "info",
+            agentRole: "orchestrator",
+            message: `[Fix257] El Documentalista ha preparado el dossier de investigación (${parsed.epoca_lugar || "época y lugar de la novela"}): ${totalDatos} datos verificados de contexto histórico, socioeconómico, geográfico y etnográfico. El Narrador lo recibirá en todos los capítulos.`,
+            metadata: { totalDatos },
+          });
+          console.log(`[Fix257] Dossier documental generado para proyecto ${projectId} (${totalDatos} datos)`);
+          return parsed;
+        }
+        console.log(`[Fix257] Dossier documental NO aplica para proyecto ${projectId} (mundo inventado)`);
+        return null;
+      } catch (err) {
+        console.error(`[Fix257] Error generando dossier documental para proyecto ${projectId}:`, err);
+        return null;
+      } finally {
+        // La promesa cacheada se limpia: si fallo, el proximo capitulo reintenta;
+        // si se persistio, la proxima llamada lo lee de la BD sin IA.
+        this.dossierPromises.delete(projectId);
+      }
+    })();
+    this.dossierPromises.set(projectId, promise);
+    return promise;
+  }
+
   private async getEnrichedWorldBible(projectId: number, baseWorldBible: any, seriesUnresolvedThreads?: string[], seriesKeyEvents?: string[]): Promise<any> {
     try {
       const dbWorldBible = await storage.getWorldBibleByProject(projectId);
       if (!dbWorldBible) return baseWorldBible;
+
+      // [Fix257] Dossier documental (investigacion previa) para el Narrador
+      let researchDossier: any | null = null;
+      try {
+        researchDossier = await this.ensureResearchDossier(projectId, baseWorldBible, dbWorldBible);
+      } catch {}
       
       const enrichedCharacters = (dbWorldBible.characters || []) as any[];
       const enriched = JSON.parse(JSON.stringify(baseWorldBible));
@@ -17771,6 +17889,7 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
         if (authorNotesEarly.length > 0) enriched._author_notes = authorNotesEarly;
         if (seriesUnresolvedThreads?.length) enriched._series_hilos_no_resueltos = seriesUnresolvedThreads;
         if (seriesKeyEvents?.length) enriched._series_eventos_clave_previos = seriesKeyEvents;
+        if (researchDossier) enriched._dossier_documental = researchDossier;
         return enriched;
       }
 
@@ -17863,7 +17982,12 @@ Responde SOLO con un JSON: {"titulo": "..."}`;
       if (seriesKeyEvents?.length) {
         enriched._series_eventos_clave_previos = seriesKeyEvents;
       }
-      
+
+      // [Fix257] Dossier documental de investigacion para el Narrador
+      if (researchDossier) {
+        enriched._dossier_documental = researchDossier;
+      }
+
       return enriched;
     } catch (error) {
       console.warn(`[WorldBible] Failed to get enriched data:`, error);

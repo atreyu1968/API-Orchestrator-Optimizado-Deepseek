@@ -867,6 +867,39 @@ export class GhostwriterAgent extends BaseAgent {
       wb.canon_historico.forEach((c: any) => { if (c) parts.push(`  ▸ ${typeof c === 'string' ? c : JSON.stringify(c)}`); });
     }
 
+    // [Fix257] Dossier documental de investigacion previa (Documentalista):
+    // situacion historica, socioeconomica, geografica y etnografica REAL de la
+    // ambientacion, mas rigor general "ante la duda, no des el dato preciso".
+    mappedKeys.add('_dossier_documental');
+    if (wb._dossier_documental && typeof wb._dossier_documental === 'object') {
+      const d = wb._dossier_documental as any;
+      parts.push(`\n═══════════════════════════════════════════════════════════════════`);
+      parts.push(`📚 DOSSIER DOCUMENTAL (investigación previa — datos REALES verificados)`);
+      parts.push(`═══════════════════════════════════════════════════════════════════`);
+      if (d.epoca_lugar) parts.push(`Ambientación: ${d.epoca_lugar}`);
+      const sec = (titulo: string, arr: any) => {
+        if (Array.isArray(arr) && arr.length > 0) {
+          parts.push(`\n${titulo}:`);
+          arr.forEach((x: any) => { if (x) parts.push(`  ▸ ${typeof x === 'string' ? x : JSON.stringify(x)}`); });
+        }
+      };
+      sec('🏛️ Contexto histórico', d.contexto_historico);
+      sec('💰 Situación socioeconómica', d.situacion_socioeconomica);
+      sec('🗺️ Geografía', d.geografia);
+      sec('🧿 Etnografía y cultura', d.etnografia_cultura);
+      sec('🕯️ Vida cotidiana', d.vida_cotidiana);
+      sec('⛔ Errores y anacronismos a EVITAR', d.errores_a_evitar);
+      parts.push(`\nREGLAS DE USO DEL DOSSIER:`);
+      parts.push(`  1. Estos datos son REALES y verificados: úsalos tal cual, sin alterarlos.`);
+      parts.push(`  2. Si necesitas un dato del mundo real que NO está en el dossier ni en el canon (fecha exacta, distancia, precio, nombre de un cargo real...), NO lo inventes con precisión falsa: escríbelo de forma vaga pero verosímil ("varios días de camino", "un puñado de monedas") o apóyate solo en lo que sabes con certeza.`);
+      parts.push(`  3. Ante la duda entre precisión inventada y vaguedad verosímil, elige SIEMPRE la vaguedad. Un dato preciso y falso destruye la credibilidad de la novela.`);
+      parts.push(`  4. Respeta la tecnología, instituciones, lenguas y costumbres de la época: nada posterior puede aparecer.`);
+    } else {
+      // [Fix257] Sin dossier (mundo inventado o dossier no disponible): regla
+      // de prudencia general igualmente activa para datos del mundo real.
+      parts.push(`\n🧭 RIGOR FACTUAL: si mencionas datos del mundo real (historia, geografía, distancias, fechas, precios, instituciones), usa SOLO lo que sepas con certeza. Ante la duda, NO des el dato preciso: formula vaga pero verosímil. Un dato preciso y falso destruye la credibilidad.`);
+    }
+
     mappedKeys.add('_hilos_pendientes'); mappedKeys.add('_hilos_resueltos');
     if (Array.isArray(wb._hilos_pendientes) && wb._hilos_pendientes.length > 0) {
       parts.push(`\n🔄 HILOS NARRATIVOS PENDIENTES:`);
