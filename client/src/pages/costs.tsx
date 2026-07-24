@@ -464,10 +464,11 @@ export default function CostsPage() {
                       </TableCell>
                       <TableCell>
                         <Badge 
-                          variant={project.status === "completed" ? "default" : "secondary"}
+                          variant={project.status === "completed" || project.status === "completed_with_issues" ? "default" : "secondary"}
                           className="text-xs"
                         >
                           {project.status === "completed" ? "Completado" : 
+                           project.status === "completed_with_issues" ? "Con issues" :
                            project.status === "generating" ? "Generando" :
                            project.status === "queued" ? "En cola" : project.status}
                         </Badge>

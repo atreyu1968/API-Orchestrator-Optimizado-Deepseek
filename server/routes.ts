@@ -5,7 +5,8 @@ import { storage } from "./storage";
 import { Orchestrator, extractForbiddenNames } from "./orchestrator";
 import { stripMetaChapterHeader } from "./utils/strip-chapter-header";
 import { queueManager } from "./queue-manager";
-import { insertProjectSchema, insertPseudonymSchema, insertPublisherSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema } from "@shared/schema";
+import { insertProjectSchema, insertPseudonymSchema, insertPublisherSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema, isProjectCompletedStatus } from "@shared/schema";
+import { recomputeCompletionStatus } from "./services/completion-status";
 import multer from "multer";
 import mammoth from "mammoth";
 import { eq, and } from "drizzle-orm";
@@ -255,7 +256,7 @@ export async function registerRoutes(
     try {
       // Get completed original projects
       const allProjects = await storage.getAllProjects();
-      const completedProjects = allProjects.filter(p => p.status === "completed");
+      const completedProjects = allProjects.filter(p => isProjectCompletedStatus(p.status));
       
       const originalProjectsWithStats = await Promise.all(
         completedProjects.map(async (project) => {
@@ -453,7 +454,7 @@ export async function registerRoutes(
       }
       // Solo exigimos status "completed" a los volumenes que son proyectos de
       // generacion. Los importados/reeditados ya estan escritos, no aplican.
-      if (mode === "completed" && sib && !finishedExternalVolume && sib.status !== "completed") {
+      if (mode === "completed" && sib && !finishedExternalVolume && !isProjectCompletedStatus(sib.status)) {
         return {
           ok: false,
           status: 409,
@@ -731,7 +732,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
-      if (project.status !== "completed") {
+      if (!isProjectCompletedStatus(project.status)) {
         return res.status(400).json({ error: "El proyecto debe estar completado para exportar" });
       }
 
@@ -795,7 +796,7 @@ export async function registerRoutes(
       const id = parseInt(req.params.id);
       const project = await storage.getProject(id);
       if (!project) return res.status(404).json({ error: "Project not found" });
-      if (project.status !== "completed") return res.status(400).json({ error: "El proyecto debe estar completado para exportar" });
+      if (!isProjectCompletedStatus(project.status)) return res.status(400).json({ error: "El proyecto debe estar completado para exportar" });
 
       const allChapters = await storage.getChaptersByProject(id);
       const prologue = project.hasPrologue ? allChapters.find(c => c.chapterNumber === 0) : null;
@@ -1242,7 +1243,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
-      if (project.status !== "completed") {
+      if (!isProjectCompletedStatus(project.status)) {
         return res.status(400).json({ error: "Solo se puede ejecutar la revisión final en proyectos completados" });
       }
 
@@ -1318,7 +1319,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
-      if (project.status !== "completed") {
+      if (!isProjectCompletedStatus(project.status)) {
         return res.status(400).json({ error: "Solo se pueden resolver issues en proyectos completados" });
       }
 
@@ -1397,7 +1398,7 @@ export async function registerRoutes(
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
-      if (project.status !== "completed") {
+      if (!isProjectCompletedStatus(project.status)) {
         return res.status(400).json({ error: "Solo se pueden analizar notas en proyectos completados" });
       }
       if (!notes || typeof notes !== "string" || !notes.trim()) {
@@ -1505,6 +1506,9 @@ export async function registerRoutes(
       if (payload && req.query.consume === "true") {
         try {
           await storage.updateProject(id, { pendingEditorialParse: null });
+          // [Fix263] Al consumir las instrucciones pendientes, recomputar el
+          // estado del proyecto (puede promover a "completed" si queda limpio).
+          await recomputeCompletionStatus(id);
         } catch (e) {
           console.error("Failed to clear pendingEditorialParse on consume:", e);
         }
@@ -1535,7 +1539,7 @@ export async function registerRoutes(
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
-      if (project.status !== "completed") {
+      if (!isProjectCompletedStatus(project.status)) {
         return res.status(400).json({ error: "Solo se puede relanzar el pulido de proyectos completados" });
       }
       const result = await forcePolishResume(id);
@@ -1558,7 +1562,7 @@ export async function registerRoutes(
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
-      if (project.status !== "completed") {
+      if (!isProjectCompletedStatus(project.status)) {
         return res.status(400).json({ error: "Solo se puede revisar holísticamente proyectos completados" });
       }
 
@@ -1626,7 +1630,7 @@ export async function registerRoutes(
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
-      if (project.status !== "completed") {
+      if (!isProjectCompletedStatus(project.status)) {
         return res.status(400).json({ error: "Solo se puede pedir lectura beta de proyectos completados" });
       }
 
@@ -1696,7 +1700,7 @@ export async function registerRoutes(
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
-      if (project.status !== "completed") {
+      if (!isProjectCompletedStatus(project.status)) {
         return res.status(400).json({ error: "Solo se pueden aplicar notas editoriales a proyectos completados" });
       }
 
@@ -2891,6 +2895,14 @@ ${prose}`;
       }
       const wordCount = corrected.trim().split(/\s+/).filter(Boolean).length;
       const updated = await storage.updateChapter(chapterId, { content: finalContent, wordCount });
+      // [Fix263] Retirar estas fichas de los pendientes persistidos del
+      // fact-check global y recomputar el estado (completed vs with_issues).
+      try {
+        const { resolveFactCheckPending } = await import("./services/novel-fact-check");
+        await resolveFactCheckPending(projectId, findings.map((f: any) => ({ afirmacion: f.afirmacion, chapterId })));
+      } catch (e) {
+        console.warn("[Fix263] resolveFactCheckPending tras apply fallo:", e);
+      }
       res.json({ chapter: updated, appliedCount: findings.length });
     } catch (error) {
       console.error("[Fix255] Error applying fact-check corrections:", error);
@@ -9627,7 +9639,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
       // Guardas backend (no fiarse solo de la UI): solo proyectos completados,
       // sin orquestador activo y sin otro parse humano en curso.
-      if (project.status !== "completed") {
+      if (!isProjectCompletedStatus(project.status)) {
         return res.status(409).json({ error: "El reedit debe estar completado antes de aportar crítica humana." });
       }
       if (activeReeditOrchestrators.has(projectId)) {
@@ -10892,7 +10904,7 @@ CRITERIOS:
       }
 
       if (activeReeditOrchestrators.has(projectId)) {
-        if (project.status === "error" || project.status === "paused" || project.status === "completed") {
+        if (project.status === "error" || project.status === "paused" || isProjectCompletedStatus(project.status)) {
           activeReeditOrchestrators.delete(projectId);
         } else {
           return res.status(400).json({ error: "Project is already being processed" });
@@ -10940,7 +10952,7 @@ CRITERIOS:
       }
 
       if (activeReeditOrchestrators.has(projectId)) {
-        if (project.status === "error" || project.status === "paused" || project.status === "completed") {
+        if (project.status === "error" || project.status === "paused" || isProjectCompletedStatus(project.status)) {
           activeReeditOrchestrators.delete(projectId);
         } else {
           return res.status(400).json({ error: "Project is already being processed" });
@@ -11096,7 +11108,7 @@ CRITERIOS:
         return res.status(404).json({ error: "Proyecto no encontrado" });
       }
 
-      if (project.status === "completed") {
+      if (isProjectCompletedStatus(project.status)) {
         return res.status(400).json({ error: "El proyecto ya está completado" });
       }
 
@@ -13104,7 +13116,7 @@ CRITERIOS:
       const sources: any[] = [];
 
       for (const p of allProjects) {
-        if (p.status === "completed") {
+        if (isProjectCompletedStatus(p.status)) {
           sources.push({
             sourceType: "project",
             sourceId: p.id,
@@ -14459,7 +14471,7 @@ CRITERIOS:
       const sources: any[] = [];
 
       for (const p of allProjects) {
-        if (p.status === "completed") {
+        if (isProjectCompletedStatus(p.status)) {
           sources.push({ sourceType: "project", sourceId: p.id, title: p.title, chapters: p.chapterCount || 0, language: "es", genre: p.genre, pseudonymId: p.pseudonymId });
         }
       }
@@ -14715,7 +14727,7 @@ CRITERIOS:
       const projectId = parseInt(req.params.id);
       const project = await storage.getProofreadingProject(projectId);
       if (!project) return res.status(404).json({ error: "Not found" });
-      if (project.status !== "completed" && project.status !== "completed_with_errors") return res.status(400).json({ error: "Project not completed" });
+      if (!isProjectCompletedStatus(project.status) && project.status !== "completed_with_errors") return res.status(400).json({ error: "Project not completed" });
 
       const chapters = await storage.getProofreadingChaptersByProject(projectId);
       const correctedChapters = chapters.filter(c => c.status === "completed" && c.correctedContent);

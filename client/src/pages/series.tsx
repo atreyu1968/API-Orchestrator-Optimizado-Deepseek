@@ -681,12 +681,14 @@ export default function SeriesPage() {
     idle: "Pendiente",
     generating: "En curso",
     completed: "Completado",
+    completed_with_issues: "Completada con issues",
   };
 
   const statusColors: Record<string, string> = {
     idle: "bg-muted text-muted-foreground",
     generating: "bg-chart-2/20 text-chart-2",
     completed: "bg-green-500/20 text-green-600 dark:text-green-400",
+    completed_with_issues: "bg-amber-500/20 text-amber-600 dark:text-amber-400",
   };
 
   if (isLoading) {

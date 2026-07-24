@@ -1186,6 +1186,16 @@ export const insertProofreadingProjectSchema = createInsertSchema(proofreadingPr
   completedAt: true,
 });
 
+// [Fix263] Estados de proyecto que cuentan como "novela terminada" para el
+// gating de features (export, KDP, traduccion, audiolibro, resume...).
+// "completed_with_issues" = manuscrito terminado PERO con issues conocidos sin
+// resolver (regla dura del usuario: nunca marcar "completed" limpio con
+// pendientes). Se promociona a "completed" cuando los pendientes se resuelven.
+export const PROJECT_COMPLETED_STATUSES = ["completed", "completed_with_issues"] as const;
+export function isProjectCompletedStatus(status: string | null | undefined): boolean {
+  return status === "completed" || status === "completed_with_issues";
+}
+
 export const insertProofreadingChapterSchema = createInsertSchema(proofreadingChapters).omit({
   id: true,
 });

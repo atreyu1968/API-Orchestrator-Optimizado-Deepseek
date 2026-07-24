@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { storage } from "../storage";
 import { INTERNAL_AUTH_HEADER, INTERNAL_AUTH_TOKEN } from "../auth";
+import { recomputeCompletionStatus } from "./completion-status";
 
 export interface NovelFactFinding {
   chapterId: number;
@@ -73,6 +74,58 @@ async function logActivity(projectId: number, message: string, level: "info" | "
   try {
     await storage.createActivityLog({ projectId, level, agentRole: "fact-checker", message, metadata: { fix: "Fix259" } });
   } catch { /* el log nunca rompe la pasada */ }
+}
+
+// [Fix263] Persiste (o limpia) la lista de fichas pendientes del fact-check
+// como worldRule "__fact_check_pending" (patron del dossier Fix257) y
+// recalcula el estado final del proyecto. Best-effort: nunca rompe la pasada.
+export async function persistFactCheckPending(projectId: number, pending: NovelFactFinding[]): Promise<void> {
+  try {
+    const wb = await storage.getWorldBibleByProject(projectId);
+    if (wb) {
+      const rules = ((wb.worldRules || []) as any[]).filter((r: any) => r?.category !== "__fact_check_pending");
+      if (pending.length > 0) {
+        rules.push({ category: "__fact_check_pending", pendientes: pending, updatedAt: new Date().toISOString() });
+      }
+      await storage.updateWorldBible(wb.id, { worldRules: rules } as any);
+    }
+    await recomputeCompletionStatus(projectId);
+  } catch (e) {
+    console.warn(`[Fix263] persistFactCheckPending fallo para proyecto ${projectId}: ${(e as Error).message}`);
+  }
+}
+
+// [Fix263] Retira de la worldRule las fichas ya decididas (corregidas a mano
+// o via endpoint apply) identificandolas por afirmacion+capitulo, y recalcula
+// el estado del proyecto. Llamado desde routes tras aplicar correcciones.
+export async function resolveFactCheckPending(
+  projectId: number,
+  resolved: { afirmacion?: string; chapterId?: number }[]
+): Promise<void> {
+  try {
+    const wb = await storage.getWorldBibleByProject(projectId);
+    if (!wb) return;
+    const rules = (wb.worldRules || []) as any[];
+    const rule = rules.find((r: any) => r?.category === "__fact_check_pending");
+    if (!rule || !Array.isArray(rule.pendientes)) return;
+    const before = rule.pendientes.length;
+    rule.pendientes = rule.pendientes.filter((p: NovelFactFinding) =>
+      !resolved.some((r) =>
+        (r.afirmacion ? p.afirmacion === r.afirmacion : true) &&
+        (r.chapterId != null ? p.chapterId === r.chapterId : true)
+      )
+    );
+    if (rule.pendientes.length !== before) {
+      const next = rule.pendientes.length > 0
+        ? rules
+        : rules.filter((r: any) => r?.category !== "__fact_check_pending");
+      rule.updatedAt = new Date().toISOString();
+      await storage.updateWorldBible(wb.id, { worldRules: next } as any);
+      await recomputeCompletionStatus(projectId);
+    }
+  } catch (e) {
+    console.warn(`[Fix263] resolveFactCheckPending fallo para proyecto ${projectId}: ${(e as Error).message}`);
+  }
 }
 
 function chapterLabel(n: number): string {
@@ -164,6 +217,10 @@ async function runPass(state: NovelFactCheckState): Promise<void> {
     state.status = "completed";
     state.finishedAt = new Date().toISOString();
     state.currentChapterLabel = undefined;
+    // [Fix263] Persistir las fichas pendientes como worldRule para que
+    // sobrevivan a un reinicio del server y cuenten como "issues conocidos"
+    // en el estado final del proyecto (completed vs completed_with_issues).
+    await persistFactCheckPending(projectId, state.pending);
     const dudosos = state.pending.filter((f) => f.veredicto === "dudoso").length;
     const incorrectos = state.pending.length - dudosos;
     await logActivity(

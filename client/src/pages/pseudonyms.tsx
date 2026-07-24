@@ -520,7 +520,7 @@ export default function PseudonymsPage() {
                               <div className="flex items-center justify-between gap-2 cursor-pointer">
                                 <span className="text-sm truncate">{project.title}</span>
                                 <Badge variant="outline" className="text-xs shrink-0">
-                                  {project.status === "completed" ? "Completado" : project.status === "generating" ? "Generando" : project.status === "error" ? "Error" : project.status === "archived" ? "Archivado" : "En espera"}
+                                  {project.status === "completed" ? "Completado" : project.status === "completed_with_issues" ? "Completada con issues" : project.status === "generating" ? "Generando" : project.status === "error" ? "Error" : project.status === "archived" ? "Archivado" : "En espera"}
                                 </Badge>
                               </div>
                             </Link>

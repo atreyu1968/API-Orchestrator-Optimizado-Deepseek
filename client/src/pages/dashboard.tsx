@@ -1224,7 +1224,7 @@ export default function Dashboard() {
                     <Clock className="h-4 w-4 text-muted-foreground" />
                     <span>{totalWordCount.toLocaleString()} palabras</span>
                   </div>
-                  {currentProject.status === "completed" && (
+                  {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (
                     <>
                       <Button
                         variant="outline"
@@ -1359,7 +1359,7 @@ export default function Dashboard() {
                   )}
                 </div>
                 
-                {currentProject.status === "completed" && currentProject.finalScore && (
+                {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && currentProject.finalScore && (
                   <div className="mt-4 p-4 rounded-md border border-border" 
                     style={{ 
                       backgroundColor: currentProject.finalScore >= 9 
@@ -1618,7 +1618,7 @@ export default function Dashboard() {
                         completados con lectores bajo meta, aunque el proyecto no tenga
                         aun los flags de convergencia (escritos por versiones nuevas).
                         Se oculta solo si la rama ambar de convergencia ya lo muestra. */}
-                    {currentProject.status === "completed" &&
+                    {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") &&
                       (((fullProjectDetail as any)?.holisticScore != null && (fullProjectDetail as any).holisticScore < 7) ||
                        ((fullProjectDetail as any)?.betaScore != null && (fullProjectDetail as any).betaScore < 9)) &&
                       !((fullProjectDetail?.finalReviewResult as any)?._issuesConverged &&
@@ -1640,7 +1640,7 @@ export default function Dashboard() {
                     )}
 
                     {/* Notas del Editor Humano — corrección quirúrgica a partir de texto libre */}
-                    {currentProject.status === "completed" && (
+                    {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (
                       <div className="mt-4 pt-4 border-t border-border/50">
                         <button
                           type="button"
@@ -1684,7 +1684,7 @@ export default function Dashboard() {
                                     isBetaReviewing ||
                                     isParsingEditorial ||
                                     applyEditorialNotesMutation.isPending ||
-                                    currentProject.status !== "completed"
+                                    !(currentProject.status === "completed" || currentProject.status === "completed_with_issues")
                                   }
                                   data-testid="button-holistic-review"
                                   className="border-purple-400 dark:border-purple-600 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40"
@@ -1703,7 +1703,7 @@ export default function Dashboard() {
                                     isBetaReviewing ||
                                     isParsingEditorial ||
                                     applyEditorialNotesMutation.isPending ||
-                                    currentProject.status !== "completed"
+                                    !(currentProject.status === "completed" || currentProject.status === "completed_with_issues")
                                   }
                                   data-testid="button-beta-review"
                                   className="border-emerald-400 dark:border-emerald-600 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40"
@@ -1773,7 +1773,7 @@ export default function Dashboard() {
                                 parseEditorialNotesMutation.isPending ||
                                 isParsingEditorial ||
                                 applyEditorialNotesMutation.isPending ||
-                                currentProject.status !== "completed"
+                                !(currentProject.status === "completed" || currentProject.status === "completed_with_issues")
                               }
                               data-testid="button-parse-editorial-notes"
                               className="w-full bg-blue-600 hover:bg-blue-700 text-white"
@@ -1963,7 +1963,7 @@ export default function Dashboard() {
                                   disabled={
                                     selectedInstructionIdxs.size === 0 ||
                                     applyEditorialNotesMutation.isPending ||
-                                    currentProject.status !== "completed"
+                                    !(currentProject.status === "completed" || currentProject.status === "completed_with_issues")
                                   }
                                   data-testid="button-apply-selected-instructions"
                                   className={`w-full text-white ${hasDeletions ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}`}
@@ -2004,7 +2004,7 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {currentProject.status === "completed" && (currentProject.totalInputTokens || currentProject.totalOutputTokens) && (
+                {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (currentProject.totalInputTokens || currentProject.totalOutputTokens) && (
                   <div className="mt-4 p-4 rounded-md bg-muted/30 border border-border">
                     <div className="flex items-center justify-between gap-4">
                       <div className="space-y-1">
@@ -2135,7 +2135,7 @@ export default function Dashboard() {
                     </Button>
                   )}
 
-                  {["completed", "paused", "cancelled", "error"].includes(currentProject.status) && (
+                  {["completed", "completed_with_issues", "paused", "cancelled", "error"].includes(currentProject.status) && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -2186,6 +2186,7 @@ export default function Dashboard() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {currentProject.title} - {currentProject.status === "completed" ? "Completado" : 
+                   currentProject.status === "completed_with_issues" ? "Completada con issues" :
                    currentProject.status === "archived" ? "Archivado" :
                    currentProject.status === "generating" ? "Generando" :
                    currentProject.status === "failed" || currentProject.status === "failed_final_review" ? "Fallido" :

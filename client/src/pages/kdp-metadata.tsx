@@ -193,7 +193,7 @@ export default function KdpMetadataPage() {
     toast({ title: "Copiado", description: `${label} copiado al portapapeles.` });
   };
 
-  const completedProjects = projects.filter((p: any) => p.status === "completed");
+  const completedProjects = projects.filter((p: any) => p.status === "completed" || p.status === "completed_with_issues");
   const completedReedits = reedits.filter((r: any) => r.status === "completed");
 
   const canGenerate = () => sourceType === "project" ? !!selectedProjectId : !!selectedReeditId;

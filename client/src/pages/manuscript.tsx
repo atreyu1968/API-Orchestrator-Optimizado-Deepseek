@@ -428,7 +428,7 @@ export default function ManuscriptPage() {
             <Download className="h-4 w-4 mr-2" />
             Descargar MD
           </Button>
-          {currentProject.status === "completed" && (
+          {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (
             <Button
               variant="outline"
               onClick={() => {

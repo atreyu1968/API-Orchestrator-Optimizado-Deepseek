@@ -66,6 +66,7 @@ import {
 import type { TokenUsage } from "./agents/base-agent";
 import type { FinalReviewIssue } from "./agents/final-reviewer";
 import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, TimelineEvent } from "@shared/schema";
+import { isProjectCompletedStatus } from "@shared/schema";
 import { ensureChapterNumbers } from "./utils/extract-chapters";
 import { extractStyleDirectives, synthesizeVoiceBlock, type NarrativeVoiceConfig } from "./utils/style-directives";
 import { repairJson } from "./utils/json-repair";
@@ -78,6 +79,7 @@ import { recordRawAiUsage } from "./utils/ai-usage";
 import { renumberChaptersSequential, remapPendingAdminActionsForRenumber } from "./utils/renumber-chapters";
 import { calculateRealCost } from "./cost-calculator";
 import { runWithProjectContext } from "./utils/agent-context";
+import { recomputeCompletionStatus } from "./services/completion-status";
 import type { AdminActionVerdict } from "./utils/review-score";
 
 interface OrchestratorCallbacks {
@@ -9606,7 +9608,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const finalReviewResult = project.finalReviewResult as any;
       if (!finalReviewResult?.issues || finalReviewResult.issues.length === 0) {
         this.callbacks.onError("No hay issues documentados para resolver.");
-        await storage.updateProject(project.id, { status: "completed" });
+        await recomputeCompletionStatus(project.id, { forceFinalize: true });
         return;
       }
 
@@ -9705,7 +9707,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             ? "Todos los issues documentados fueron descartados por ser vagos. Considera regenerar la revisión final."
             : "No hay issues documentados para resolver."
         );
-        await storage.updateProject(project.id, { status: "completed" });
+        await recomputeCompletionStatus(project.id, { forceFinalize: true });
         return;
       }
       
@@ -9723,7 +9725,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const worldBible = await storage.getWorldBibleByProject(project.id);
       if (!worldBible) {
         this.callbacks.onError("No se encontró la biblia del mundo para este proyecto");
-        await storage.updateProject(project.id, { status: "completed" });
+        await recomputeCompletionStatus(project.id, { forceFinalize: true });
         return;
       }
 
@@ -9747,7 +9749,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
       if (chaptersToFix.size === 0) {
         this.callbacks.onError("Los issues documentados no especifican capítulos afectados.");
-        await storage.updateProject(project.id, { status: "completed" });
+        await recomputeCompletionStatus(project.id, { forceFinalize: true });
         return;
       }
 
@@ -9863,7 +9865,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
       if (resolvedCount === 0) {
         this.callbacks.onError("No se pudo corregir ningún capítulo — los issues no apuntan a capítulos válidos.");
-        await storage.updateProject(project.id, { status: "completed" });
+        await recomputeCompletionStatus(project.id, { forceFinalize: true });
         return;
       }
 
@@ -9937,6 +9939,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         finalReviewResult: resultToPersist as any,
         finalScoreAt: new Date(), // [Fix82]
       } as any);
+      // [Fix263] Si quedan issues conocidos (p.ej. issues sin resolver del
+      // Revisor Final tras converger), el estado real es "completed_with_issues".
+      try { await recomputeCompletionStatus(project.id, { forceFinalize: true }); } catch {}
 
       if (issuesConverged && newIssueCount > 0) {
         const readerNote = readersMetTargets
@@ -9964,7 +9969,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       this.callbacks.onProjectComplete();
     } catch (error) {
       console.error("[Orchestrator] resolveDocumentedIssues error:", error);
-      await storage.updateProject(project.id, { status: "completed" });
+      await recomputeCompletionStatus(project.id, { forceFinalize: true });
       this.callbacks.onError(`Error resolviendo issues: ${error instanceof Error ? error.message : "Error desconocido"}`);
     }
   }
@@ -12594,6 +12599,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     };
     try {
       await storage.updateProject(projectId, { pendingEditorialParse: payload as any });
+      // [Fix263] Instrucciones pendientes = issues conocidos: si el proyecto ya
+      // esta terminado, degradar a "completed_with_issues" (o promover si 0).
+      try { await recomputeCompletionStatus(projectId); } catch {}
       this.callbacks.onAutoReviewReady?.({
         count: instructions.length,
         resumen: parsed.resumen_general || null,
@@ -13964,7 +13972,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           await this.applyEditorialNotes(currentProject, "", instructions, { skipReaderReviewRefresh: true, fromAutoLoop: true });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
+          try { await recomputeCompletionStatus(project.id, { forceFinalize: true }); } catch {}
           // [Fix157] applyEditorialNotes pudo dejar la prosa en estado PARCIAL. Solo
           // cerramos ADVISORY con ortotipografica si hay un mejor snapshot LIMPIO que
           // restaurar (finalizeAdvisoryWithOrtho lo restaura antes de pulir). Sin
@@ -15016,7 +15024,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
 
       if (!usingPreParsed && (!notesText || !notesText.trim())) {
         this.callbacks.onError("Las notas editoriales están vacías.");
-        await storage.updateProject(project.id, { status: "completed" });
+        await recomputeCompletionStatus(project.id, { forceFinalize: true });
         return;
       }
 
@@ -15035,7 +15043,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       const worldBible = await storage.getWorldBibleByProject(project.id);
       if (!worldBible) {
         this.callbacks.onError("No se encontró la biblia del mundo para este proyecto");
-        await storage.updateProject(project.id, { status: "completed" });
+        await recomputeCompletionStatus(project.id, { forceFinalize: true });
         return;
       }
 
@@ -15108,7 +15116,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         if (instructions.length === 0) {
           const summary = parseResult.result?.resumen_general || "El sistema no encontró instrucciones procesables en las notas.";
           this.callbacks.onError(`No se extrajeron instrucciones aplicables tras anclar contra el texto y la canon. ${summary}`);
-          await storage.updateProject(project.id, { status: "completed" });
+          await recomputeCompletionStatus(project.id, { forceFinalize: true });
           return;
         }
       }
@@ -15163,7 +15171,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             message: `Aplicación de notas editoriales abortada: la fase de eliminación falló (${errMsg.slice(0, 200)}). Las reescrituras NO se aplicaron. Revisa el estado del manuscrito y reintenta.`,
             agentRole: "editor",
           });
-          await storage.updateProject(project.id, { status: "completed" });
+          await recomputeCompletionStatus(project.id, { forceFinalize: true });
           this.callbacks.onAgentStatus("editor", "error",
             "Eliminación de capítulos falló — sesión editorial abortada para preservar el resto del manuscrito."
           );
@@ -15225,7 +15233,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             "Recalculación de puntuación global falló tras la eliminación."
           );
         }
-        await storage.updateProject(project.id, { status: "completed" });
+        await recomputeCompletionStatus(project.id, { forceFinalize: true });
         this.callbacks.onAgentStatus("ghostwriter", "completed",
           `Notas editoriales procesadas: ${totalDeleted} capítulo(s) eliminado(s).`
         );
@@ -15304,7 +15312,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             agentRole: "final-reviewer",
           });
         }
-        await storage.updateProject(project.id, { status: "completed" });
+        await recomputeCompletionStatus(project.id, { forceFinalize: true });
         this.callbacks.onAgentStatus("ghostwriter", "completed",
           `Notas editoriales procesadas (macro): ${macroResult.summary}.`
         );
@@ -15916,7 +15924,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       this.callbacks.onProjectComplete();
     } catch (error) {
       console.error("[Orchestrator] applyEditorialNotes error:", error);
-      await storage.updateProject(project.id, { status: "completed" });
+      await recomputeCompletionStatus(project.id, { forceFinalize: true });
       this.callbacks.onError(`Error aplicando notas editoriales: ${error instanceof Error ? error.message : "Error desconocido"}`);
     } finally {
       clearProjectAbortController(project.id);
@@ -16476,7 +16484,7 @@ Responde SOLO con un JSON válido con la estructura:
           && c.chapterNumber < fromChapter);
       if (completedBefore.length === 0) {
         this.callbacks.onError(`No hay capítulos completados antes del capítulo ${fromChapter}; nada en qué basar el rediseño.`);
-        await storage.updateProject(project.id, { status: "completed" });
+        await recomputeCompletionStatus(project.id, { forceFinalize: true });
         return;
       }
 
@@ -16655,7 +16663,7 @@ Responde SOLO con un JSON válido con la estructura:
         } as any);
       }
 
-      await storage.updateProject(project.id, { status: "completed" });
+      await recomputeCompletionStatus(project.id, { forceFinalize: true });
       this.callbacks.onAgentStatus("architect", "complete", `Rediseño completado: ${newOutlinesNormalized.length} capítulos rediseñados (a partir del ${fromChapter}).`);
       this.callbacks.onProjectComplete?.();
     } catch (error) {
@@ -18320,7 +18328,7 @@ RESPONDE ÚNICAMENTE CON JSON:
       // On-demand: solo si hay al menos 1 volumen previo completado.
       const all = await storage.getProjectsBySeries(seriesId);
       const previousCompleted = all
-        .filter(p => p.id !== currentProjectId && p.status === "completed")
+        .filter(p => p.id !== currentProjectId && isProjectCompletedStatus(p.status))
         .sort((a, b) => (a.seriesOrder ?? 0) - (b.seriesOrder ?? 0));
       if (previousCompleted.length === 0) return "";
       try {
@@ -18355,7 +18363,7 @@ RESPONDE ÚNICAMENTE CON JSON:
     const series = await storage.getSeries(seriesId);
     const all = await storage.getProjectsBySeries(seriesId);
     const volumes = all
-      .filter(p => p.status === "completed")
+      .filter(p => isProjectCompletedStatus(p.status))
       .sort((a, b) => (a.seriesOrder ?? 0) - (b.seriesOrder ?? 0));
     if (volumes.length === 0) {
       console.log(`[Fix78] regenerateSeriesWorldBible: serie ${seriesId} sin volúmenes completados — skip.`);
@@ -18466,7 +18474,7 @@ RESPONDE ÚNICAMENTE CON JSON:
       agentRole: "orchestrator",
     });
 
-    await storage.updateProject(project.id, { status: "completed" });
+    await recomputeCompletionStatus(project.id, { forceFinalize: true });
     await this.generateSeriesContinuitySnapshot(project);
     // [Fix78] Tras completar un volumen de serie, regeneramos la Biblia de
     // Serie consolidada para que el próximo volumen reciba fichas
@@ -18565,7 +18573,7 @@ RESPONDE ÚNICAMENTE CON JSON:
       // aprobado por el Revisor Final, asi que "completed" es el estado correcto.
       if ((project as any).status === "applying_editorial") {
         try {
-          await storage.updateProject(project.id, { status: "completed" });
+          await recomputeCompletionStatus(project.id, { forceFinalize: true });
           (project as any).status = "completed";
         } catch { /* best-effort */ }
       }
@@ -18895,7 +18903,7 @@ RESPONDE ÚNICAMENTE CON JSON:
               });
               await this.runOrthotypographicPassAndUpdate(refreshedForBest);
             } else {
-              try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
+              try { await recomputeCompletionStatus(project.id, { forceFinalize: true }); } catch {}
             }
             return;
           } else {
@@ -18998,7 +19006,7 @@ RESPONDE ÚNICAMENTE CON JSON:
             if (bestSnapshot && bestSnapshot.score >= TARGET_BETA_SCORE) {
               await this.runOrthotypographicPassAndUpdate(refreshedForBest);
             } else {
-              try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
+              try { await recomputeCompletionStatus(project.id, { forceFinalize: true }); } catch {}
             }
             return;
           } else if (osc.matches > 0) {
@@ -19093,6 +19101,8 @@ RESPONDE ÚNICAMENTE CON JSON:
                 source: restoredToBest ? "auto_beta_loop_max_iter_restored_to_best" : "auto_beta_loop_max_iter",
               } as any,
             });
+            // [Fix263] Pendientes sin aplicar = issues conocidos.
+            try { await recomputeCompletionStatus(project.id); } catch {}
             this.callbacks.onAutoReviewReady?.({ count: total, resumen: parsed.resumen_general || null });
           } catch (e) {
             console.error("[Fix47] persist pendingEditorialParse failed:", e);
@@ -19122,7 +19132,7 @@ RESPONDE ÚNICAMENTE CON JSON:
             message: `[Fix47] Iteración ${iter}: applyEditorialNotes falló (${msg.slice(0, 200)}). Auto-loop abortado; manuscrito restaurado a status="completed".`,
             agentRole: "editor",
           });
-          try { await storage.updateProject(project.id, { status: "completed" }); } catch {}
+          try { await recomputeCompletionStatus(project.id, { forceFinalize: true }); } catch {}
           return;
         }
 
@@ -19138,8 +19148,9 @@ RESPONDE ÚNICAMENTE CON JSON:
           });
           return;
         }
-        if (refreshed.status !== "completed") {
-          // applyEditorialNotes debería dejarlo en "completed". Si no, algo
+        if (refreshed.status !== "completed" && refreshed.status !== "completed_with_issues") {
+          // applyEditorialNotes debería dejarlo en "completed" (o
+          // "completed_with_issues" si quedan pendientes, Fix263). Si no, algo
           // raro pasó (posible cancelación manual); abortamos sin re-leer.
           await storage.createActivityLog({
             projectId: project.id, level: "warning",
@@ -19160,8 +19171,8 @@ RESPONDE ÚNICAMENTE CON JSON:
       });
       try {
         const p = await storage.getProject(project.id);
-        if (p && p.status !== "completed") {
-          await storage.updateProject(project.id, { status: "completed" });
+        if (p && p.status !== "completed" && p.status !== "completed_with_issues") {
+          await recomputeCompletionStatus(project.id, { forceFinalize: true });
         }
       } catch {}
     }
