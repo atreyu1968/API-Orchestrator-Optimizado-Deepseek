@@ -2682,29 +2682,65 @@ REGLAS DURAS:
       const proseForCheck = prose.substring(0, 60000);
 
       const label = chapter.chapterNumber === 0 ? "Prólogo" : chapter.chapterNumber === -1 ? "Epílogo" : chapter.chapterNumber === -2 ? "Nota del Autor" : `Capítulo ${chapter.chapterNumber}`;
-      const prompt = `Eres un verificador de datos (fact-checker) editorial para novelas en español. Tu trabajo es revisar el texto de un capítulo y detectar ERRORES VERIFICABLES DEL MUNDO REAL.
 
-NOVELA: "${project.title}" (género: ${project.genre}). SECCIÓN: ${label}${chapter.title ? ` — "${chapter.title}"` : ""}.
+      // [Fix256] Contexto de capitulos ANTERIORES para comprobar coherencia
+      // interna y logica ademas de los datos del mundo real. Orden narrativo:
+      // Prologo (0) -> 1..N -> Epilogo (-1) -> Nota del Autor (-2).
+      const narrativeIndex = (n: number) => n === 0 ? 0 : n > 0 ? n : n === -1 ? 1_000_000 : 1_000_001;
+      const currentIdx = narrativeIndex(chapter.chapterNumber);
+      const prevChapters = chapters
+        .filter(c => c.id !== chapter.id && (c.content || "").trim() && narrativeIndex(c.chapterNumber) < currentIdx)
+        .sort((a, b) => narrativeIndex(a.chapterNumber) - narrativeIndex(b.chapterNumber));
+      const chapterLabel = (n: number) => n === 0 ? "Prólogo" : n === -1 ? "Epílogo" : n === -2 ? "Nota del Autor" : `Capítulo ${n}`;
+      // Techo total de contexto previo: 400k chars (~100k tokens, dentro del 1M
+      // de DeepSeek). Si se supera, se conservan ENTEROS los mas recientes y se
+      // descartan los mas antiguos (los mas cercanos pesan mas para continuidad).
+      const PREV_BUDGET = 400000;
+      let used = 0;
+      const prevBlocks: string[] = [];
+      for (let i = prevChapters.length - 1; i >= 0; i--) {
+        const c = prevChapters[i];
+        let p = c.content || "";
+        if (p.includes(MARKER)) p = p.split(MARKER)[0];
+        p = p.trim();
+        if (!p) continue;
+        if (used + p.length > PREV_BUDGET) break;
+        used += p.length;
+        prevBlocks.unshift(`=== ${chapterLabel(c.chapterNumber)}${c.title ? ` — "${c.title}"` : ""} ===\n${p}`);
+      }
+      const omittedCount = prevChapters.length - prevBlocks.length;
+      const prevContext = prevBlocks.length > 0
+        ? `\n\nCAPÍTULOS ANTERIORES DE LA NOVELA (para comprobar coherencia interna${omittedCount > 0 ? `; se omiten los ${omittedCount} más antiguos por tamaño` : ""}):\n${prevBlocks.join("\n\n")}\n`
+        : "";
 
-QUÉ VERIFICAR (solo afirmaciones sobre el mundo REAL):
+      const prompt = `Eres un verificador de datos (fact-checker) editorial para novelas en español. Tu trabajo es revisar el texto de un capítulo y detectar (A) ERRORES VERIFICABLES DEL MUNDO REAL y (B) INCOHERENCIAS INTERNAS con los capítulos anteriores de la propia novela o fallos de lógica.
+
+NOVELA: "${project.title}" (género: ${project.genre}). SECCIÓN A VERIFICAR: ${label}${chapter.title ? ` — "${chapter.title}"` : ""}.
+
+QUÉ VERIFICAR — (A) afirmaciones sobre el mundo REAL:
 - FECHAS Y CRONOLOGÍA HISTÓRICA: años de guerras, reinados, inventos, muertes de personajes históricos reales, anacronismos (objetos/tecnología/palabras que no existían en la época en que transcurre la escena).
 - GEOGRAFÍA: ubicaciones, distancias, ríos, montañas, clima, fronteras de la época, direcciones de viaje imposibles.
 - NOMBRES Y TÍTULOS REALES: personajes históricos, cargos, instituciones, obras, topónimos (grafía correcta).
 - CIFRAS Y HECHOS FÍSICOS: números, unidades, velocidades, duraciones, procesos naturales o técnicos descritos de forma imposible.
 - CULTURA MATERIAL: vestimenta, armas, comida, moneda, idiomas coherentes con la época y el lugar.
 
+QUÉ VERIFICAR — (B) coherencia interna y lógica (categorías "continuidad" y "logica"):
+- CONTINUIDAD con capítulos anteriores: datos que CONTRADICEN lo ya establecido en la novela — edades, fechas internas, distancias o tiempos de viaje entre los mismos lugares, cifras repetidas que cambian, nombres/grafías de personajes o lugares ficticios que varían, objetos que ya se destruyeron/perdieron y reaparecen, heridas o estados físicos que desaparecen sin explicación.
+- LÓGICA INTERNA: imposibilidades dentro del propio capítulo o respecto a los anteriores — cronología interna que no cuadra (más horas de las que caben en el día narrado), personajes en dos sitios a la vez, causas posteriores a sus efectos, cantidades que no suman.
+- Señala la incoherencia SOLO si el dato establecido en capítulos anteriores es claro; si podría ser una evolución deliberada de la trama (retcon, revelación, alias), márcala como "dudoso" y explícalo.
+
 QUÉ NO SEÑALAR:
-- Elementos claramente FICTICIOS de la novela (personajes, lugares, organizaciones inventados): son intencionados.
+- Elementos claramente FICTICIOS de la novela (personajes, lugares, organizaciones inventados) por el mero hecho de ser ficticios: son intencionados. Solo se señalan si CONTRADICEN lo establecido antes en la propia novela.
 - Licencias narrativas subjetivas (metáforas, exageraciones del narrador o de un personaje al hablar).
 - Un personaje puede EQUIVOCARSE a propósito en un diálogo; señálalo solo como "dudoso" y dilo.
 
-Para cada hallazgo asigna un veredicto: "incorrecto" (error claro y verificable), "dudoso" (posible error o dato no confirmable con seguridad) o "correcto" (dato real notable que has comprobado y está bien; incluye SOLO los más relevantes, máximo 5). Máximo 20 hallazgos en total, ordenados: incorrectos primero, luego dudosos, luego correctos.
-
-TEXTO DEL CAPÍTULO:
+Para cada hallazgo asigna un veredicto: "incorrecto" (error claro y verificable, o contradicción interna clara), "dudoso" (posible error o dato no confirmable con seguridad) o "correcto" (dato notable que has comprobado y está bien; incluye SOLO los más relevantes, máximo 5). Máximo 20 hallazgos en total, ordenados: incorrectos primero, luego dudosos, luego correctos. En los hallazgos de continuidad, cita en la explicación QUÉ capítulo anterior establece el dato contradicho.
+${prevContext}
+TEXTO DEL CAPÍTULO A VERIFICAR (${label}):
 ${proseForCheck}
 
 RESPONDE ÚNICAMENTE CON JSON:
-{"resumen": "1-2 frases con la valoración global", "hallazgos": [{"afirmacion": "cita breve o paráfrasis del dato en el texto", "categoria": "historia|geografia|nombres|cifras|cultura", "veredicto": "incorrecto|dudoso|correcto", "explicacion": "por qué, con el dato real correcto si aplica", "sugerencia": "cómo corregirlo en el texto (vacío si veredicto=correcto)"}]}`;
+{"resumen": "1-2 frases con la valoración global", "hallazgos": [{"afirmacion": "cita breve o paráfrasis del dato en el texto", "categoria": "historia|geografia|nombres|cifras|cultura|continuidad|logica", "veredicto": "incorrecto|dudoso|correcto", "explicacion": "por qué, con el dato correcto si aplica (en continuidad, cita el capítulo anterior que lo establece)", "sugerencia": "cómo corregirlo en el texto (vacío si veredicto=correcto)"}]}`;
 
       const { default: OpenAI } = await import("openai");
       const ai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY!, baseURL: "https://api.deepseek.com" });

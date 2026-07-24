@@ -669,7 +669,7 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
               Verificación de datos del capítulo
             </DialogTitle>
             <DialogDescription>
-              Fechas, datos históricos, geografía, nombres reales y cifras. Los elementos ficticios de la novela no se señalan.
+              Fechas, datos históricos, geografía, nombres reales y cifras, además de la coherencia lógica con los capítulos anteriores. Los elementos ficticios de la novela no se señalan salvo que se contradigan entre capítulos.
             </DialogDescription>
           </DialogHeader>
           {/* [Fix255] div con overflow-y-auto en lugar de ScrollArea: dentro de un
