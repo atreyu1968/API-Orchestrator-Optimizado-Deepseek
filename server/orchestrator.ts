@@ -3413,6 +3413,12 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
           // decorativos en la próxima escaleta).
           let lastAutopatchNotice: string = "";
 
+          // [Fix254] Marca de convergencia por falso negativo cronico de
+          // falso_aliado en ESTA pasada del bucle: ademas de cortar el bucle
+          // interno, evita que el retry exterior de auto-guidance (Fix118)
+          // relance 8 iteraciones mas persiguiendo la misma metrica imposible.
+          let faConvergedThisPass = false;
+
           for (let saIter = 0; saIter < MAX_SA_ITERATIONS; saIter++) {
             if (this.aborted) break;
             this.callbacks.onAgentStatus("architect", "thinking", "El Auditor Estructural está revisando forma de escena, ledger de información y dosificación de revelaciones...");
@@ -3583,6 +3589,46 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
             // saIter ≥ 1 para que tenga sentido ("best" implica que ya hubo
             // alguna iter previa).
             const earlyStopByRegression = consecutiveRegressionsSA >= 2 && bestSA != null && saIter >= 1;
+            // [Fix254] Convergencia temprana por falso negativo cronico de
+            // "falso_aliado" DENTRO del bucle. La red Fix145-B ya omite el gate
+            // final cuando la unica dimension que hunde el agregado es
+            // falso_aliado con cobertura 0% cronica (detector que no reconoce
+            // como el Arquitecto declaro el reveal del traidor), pero el bucle
+            // seguia quemando iteraciones/regeneraciones (~6-9 min cada una)
+            // persiguiendo una metrica imposible de bajar (caso real "EL
+            // ARCHIVO DE LOS HOMBRES MUERTOS": 13 regeneraciones, ~2 h, con
+            // aliado=0% en TODAS las iters y el WBA on-demand dictaminando
+            // "WB apto, problema de implementacion"). Mismas condiciones
+            // estrictas que Fix145-B, evaluadas en la iter actual:
+            // - todos los problemas de falso_aliado son "reveal_no_declarado"
+            // - cobertura falso_aliado 0% en >=CHRONIC_ZERO_COVERAGE_ITERS
+            //   iters consecutivas (historial previo + la actual)
+            // - sin esa penalizacion el score alcanza el umbral y no queda
+            //   ninguna severidad alta fuera de falso_aliado
+            // - ninguna dimension critica de segunda mitad esta KO
+            // Control negativo: si hay CUALQUIER otro problema alto, otra dim
+            // KO critica, o la cobertura no es cronica-0%, se sigue reintentando.
+            let faLoopConverged = false;
+            if (needsRetry && !lastIter && !earlyStopByRegression && !criticalSecondHalfKO) {
+              const faProblemsLoop = sa.problemas.filter((p) => p.area === "falso_aliado");
+              const faOnlyRevealLoop =
+                faProblemsLoop.length > 0 && faProblemsLoop.every((p) => p.tipo === "reveal_no_declarado");
+              if (faOnlyRevealLoop) {
+                const covFaNow = typeof (sa as any).coverage?.falso_aliado_pct === "number"
+                  ? (sa as any).coverage.falso_aliado_pct : null;
+                const prevFaHist = coverageHistorySA.falso_aliado.slice(-(CHRONIC_ZERO_COVERAGE_ITERS - 1));
+                const chronicZeroFaNow = covFaNow !== null && covFaNow <= 0.01
+                  && prevFaHist.length >= CHRONIC_ZERO_COVERAGE_ITERS - 1
+                  && prevFaHist.every((v) => v <= 0.01);
+                if (chronicZeroFaNow) {
+                  const nonFaLoop = sa.problemas.filter((p) => p.area !== "falso_aliado");
+                  const altasNFLoop = nonFaLoop.filter((p) => p.severidad === "alta").length;
+                  const mediasNFLoop = nonFaLoop.filter((p) => p.severidad === "media").length;
+                  const scoreWithoutFaLoop = Math.max(1, Math.min(10, 10 - 2 * altasNFLoop - 0.7 * mediasNFLoop));
+                  faLoopConverged = altasNFLoop === 0 && scoreWithoutFaLoop >= SA_THRESHOLD;
+                }
+              }
+            }
             // [Fix135-A] Aviso cuando el retry lo fuerza SOLO una dimension critica
             // de segunda mitad (el agregado ya pasa el umbral y no hay alta), para
             // que en los logs quede claro por que el bucle no acepta todavia.
@@ -3596,7 +3642,22 @@ REGLA CRÍTICA: conserva las decisiones narrativas que NO sean problemáticas. E
                 metadata: { fix: "Fix135", criticalKODims, score: sa.puntuacion_global, iteration: saIter + 1, maxIterations: MAX_SA_ITERATIONS },
               });
             }
-            if (!needsRetry || lastIter || earlyStopByRegression) {
+            if (!needsRetry || lastIter || earlyStopByRegression || faLoopConverged) {
+              // [Fix254] Salida por convergencia: el unico motivo del retry es
+              // el falso negativo cronico de falso_aliado. No quemamos mas
+              // iteraciones; el Narrador materializara el giro del traidor en
+              // prosa y Fix145-B ya cubre el gate final.
+              if (faLoopConverged) {
+                faConvergedThisPass = true;
+                console.warn(`[Orchestrator] [Fix254] Bucle SA cortado en iter ${saIter + 1}/${MAX_SA_ITERATIONS}: el unico bloqueo restante es "falso_aliado" con cobertura 0% cronica (falso negativo probable del detector). Sin su penalizacion el score alcanza ${SA_THRESHOLD}/10. Continuamos con la escaleta actual.`);
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "info",
+                  agentRole: "architect",
+                  message: `[Fix254] El bucle del Auditor Estructural se corta en la iteración ${saIter + 1}/${MAX_SA_ITERATIONS}: el ÚNICO problema restante es "Falso aliado / traición humanizada" con cobertura 0% crónica, el patrón conocido de falso negativo del detector (mide tokens exactos, no la semántica; el audit on-demand del World Bible lo confirmó en runs previos). Sin esa penalización el score ya alcanza el umbral ${SA_THRESHOLD}/10, no hay severidades altas en otras dimensiones ni dimensión crítica de segunda mitad KO. Se continúa a la escritura sin gastar más regeneraciones: el Narrador materializará el giro del traidor de forma explícita en la prosa.`,
+                  metadata: { fix: "Fix254", iteration: saIter + 1, maxIterations: MAX_SA_ITERATIONS, score: sa.puntuacion_global, threshold: SA_THRESHOLD, coverageFalsoAliado: (sa as any).coverage?.falso_aliado_pct ?? null },
+                });
+              }
               // [Fix101] Si salimos sin alcanzar umbral en última iter, lo decimos.
               if (lastIter && needsRetry) {
                 await storage.createActivityLog({
@@ -4156,6 +4217,19 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
           }
           const bestCriticalKOLoop = bestCriticalKODimsLoop.length > 0;
           if (currentBestScore >= MIN_PUBLISHABLE_SA_SCORE && !bestCriticalKOLoop) break outerSALoop;
+          // [Fix254] Si esta pasada convergio por el falso negativo cronico de
+          // falso_aliado, NO relanzamos el bucle con auto-guidance: el score
+          // bajo es artefacto del detector, no una carencia real, y la pasada
+          // extra quemaria hasta 8 regeneraciones mas por nada. El gate final
+          // Fix145-B ya cubre este caso y la generacion continua.
+          // [Fix254 post-review] Guardado por !bestCriticalKOLoop: si el BEST
+          // global mantiene una dimension critica de segunda mitad KO (aunque
+          // la iter actual convergiera por FA), el retry exterior Fix118/143-B
+          // SI debe correr — no anulamos esa proteccion.
+          if (faConvergedThisPass && !bestCriticalKOLoop) {
+            console.warn(`[Orchestrator] [Fix254] Se omite el retry exterior de auto-guidance (Fix118): la pasada convergio por falso negativo cronico de falso_aliado. Continuamos al gate final.`);
+            break outerSALoop;
+          }
           if (autoMechanicalGuidanceApplied) break outerSALoop;
           if (!bestSAOverall) break outerSALoop;
 

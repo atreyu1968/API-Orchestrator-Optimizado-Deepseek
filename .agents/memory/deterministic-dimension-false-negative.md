@@ -81,6 +81,14 @@ laxo en el denominador convierte una novela publicable en un bucle de horas.
    acto 2 sin ningún "alta"/"critica" sí penaliza) + las puertas SEMÁNTICAS. Control negativo:
    meseta/descenso en "baja"/"media" sigue marcando bucle.
 
+**El aflojado debe aplicarse en TODAS las capas del bucle, no solo en el gate:** la red
+de seguridad del gate final evita el bloqueo, pero el bucle de mejora interno Y el retry
+exterior con auto-guidance siguen quemando regeneraciones (~6-9 min cada una) persiguiendo
+la métrica imposible. Caso real: 13 regeneraciones (~2 h) con la dimensión al 0% en todas
+las iters aunque el gate ya la perdonaba. Solución: replicar las MISMAS condiciones estrictas
+del gate como corte temprano dentro del bucle (y saltar el retry exterior), guardado por
+"el best global no tiene KO crítica" para no anular las protecciones de dims críticas.
+
 **Regla transversal (post-Fix151):** una vez que el gate determinista es ADVISORY (no bloquea),
 estos falsos positivos ya no atascan la PUBLICACIÓN, pero SÍ malgastan tiempo/coste en el bucle
 de mejora previo (re-correr al Arquitecto 8+ veces buscando bajar una métrica que es imposible
