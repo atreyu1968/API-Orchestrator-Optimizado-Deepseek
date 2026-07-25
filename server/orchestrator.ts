@@ -39,6 +39,7 @@ import {
   computePlotIntegrityMetrics,
   TensionCurveAuditorAgent,
   computeTensionCurveMetrics,
+  EscaletaSurgeonAgent,
   WorldBibleAuditorAgent,
   type WorldBibleAuditResult,
   enforceDensityFloors,
@@ -240,6 +241,7 @@ export class Orchestrator {
   private plotIntegrityAuditor = new PlotIntegrityAuditorAgent();
   // [Fix261] Juez semantico de la curva de tension de la escaleta.
   private tensionCurveAuditor = new TensionCurveAuditorAgent();
+  private escaletaSurgeon = new EscaletaSurgeonAgent();
   // [Fix147][Puerta 1] Editor de Desarrollo del plan / Regla de Agencia.
   private agencyCritic = new AgencyCriticAgent();
   // [Fix148][Puerta 4] Editor de Prosa de Agencia (juez de la PROSA escrita).
@@ -4590,14 +4592,78 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
               message: `[Fix145] La estructura quedo en ${finalSAScore}/10 SOLO porque el Auditor Estructural no detecto la revelacion del falso aliado/traidor en la escaleta (las demas dimensiones alcanzan el minimo publicable ${MIN_PUBLISHABLE_SA_SCORE}/10 y ninguna dimension critica de segunda mitad esta KO). Suele ser un falso negativo del detector, no una carencia real (el audit on-demand del World Bible lo confirmo en runs previos). En lugar de pausar la novela indefinidamente, se continua a la escritura: el Narrador debe materializar el giro del traidor de forma explicita y humanizada en la prosa.`,
               metadata: { fix: "Fix145-B", finalScore: finalSAScore, threshold: MIN_PUBLISHABLE_SA_SCORE },
             });
+            // [Fix267] Aunque el gate se omite, los problemas residuales (el
+            // reveal del falso aliado no declarado y cualquier otro) se
+            // persisten como objetivos VINCULANTES para el Narrador: es
+            // exactamente el caso donde "el Narrador debe materializar el giro
+            // en prosa" — ahora lo recibe como instruccion, no como esperanza.
+            try {
+              await this.persistStructuralResiduals(project.id, finalAudit?.problemas || []);
+            } catch {}
           }
           if (bestSAOverall && finalAudit && (finalSAScore < MIN_PUBLISHABLE_SA_SCORE || gateCriticalKO) && !faChronicSoleBlocker) {
+            // [Fix267] ANTES de conformarse con el paso advisory: cirugia
+            // QUIRURGICA de la escaleta sobre los problemas residuales (el
+            // Cirujano de Escaletas repara SOLO los caps citados, se empalma y
+            // se re-audita deterministicamente; anti-regresion con revert).
+            // Prioridad del usuario: la estructura debe salir SIN problemas
+            // pendientes de fabrica siempre que sea posible.
+            let surgeryCleaned = false;
+            let residualsAfterSurgery: StructuralAuditProblem[] = finalAudit.problemas;
+            try {
+              const surgery = await this.runEscaletaResidualSurgery(
+                project,
+                bestSAOverall.data,
+                seriesAuditContext,
+                MIN_PUBLISHABLE_SA_SCORE,
+              );
+              if (surgery.improved) {
+                bestSAOverall = { ...bestSAOverall, data: surgery.data, score: surgery.score };
+              }
+              residualsAfterSurgery = surgery.problemas;
+              surgeryCleaned = surgery.cleaned;
+              if (surgery.cleaned) {
+                worldBibleData = surgery.data;
+                await this.persistStructuralResiduals(project.id, []);
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "success",
+                  agentRole: "architect",
+                  message: `[Fix267] Estructura CERRADA por el Cirujano de Escaletas en ${surgery.rounds} ronda(s): score final ${surgery.score}/10 ≥ ${MIN_PUBLISHABLE_SA_SCORE}/10 y sin dimensiones críticas KO. La novela se escribirá con una escaleta SIN problemas estructurales pendientes (antes habría continuado en modo advisory con residuos).`,
+                  metadata: { fix: "Fix267", rounds: surgery.rounds, finalScore: surgery.score },
+                });
+              }
+            } catch (surgErr) {
+              console.warn(`[Orchestrator] [Fix267] Cirugia de escaleta fallo (best-effort, seguimos): ${(surgErr as Error).message}`);
+            }
+            if (surgeryCleaned) {
+              try {
+                this.callbacks.onAgentStatus("architect", "thinking", "Estructura reparada quirúrgicamente y aprobada por el auditor. Escribiendo la novela...");
+              } catch {}
+            } else {
             // [Fix151][Puerta 6] Continuamos con la MEJOR escaleta vista
             // (best-effort anti-regresion). El Auditor Estructural es ADVISORY:
             // aporta su mejor estructura y un aviso con los problemas residuales,
             // pero NUNCA bloquea ni espera a un humano (ver bloque de comentario
             // arriba). La calidad real la garantizan las puertas semanticas.
             worldBibleData = bestSAOverall.data;
+            // [Fix267] Los residuos que sobreviven a la cirugia viajan como
+            // objetivos VINCULANTES al Narrador (worldRule __structural_residuals
+            // → _residuos_estructurales en el WB enriquecido): al escribir los
+            // capitulos citados debe resolverlos en escena, no quedan en un log.
+            try {
+              await this.persistStructuralResiduals(project.id, residualsAfterSurgery);
+              const residCount = residualsAfterSurgery.filter(p => p.severidad !== "baja").length;
+              if (residCount > 0) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "info",
+                  agentRole: "architect",
+                  message: `[Fix267] ${Math.min(residCount, 12)} problema(s) estructural(es) residual(es) persistidos como objetivos VINCULANTES para el Narrador: al escribir los capítulos citados deberá resolverlos en escena (siembra, reveal o escalada explícita). Ya no son solo informativos.`,
+                  metadata: { fix: "Fix267", residuals: Math.min(residCount, 12) },
+                });
+              }
+            } catch {}
             const advisoryReason = gateByCriticalKOOnly
               ? `La estructura alcanzó el mínimo agregado (${finalSAScore}/10 ≥ ${MIN_PUBLISHABLE_SA_SCORE}/10) pero una dimensión crítica de la segunda mitad sigue marcada KO por el detector determinista (${gateCriticalKODims.join(", ")}: acto 2 plano o clímax sin sembrar).`
               : `La estructura quedó en ${finalSAScore}/10 (< ${MIN_PUBLISHABLE_SA_SCORE}/10 según el detector determinista) tras ${lastMaxSAIterations} iteraciones${lastWbaExternalCount > 0 ? ` + ${lastWbaExternalCount} audit(s) on-demand del Auditor de World Bible` : ""}${autoMechanicalGuidanceApplied ? " + 1 pasada extra con auto-guidance mecánica" : ""}.`;
@@ -4628,6 +4694,15 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
               this.callbacks.onAgentStatus("architect", "thinking", "Estructura por debajo del umbral del auditor determinista; continuamos (las puertas semánticas garantizan la calidad). Escribiendo la novela...");
             } catch {}
             // [Fix151][Puerta 6] NO se pausa: seguimos al Lector Beta y al Narrador.
+            } // [Fix267] cierre del else (cirugia no dejo la estructura limpia)
+          } else if (bestSAOverall && finalAudit && finalSAScore >= MIN_PUBLISHABLE_SA_SCORE && !gateCriticalKO && !faChronicSoleBlocker) {
+            // [Fix267] Gate NO disparado porque la estructura salio LIMPIA de
+            // fabrica (score publicable, sin KO critico y sin excepcion
+            // falso-aliado). Solo en este caso limpiamos residuos persistidos
+            // de runs anteriores para que el Narrador no arrastre objetivos
+            // obsoletos. Las rutas de excepcion (faChronicSoleBlocker) YA
+            // persistieron sus residuos arriba.
+            try { await this.persistStructuralResiduals(project.id, []); } catch {}
           } else if (!bestSAOverall) {
             // [Fix151][Puerta 6] Borde sin "best snapshot": el bucle SA no logró
             // capturar una mejor escaleta (p. ej. todas las auditorías fallaron o
@@ -10767,6 +10842,147 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     return CRITICAL_SECOND_HALF_DIMS.filter(d => counts[d] >= 2 || hasAlta[d]);
   }
 
+  // [Fix267] Cirugia QUIRURGICA de la escaleta sobre los problemas residuales
+  // del Auditor Estructural, ANTES de conformarse con el paso advisory Fix151.
+  // Leccion del log de 3 dias: relanzar al Arquitecto entero oscila (retries a
+  // 1/10 y 1.8/10) y la novela acabo escribiendose con residuos de arco_secreto/
+  // falso_aliado que los lectores penalizaron despues sin remedio de prosa.
+  // Este brazo repara SOLO los capitulos citados por los problemas (Cirujano de
+  // Escaletas), empalma y RE-AUDITA deterministicamente (gratis, sin LLM juez).
+  // Anti-regresion: solo acepta el empalme si el score sube y las altas no
+  // aumentan; si no, revierte. Maximo 2 rondas. Best-effort: nunca bloquea.
+  private async runEscaletaResidualSurgery(
+    project: Project,
+    data: ParsedWorldBible,
+    seriesAuditContext: SeriesAuditContext | undefined,
+    minScore: number,
+  ): Promise<{ data: ParsedWorldBible; score: number; problemas: StructuralAuditProblem[]; cleaned: boolean; rounds: number; improved: boolean }> {
+    const MAX_SURGERY_ROUNDS = 2;
+    const MAX_TARGET_CAPS = 10;
+    let current: ParsedWorldBible = JSON.parse(JSON.stringify(data));
+    let audit = runArchitectStructuralAudits(
+      (current as any).escaleta_capitulos as any[],
+      (current as any).world_bible,
+      seriesAuditContext,
+    );
+    const initialScore = audit.puntuacion_global;
+    let rounds = 0;
+    const isClean = (a: typeof audit) =>
+      a.puntuacion_global >= minScore && this.criticalSecondHalfKODims(a.problemas).length === 0;
+
+    while (rounds < MAX_SURGERY_ROUNDS && !isClean(audit) && !this.aborted) {
+      rounds++;
+      const altas = audit.problemas.filter(p => p.severidad === "alta");
+      const medias = audit.problemas.filter(p => p.severidad === "media");
+      // Priorizamos altas; completamos con medias hasta un tope razonable.
+      const selected = [...altas, ...medias].slice(0, 12);
+      if (selected.length === 0) break;
+
+      const escaleta = ((current as any).escaleta_capitulos || []) as any[];
+      const byNum = new Map<number, any>();
+      for (const c of escaleta) {
+        const n = c?.numero ?? c?.number;
+        if (typeof n === "number") byNum.set(n, c);
+      }
+      const targetNums = Array.from(new Set(selected.flatMap(p => p.capitulos || [])))
+        .filter(n => byNum.has(n))
+        .sort((a, b) => a - b)
+        .slice(0, MAX_TARGET_CAPS);
+      if (targetNums.length === 0) break;
+
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "info",
+        agentRole: "architect",
+        message: `[Fix267] Cirujano de Escaletas (ronda ${rounds}/${MAX_SURGERY_ROUNDS}): reparación quirúrgica de ${targetNums.length} capítulo(s) de la escaleta (${targetNums.join(", ")}) para cerrar ${selected.length} problema(s) residual(es) del Auditor Estructural (${altas.length} altos). Score actual: ${audit.puntuacion_global}/10 (meta ${minScore}/10). Solo se aceptará el empalme si el score sube sin aumentar los problemas altos.`,
+        metadata: { fix: "Fix267", ronda: rounds, targets: targetNums, score: audit.puntuacion_global, problemas: selected.length },
+      });
+
+      const outcome = await this.escaletaSurgeon.repair({
+        title: project.title,
+        genre: project.genre,
+        tone: project.tone,
+        premise: project.premise || "",
+        projectId: project.id,
+        escaletaCompleta: escaleta,
+        capitulosObjetivo: targetNums.map(n => byNum.get(n)),
+        problemas: selected.filter(p => (p.capitulos || []).some(n => targetNums.includes(n)) || (p.capitulos || []).length === 0),
+      });
+      if (!outcome.result) break;
+
+      // Empalme: sustituimos SOLO los caps devueltos (mismos numeros).
+      const candidate: ParsedWorldBible = JSON.parse(JSON.stringify(current));
+      const candEscaleta = ((candidate as any).escaleta_capitulos || []) as any[];
+      let spliced = 0;
+      for (const rep of outcome.result.capitulos_reparados) {
+        const n = rep?.numero ?? rep?.number;
+        const idx = candEscaleta.findIndex((c: any) => (c?.numero ?? c?.number) === n);
+        if (idx >= 0) { candEscaleta[idx] = rep; spliced++; }
+      }
+      if (spliced === 0) break;
+
+      const candAudit = runArchitectStructuralAudits(
+        candEscaleta,
+        (candidate as any).world_bible,
+        seriesAuditContext,
+      );
+      const prevAltas = audit.problemas.filter(p => p.severidad === "alta").length;
+      const candAltas = candAudit.problemas.filter(p => p.severidad === "alta").length;
+      const accepted = candAudit.puntuacion_global > audit.puntuacion_global && candAltas <= prevAltas;
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: accepted ? "success" : "warning",
+        agentRole: "architect",
+        message: accepted
+          ? `[Fix267] Cirugía de escaleta ACEPTADA (ronda ${rounds}): ${spliced} capítulo(s) empalmados. Score ${audit.puntuacion_global}/10 → ${candAudit.puntuacion_global}/10; problemas altos ${prevAltas} → ${candAltas}. ${outcome.result.resumen ? `Cambios: ${outcome.result.resumen.slice(0, 400)}` : ""}`
+          : `[Fix267] Cirugía de escaleta REVERTIDA (ronda ${rounds}): el empalme no mejoró (score ${audit.puntuacion_global}/10 → ${candAudit.puntuacion_global}/10, altos ${prevAltas} → ${candAltas}). Se conserva la escaleta previa.`,
+        metadata: { fix: "Fix267", ronda: rounds, accepted, scoreBefore: audit.puntuacion_global, scoreAfter: candAudit.puntuacion_global, altasBefore: prevAltas, altasAfter: candAltas, spliced },
+      });
+      if (!accepted) break;
+      current = candidate;
+      audit = candAudit;
+    }
+
+    return {
+      data: current,
+      score: audit.puntuacion_global,
+      problemas: audit.problemas,
+      cleaned: isClean(audit),
+      rounds,
+      improved: audit.puntuacion_global > initialScore,
+    };
+  }
+
+  // [Fix267] Persiste los problemas estructurales residuales que sobreviven a
+  // la cirugia de escaleta como worldRule `__structural_residuals`. El Narrador
+  // los recibe via getEnrichedWorldBible (`_residuos_estructurales`) y DEBE
+  // resolverlos en escena al escribir los capitulos citados (los residuos ya no
+  // se quedan en un log informativo). Lista vacia = limpia la regla.
+  private async persistStructuralResiduals(projectId: number, problemas: StructuralAuditProblem[]): Promise<void> {
+    try {
+      const wb = await storage.getWorldBibleByProject(projectId);
+      if (!wb) return;
+      const rules = ((wb.worldRules || []) as any[]).filter((r: any) => r?.category !== "__structural_residuals");
+      const relevantes = (problemas || [])
+        .filter(p => p.severidad === "alta" || p.severidad === "media")
+        .slice(0, 12)
+        .map(p => ({
+          area: p.area,
+          tipo: p.tipo,
+          severidad: p.severidad,
+          capitulos: p.capitulos || [],
+          descripcion: p.descripcion,
+          sugerencia: p.sugerencia,
+        }));
+      if (relevantes.length > 0) {
+        rules.push({ category: "__structural_residuals", residuos: relevantes, updatedAt: new Date().toISOString() });
+      }
+      await storage.updateWorldBible(wb.id, { worldRules: rules } as any);
+    } catch (e) {
+      console.warn(`[Fix267] persistStructuralResiduals fallo para proyecto ${projectId}: ${(e as Error).message}`);
+    }
+  }
+
   // [Fix143-A] Combina la crítica del Holístico y del Beta de mid-novela en un
   // solo bloque para inyectarlo al Ghostwriter como `editorialCritique`. El
   // Holístico va primero (visión macro/estructural). Cada parte se acota para no
@@ -12811,12 +13027,41 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     targets = Array.from(new Set(targets)).sort((a, b) => a - b).slice(0, MAX_RESCUE_CHAPTERS);
     if (targets.length === 0) return 0;
 
+    // [Fix267] ESCALADA: si este brazo ya corrio >=2 veces sobre un tramo que
+    // solapa con los targets actuales y la queja estructural persiste, las
+    // cirugias fueron cosmeticas (visto en logs: 2.8-6.8% de cambio, 3 pasadas
+    // sobre los caps 18-25 sin mover Hol 6/Beta 8). En vez de repetir la misma
+    // instruccion, se escala a reescritura PROFUNDA: se marca la instruccion
+    // como estructural (el cirujano cae a reescritura completa con Narrador) y
+    // se autoriza a cambiar los EVENTOS de la escena (nuevos obstaculos y
+    // costes) siempre que respeten el canon. Historial en worldRule
+    // `__structural_rescue_history` (ultimas 6 pasadas).
+    let escalated = false;
+    try {
+      const wbRow = await storage.getWorldBibleByProject(project.id);
+      const rules = ((wbRow?.worldRules || []) as any[]);
+      const histRule = rules.find((r: any) => r?.category === "__structural_rescue_history");
+      const past: Array<{ targets: number[]; ts: string }> = Array.isArray(histRule?.pasadas) ? histRule.pasadas : [];
+      const targetSet = new Set(targets);
+      const overlapping = past.filter(p => Array.isArray(p?.targets) && p.targets.some((n: number) => targetSet.has(n)));
+      escalated = overlapping.length >= 2;
+      // Registrar esta pasada (antes de ejecutar, para que un crash no borre memoria).
+      const nextPasadas = [...past, { targets, ts: new Date().toISOString(), escalated }].slice(-6);
+      const nextRules = rules.filter((r: any) => r?.category !== "__structural_rescue_history");
+      nextRules.push({ category: "__structural_rescue_history", pasadas: nextPasadas, updatedAt: new Date().toISOString() });
+      if (wbRow) await storage.updateWorldBible(wbRow.id, { worldRules: nextRules } as any);
+    } catch (e) {
+      console.warn(`[Fix267] Historial del brazo estructural no disponible: ${(e as Error).message}`);
+    }
+
     await storage.createActivityLog({
       projectId: project.id,
-      level: "info",
+      level: escalated ? "warning" : "info",
       agentRole: "editor",
-      message: `[Fix135-B] Brazo estructural activado: el informe señala decaimiento de la segunda mitad (señales: ${matched.slice(0, 5).join(", ")}) que el cirujano cap-a-cap no puede aplicar. Reescritura dirigida de ${targets.length} capítulo(s) del tramo flojo: ${targets.join(", ")}.`,
-      metadata: { fix: "Fix135-B", targets, signals: matched.slice(0, 8) },
+      message: escalated
+        ? `[Fix267] Brazo estructural en modo ESCALADO: ya hubo ≥2 pasadas quirúrgicas previas sobre este mismo tramo sin que la nota de los lectores subiera (parches cosméticos del 3-7% no arreglan estructura). Esta pasada reescribe EN PROFUNDIDAD ${targets.length} capítulo(s) (${targets.join(", ")}): se autoriza a cambiar los eventos de las escenas (nuevos obstáculos, costes y escalada) respetando el canon. El snapshot del bucle restaura si empeora.`
+        : `[Fix135-B] Brazo estructural activado: el informe señala decaimiento de la segunda mitad (señales: ${matched.slice(0, 5).join(", ")}) que el cirujano cap-a-cap no puede aplicar. Reescritura dirigida de ${targets.length} capítulo(s) del tramo flojo: ${targets.join(", ")}.`,
+      metadata: { fix: escalated ? "Fix267" : "Fix135-B", targets, signals: matched.slice(0, 8), escalated },
     });
 
     // 4) Instruccion estructural compartida (filosofia Fix132: escalada monotona
@@ -12885,12 +13130,23 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         if (!chapter || !sectionData || !chapter.content) continue;
 
         const instruction = [
-          `REESCRITURA ESTRUCTURAL DIRIGIDA — ELEVAR LA TENSIÓN DE LA SEGUNDA MITAD (acto 2 / tramo flojo).`,
+          // [Fix267] En modo escalado la instruccion se declara ESTRUCTURAL y
+          // de reescritura PROFUNDA: el cirujano de parches la rechazara y el
+          // pipeline caera a reescritura completa con el Narrador (via ya
+          // existente "cirugia no aplicable -> fallback"), que es lo que este
+          // tramo necesita tras >=2 pasadas cosmeticas sin subir la nota.
+          escalated
+            ? `REESCRITURA ESTRUCTURAL PROFUNDA [ESCALADA Fix267] — cambio ESTRUCTURAL de la escena, NO parche local. Esta instrucción NO es aplicable con cirugía puntual: requiere reescribir el capítulo entero. Pasadas quirúrgicas previas sobre este tramo NO movieron la nota de los lectores; esta vez PUEDES Y DEBES cambiar los EVENTOS de la escena (añadir un obstáculo nuevo, una complicación, un coste mayor, reordenar beats internos) siempre que respetes el canon, los nombres, las revelaciones ya dosificadas y el desenlace global.`
+            : `REESCRITURA ESTRUCTURAL DIRIGIDA — ELEVAR LA TENSIÓN DE LA SEGUNDA MITAD (acto 2 / tramo flojo).`,
           `El Lector Holístico detecta que este tramo del manuscrito decae: las apuestas no escalan, el ritmo se aplana y/o el avance hacia el clímax no se paga con coste real. Reescribe ESTE capítulo (${this.getSectionLabel(sectionData)}) para corregirlo SIN romper la continuidad ni el World Bible:`,
           `1. SUBE la apuesta dramática respecto al capítulo anterior (escalada monótona): el protagonista debe arriesgar o perder más que antes.`,
           `2. PAGA esa subida con un coste TANGIBLE E IRREVERSIBLE dentro de la escena (una herida o pérdida, una decisión sin vuelta atrás, una exposición pública, la rotura de un recurso o aliado). Nada de tensión que se resuelve gratis.`,
           `3. PROHIBIDO introducir salvadores, informantes o soluciones que no estén ya sembrados antes en la novela (anti deus ex machina): trabaja solo con elementos ya presentes.`,
-          `4. CONSERVA los hechos canónicos, los nombres, las revelaciones ya dosificadas y la trama; cambia la INTENSIDAD y las consecuencias, no los hechos.`,
+          escalated
+            // [Fix267] En modo escalado la conservacion se relaja: se pueden
+            // cambiar eventos internos de la escena (no el canon global).
+            ? `4. CONSERVA el canon global (nombres, revelaciones ya dosificadas, desenlace de la novela y hechos citados en otros capítulos); dentro de ESTA escena puedes cambiar eventos, obstáculos y su orden para lograr la escalada.`
+            : `4. CONSERVA los hechos canónicos, los nombres, las revelaciones ya dosificadas y la trama; cambia la INTENSIDAD y las consecuencias, no los hechos.`,
           tramoRoleLine(tramo, ti),
           ``,
           `INFORME DEL LECTOR HOLÍSTICO (contexto del problema global):`,
@@ -13486,11 +13742,28 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     for (let i = polishHistory.length - 1; i >= 0 && !polishHistory[i].improved; i--) trailingNonImprovingRuns++;
     // Primera ronda de la vida del proyecto: no hay techo que batir.
     let beatHistoricalThisRun = polishHistory.length === 0;
+    // [Fix267] Antes de aceptar una meseta, comprobar si el brazo estructural
+    // ESCALADO (reescritura profunda) ya se intento. Si el brazo corrio >=2
+    // veces en modo quirurgico sin llegar a escalar, la meseta puede ser un
+    // artefacto de parches cosmeticos: se concede UNA ronda mas para que la
+    // escalada dispare antes de rendirse.
+    let escalatedRescueTried = false;
+    let rescuePassCount = 0;
+    try {
+      const wbHist = await storage.getWorldBibleByProject(project.id);
+      const histRescue = (((wbHist?.worldRules || []) as any[]).find((r: any) => r?.category === "__structural_rescue_history"))?.pasadas;
+      if (Array.isArray(histRescue)) {
+        rescuePassCount = histRescue.length;
+        escalatedRescueTried = histRescue.some((p: any) => p?.escalated === true);
+      }
+    } catch {}
+    const escalationPending = rescuePassCount >= 2 && !escalatedRescueTried;
     // (c) Meseta ACEPTADA: no relanzar la ronda completa.
     if (
       trailingNonImprovingRuns >= 2 &&
       histBestBeta >= TARGET_BETA_SCORE - 1 &&
-      histBestHolistic >= TARGET_HOLISTIC_SCORE - 1
+      histBestHolistic >= TARGET_HOLISTIC_SCORE - 1 &&
+      !escalationPending
     ) {
       await storage.createActivityLog({
         projectId: project.id,
@@ -18593,6 +18866,9 @@ RESPONDE ÚNICAMENTE CON JSON:
         if (seriesUnresolvedThreads?.length) enriched._series_hilos_no_resueltos = seriesUnresolvedThreads;
         if (seriesKeyEvents?.length) enriched._series_eventos_clave_previos = seriesKeyEvents;
         if (researchDossier) enriched._dossier_documental = researchDossier;
+        // [Fix267] Residuos estructurales vinculantes para el Narrador.
+        const residualRuleEarly = dbRulesEarly.find((r: any) => r?.category === "__structural_residuals");
+        if (residualRuleEarly?.residuos?.length) enriched._residuos_estructurales = residualRuleEarly.residuos;
         return enriched;
       }
 
@@ -18689,6 +18965,12 @@ RESPONDE ÚNICAMENTE CON JSON:
       // [Fix257] Dossier documental de investigacion para el Narrador
       if (researchDossier) {
         enriched._dossier_documental = researchDossier;
+      }
+
+      // [Fix267] Residuos estructurales vinculantes para el Narrador.
+      const residualRule = dbRules.find((r: any) => r?.category === "__structural_residuals");
+      if (residualRule?.residuos?.length) {
+        enriched._residuos_estructurales = residualRule.residuos;
       }
 
       return enriched;

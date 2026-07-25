@@ -907,6 +907,26 @@ export class GhostwriterAgent extends BaseAgent {
       parts.push(`\n🧭 RIGOR FACTUAL: si mencionas datos del mundo real (historia, geografía, distancias, fechas, precios, instituciones), usa SOLO lo que sepas con certeza. Ante la duda, NO des el dato preciso: formula vaga pero verosímil. Un dato preciso y falso destruye la credibilidad.`);
     }
 
+    // [Fix267] Residuos estructurales VINCULANTES: problemas que el Auditor
+    // Estructural no pudo cerrar en la escaleta (ni el Cirujano de Escaletas).
+    // El Narrador es la ultima red: al escribir un capitulo citado DEBE
+    // materializar la correccion en escena (no queda en un log informativo).
+    mappedKeys.add('_residuos_estructurales');
+    if (Array.isArray(wb._residuos_estructurales) && wb._residuos_estructurales.length > 0) {
+      parts.push(`\n═══════════════════════════════════════════════════════════════════`);
+      parts.push(`🚨 RESIDUOS ESTRUCTURALES PENDIENTES (OBJETIVOS VINCULANTES) [Fix267]`);
+      parts.push(`═══════════════════════════════════════════════════════════════════`);
+      parts.push(`La escaleta quedó con estos defectos estructurales SIN cerrar. Si el capítulo que estás escribiendo aparece en la lista de capítulos de un residuo, es tu OBLIGACIÓN resolverlo EN ESCENA en este capítulo (siembra la pista, declara el reveal, sube la apuesta con un evento concreto, según pida el residuo). No es opcional ni informativo.`);
+      for (const r of wb._residuos_estructurales) {
+        if (!r) continue;
+        const caps = Array.isArray(r.capitulos) && r.capitulos.length > 0 ? r.capitulos.join(", ") : "sin capítulo concreto (aplícalo en cuanto encaje)";
+        parts.push(`  ▸ [${r.area || "?"}/${r.tipo || "?"}] (severidad ${r.severidad || "?"}) Capítulos: ${caps}`);
+        if (r.descripcion) parts.push(`    Problema: ${r.descripcion}`);
+        if (r.sugerencia) parts.push(`    Cómo resolverlo: ${r.sugerencia}`);
+      }
+      parts.push(`  REGLAS: resuélvelo con CONTENIDO dramatizado (escena, no resumen), coherente con el canon; nada de deus ex machina ni salvadores sin sembrar.`);
+    }
+
     mappedKeys.add('_hilos_pendientes'); mappedKeys.add('_hilos_resueltos');
     if (Array.isArray(wb._hilos_pendientes) && wb._hilos_pendientes.length > 0) {
       parts.push(`\n🔄 HILOS NARRATIVOS PENDIENTES:`);

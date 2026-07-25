@@ -32,6 +32,7 @@
 - [Dossier documental de investigacion](research-dossier-injection.md) — material nuevo para el Narrador en TODOS los caminos: enganchar en getEnrichedWorldBible + worldRule `__x`, no en los call sites.
 - [Estado dual completed/with_issues](completed-with-issues-status.md) — todo gate project-level de "terminado" usa el helper compartido y acepta ambos; nuevas fuentes de issues se registran en el colector central.
 - [Memoria entre rondas en bucles de calidad](quality-loop-cross-run-memory.md) — bucles relanzables sin historial persistido repiten la misma meseta; empates cuentan como no-mejora.
+- [Residuos estructurales vinculantes](structural-residuals-binding.md) — lo que un gate advisory deja pasar se persiste como objetivo vinculante del Narrador; limpiar SOLO en pase realmente limpio (rutas de excepcion persisten).
 - [Juez que exige material: nunca no-op silencioso](judge-input-availability.md) — si un juez/diagnostico requiere notas u otro material, recuperarlo de su fuente o generarlo fresco antes de rendirse; un no-op silencioso deja UI prometiendo cosas que no llegan.
 - [Reparacion en caliente mid-novela](mid-novel-repair.md) — lecturas intermedias deben reparar lo ya escrito (con memoria de hallazgos y frenos), no solo guiar capitulos futuros.
 - [Prohibicion en prompt necesita red determinista](prompt-prohibition-needs-deterministic-net.md) — el planner propone la accion prohibida igual; sin red que la traduzca, el ejecutor quema presupuesto en no-ops.
