@@ -2958,6 +2958,54 @@ ${prose}`;
     }
   });
 
+  // [Fix266] Gestion MASIVA de fichas pendientes del verificador de datos:
+  // resumen (corregibles vs dudosas) y acciones bulk (aplicar corregibles en
+  // segundo plano / descartar dudosas / descartar todas). Via de salida del
+  // caso "186 fichas bloqueando la novela 2 dias".
+  app.get("/api/projects/:id/fact-check-pending", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) return res.status(400).json({ error: "ID inválido" });
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      const { getFactCheckPending, isFactFindingCorrectable, isFactCheckBulkApplyRunning } = await import("./services/novel-fact-check");
+      const pending = await getFactCheckPending(projectId);
+      const corregibles = pending.filter(isFactFindingCorrectable).length;
+      res.json({
+        count: pending.length,
+        corregibles,
+        dudosas: pending.length - corregibles,
+        applying: isFactCheckBulkApplyRunning(projectId),
+      });
+    } catch (error) {
+      res.status(500).json({ error: "No se pudieron leer las fichas pendientes" });
+    }
+  });
+
+  app.post("/api/projects/:id/fact-check-pending/bulk", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) return res.status(400).json({ error: "ID inválido" });
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      const action = String(req.body?.action || "");
+      const svc = await import("./services/novel-fact-check");
+      if (action === "apply_corregibles") {
+        const result = svc.startFactCheckPendingApply(projectId);
+        if (!result.success) return res.status(409).json({ error: result.message });
+        return res.status(202).json({ message: "Corrección masiva iniciada en segundo plano; sigue el progreso en el registro de actividad." });
+      }
+      if (action === "discard_dudosas" || action === "discard_todas") {
+        const discarded = await svc.discardFactCheckPending(projectId, action === "discard_todas" ? "todas" : "dudosas");
+        return res.json({ discarded, message: `${discarded} ficha(s) descartadas.` });
+      }
+      return res.status(400).json({ error: "Acción no reconocida (apply_corregibles | discard_dudosas | discard_todas)" });
+    } catch (error) {
+      console.error("[Fix266] Error en bulk fact-check-pending:", error);
+      res.status(500).json({ error: "No se pudo ejecutar la acción masiva" });
+    }
+  });
+
   // [Fix265] Tramas colgantes pendientes: listado y resolucion manual. Via de
   // salida obligatoria del estado "completed_with_issues" cuando el usuario
   // corrige (o acepta) las tramas por su cuenta.

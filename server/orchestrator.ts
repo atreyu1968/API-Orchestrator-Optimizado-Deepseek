@@ -3568,6 +3568,12 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas que NO estuvieran marca
           // bucle ya restauraba el best al final, pero gastaba todas las
           // iteraciones. Con este corte salimos en iter 3 en vez de iter 6.
           let consecutiveRegressionsSA = 0;
+          // [Fix266] Estancamiento: iters consecutivas SIN superar el best
+          // (incluye empates, que Fix109d no contaba — el caso real fue
+          // 7.3/7.3/7.3 y luego 5.3: tres empates y una regresion pagando
+          // 4 regeneraciones de ~7 min para nada). 3 sin mejora = corte.
+          let consecutiveNoImproveSA = 0;
+          const MAX_NO_IMPROVE_SA = 3;
           // [Fix115] Estado para el audit on-demand del Auditor de World Bible.
           // Si en ≥2 iters consecutivas la MISMA dimensión KO acumula count≥3,
           // el problema NO es de la escaleta — es la World Bible la que no
@@ -3762,6 +3768,11 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas que NO estuvieran marca
               // [Fix119] Persistimos también los problemas crudos del SA para
               // poder filtrarlos por área en el audit on-demand del WBA.
               bestSA = { data: worldBibleData, score: sa.puntuacion_global, problemsSummary, problemas: Array.isArray(sa.problemas) ? sa.problemas : [] };
+              // [Fix266] Nuevo best: resetea el contador de estancamiento.
+              consecutiveNoImproveSA = 0;
+            } else {
+              // [Fix266] Empate o regresion: iteracion sin avance real.
+              consecutiveNoImproveSA++;
             }
 
             // Retry si score bajo O si hay cualquier severidad alta (incluso con score ≥ 7
@@ -3806,6 +3817,10 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas que NO estuvieran marca
             // saIter ≥ 1 para que tenga sentido ("best" implica que ya hubo
             // alguna iter previa).
             const earlyStopByRegression = consecutiveRegressionsSA >= 2 && bestSA != null && saIter >= 1;
+            // [Fix266] Corte por ESTANCAMIENTO: N iters seguidas sin superar el
+            // best (empates incluidos). El bucle restaurara el best igualmente;
+            // seguir regenerando solo quema tokens y tiempo.
+            const earlyStopByStall = consecutiveNoImproveSA >= MAX_NO_IMPROVE_SA && bestSA != null && saIter >= 2;
             // [Fix254] Convergencia temprana por falso negativo cronico de
             // "falso_aliado" DENTRO del bucle. La red Fix145-B ya omite el gate
             // final cuando la unica dimension que hunde el agregado es
@@ -3826,7 +3841,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas que NO estuvieran marca
             // Control negativo: si hay CUALQUIER otro problema alto, otra dim
             // KO critica, o la cobertura no es cronica-0%, se sigue reintentando.
             let faLoopConverged = false;
-            if (needsRetry && !lastIter && !earlyStopByRegression && !criticalSecondHalfKO) {
+            if (needsRetry && !lastIter && !earlyStopByRegression && !earlyStopByStall && !criticalSecondHalfKO) {
               const faProblemsLoop = sa.problemas.filter((p) => p.area === "falso_aliado");
               const faOnlyRevealLoop =
                 faProblemsLoop.length > 0 && faProblemsLoop.every((p) => p.tipo === "reveal_no_declarado");
@@ -3850,7 +3865,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas que NO estuvieran marca
             // de segunda mitad (el agregado ya pasa el umbral y no hay alta), para
             // que en los logs quede claro por que el bucle no acepta todavia.
             if (criticalSecondHalfKO && !(sa.puntuacion_global < SA_THRESHOLD || hasAlta)
-                && sa.instrucciones_revision.trim().length > 0 && !lastIter && !earlyStopByRegression) {
+                && sa.instrucciones_revision.trim().length > 0 && !lastIter && !earlyStopByRegression && !earlyStopByStall) {
               await storage.createActivityLog({
                 projectId: project.id,
                 level: "info",
@@ -3859,7 +3874,7 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas que NO estuvieran marca
                 metadata: { fix: "Fix135", criticalKODims, score: sa.puntuacion_global, iteration: saIter + 1, maxIterations: MAX_SA_ITERATIONS },
               });
             }
-            if (!needsRetry || lastIter || earlyStopByRegression || faLoopConverged) {
+            if (!needsRetry || lastIter || earlyStopByRegression || earlyStopByStall || faLoopConverged) {
               // [Fix254] Salida por convergencia: el unico motivo del retry es
               // el falso negativo cronico de falso_aliado. No quemamos mas
               // iteraciones; el Narrador materializara el giro del traidor en
@@ -3886,6 +3901,16 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas que NO estuvieran marca
                 });
               }
               // [Fix109d] Si salimos por early-stop, lo decimos también.
+              // [Fix266] Log del corte por estancamiento (empates sin avance).
+              if (earlyStopByStall && !earlyStopByRegression && needsRetry && !lastIter) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  agentRole: "architect",
+                  message: `[Fix266] Early-stop del Auditor Estructural por ESTANCAMIENTO: ${consecutiveNoImproveSA} iteraciones consecutivas sin superar el mejor score (${bestSA?.score}/10). Cortamos en iter ${saIter + 1}/${MAX_SA_ITERATIONS} para no seguir pagando regeneraciones que no mejoran; se continúa con la mejor escaleta vista.`,
+                  metadata: { fix: "Fix266", bestScore: bestSA?.score, lastScore: sa.puntuacion_global, consecutiveNoImprove: consecutiveNoImproveSA, iteration: saIter + 1, maxIterations: MAX_SA_ITERATIONS },
+                });
+              }
               if (earlyStopByRegression && needsRetry && !lastIter) {
                 await storage.createActivityLog({
                   projectId: project.id,
@@ -13409,6 +13434,74 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     // vueltas sin avanzar (el log mostraba 4 regresiones seguidas hasta agotar iter).
     let consecutiveNonImproving = 0;
     const MAX_NONIMPROVING_ROUNDS = 2;
+    // [Fix266] MEMORIA DE MESETA ENTRE RONDAS de pulido. Caso real: 5 rondas
+    // completas (hasta 8 iters cada una, 2 lectores releyendo 82k palabras por
+    // iter) en 2 dias, siempre terminando en el mismo techo (Beta=8, Hol=6/7).
+    // Cada relanzamiento (manual o auto-resume tras reinicio) empezaba de cero
+    // sin memoria. Ahora: (a) el historial de rondas se persiste como worldRule
+    // "__polish_history"; (b) si ya hubo >=1 ronda previa, la nueva ronda debe
+    // SUPERAR el mejor combinado historico en sus 2 primeras iteraciones o se
+    // cierra advisory (meseta persistente); (c) si ya hubo >=2 rondas seguidas
+    // sin superar el techo y el mejor historico esta a <=1 punto de ambas metas,
+    // se ACEPTA la meseta y no se relanza la ronda completa (el ruido +/-1 del
+    // juez hace estadisticamente inutil perseguir el punto que falta).
+    type PolishRunRecord = { beta: number | null; holistic: number | null; iterations: number; improved: boolean; endedAt: string };
+    const readPolishHistory = async (): Promise<PolishRunRecord[]> => {
+      try {
+        const wb = await storage.getWorldBibleByProject(project.id);
+        const rule = ((wb?.worldRules || []) as any[]).find((r: any) => r?.category === "__polish_history");
+        return Array.isArray(rule?.runs) ? rule.runs : [];
+      } catch { return []; }
+    };
+    let polishRunRecorded = false;
+    const recordPolishRun = async (improved: boolean): Promise<void> => {
+      if (polishRunRecorded) return;
+      polishRunRecorded = true;
+      try {
+        const wb = await storage.getWorldBibleByProject(project.id);
+        if (!wb) return;
+        const rules = ((wb.worldRules || []) as any[]);
+        let rule = rules.find((r: any) => r?.category === "__polish_history");
+        if (!rule) { rule = { category: "__polish_history", runs: [] }; rules.push(rule); }
+        if (!Array.isArray(rule.runs)) rule.runs = [];
+        rule.runs.push({
+          beta: bestSnapshot?.beta ?? null,
+          holistic: bestSnapshot?.holistic ?? null,
+          iterations: iter,
+          improved,
+          endedAt: new Date().toISOString(),
+        });
+        rule.runs = rule.runs.slice(-10);
+        rule.updatedAt = new Date().toISOString();
+        await storage.updateWorldBible(wb.id, { worldRules: rules } as any);
+      } catch (e) {
+        console.warn(`[Fix266] recordPolishRun fallo: ${(e as Error).message}`);
+      }
+    };
+    const polishHistory = await readPolishHistory();
+    const histBestCombined = polishHistory.reduce((m, r) => Math.max(m, (r.beta ?? 0) + (r.holistic ?? 0)), -1);
+    const histBestBeta = polishHistory.reduce((m, r) => Math.max(m, r.beta ?? -1), -1);
+    const histBestHolistic = polishHistory.reduce((m, r) => Math.max(m, r.holistic ?? -1), -1);
+    let trailingNonImprovingRuns = 0;
+    for (let i = polishHistory.length - 1; i >= 0 && !polishHistory[i].improved; i--) trailingNonImprovingRuns++;
+    // Primera ronda de la vida del proyecto: no hay techo que batir.
+    let beatHistoricalThisRun = polishHistory.length === 0;
+    // (c) Meseta ACEPTADA: no relanzar la ronda completa.
+    if (
+      trailingNonImprovingRuns >= 2 &&
+      histBestBeta >= TARGET_BETA_SCORE - 1 &&
+      histBestHolistic >= TARGET_HOLISTIC_SCORE - 1
+    ) {
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "success",
+        agentRole: "editor",
+        message: `[Fix266] MESETA DE PULIDO ACEPTADA: ${trailingNonImprovingRuns} ronda(s) completas de pulido ya terminaron sin superar el mejor resultado histórico (Beta=${histBestBeta}, Holístico=${histBestHolistic}), que está a ≤1 punto de ambas metas. El ruido natural del juez (±1) hace improbable ganar ese punto con más rondas, así que NO se relanza el pulido completo (cada ronda relee la novela entera con 2 lectores hasta 8 veces). La novela conserva su mejor versión; si quieres otra pasada de todos modos, usa el pulido manual sabiendo que el techo actual es ese.`,
+        metadata: { fix: "Fix266", histBestBeta, histBestHolistic, trailingNonImprovingRuns, runs: polishHistory.length },
+      });
+      await storage.updateProject(project.id, { autoPolishPending: false } as any).catch(() => {});
+      return;
+    }
     // [Fix135-B] One-shot por bucle del brazo estructural: evita reescritura ->
     // relectura -> reescritura en cadena. Si tras el rescate sigue sin converger,
     // se acepta la salida normal (convergencia/persistencia para revision manual).
@@ -13539,6 +13632,9 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         : 0;
       const deltaOk = initialHolisticScore !== null && holisticDelta >= 2;
       if (!absoluteOk && !deltaOk) return false;
+      // [Fix266] Salida con exito: cuenta como ronda que SI mejoro (no debe
+      // alimentar el contador de meseta de futuras rondas).
+      await recordPolishRun(true);
       const criterionNote = absoluteOk
         ? `El Holistico alcanzo su meta absoluta (${currentScores.holistic} >= ${TARGET_HOLISTIC_SCORE}) y el Beta alcanzo su target (${currentScores.beta} >= ${TARGET_BETA_SCORE}).`
         : `El Holistico subio de ${initialHolisticScore} -> ${currentScores.holistic} (+${holisticDelta}) y el Beta alcanzo su target (${currentScores.beta} >= ${TARGET_BETA_SCORE}).`;
@@ -13586,6 +13682,8 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // matado), NO escribimos nada tardio (restore/persist/ortho). El cierre limpio
       // ya quedo cubierto; cualquier write post-abort seria una escritura huerfana.
       if (this.aborted) return;
+      // [Fix266] Registrar la ronda en el historial de meseta.
+      await recordPolishRun(beatHistoricalThisRun);
       let restoreNote = "";
       if (bestSnapshot) {
         const r = await restoreSnapshot(bestSnapshot.chapters);
@@ -13912,6 +14010,23 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             );
             return;
           }
+        }
+
+        // [Fix266] (b) Corte por meseta persistente: si ya hubo rondas previas y
+        // esta ronda no ha SUPERADO el mejor combinado historico en sus 2
+        // primeras iteraciones, cerramos advisory sin quemar las 8. La mejor
+        // version de la novela ya existe (rondas previas); repetir lecturas
+        // completas persiguiendo el mismo techo es el patron insostenible.
+        if (betaScore !== null && holisticScore !== null && betaScore + holisticScore > histBestCombined) {
+          beatHistoricalThisRun = true;
+        }
+        if (!beatHistoricalThisRun && iter >= 2) {
+          await finalizeAdvisoryWithOrtho(
+            { resumen_general: `Meseta persistente entre rondas: esta ronda no superó el mejor histórico (combinado ${histBestCombined}) en ${iter} iteraciones. Mejor histórico: Beta=${histBestBeta}, Holístico=${histBestHolistic}.`, instrucciones: [] },
+            "auto_holistic_plateau_between_runs",
+            `[Fix266] Ronda de pulido cortada en la iteración ${iter}: no superó el mejor resultado histórico del proyecto (Beta=${histBestBeta}, Holístico=${histBestHolistic}) — meseta persistente entre rondas.`,
+          );
+          return;
         }
 
         // [Fix81] Actualizar mejor snapshot si la combinación actual lo supera.

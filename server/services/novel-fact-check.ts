@@ -289,3 +289,123 @@ export async function runNovelFactCheckBeforeReview(projectId: number): Promise<
   }
   return waitFor(registry.get(projectId)!);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [Fix266] Gestion MASIVA de fichas pendientes del fact-check. Caso real: 186
+// fichas bloqueando el estado "completada" durante 2 dias porque la unica via
+// era corregirlas capitulo a capitulo desde la UI. Tres operaciones:
+//   - getFactCheckPending: lee las fichas persistidas (worldRule).
+//   - discardFactCheckPending: descarta "dudosas" (posibles retcons deliberados)
+//     o "todas" de golpe, y recomputa el estado del proyecto.
+//   - startFactCheckPendingApply: aplica en BACKGROUND las corregibles
+//     (veredicto "incorrecto" con sugerencia) agrupadas por capitulo via el
+//     endpoint apply de Fix255 (lotes de <=20, su techo). El endpoint ya retira
+//     las fichas aplicadas y recomputa el estado. Best-effort por capitulo:
+//     un 413/409 no frena el resto; lo que falle queda pendiente.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getFactCheckPending(projectId: number): Promise<NovelFactFinding[]> {
+  try {
+    const wb = await storage.getWorldBibleByProject(projectId);
+    const rule = ((wb?.worldRules || []) as any[]).find((r: any) => r?.category === "__fact_check_pending");
+    return Array.isArray(rule?.pendientes) ? rule.pendientes : [];
+  } catch {
+    return [];
+  }
+}
+
+export function isFactFindingCorrectable(f: NovelFactFinding): boolean {
+  return f.veredicto === "incorrecto" && typeof f.sugerencia === "string" && f.sugerencia.trim().length > 0;
+}
+
+export async function discardFactCheckPending(projectId: number, scope: "dudosas" | "todas"): Promise<number> {
+  const pending = await getFactCheckPending(projectId);
+  const toDiscard = scope === "todas" ? pending : pending.filter((f) => !isFactFindingCorrectable(f));
+  if (toDiscard.length === 0) return 0;
+  await resolveFactCheckPending(projectId, toDiscard.map((f) => ({ afirmacion: f.afirmacion, chapterId: f.chapterId })));
+  await logActivity(
+    projectId,
+    `[Fix266] Descartadas ${toDiscard.length} ficha(s) pendientes del verificador de datos (alcance: ${scope}). Se consideran retcons deliberados o hallazgos no accionables; si era lo ultimo pendiente, la novela pasa a "completada".`,
+    "success",
+  );
+  return toDiscard.length;
+}
+
+const bulkApplyInFlight = new Set<number>();
+
+export function isFactCheckBulkApplyRunning(projectId: number): boolean {
+  return bulkApplyInFlight.has(projectId);
+}
+
+export function startFactCheckPendingApply(projectId: number): { success: boolean; message: string } {
+  // Check+set SINCRONO antes de cualquier await: dos clicks seguidos no deben
+  // lanzar dos pasadas (leccion del runner de Cura de Serie).
+  if (bulkApplyInFlight.has(projectId)) {
+    return { success: false, message: "Ya hay una correccion masiva en curso para este proyecto" };
+  }
+  const running = registry.get(projectId);
+  if (running && running.status === "running") {
+    return { success: false, message: "Hay una verificacion de novela en curso; espera a que termine" };
+  }
+  bulkApplyInFlight.add(projectId);
+  void runFactCheckPendingApply(projectId).finally(() => bulkApplyInFlight.delete(projectId));
+  return { success: true, message: "Correccion masiva iniciada en segundo plano" };
+}
+
+async function runFactCheckPendingApply(projectId: number): Promise<void> {
+  try {
+    const pending = await getFactCheckPending(projectId);
+    const correctable = pending.filter(isFactFindingCorrectable);
+    if (correctable.length === 0) {
+      await logActivity(projectId, "[Fix266] Correccion masiva: no hay fichas corregibles automaticamente (incorrectas con sugerencia).");
+      return;
+    }
+    const byChapter = new Map<number, NovelFactFinding[]>();
+    for (const f of correctable) {
+      if (typeof f.chapterId !== "number") continue;
+      const list = byChapter.get(f.chapterId) || [];
+      list.push(f);
+      byChapter.set(f.chapterId, list);
+    }
+    await logActivity(
+      projectId,
+      `[Fix266] Correccion masiva de datos iniciada: ${correctable.length} ficha(s) corregibles en ${byChapter.size} capitulo(s). Se aplican en segundo plano, capitulo a capitulo; las dudosas o sin sugerencia no se tocan.`,
+    );
+    let applied = 0;
+    let failedChapters = 0;
+    for (const [chapterId, findings] of Array.from(byChapter.entries())) {
+      // Lotes de <=20 (techo del endpoint apply de Fix255).
+      for (let i = 0; i < findings.length; i += 20) {
+        const batch = findings.slice(i, i + 20);
+        try {
+          await selfFetch(`/api/projects/${projectId}/chapters/${chapterId}/fact-check/apply`, {
+            findings: batch.map((f) => ({
+              afirmacion: f.afirmacion,
+              veredicto: f.veredicto,
+              explicacion: f.explicacion,
+              sugerencia: f.sugerencia,
+            })),
+          });
+          applied += batch.length;
+        } catch (e) {
+          failedChapters++;
+          const label = batch[0]?.chapterLabel || `capitulo ${chapterId}`;
+          await logActivity(
+            projectId,
+            `[Fix266] Correccion masiva: fallo en ${label} (${(e as Error).message.slice(0, 200)}). Sus fichas siguen pendientes; puedes corregirlas a mano o reintentar.`,
+            "warning",
+          );
+          break; // siguiente capitulo: mas lotes del mismo cap fallarian igual
+        }
+      }
+    }
+    const remaining = (await getFactCheckPending(projectId)).length;
+    await logActivity(
+      projectId,
+      `[Fix266] Correccion masiva de datos terminada: ${applied} ficha(s) aplicadas${failedChapters > 0 ? `, ${failedChapters} capitulo(s) con fallo` : ""}. Quedan ${remaining} ficha(s) pendientes${remaining === 0 ? " — si no hay otros issues, la novela pasa a \"completada\"" : " (dudosas, sin sugerencia o de capitulos fallidos)"}.`,
+      failedChapters > 0 ? "warning" : "success",
+    );
+    await recomputeCompletionStatus(projectId).catch(() => {});
+  } catch (e) {
+    await logActivity(projectId, `[Fix266] Correccion masiva de datos fallo: ${(e as Error).message.slice(0, 300)}`, "warning");
+  }
+}

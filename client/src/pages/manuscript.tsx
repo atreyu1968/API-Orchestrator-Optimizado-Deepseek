@@ -73,6 +73,31 @@ export default function ManuscriptPage() {
       toast({ title: "No se pudo marcar la trama como resuelta", variant: "destructive" });
     },
   });
+  // [Fix266] Fichas pendientes del verificador de datos + acciones masivas
+  const { data: factPendingData } = useQuery<{ count: number; corregibles: number; dudosas: number; applying: boolean }>({
+    queryKey: ["/api/projects", currentProject?.id, "fact-check-pending"],
+    enabled: !!currentProject,
+    refetchInterval: (query) => (query.state.data as any)?.applying ? 5000 : false,
+  });
+  const factPendingCount = factPendingData?.count || 0;
+  const factBulkMutation = useMutation({
+    mutationFn: async (action: string) => {
+      const res = await apiRequest("POST", `/api/projects/${currentProject!.id}/fact-check-pending/bulk`, { action });
+      return res.json();
+    },
+    onSuccess: (data, action) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "fact-check-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      if (action === "apply_corregibles") {
+        toast({ title: "Corrección masiva iniciada", description: "Se aplican en segundo plano, capítulo a capítulo. Sigue el progreso en el registro de actividad." });
+      } else {
+        toast({ title: "Fichas descartadas", description: data.message || "Hecho. Si no queda nada pendiente, la novela pasará a \"completada\"." });
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: "No se pudo ejecutar la acción", description: error.message || undefined, variant: "destructive" });
+    },
+  });
   const startNovelFactCheckMutation = useMutation({
     mutationFn: async (projectId: number) => {
       const res = await apiRequest("POST", `/api/projects/${projectId}/fact-check-novel`);
@@ -837,6 +862,64 @@ export default function ManuscriptPage() {
                   </Button>
                 </div>
               ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* [Fix266] Fichas pendientes del verificador de datos con acciones
+           MASIVAS: aplicar todas las corregibles en segundo plano, descartar
+           las dudosas o descartar todo. Al vaciarse, el estado pasa a
+           "completada" automaticamente. */}
+      {factPendingCount > 0 && (
+        <Card className="mb-4 border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20" data-testid="card-fact-check-pending">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2 text-amber-900 dark:text-amber-200">
+              <AlertTriangle className="h-5 w-5" />
+              Fichas del verificador de datos pendientes ({factPendingCount})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              El Verificador de Datos dejó <strong data-testid="text-fact-pending-corregibles">{factPendingData?.corregibles || 0} corregibles</strong> (dato incorrecto con corrección propuesta) y <strong data-testid="text-fact-pending-dudosas">{factPendingData?.dudosas || 0} dudosas</strong> (posibles decisiones deliberadas de la historia). Mientras queden pendientes, la novela figura como <strong>"completada con issues"</strong>. Puedes resolverlas de golpe desde aquí en vez de capítulo a capítulo.
+            </p>
+            {factPendingData?.applying && (
+              <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="text-fact-bulk-applying">
+                Corrección masiva en curso… se aplican las fichas capítulo a capítulo en segundo plano.
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {(factPendingData?.corregibles || 0) > 0 && (
+                <Button
+                  size="sm"
+                  disabled={factBulkMutation.isPending || factPendingData?.applying}
+                  onClick={() => factBulkMutation.mutate("apply_corregibles")}
+                  data-testid="button-fact-apply-corregibles"
+                >
+                  <Check className="h-4 w-4 mr-1" />
+                  Corregir las {factPendingData?.corregibles} corregibles
+                </Button>
+              )}
+              {(factPendingData?.dudosas || 0) > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={factBulkMutation.isPending || factPendingData?.applying}
+                  onClick={() => factBulkMutation.mutate("discard_dudosas")}
+                  data-testid="button-fact-discard-dudosas"
+                >
+                  Descartar las {factPendingData?.dudosas} dudosas
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={factBulkMutation.isPending || factPendingData?.applying}
+                onClick={() => factBulkMutation.mutate("discard_todas")}
+                data-testid="button-fact-discard-todas"
+              >
+                Descartar todas
+              </Button>
             </div>
           </CardContent>
         </Card>
