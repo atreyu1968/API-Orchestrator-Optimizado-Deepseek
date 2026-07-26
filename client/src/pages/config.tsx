@@ -323,7 +323,7 @@ export default function ConfigPage() {
               {projects.length} proyecto{projects.length !== 1 ? "s" : ""} creado{projects.length !== 1 ? "s" : ""}
             </CardDescription>
             {projects.length > 0 && (
-              <div className="flex gap-2 mt-2">
+              <div className="flex flex-col sm:flex-row gap-2 mt-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -335,7 +335,7 @@ export default function ConfigPage() {
                   />
                 </div>
                 <Select value={pseudonymFilter} onValueChange={setPseudonymFilter}>
-                  <SelectTrigger className="w-[160px]" data-testid="select-pseudonym-filter">
+                  <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-pseudonym-filter">
                     <User className="h-4 w-4 mr-1 shrink-0" />
                     <SelectValue placeholder="Autor" />
                   </SelectTrigger>
@@ -380,7 +380,7 @@ export default function ConfigPage() {
                   {filteredProjects.map((project) => (
                     <div 
                       key={project.id}
-                      className="flex items-center justify-between gap-4 p-3 rounded-md bg-muted/50"
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 p-3 rounded-md bg-muted/50"
                       data-testid={`project-item-${project.id}`}
                     >
                       <div className="flex-1 min-w-0">
@@ -403,7 +403,7 @@ export default function ConfigPage() {
                           </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0 self-end sm:self-auto">
                         {!project.seriesId && (
                           <Button
                             variant="ghost"
