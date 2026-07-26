@@ -188,8 +188,13 @@ export class OutlineBetaReaderAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "deepseek-v4-flash",
       useThinking: true,
+      // [Fix268] El techo de salida de DeepSeek con thinking es COMBINADO
+      // (razonamiento + contenido). Con 8192 y una escaleta de 30+ caps como
+      // entrada, el razonamiento agotaba el presupuesto y el JSON llegaba
+      // vacío/truncado -> null -> el pipeline saltaba SIEMPRE al Beta de
+      // Escaletas ("[Fix245] no devolvió un resultado válido").
       thinkingBudget: 8192,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 24576,
       includeThoughts: false,
     });
     this.timeoutMs = 8 * 60 * 1000;
