@@ -48,7 +48,7 @@ export class KdpMarketingKitGenerator extends BaseAgent {
       role: "Generador de Kit de Marketing Orgánico",
       model: "deepseek-v4-flash",
       useThinking: true,
-      maxOutputTokens: 8000,
+      maxOutputTokens: 16384, // [Fix269] techo COMBINADO thinking+contenido (antes 8000: riesgo de JSON vacio con entradas grandes)
       systemPrompt: `You are an expert in organic book marketing and social media strategy for independent publishers. You understand BookTok, Bookstagram, and Pinterest algorithms. You create viral-worthy content hooks and engagement-driving strategies. You write natively in the requested language and understand the nuances of that book community. Your goal is to help authors build visibility without paid advertising.
 
 You ALWAYS respond with strict JSON only — no prose, no markdown fences.`,

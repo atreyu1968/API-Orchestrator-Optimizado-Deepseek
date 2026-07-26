@@ -1102,7 +1102,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="space-y-6 p-6" data-testid="dashboard-page">
+    <div className="space-y-6 p-3 sm:p-6" data-testid="dashboard-page">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold">Panel de Control</h1>
@@ -1203,7 +1203,7 @@ export default function Dashboard() {
 
           {currentProject && (
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4 pb-2">
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4 pb-2">
                 <CardTitle className="text-lg">Progreso del Manuscrito</CardTitle>
                 <div className="flex items-center gap-4">
                   {getPseudonymName(currentProject.pseudonymId) && (
@@ -2006,7 +2006,7 @@ export default function Dashboard() {
 
                 {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (currentProject.totalInputTokens || currentProject.totalOutputTokens) && (
                   <div className="mt-4 p-4 rounded-md bg-muted/30 border border-border">
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
                       <div className="space-y-1">
                         <p className="text-sm font-medium">Coste de Generación</p>
                         <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">

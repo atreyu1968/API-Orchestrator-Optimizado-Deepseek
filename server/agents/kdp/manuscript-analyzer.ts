@@ -33,7 +33,7 @@ export class KdpManuscriptAnalyzer extends BaseAgent {
       role: "Analista de Manuscrito KDP",
       model: "deepseek-v4-flash",
       useThinking: true,
-      maxOutputTokens: 6000,
+      maxOutputTokens: 16384, // [Fix269] techo COMBINADO thinking+contenido (antes 6000: riesgo de JSON vacio con entradas grandes)
       systemPrompt: `You are an expert Amazon KDP marketing strategist specializing in conversion optimization. Your goal is to identify long-tail, high-intent keywords that attract buyers ready to purchase, not just browsers. You understand that Amazon's A9 algorithm prioritizes sales velocity and conversion rate over traditional SEO metrics.
 
 You ALWAYS respond with strict JSON, no prose, no markdown fences.`,

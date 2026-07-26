@@ -355,7 +355,7 @@ export default function ManuscriptPage() {
   }
 
   return (
-    <div className="h-full flex flex-col p-6" data-testid="manuscript-page">
+    <div className="h-full flex flex-col p-3 sm:p-6" data-testid="manuscript-page">
       <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
         <div>
           {editingTitle ? (

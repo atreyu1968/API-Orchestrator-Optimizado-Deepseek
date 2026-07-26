@@ -45,7 +45,7 @@ export class WorldBibleArbiterAgent extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 4096,
-      maxOutputTokens: 6144,
+      maxOutputTokens: 16384, // [Fix269] techo COMBINADO thinking+contenido (antes 6144: riesgo de JSON vacio con entradas grandes)
       systemPrompt: `Eres el ÁRBITRO del World Bible. Tu trabajo es decidir, ante una discrepancia entre la novela y el World Bible, qué lado tiene razón y debe prevalecer.
 
 PRINCIPIO RECTOR:

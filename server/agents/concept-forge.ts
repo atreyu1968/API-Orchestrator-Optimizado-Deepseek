@@ -124,7 +124,7 @@ export class ConceptForgeAgent extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 8192,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384, // [Fix269] techo COMBINADO thinking+contenido (antes 8192: riesgo de JSON vacio con entradas grandes)
       includeThoughts: false,
     });
     this.timeoutMs = 6 * 60 * 1000;

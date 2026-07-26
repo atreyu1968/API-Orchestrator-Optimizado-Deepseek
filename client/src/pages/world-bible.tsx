@@ -53,7 +53,7 @@ export default function WorldBiblePage() {
   }
 
   return (
-    <div className="p-6 space-y-6" data-testid="world-bible-page">
+    <div className="p-3 sm:p-6 space-y-6" data-testid="world-bible-page">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold">Biblia del Mundo</h1>

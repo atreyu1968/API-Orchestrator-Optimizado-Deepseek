@@ -89,7 +89,7 @@ export class EditorialNotesParser extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 4096,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384, // [Fix269] techo COMBINADO thinking+contenido (antes 8192: riesgo de JSON vacio con entradas grandes)
       systemPrompt: `Eres un analista editorial. Tu tarea es transformar las notas LIBRES de un editor humano sobre un manuscrito en una lista ESTRUCTURADA de instrucciones de corrección quirúrgica, una por cada problema concreto que requiera intervención sobre el texto.
 
 REGLAS:

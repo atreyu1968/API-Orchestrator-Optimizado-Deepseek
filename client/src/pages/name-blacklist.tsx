@@ -79,7 +79,7 @@ export default function NameBlacklistPage() {
   const apellidos = entries.filter((e) => e.type === "apellido").length;
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl space-y-6">
+    <div className="container mx-auto p-3 sm:p-6 max-w-4xl space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2" data-testid="text-page-title">

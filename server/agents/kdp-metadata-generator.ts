@@ -36,7 +36,7 @@ export class KdpMetadataGenerator extends BaseAgent {
       role: "Generador de Metadatos KDP",
       model: "deepseek-v4-flash",
       useThinking: true,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384, // [Fix269] techo COMBINADO thinking+contenido (antes 8192: riesgo de JSON vacio con entradas grandes)
       systemPrompt: `Eres un experto certificado en optimización de Amazon KDP, el algoritmo A9 (Kindlepreneur / Dave Chesson) y la capa COSMO (lo que la comunidad llama "A10") que Amazon ha desplegado sobre A9 en 2025. Tu trabajo es generar metadatos que maximicen INDEXACIÓN, RANKING y CONVERSIÓN en Amazon, no metadatos genéricos.
 
 ═══════════════════════════════════════════════════════════

@@ -98,7 +98,7 @@ export default function PublishersPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6" data-testid="page-publishers">
+    <div className="container mx-auto p-3 sm:p-6 space-y-6" data-testid="page-publishers">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2"><Building2 className="h-7 w-7" /> Editoriales</h1>

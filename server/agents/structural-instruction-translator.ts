@@ -136,7 +136,7 @@ export class StructuralInstructionTranslatorAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "deepseek-v4-flash",
       useThinking: true,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 16384, // [Fix269] techo COMBINADO thinking+contenido (antes 4096: riesgo de JSON vacio con entradas grandes)
     });
   }
 

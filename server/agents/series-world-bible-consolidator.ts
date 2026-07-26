@@ -58,7 +58,7 @@ export class SeriesWorldBibleConsolidatorAgent extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 4096,
-      maxOutputTokens: 12288,
+      maxOutputTokens: 16384, // [Fix269] techo COMBINADO thinking+contenido (antes 12288: riesgo de JSON vacio con entradas grandes)
       systemPrompt: `Eres el CONSOLIDADOR DE BIBLIA DE SERIE. Tu trabajo es leer todos los volúmenes ya publicados de una saga y producir UNA SOLA biblia canónica que el resto del sistema usará como verdad para escribir los volúmenes siguientes.
 
 PRINCIPIO RECTOR

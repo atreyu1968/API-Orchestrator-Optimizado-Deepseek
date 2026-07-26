@@ -244,7 +244,7 @@ export class ChapterExpansionAnalyzer extends BaseAgent {
       systemPrompt: ANALYSIS_SYSTEM_PROMPT,
       model: "deepseek-v4-flash",
       useThinking: true,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384, // [Fix269] techo COMBINADO thinking+contenido (antes 8192: riesgo de JSON vacio con entradas grandes)
     });
   }
 

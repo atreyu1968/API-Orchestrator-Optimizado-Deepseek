@@ -700,7 +700,7 @@ export default function SeriesPage() {
   }
 
   return (
-    <div className="p-6 space-y-6" data-testid="series-page">
+    <div className="p-3 sm:p-6 space-y-6" data-testid="series-page">
       <input
         type="file"
         ref={seriesGuideInputRef}

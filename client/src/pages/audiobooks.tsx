@@ -642,7 +642,7 @@ export default function AudiobooksPage() {
 
   if (view === "create") {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-3 sm:p-6 max-w-4xl mx-auto">
         <CreateAudiobookForm
           onCreated={() => setView("list")}
           onCancel={() => setView("list")}
@@ -653,7 +653,7 @@ export default function AudiobooksPage() {
 
   if (view === "detail" && selectedProjectId) {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-3 sm:p-6 max-w-4xl mx-auto">
         <AudiobookDetail
           projectId={selectedProjectId}
           onBack={() => { setView("list"); setSelectedProjectId(null); }}
@@ -663,7 +663,7 @@ export default function AudiobooksPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">

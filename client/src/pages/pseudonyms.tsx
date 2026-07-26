@@ -249,7 +249,7 @@ export default function PseudonymsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6" data-testid="pseudonyms-page">
+    <div className="p-3 sm:p-6 space-y-6" data-testid="pseudonyms-page">
       <div>
         <h1 className="text-3xl font-bold">Pseudónimos</h1>
         <p className="text-muted-foreground mt-1">

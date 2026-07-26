@@ -98,7 +98,7 @@ export class SurgicalPatcherAgent extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 4096,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384, // [Fix269] techo COMBINADO thinking+contenido (antes 8192: riesgo de JSON vacio con entradas grandes)
       systemPrompt: `Eres un cirujano de texto. Tu trabajo es aplicar correcciones EXTREMADAMENTE LOCALIZADAS a un capítulo de novela respondiendo con una lista de operaciones find/replace que un programa aplicará de forma determinista.
 
 REGLAS INVIOLABLES:

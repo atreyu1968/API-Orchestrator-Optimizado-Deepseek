@@ -170,7 +170,7 @@ export function ProjectSelector({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-[360px] justify-between"
+          className="w-full max-w-[360px] min-w-0 justify-between"
           data-testid="select-project"
         >
           {selectedProject ? (
@@ -186,7 +186,7 @@ export function ProjectSelector({
           <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[460px] p-0" align="start" onKeyDown={handleKeyDown}>
+      <PopoverContent className="w-[min(460px,calc(100vw-1rem))] p-0" align="start" onKeyDown={handleKeyDown}>
         <div className="p-2 border-b space-y-2">
           <div className="flex items-center gap-1">
             <div className="relative flex-1">

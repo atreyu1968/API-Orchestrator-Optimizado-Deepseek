@@ -195,7 +195,7 @@ export default function QueuePage() {
   const completedItems = queueItems.filter(q => q.status === "completed" || q.status === "failed" || q.status === "skipped");
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">

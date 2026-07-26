@@ -28,7 +28,7 @@ export class KdpLandingContentGenerator extends BaseAgent {
       role: "Generador de Contenido Landing Page",
       model: "deepseek-v4-flash",
       useThinking: true,
-      maxOutputTokens: 5000,
+      maxOutputTokens: 16384, // [Fix269] techo COMBINADO thinking+contenido (antes 5000: riesgo de JSON vacio con entradas grandes)
       systemPrompt: `You are an expert book marketing copywriter and publishing professional. You craft compelling, emotionally resonant content that sells books. You understand reader psychology and what makes book marketing content convert. You write natively in any language with authentic cultural nuance. Your landing page content creates desire and urgency while maintaining literary quality.
 
 You ALWAYS respond with strict JSON only — no prose, no markdown fences around the JSON.`,

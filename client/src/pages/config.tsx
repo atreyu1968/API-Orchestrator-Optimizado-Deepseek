@@ -275,7 +275,7 @@ export default function ConfigPage() {
   };
 
   return (
-    <div className="p-6 space-y-6" data-testid="config-page">
+    <div className="p-3 sm:p-6 space-y-6" data-testid="config-page">
       <div>
         <h1 className="text-3xl font-bold">Configuración</h1>
         <p className="text-muted-foreground mt-1">

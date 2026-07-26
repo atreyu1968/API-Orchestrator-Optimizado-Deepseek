@@ -274,7 +274,7 @@ export default function ReeditSeriesPage() {
   const totalWords = selectedBooks.reduce((sum, b) => sum + b.wordCount, 0);
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => navigate("/reedit")} data-testid="button-back-reedit">
           <ArrowLeft className="h-5 w-5" />

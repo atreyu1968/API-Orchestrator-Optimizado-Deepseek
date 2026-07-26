@@ -116,9 +116,9 @@ function AuthenticatedApp() {
         <div className="flex h-screen w-full">
           <AppSidebar />
           <div className="flex flex-col flex-1 min-w-0">
-            <header className="flex items-center justify-between gap-4 p-3 border-b shrink-0 sticky top-0 z-50 bg-background">
+            <header className="flex items-center justify-between gap-2 sm:gap-4 p-2 sm:p-3 border-b shrink-0 sticky top-0 z-50 bg-background">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1 justify-end">
                 <GlobalProjectSelector />
                 <ThemeToggle />
                 <LogoutButton />
@@ -131,7 +131,7 @@ function AuthenticatedApp() {
               <img src={asdLogo} alt="ASD" className="h-4 w-auto" />
               <span>&copy; {new Date().getFullYear()} Atreyu Servicios Digitales</span>
               <span className="text-muted-foreground/50">|</span>
-              <span className="text-muted-foreground/50" data-testid="text-app-version">v10.1.3</span>
+              <span className="text-muted-foreground/50" data-testid="text-app-version">v10.1.5</span>
             </footer>
           </div>
         </div>
