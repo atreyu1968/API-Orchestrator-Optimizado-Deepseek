@@ -33,3 +33,5 @@ no subir el techo indefinidamente.
 la novela, pero OMITE silenciosamente la puerta -> se pierde la verificacion. El
 coste se factura por uso real, asi que subir el techo no encarece salvo cuando de
 verdad se necesita.
+
+**Actualización (jul 2026):** el rescate de contenido vacío puede devolver contenido NO vacío pero aún cortado (finish_reason=length). Solución: un segundo boost acotado (tope duro) solo si el contenido parece JSON incompleto, y si aun así llega cortado, devolver `truncated: true` en la respuesta para que el caller use repairJson()/su reintento propio en vez de JSON.parse a ciegas. Nunca bucles sin tope.

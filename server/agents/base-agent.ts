@@ -20,6 +20,13 @@ export interface AgentResponse {
   tokenUsage?: TokenUsage;
   timedOut?: boolean;
   error?: string;
+  /**
+   * [Fix271] La respuesta terminó con finish_reason=length: el contenido puede
+   * estar cortado a medias (JSON incompleto). Los callers que parsean JSON
+   * deben usar repairJson() (que ya devuelve OBJETO parseado, no string) o su
+   * propia ruta de reintento en lugar de un JSON.parse directo.
+   */
+  truncated?: boolean;
 }
 
 export type DeepSeekModel = "deepseek-v4-flash" | "deepseek-v4-pro";
@@ -114,6 +121,41 @@ export function clearProjectAbortController(projectId: number): void {
   activeAbortControllers.delete(projectId);
 }
 
+// [Fix271] Heurística barata para detectar un JSON cortado a medias: el texto
+// arranca como JSON (posiblemente en fence markdown) pero los delimitadores
+// no cierran de forma balanceada. Ignora llaves/corchetes dentro de strings.
+export function looksLikeIncompleteJson(text: string): boolean {
+  let s = text.trim();
+  // Quitar fence de apertura tipo ```json — el cierre puede no haber llegado.
+  const fenceMatch = s.match(/^```(?:json)?\s*/i);
+  if (fenceMatch) {
+    s = s.slice(fenceMatch[0].length);
+    s = s.replace(/```\s*$/, "").trim();
+  }
+  if (!s.startsWith("{") && !s.startsWith("[")) return false;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (const ch of s) {
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{" || ch === "[") depth++;
+    else if (ch === "}" || ch === "]") depth--;
+  }
+  // Cortado si quedan delimitadores sin cerrar o el corte cayó dentro de un string.
+  return depth > 0 || inString;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -170,6 +212,13 @@ export abstract class BaseAgent {
     // agotar todo el presupuesto en razonamiento y dejar el JSON vacío.
     let boostedMaxOutput: number | null = null;
     let emptyThinkingRetryUsed = false;
+    // [Fix271] Segundo boost acotado: si el reintento boosted devuelve contenido
+    // NO vacío pero aún con finish_reason=length (JSON cortado a medias),
+    // reintentar UNA sola vez más con el techo duplicado, con tope duro para
+    // acotar el coste. Si aun así llega cortado, devolver truncated=true para
+    // que el caller use repairJson()/su reintento propio. Sin bucles.
+    const TRUNCATED_BOOST_CAP = 65536;
+    let truncatedRetryUsed = false;
 
     const maxAttempts = MAX_RETRIES + RATE_LIMIT_MAX_RETRIES + NETWORK_ERROR_MAX_RETRIES + 1;
 
@@ -311,6 +360,40 @@ export abstract class BaseAgent {
             `Reintentando una vez con maxOutputTokens duplicado (${boostedMaxOutput})...`
           );
           continue;
+        }
+
+        // [Fix271] Contenido NO vacío pero cortado por techo de salida y con
+        // pinta de JSON incompleto: un solo boost adicional acotado por
+        // TRUNCATED_BOOST_CAP. Solo si el boost realmente sube el techo;
+        // si no hay margen (o ya se usó), devolver con truncated=true.
+        if (
+          useThinking &&
+          finishReason === "length" &&
+          content.trim().length > 0 &&
+          !truncatedRetryUsed &&
+          looksLikeIncompleteJson(content)
+        ) {
+          const nextMax = Math.min(maxOutput * 2, TRUNCATED_BOOST_CAP);
+          if (nextMax > maxOutput) {
+            truncatedRetryUsed = true;
+            boostedMaxOutput = nextMax;
+            console.warn(
+              `[${this.config.name}] [Fix271] Respuesta cortada a medias (finish_reason=length, ` +
+              `max_tokens=${maxOutput}, contenido=${content.length} chars, JSON incompleto). ` +
+              `Reintentando una única vez con maxOutputTokens=${nextMax} (tope ${TRUNCATED_BOOST_CAP})...`
+            );
+            continue;
+          }
+        }
+
+        if (finishReason === "length") {
+          // Sin más reintentos: entregar lo que hay, marcado como truncado para
+          // que el caller no haga JSON.parse a ciegas.
+          console.warn(
+            `[${this.config.name}] [Fix271] Entregando respuesta marcada como truncated=true ` +
+            `(finish_reason=length tras agotar los boosts acotados).`
+          );
+          return { content, thoughtSignature, tokenUsage, truncated: true };
         }
 
         return { content, thoughtSignature, tokenUsage };
