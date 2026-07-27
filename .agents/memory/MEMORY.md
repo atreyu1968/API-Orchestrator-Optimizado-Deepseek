@@ -27,6 +27,7 @@
 - [Citas muertas: sanear, no purgar entero](ghost-instruction-sanitization.md) — retirar solo la cita obsoleta conservando la intencion; brazos cuentan exito por diff real de BD, no por intentos.
 - [Grounding pajar combinado vs por-capitulo](grounding-haystack-scope-mismatch.md) — auditar citas en el mismo ambito donde se ejecuta; validar en conjunto y purgar por-cap anula instrucciones multi-cap.
 - [Retry truncado del LLM: empalmar, no descartar](truncated-llm-retry-splice.md) — un reintento de outline truncado aun trae las correcciones; cabeza revisada + cola previa y re-auditar.
+- [Juicios humanos sobre contenido autorado por el sistema](system-authored-judgment-gates.md) — si la decisión exige conocer la intención de la trama (que diseñó el sistema), la adjudica un juez con el canon, no el usuario.
 - [Cirugía dirigida vs regeneración total](outline-feedback-surgery-vs-regen.md) — feedback de juez anclado a caps concretos = reparar solo esos caps y empalmar; regenerar todo es lotería (3 iters, 3 sietes distintos).
 - [Bucles regenerar-con-feedback](regen-loop-enrichment-base.md) — el retry necesita la mejor version previa como base; guardia de degeneracion antes de auditar; veredicto sin feedback no rompe el bucle.
 - [Detectores cross-capitulo](cross-chapter-detectors.md) — agentes por-capitulo no ven repeticion entre caps; detector global unico + hallazgos filtrados por capitulo; dedupe con fronteras de token.

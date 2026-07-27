@@ -14,6 +14,7 @@
 import { storage } from "../storage";
 import { INTERNAL_AUTH_HEADER, INTERNAL_AUTH_TOKEN } from "../auth";
 import { recomputeCompletionStatus } from "./completion-status";
+import { FactDudosaAdjudicatorAgent, type DudosaDecision } from "../agents/fact-dudosa-adjudicator";
 
 export interface NovelFactFinding {
   chapterId: number;
@@ -214,9 +215,11 @@ async function runPass(state: NovelFactCheckState): Promise<void> {
       state.chaptersDone++;
     }
 
-    state.status = "completed";
-    state.finishedAt = new Date().toISOString();
-    state.currentChapterLabel = undefined;
+    // [Fix273 post-review] El status pasa a "completed" AL FINAL de runPass
+    // (tras el auto-apply Fix272 y la adjudicación Fix273): el orquestador
+    // espera con waitFor(status === "running"), y marcar completed aquí le
+    // dejaba lanzar el Holístico sobre un texto aún a medio corregir.
+    state.currentChapterLabel = "Post-proceso: correcciones y adjudicación de dudosas";
     // [Fix263] Persistir las fichas pendientes como worldRule para que
     // sobrevivan a un reinicio del server y cuenten como "issues conocidos"
     // en el estado final del proyecto (completed vs completed_with_issues).
@@ -251,6 +254,25 @@ async function runPass(state: NovelFactCheckState): Promise<void> {
       state.pending = await getFactCheckPending(projectId);
     }
 
+    // [Fix273] ADJUDICAR las dudosas automaticamente. La trama la diseño el
+    // SISTEMA, no el usuario (que no leyo la novela durante su creacion), asi
+    // que "¿error o decision deliberada?" no es una pregunta para humanos:
+    // un juez con el canon (world bible, plan de trama, decisiones) la
+    // responde. Deliberado -> descartar; error con correccion -> aplicar.
+    // Best-effort y una sola pasada (sin re-verificar: no treadmill).
+    const dudosasLeft = state.pending.filter((f) => f.veredicto === "dudoso");
+    if (dudosasLeft.length > 0) {
+      try {
+        await adjudicateDudosas(projectId, dudosasLeft);
+        state.pending = await getFactCheckPending(projectId);
+      } catch (e) {
+        await logActivity(projectId, `[Fix273] La adjudicación automática de dudosas falló (${(e as Error).message.slice(0, 200)}). Siguen pendientes; puedes descartarlas desde la tarjeta del fact-check.`, "warning");
+      }
+    }
+
+    state.status = "completed";
+    state.finishedAt = new Date().toISOString();
+    state.currentChapterLabel = undefined;
     const dudosos = state.pending.filter((f) => f.veredicto === "dudoso").length;
     const incorrectos = state.pending.length - dudosos;
     await logActivity(
@@ -438,4 +460,123 @@ async function runFactCheckPendingApply(projectId: number): Promise<void> {
   } catch (e) {
     await logActivity(projectId, `[Fix266] Correccion masiva de datos fallo: ${(e as Error).message.slice(0, 300)}`, "warning");
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [Fix273] Adjudicacion automatica de fichas DUDOSAS. El juez recibe el canon
+// del proyecto (world bible, plan de trama, decisiones) y decide por cada
+// dudosa: "deliberado" (descartar, la prosa no se toca) o "error" (aplicar la
+// correccion via el endpoint apply de Fix255). Las fichas que el juez no
+// devuelva quedan pendientes (fallback: boton de descartar dudosas).
+// ─────────────────────────────────────────────────────────────────────────────
+const dudosaAdjudicator = new FactDudosaAdjudicatorAgent();
+
+async function buildProjectCanon(projectId: number): Promise<string> {
+  const wb = await storage.getWorldBibleByProject(projectId);
+  if (!wb) return "(sin world bible registrada)";
+  const rules = ((wb.worldRules || []) as any[]).filter((r: any) => !String(r?.category || "").startsWith("__"));
+  const canon = {
+    personajes: wb.characters || [],
+    reglas_del_mundo: rules,
+    plan_de_trama: wb.plotOutline || {},
+    decisiones_de_trama: wb.plotDecisions || [],
+    linea_temporal: wb.timeline || [],
+  };
+  // Techo prudente: el juez tiene 16k de salida combinada; el canon es entrada
+  // pero un JSON gigante degrada el juicio. 60k chars ≈ suficiente contexto.
+  return JSON.stringify(canon, null, 1).slice(0, 60000);
+}
+
+export async function adjudicateDudosas(projectId: number, dudosas: NovelFactFinding[]): Promise<void> {
+  const project = await storage.getProject(projectId);
+  if (!project) return;
+  const canon = await buildProjectCanon(projectId);
+
+  await logActivity(
+    projectId,
+    `[Fix273] Adjudicando ${dudosas.length} ficha(s) dudosa(s) contra el canon del proyecto (la trama la diseñó el sistema; esta decisión no requiere lectura humana). Deliberadas → se descartan; errores → se corrigen.`,
+  );
+
+  const BATCH = 15;
+  const decisiones: Array<{ ficha: NovelFactFinding; d: DudosaDecision }> = [];
+  for (let i = 0; i < dudosas.length; i += BATCH) {
+    const batch = dudosas.slice(i, i + BATCH);
+    const outcome = await dudosaAdjudicator.adjudicate({
+      title: project.title,
+      genre: project.genre,
+      tone: project.tone,
+      projectId,
+      canon,
+      fichas: batch.map((f, idx) => ({
+        id: i + idx,
+        chapterLabel: f.chapterLabel,
+        afirmacion: f.afirmacion,
+        categoria: f.categoria,
+        explicacion: f.explicacion,
+        sugerencia: f.sugerencia,
+      })),
+    });
+    if (!outcome.result) {
+      await logActivity(projectId, `[Fix273] El adjudicador no devolvió veredictos para un lote de ${batch.length} ficha(s); quedan pendientes.`, "warning");
+      continue;
+    }
+    for (const d of outcome.result) {
+      const ficha = dudosas[d.id];
+      // [Fix273 post-review] Dedupe por id (first-write-wins): un juez que
+      // devuelva entradas duplicadas/contradictorias para la misma ficha no
+      // puede meterla a la vez en "aplicar" y "descartar".
+      if (ficha && !decisiones.some((x) => x.ficha === ficha)) decisiones.push({ ficha, d });
+    }
+  }
+  if (decisiones.length === 0) return;
+
+  // 1) Deliberadas (y errores SIN correccion utilizable, que no podemos
+  //    aplicar con seguridad): descartar — la prosa no se toca.
+  const aDescartar = decisiones.filter(
+    ({ d }) => d.decision === "deliberado" || !(d.correccion || "").trim(),
+  );
+  // 2) Errores con correccion: aplicar por capitulo (lotes <=20, techo Fix255).
+  const aCorregir = decisiones.filter(
+    ({ d }) => d.decision === "error" && (d.correccion || "").trim(),
+  );
+
+  let corregidas = 0;
+  const byChapter = new Map<number, Array<{ ficha: NovelFactFinding; d: DudosaDecision }>>();
+  for (const item of aCorregir) {
+    const list = byChapter.get(item.ficha.chapterId) || [];
+    list.push(item);
+    byChapter.set(item.ficha.chapterId, list);
+  }
+  for (const [chapterId, items] of Array.from(byChapter.entries())) {
+    for (let i = 0; i < items.length; i += 20) {
+      const batch = items.slice(i, i + 20);
+      try {
+        await selfFetch(`/api/projects/${projectId}/chapters/${chapterId}/fact-check/apply`, {
+          findings: batch.map(({ ficha, d }) => ({
+            afirmacion: ficha.afirmacion,
+            veredicto: "incorrecto",
+            explicacion: `[Fix273] Adjudicado como ERROR contra el canon: ${d.motivo}`.slice(0, 800),
+            sugerencia: d.correccion,
+          })),
+        });
+        corregidas += batch.length;
+      } catch (e) {
+        const label = batch[0]?.ficha.chapterLabel || `capitulo ${chapterId}`;
+        await logActivity(projectId, `[Fix273] Fallo aplicando correcciones adjudicadas en ${label} (${(e as Error).message.slice(0, 200)}). Sus fichas siguen pendientes.`, "warning");
+        break;
+      }
+    }
+  }
+
+  if (aDescartar.length > 0) {
+    await resolveFactCheckPending(projectId, aDescartar.map(({ ficha }) => ({ afirmacion: ficha.afirmacion, chapterId: ficha.chapterId })));
+  }
+
+  const sinVeredicto = dudosas.length - decisiones.length;
+  await logActivity(
+    projectId,
+    `[Fix273] Adjudicación de dudosas terminada: ${aDescartar.length} descartada(s) como decisiones deliberadas de la historia, ${corregidas} corregida(s) como errores contra el canon${sinVeredicto > 0 ? `, ${sinVeredicto} sin veredicto (siguen pendientes)` : ""}.`,
+    "success",
+  );
+  await recomputeCompletionStatus(projectId).catch(() => {});
 }
