@@ -221,6 +221,36 @@ async function runPass(state: NovelFactCheckState): Promise<void> {
     // sobrevivan a un reinicio del server y cuenten como "issues conocidos"
     // en el estado final del proyecto (completed vs completed_with_issues).
     await persistFactCheckPending(projectId, state.pending);
+
+    // [Fix272] AUTO-APLICAR las corregibles restantes. Antes, la ultima
+    // verificacion de cada capitulo podia re-detectar fichas "incorrectas CON
+    // sugerencia" que ya no recibian ningun intento de aplicacion (el bucle
+    // por-capitulo rompe en MAX_APPLY_ROUNDS tras verificar, sin apply final)
+    // y quedaban esperando el boton "Corregir las corregibles" de la UI —
+    // incoherente: si la ficha ya trae correccion propuesta, no hay decision
+    // humana que esperar. Ahora se lanza la misma correccion masiva del boton,
+    // en linea (asi el Holistico/Revisor Final leen el texto YA corregido, no
+    // uno a medio corregir). Sin bucle de re-verificacion: aplicar retira las
+    // fichas y converge (leccion reevaluation-treadmill). Las DUDOSAS (posibles
+    // decisiones deliberadas de la historia) siguen esperando decision humana.
+    const correctablesLeft = state.pending.filter(isFactFindingCorrectable);
+    if (correctablesLeft.length > 0 && !bulkApplyInFlight.has(projectId)) {
+      bulkApplyInFlight.add(projectId);
+      try {
+        await logActivity(
+          projectId,
+          `[Fix272] ${correctablesLeft.length} ficha(s) corregibles quedaron pendientes tras la pasada: se aplican AUTOMÁTICAMENTE ahora (antes exigían pulsar "Corregir las corregibles"). Las dudosas siguen esperando tu decisión.`,
+        );
+        await runFactCheckPendingApply(projectId);
+      } catch (e) {
+        await logActivity(projectId, `[Fix272] La auto-aplicación de corregibles falló (${(e as Error).message.slice(0, 200)}). Siguen disponibles en el botón "Corregir las corregibles".`, "warning");
+      } finally {
+        bulkApplyInFlight.delete(projectId);
+      }
+      // Refrescar para que el informe final refleje lo realmente pendiente.
+      state.pending = await getFactCheckPending(projectId);
+    }
+
     const dudosos = state.pending.filter((f) => f.veredicto === "dudoso").length;
     const incorrectos = state.pending.length - dudosos;
     await logActivity(
