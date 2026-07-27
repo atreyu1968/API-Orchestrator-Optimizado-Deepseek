@@ -372,7 +372,7 @@ export default function BookCatalogPage() {
             return (
               <Card key={entry.id} data-testid={`card-catalog-${entry.id}`}>
                 <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <CardTitle className="text-base truncate">{entry.title}</CardTitle>
                       <CardDescription className="text-sm">{entry.authorName}</CardDescription>

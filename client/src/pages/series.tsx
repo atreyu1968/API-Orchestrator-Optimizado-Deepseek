@@ -1198,7 +1198,7 @@ export default function SeriesPage() {
                       {s.volumes.map((vol) => (
                         <div
                           key={`${vol.type}-${vol.id}`}
-                          className="flex items-center justify-between gap-4 p-3 rounded-md bg-muted/50"
+                          className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 p-3 rounded-md bg-muted/50"
                           data-testid={`volume-item-${vol.type}-${vol.id}`}
                         >
                           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1225,7 +1225,7 @@ export default function SeriesPage() {
                               </Badge>
                             )}
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             {vol.type === "project" ? (
                               <Badge className={statusColors[vol.status] || ""}>
                                 {statusLabels[vol.status] || vol.status}
