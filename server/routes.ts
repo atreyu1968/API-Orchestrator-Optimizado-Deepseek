@@ -29,6 +29,10 @@ import { recordRawAiUsage } from "./utils/ai-usage";
 import { waitForOffPeakIfEnabled } from "./utils/peak-hours";
 import { renumberChaptersSequential, remapPendingAdminActionsForRenumber } from "./utils/renumber-chapters";
 import { forcePolishResume } from "./polish-auto-resume";
+// [Fix268][Task 8] Tras una cirugía estructural (fusión/borrado/división/
+// reescritura de capítulos) la memoria de meseta del pulido (Fix266) queda
+// medida sobre un manuscrito que ya no existe: hay que invalidarla.
+import { invalidatePolishHistoryAfterStructuralChange } from "./utils/polish-history";
 import {
   extractMilestonesAndThreadsFromGuide,
 } from "./utils/series-milestones-extractor";
@@ -6059,6 +6063,9 @@ IMPORTANTE:
         }
         
         console.log(`[Rewrite] Chapter ${chapterNumber} rewritten: ${chapter.wordCount} -> ${wordCount} words`);
+        // [Fix268] Reescritura manual completa de un capítulo: invalida la
+        // memoria de meseta del pulido (el manuscrito ya no es el mismo).
+        await invalidatePolishHistoryAfterStructuralChange(projectId, `reescritura manual del capítulo ${chapterNumber}`);
       }
     } catch (error) {
       console.error("Error rewriting chapter:", error);
@@ -9441,6 +9448,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       });
 
       console.log(`[DuplicatePurge] Deleted ${deletedCount} duplicate chapters for project ${projectId}, chapter ${chapterNumber}`);
+      // [Fix268] Purga de capítulos duplicados = cirugía estructural: la
+      // memoria de meseta del pulido deja de ser comparable.
+      if (deletedCount > 0) {
+        await invalidatePolishHistoryAfterStructuralChange(projectId, `purga de ${deletedCount} capítulo(s) duplicado(s) del capítulo ${chapterNumber}`);
+      }
 
       res.json({
         success: true,
@@ -10004,6 +10016,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           message: `[Fix215] Division ejecutada: cap ${targetNum} partido en dos por ancla ${found.method === "literal" ? "literal" : "normalizada"} ("${found.anchor.slice(0, 60)}..."); ${renumberedCount} cap(s) renumerado(s) +1.`,
           agentRole: "editor",
         });
+        await invalidatePolishHistoryAfterStructuralChange(projectId, `división del capítulo ${targetNum} en dos (acción administrativa)`);
         return res.json({ success: true, type, split: true, chapterSplit: targetNum, newChapter: targetNum + 1, renumbered: renumberedCount });
       }
 
@@ -10141,6 +10154,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           message: `[Fix236] Fusion archivada ejecutada a mano: el contenido de cap ${srcChaps.map(c => c.chapterNumber).join(", ")} se ha integrado al final del cap ${destNum} con separador de escena y los capitulos fuente se han eliminado; ${renumberedArc} cap(s) renumerado(s).`,
           agentRole: "editor",
         });
+        await invalidatePolishHistoryAfterStructuralChange(projectId, `fusión de capítulos ${srcChaps.map(c => c.chapterNumber).join(", ")} → ${destNum} (acción administrativa archivada)`);
         return res.json({ success: true, type, merged: true, chaptersDeleted: srcChaps.length, renumbered: renumberedArc });
       }
 
@@ -10186,6 +10200,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         message: `[Fix100] ${summary}`,
         agentRole: "editor",
       });
+
+      await invalidatePolishHistoryAfterStructuralChange(
+        projectId,
+        type === "merge_chapters"
+          ? `fusión de capítulos ${action.targetChapter}+${chapterToDelete} (acción administrativa)`
+          : `borrado del capítulo ${chapterToDelete} (acción administrativa)`,
+      );
 
       res.json({ success: true, deleted: 1, renumbered, type, chapterDeleted: chapterToDelete });
     } catch (error) {
@@ -12335,6 +12356,9 @@ CRITERIOS:
             if (newContent && newContent !== currentContent) {
               await storage.updateChapter(targetChapter.id, { content: newContent });
               result = { applied: true, message: `Cambio aplicado al capítulo ${capitulo}` };
+              // [Fix268] Reescritura vía chat editorial = cirugía sobre el
+              // manuscrito: la meseta histórica del pulido deja de ser válida.
+              await invalidatePolishHistoryAfterStructuralChange(projectId, `reescritura del capítulo ${capitulo} vía chat editorial`);
             } else {
               result = { applied: false, message: "No se pudo encontrar el texto original en el capítulo. El texto puede haber sido modificado." };
             }
