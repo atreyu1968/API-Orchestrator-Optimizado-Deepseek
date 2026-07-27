@@ -163,6 +163,13 @@ export abstract class BaseAgent {
     const temperature = options?.temperature ?? 1.0;
     let rateLimitAttempts = 0;
     let networkErrorAttempts = 0;
+    // [Fix270] Red de seguridad para agentes con thinking: si la respuesta llega
+    // vacía/truncada por techo de salida (finish_reason=length), reintentar UNA
+    // vez con el doble de maxOutputTokens. El techo es combinado
+    // razonamiento+contenido, así que una entrada excepcionalmente grande puede
+    // agotar todo el presupuesto en razonamiento y dejar el JSON vacío.
+    let boostedMaxOutput: number | null = null;
+    let emptyThinkingRetryUsed = false;
 
     const maxAttempts = MAX_RETRIES + RATE_LIMIT_MAX_RETRIES + NETWORK_ERROR_MAX_RETRIES + 1;
 
@@ -180,7 +187,7 @@ export abstract class BaseAgent {
         const useThinking = this.config.useThinking === true;
 
         const defaultMaxOutput = 32768;
-        const maxOutput = this.config.maxOutputTokens || defaultMaxOutput;
+        const maxOutput: number = boostedMaxOutput ?? (this.config.maxOutputTokens || defaultMaxOutput);
 
         // DeepSeek V4 thinking mode: enabled by default. We control it explicitly per agent.
         // - useThinking=true  -> thinking enabled, reasoning_effort = "high" (or "max" if thinkingBudget >= 8192)
@@ -284,6 +291,26 @@ export abstract class BaseAgent {
           } catch (err) {
             console.error(`[${this.config.name}] Failed to log AI usage event:`, err);
           }
+        }
+
+        // [Fix270] Reintento automático: agente con thinking + finish_reason=length
+        // + contenido vacío (o casi) => el presupuesto combinado se agotó en
+        // razonamiento. Reintentar una sola vez con maxOutputTokens duplicado.
+        // (Los tokens del intento fallido ya quedaron contabilizados arriba.)
+        if (
+          useThinking &&
+          finishReason === "length" &&
+          content.trim().length === 0 &&
+          !emptyThinkingRetryUsed
+        ) {
+          emptyThinkingRetryUsed = true;
+          boostedMaxOutput = maxOutput * 2;
+          console.warn(
+            `[${this.config.name}] [Fix270] Contenido VACÍO con thinking y finish_reason=length ` +
+            `(max_tokens=${maxOutput}, reasoning_tokens=${reasoningTokens}). ` +
+            `Reintentando una vez con maxOutputTokens duplicado (${boostedMaxOutput})...`
+          );
+          continue;
         }
 
         return { content, thoughtSignature, tokenUsage };
