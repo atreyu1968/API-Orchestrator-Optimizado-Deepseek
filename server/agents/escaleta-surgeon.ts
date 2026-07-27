@@ -34,6 +34,113 @@ export interface EscaletaSurgeryInput {
 export interface EscaletaSurgeryResult {
   capitulos_reparados: any[];
   resumen: string;
+  /** [Fix274] Caps devueltos por el LLM pero DESCARTADOS por rebajar revelaciones. */
+  rechazados_por_rebaja?: RevelationDowngrade[];
+}
+
+// [Fix274] Violación detectada: un cap "reparado" rebaja la ambición de una
+// revelación (dificultad a la baja, setup_capitulos vaciado o revelación
+// eliminada) en vez de sembrarla.
+export interface RevelationDowngrade {
+  cap: number;
+  hecho: string;
+  motivo: string;
+}
+
+const DIFF_RANK: Record<string, number> = {
+  bajo: 0, baja: 0, low: 0,
+  medio: 1, media: 1, medium: 1,
+  alto: 2, alta: 2, high: 2,
+};
+
+function normTxt(s: any): string {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Empareja una revelación original con su versión reparada por hecho_revelado
+// (exacto normalizado, o solapamiento de tokens >= 0.5).
+function matchRevelacion(orig: any, reps: any[]): any | null {
+  const on = normTxt(orig?.hecho_revelado);
+  if (!on) return null;
+  let best: any = null;
+  let bestScore = 0;
+  const oTokens = on.split(" ").filter(t => t.length > 3);
+  for (const r of reps) {
+    const rn = normTxt(r?.hecho_revelado);
+    if (!rn) continue;
+    if (rn === on) return r;
+    const rSet = new Set(rn.split(" "));
+    const shared = oTokens.filter(t => rSet.has(t)).length;
+    const score = shared / Math.max(1, oTokens.length);
+    if (score > bestScore) { bestScore = score; best = r; }
+  }
+  return bestScore >= 0.5 ? best : null;
+}
+
+// [Fix274] ¿El texto del problema pide EXPLÍCITAMENTE rebajar dificultad,
+// vaciar setup o eliminar la revelación? (p.ej. la sugerencia del auditor
+// "añade las siembras o baja la dificultad" autoriza la rebaja como vía.)
+const ALLOW_DOWNGRADE_RE =
+  /(baja|bajar|rebaja|rebajar|reduc\w*)\s+(la\s+)?dificultad|dificultad\s+a\s+baj\w*|vaci\w*\s+(el\s+)?setup|elimin\w*\s+(la\s+)?revelacion|quit\w*\s+(la\s+)?revelacion/;
+
+// [Fix274] ¿El problema exige SEMBRAR algo antes/anticipar? (usado por el
+// orquestador para añadir al lote un capítulo anterior sembrable.)
+export function problemaExigeSiembra(p: { tipo?: string; descripcion?: string; sugerencia?: string }): boolean {
+  const txt = normTxt(`${p?.tipo || ""} ${p?.descripcion || ""} ${p?.sugerencia || ""}`);
+  return /siembr|sembrar|sembrad|setup|anticip|presagi|foreshadow|plantar|pista\w*\s+previa|antes\s+de/.test(txt);
+}
+
+// [Fix274] Detector determinista post-cirugía: para cada cap reparado, compara
+// sus revelaciones_dosificadas con las originales y devuelve las rebajas
+// (dificultad a la baja, setup_capitulos vaciado, revelación desaparecida)
+// que NINGÚN problema citado autoriza explícitamente.
+export function detectRevelationDowngrades(
+  originales: any[],
+  reparados: any[],
+  problemas: Array<{ capitulos?: number[]; descripcion?: string; sugerencia?: string }>,
+): RevelationDowngrade[] {
+  const allowedCaps = new Set<number>();
+  for (const p of problemas || []) {
+    const txt = normTxt(`${p?.descripcion || ""} ${p?.sugerencia || ""}`);
+    if (ALLOW_DOWNGRADE_RE.test(txt)) {
+      for (const c of p?.capitulos || []) allowedCaps.add(c);
+    }
+  }
+  const viols: RevelationDowngrade[] = [];
+  for (const orig of originales || []) {
+    const n = orig?.numero ?? orig?.number;
+    if (typeof n !== "number" || allowedCaps.has(n)) continue;
+    const rep = (reparados || []).find((c: any) => (c?.numero ?? c?.number) === n);
+    if (!rep) continue;
+    const oRevs = Array.isArray(orig?.revelaciones_dosificadas) ? orig.revelaciones_dosificadas : [];
+    const rRevs = Array.isArray(rep?.revelaciones_dosificadas) ? rep.revelaciones_dosificadas : [];
+    for (const or of oRevs) {
+      const hecho = String(or?.hecho_revelado || "").slice(0, 120);
+      if (!hecho) continue;
+      const mr = matchRevelacion(or, rRevs);
+      if (!mr) {
+        viols.push({ cap: n, hecho, motivo: "revelación eliminada del capítulo" });
+        continue;
+      }
+      const od = DIFF_RANK[normTxt(or?.dificultad)];
+      const rd = DIFF_RANK[normTxt(mr?.dificultad)];
+      if (od !== undefined && rd !== undefined && rd < od) {
+        viols.push({ cap: n, hecho, motivo: `dificultad rebajada (${or?.dificultad} → ${mr?.dificultad})` });
+      }
+      const oSetup = Array.isArray(or?.setup_capitulos) ? or.setup_capitulos.filter((x: any) => typeof x === "number") : [];
+      const rSetup = Array.isArray(mr?.setup_capitulos) ? mr.setup_capitulos.filter((x: any) => typeof x === "number") : [];
+      if (oSetup.length > 0 && rSetup.length === 0) {
+        viols.push({ cap: n, hecho, motivo: `setup_capitulos vaciado (antes [${oSetup.join(", ")}])` });
+      }
+    }
+  }
+  return viols;
 }
 
 const SYSTEM_PROMPT = `
@@ -48,6 +155,7 @@ REGLAS DURAS:
 4. COHERENCIA: los cambios deben ser coherentes con la escaleta completa (contexto). No contradigas capitulos que no puedes tocar; si un problema exige sembrar algo "antes", siembralo en el capitulo objetivo mas temprano de tu lista.
 5. NO cambies el numero de capitulos, ni reordenes, ni anadas capitulos nuevos. Devuelve exactamente los capitulos recibidos, reparados.
 6. CONSERVA la estructura del JSON de cada capitulo: mismos nombres de campos, mismos tipos. Puedes anadir elementos a arrays existentes (p.ej. un beat nuevo) y editar textos.
+7. PROHIBIDO RESOLVER SIEMBRA REBAJANDO: nunca resuelvas un problema de siembra/arco secreto/revelacion rebajando la "dificultad" de una revelacion, vaciando o recortando su "setup_capitulos", ni eliminando la revelacion. Eso es maquillaje de etiquetas: el auditor lo daria por bueno pero la novela queda EMPOBRECIDA. Lo correcto es SEMBRAR: anade la pista del hecho en los beats/eventos/informacion_nueva del capitulo objetivo mas temprano de tu lista y declara ese capitulo en "setup_capitulos". Si el problema exige sembrar "antes" y no tienes un capitulo anterior en tu lista, siembra el hecho en los beats INICIALES del capitulo citado mas temprano que si tengas. Solo puedes rebajar dificultad o vaciar setup si la descripcion o sugerencia de un problema lo pide EXPLICITAMENTE. Una verificacion determinista posterior DESCARTA cualquier capitulo devuelto que incumpla esta regla, asi que rebajarlo solo desperdicia el intento.
 
 FORMATO DE SALIDA — JSON ESTRICTO:
 {
@@ -126,6 +234,30 @@ Repara los capitulos objetivo y devuelve el JSON.
       if (parsed.capitulos_reparados.length === 0) {
         console.error(`[EscaletaSurgeon] Ningun capitulo devuelto coincide con los objetivo.`);
         return { result: null, raw: response };
+      }
+      // [Fix274] Red determinista anti-rebaja: descartamos los caps que
+      // "resuelven" siembra rebajando dificultad / vaciando setup_capitulos /
+      // borrando revelaciones (salvo que un problema citado lo pida
+      // explicitamente). El resto del empalme sigue adelante.
+      const viols = detectRevelationDowngrades(
+        input.capitulosObjetivo,
+        parsed.capitulos_reparados,
+        input.problemas || [],
+      );
+      if (viols.length > 0) {
+        const badCaps = new Set(viols.map(v => v.cap));
+        console.warn(
+          `[EscaletaSurgeon] [Fix274] ${viols.length} rebaja(s) de revelacion detectadas — se descartan los caps ${Array.from(badCaps).join(", ")}: ` +
+          viols.map(v => `cap ${v.cap}: ${v.motivo} ("${v.hecho.slice(0, 60)}")`).join("; "),
+        );
+        parsed.capitulos_reparados = parsed.capitulos_reparados.filter(
+          (c: any) => !badCaps.has(c?.numero ?? c?.number),
+        );
+        parsed.rechazados_por_rebaja = viols;
+        if (parsed.capitulos_reparados.length === 0) {
+          console.error(`[EscaletaSurgeon] [Fix274] TODOS los caps reparados rebajaban revelaciones: cirugia rechazada entera.`);
+          return { result: parsed, raw: response };
+        }
       }
       parsed.resumen = parsed.resumen || "";
       return { result: parsed, raw: response };

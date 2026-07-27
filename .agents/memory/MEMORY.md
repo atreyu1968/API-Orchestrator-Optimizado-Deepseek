@@ -41,4 +41,5 @@
 - [Prohibicion en prompt necesita red determinista](prompt-prohibition-needs-deterministic-net.md) — el planner propone la accion prohibida igual; sin red que la traduzca, el ejecutor quema presupuesto en no-ops.
 - [Secciones por numero, no por titulo](section-type-by-number.md) — prologo/epilogo llevan titulo propio; resolver tipo de seccion por chapterNumber (0/-1/-2), nunca por match de titulo exacto.
 - [Bucles de re-evaluacion sin freno](reevaluation-treadmill.md) — un juez que re-lee tras cada correccion SIEMPRE encuentra algo nuevo; todo boton/bucle "resolver issues" necesita freno de convergencia (nota alta + pasadas/no-mejora) que declare TERMINADO.
+- [Reparadores que rebajan ambición](repair-agent-ambition-downgrade.md) — un auditor de solo-consistencia deja "aprobar" degradando (bajar dificultad/vaciar setups); red anti-rebaja determinista + lote con caps sembrables.
 - [Endpoint sin boton = via muerta](endpoint-without-ui-button.md) — si un mensaje/aviso recomienda una accion ("relanza el pulido"), verificar que exista boton UI que la dispare; un endpoint sin UI deja al usuario sin salida.

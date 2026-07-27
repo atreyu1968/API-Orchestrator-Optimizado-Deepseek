@@ -40,6 +40,7 @@ import {
   TensionCurveAuditorAgent,
   computeTensionCurveMetrics,
   EscaletaSurgeonAgent,
+  problemaExigeSiembra,
   WorldBibleAuditorAgent,
   type WorldBibleAuditResult,
   enforceDensityFloors,
@@ -4952,6 +4953,19 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
                     .filter(n => byNum271.has(n))
                     .sort((a, b) => a - b)
                     .slice(0, 10);
+                  // [Fix274] Si algun problema del Beta exige sembrar "antes",
+                  // ampliamos el lote con hasta 2 caps anteriores sembrables
+                  // para que el Cirujano no caiga en vaciar el setup.
+                  if (targets271.length > 0 && anclados271.some(p => problemaExigeSiembra({ tipo: p.tipo, descripcion: p.descripcion, sugerencia: p.sugerencia_concreta }))) {
+                    const extra271: number[] = [];
+                    for (let n = targets271[0] - 1; n >= 1 && extra271.length < 2; n--) {
+                      if (byNum271.has(n) && !targets271.includes(n)) extra271.push(n);
+                    }
+                    if (extra271.length > 0) {
+                      targets271.unshift(...extra271.sort((a, b) => a - b));
+                      console.log(`[Orchestrator] [Fix274] Lote de cirugía (feedback Beta) ampliado con cap(s) sembrable(s) ${extra271.join(", ")}.`);
+                    }
+                  }
                   if (targets271.length > 0) {
                     await storage.createActivityLog({
                       projectId: project.id,
@@ -4980,7 +4994,17 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
                     if (outcome271.raw?.tokenUsage) {
                       await this.trackTokenUsage(project.id, outcome271.raw.tokenUsage, "El Cirujano de Escaletas (feedback Beta)", "deepseek-v4-flash", undefined, "outline_review");
                     }
-                    if (outcome271.result) {
+                    if (outcome271.result?.rechazados_por_rebaja?.length) {
+                      const v271 = outcome271.result.rechazados_por_rebaja;
+                      await storage.createActivityLog({
+                        projectId: project.id,
+                        level: "warning",
+                        agentRole: "architect",
+                        message: `[Fix274] Red anti-rebaja (cirugía por feedback Beta): ${v271.length} cap(s) descartados por rebajar revelaciones en vez de sembrarlas (${v271.slice(0, 4).map(x => `cap ${x.cap}: ${x.motivo}`).join("; ")}${v271.length > 4 ? "; …" : ""}).`,
+                        metadata: { fix: "Fix274", betaIter, rechazados: v271.map(x => ({ cap: x.cap, motivo: x.motivo })) },
+                      });
+                    }
+                    if (outcome271.result && outcome271.result.capitulos_reparados.length > 0) {
                       const candidate271: ParsedWorldBible = JSON.parse(JSON.stringify(worldBibleData));
                       const candEscaleta271 = ((candidate271 as any).escaleta_capitulos || []) as any[];
                       let spliced271 = 0;
@@ -11021,6 +11045,23 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         .slice(0, MAX_TARGET_CAPS);
       if (targetNums.length === 0) break;
 
+      // [Fix274] Si algun problema exige SEMBRAR "antes" (siembra/arco secreto)
+      // y el lote no contiene ningun cap anterior al mas temprano citado, el
+      // Cirujano no tiene donde sembrar y la tentacion es vaciar el setup
+      // (prohibido). Anadimos al lote hasta 2 caps sembrables inmediatamente
+      // anteriores para que la siembra sea posible.
+      if (selected.some(p => problemaExigeSiembra(p))) {
+        const earliest = targetNums[0];
+        const extra: number[] = [];
+        for (let n = earliest - 1; n >= 1 && extra.length < 2; n--) {
+          if (byNum.has(n) && !targetNums.includes(n)) extra.push(n);
+        }
+        if (extra.length > 0) {
+          targetNums.unshift(...extra.sort((a, b) => a - b));
+          console.log(`[Orchestrator] [Fix274] Lote de cirugia ampliado con cap(s) sembrable(s) ${extra.join(", ")} (problemas de siembra citan como mas temprano el cap ${earliest}).`);
+        }
+      }
+
       await storage.createActivityLog({
         projectId: project.id,
         level: "info",
@@ -11040,6 +11081,20 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         problemas: selected.filter(p => (p.capitulos || []).some(n => targetNums.includes(n)) || (p.capitulos || []).length === 0),
       });
       if (!outcome.result) break;
+      // [Fix274] Trazabilidad: caps descartados por la red anti-rebaja (el
+      // Cirujano intento "resolver" siembra rebajando dificultad o vaciando
+      // setup_capitulos; el detector determinista los rechazo antes del empalme).
+      if (outcome.result.rechazados_por_rebaja?.length) {
+        const v = outcome.result.rechazados_por_rebaja;
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warning",
+          agentRole: "architect",
+          message: `[Fix274] Red anti-rebaja: ${v.length} intento(s) del Cirujano de "resolver" problemas de siembra REBAJANDO revelaciones fueron descartados (${v.slice(0, 4).map(x => `cap ${x.cap}: ${x.motivo}`).join("; ")}${v.length > 4 ? "; …" : ""}). Rebajar dificultad o vaciar setup_capitulos maquilla el score pero empobrece la novela; solo se empalman los capítulos que siembran de verdad.`,
+          metadata: { fix: "Fix274", ronda: rounds, rechazados: v.map(x => ({ cap: x.cap, motivo: x.motivo })) },
+        });
+      }
+      if (outcome.result.capitulos_reparados.length === 0) break;
 
       // Empalme: sustituimos SOLO los caps devueltos (mismos numeros).
       const candidate: ParsedWorldBible = JSON.parse(JSON.stringify(current));
