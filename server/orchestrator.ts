@@ -4994,8 +4994,11 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
                     if (outcome271.raw?.tokenUsage) {
                       await this.trackTokenUsage(project.id, outcome271.raw.tokenUsage, "El Cirujano de Escaletas (feedback Beta)", "deepseek-v4-flash", undefined, "outline_review");
                     }
-                    if (outcome271.result?.rechazados_por_rebaja?.length) {
-                      const v271 = outcome271.result.rechazados_por_rebaja;
+                    // [Fix274] Trazabilidad de la red anti-rebaja (reutilizable en el
+                    // reintento con lote reducido del Task10).
+                    const logRebaja271 = async (result: typeof outcome271.result) => {
+                      if (!result?.rechazados_por_rebaja?.length) return;
+                      const v271 = result.rechazados_por_rebaja;
                       await storage.createActivityLog({
                         projectId: project.id,
                         level: "warning",
@@ -5003,36 +5006,102 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
                         message: `[Fix274] Red anti-rebaja (cirugía por feedback Beta): ${v271.length} cap(s) descartados por rebajar revelaciones en vez de sembrarlas (${v271.slice(0, 4).map(x => `cap ${x.cap}: ${x.motivo}`).join("; ")}${v271.length > 4 ? "; …" : ""}).`,
                         metadata: { fix: "Fix274", betaIter, rechazados: v271.map(x => ({ cap: x.cap, motivo: x.motivo })) },
                       });
-                    }
-                    if (outcome271.result && outcome271.result.capitulos_reparados.length > 0) {
+                    };
+                    await logRebaja271(outcome271.result);
+                    // [Task10] Empalme extraído a función local para poder reutilizarlo
+                    // en el reintento con lote reducido.
+                    const splice271 = async (result: NonNullable<typeof outcome271.result>, attemptLabel: string): Promise<boolean> => {
                       const candidate271: ParsedWorldBible = JSON.parse(JSON.stringify(worldBibleData));
                       const candEscaleta271 = ((candidate271 as any).escaleta_capitulos || []) as any[];
                       let spliced271 = 0;
-                      for (const rep of outcome271.result.capitulos_reparados) {
+                      for (const rep of result.capitulos_reparados) {
                         const n = rep?.numero ?? rep?.number;
                         const idx = candEscaleta271.findIndex((c: any) => (c?.numero ?? c?.number) === n);
                         if (idx >= 0) { candEscaleta271[idx] = rep; spliced271++; }
                       }
-                      if (spliced271 > 0) {
-                        worldBibleData = candidate271;
-                        fix271SurgeryDone = true;
-                        await storage.createActivityLog({
-                          projectId: project.id,
-                          level: "success",
-                          agentRole: "architect",
-                          message: `[Fix271] Cirugía de escaleta por feedback del Beta aplicada: ${spliced271} capítulo(s) empalmados sobre la escaleta vigente (el resto queda intacto). ${outcome271.result.resumen ? `Cambios: ${outcome271.result.resumen.slice(0, 400)}` : ""} Re-evaluando con el Lector Beta...`,
-                          metadata: { fix: "Fix271", betaIter, spliced: spliced271 },
-                        });
-                      }
+                      if (spliced271 === 0) return false;
+                      worldBibleData = candidate271;
+                      await storage.createActivityLog({
+                        projectId: project.id,
+                        level: "success",
+                        agentRole: "architect",
+                        message: `[Fix271] Cirugía de escaleta por feedback del Beta aplicada${attemptLabel}: ${spliced271} capítulo(s) empalmados sobre la escaleta vigente (el resto queda intacto). ${result.resumen ? `Cambios: ${result.resumen.slice(0, 400)}` : ""} Re-evaluando con el Lector Beta...`,
+                        metadata: { fix: "Fix271", betaIter, spliced: spliced271 },
+                      });
+                      return true;
+                    };
+                    if (outcome271.result) {
+                      fix271SurgeryDone = await splice271(outcome271.result, "");
                     }
                     if (!fix271SurgeryDone) {
+                      // [Task10] Reintento UNA vez con LOTE REDUCIDO antes del fallback a
+                      // regeneración completa. Causa típica del null con lotes grandes:
+                      // 8+ entradas JSON completas + thinking desbordan el techo de
+                      // salida combinado, o el filtro anti-alucinación descarta todo.
+                      const motivo271 = outcome271.failureReason
+                        || (outcome271.result
+                          ? (outcome271.result.capitulos_reparados.length === 0 ? "rebaja_rechazada_fix274" : "empalme_sin_coincidencias")
+                          : "desconocido");
+                      const MAX_RETRY_CAPS_271 = 5;
+                      // Lote reducido: solo los caps citados por problemas MAYORES.
+                      let reduced271 = Array.from(new Set(mayores271.flatMap(p => p.capitulos_afectados || [])))
+                        .filter(n => byNum271.has(n) && targets271.includes(n))
+                        .sort((a, b) => a - b)
+                        .slice(0, MAX_RETRY_CAPS_271);
+                      // Si el lote reducido no encoge nada (ya era pequeño), recortar más.
+                      if (reduced271.length === 0) reduced271 = targets271.slice(0, MAX_RETRY_CAPS_271);
+                      if (reduced271.length >= targets271.length) reduced271 = reduced271.slice(0, Math.max(1, Math.min(4, targets271.length - 1) || 1));
                       await storage.createActivityLog({
                         projectId: project.id,
                         level: "warn",
                         agentRole: "architect",
-                        message: `[Fix271] La cirugía de escaleta no devolvió capítulos válidos. Fallback: regeneración completa del Arquitecto con el feedback del Beta.`,
-                        metadata: { fix: "Fix271", betaIter },
+                        message: `[Fix271][Task10] La cirugía de escaleta no devolvió capítulos válidos (motivo: ${motivo271}${outcome271.raw?.timedOut ? ", timeout" : ""}${outcome271.raw?.error ? `, error: ${String(outcome271.raw.error).slice(0, 200)}` : ""}). Reintentando UNA vez con lote reducido de ${reduced271.length} capítulo(s) (${reduced271.join(", ")}) antes de caer a la regeneración completa.`,
+                        metadata: { fix: "Fix271", betaIter, motivo: motivo271, targetsOriginales: targets271, targetsReducidos: reduced271 },
                       });
+                      try {
+                        const retry271 = await this.escaletaSurgeon.repair({
+                          title: project.title,
+                          genre: project.genre,
+                          tone: project.tone,
+                          premise: effectivePremise,
+                          projectId: project.id,
+                          escaletaCompleta: escaleta271,
+                          capitulosObjetivo: reduced271.map(n => byNum271.get(n)),
+                          problemas: anclados271
+                            .filter(p => (p.capitulos_afectados || []).some(n => reduced271.includes(n)))
+                            .slice(0, 8)
+                            .map(p => ({
+                              area: "lector-beta",
+                              tipo: p.tipo || "ritmo",
+                              severidad: p.severidad,
+                              capitulos: (p.capitulos_afectados || []).filter(n => reduced271.includes(n)),
+                              descripcion: p.descripcion,
+                              sugerencia: p.sugerencia_concreta || "",
+                            })),
+                        });
+                        if (retry271.raw?.tokenUsage) {
+                          await this.trackTokenUsage(project.id, retry271.raw.tokenUsage, "El Cirujano de Escaletas (feedback Beta, lote reducido)", "deepseek-v4-flash", undefined, "outline_review");
+                        }
+                        await logRebaja271(retry271.result);
+                        if (retry271.result && retry271.result.capitulos_reparados.length > 0) {
+                          fix271SurgeryDone = await splice271(retry271.result, " (reintento con lote reducido)");
+                        }
+                        if (!fix271SurgeryDone) {
+                          const motivoRetry = retry271.failureReason
+                            || (retry271.result
+                              ? (retry271.result.capitulos_reparados.length === 0 ? "rebaja_rechazada_fix274" : "empalme_sin_coincidencias")
+                              : "desconocido");
+                          await storage.createActivityLog({
+                            projectId: project.id,
+                            level: "warn",
+                            agentRole: "architect",
+                            message: `[Fix271][Task10] El reintento con lote reducido también falló (motivo: ${motivoRetry}). Fallback: regeneración completa del Arquitecto con el feedback del Beta. Si también falla, la escaleta quedará en su mejor versión (score actual del Beta: ${beta.puntuacion_global}/10).`,
+                            metadata: { fix: "Fix271", betaIter, motivo: motivoRetry },
+                          });
+                        }
+                      } catch (retrySurgErr271) {
+                        console.warn(`[Fix271][Task10] Reintento reducido de cirugía falló con excepción: ${(retrySurgErr271 as Error).message}. Fallback a regeneración.`);
+                      }
                     }
                   }
                 } else if (mayores271.length > 0) {
@@ -5166,8 +5235,8 @@ ${beta.problemas.slice(0, 10).map((p, i) =>
                     projectId: project.id,
                     level: "warn",
                     agentRole: "architect",
-                    message: `[Fix245] El reintento del Arquitecto tras el feedback del Lector Beta falló (${retryResult.error || "vacío/timeout"}). Se conserva la mejor escaleta vista.`,
-                    metadata: { fix: "Fix245", betaIter },
+                    message: `[Fix245] El reintento del Arquitecto tras el feedback del Lector Beta falló (${retryResult.error || "vacío/timeout"}). La escaleta queda en su mejor versión vista (score ${bestBetaScore > -1 ? bestBetaScore : beta.puntuacion_global}/10).`,
+                    metadata: { fix: "Fix245", betaIter, bestScore: bestBetaScore > -1 ? bestBetaScore : beta.puntuacion_global },
                   });
                   break;
                 }
@@ -11070,7 +11139,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         metadata: { fix: "Fix267", ronda: rounds, targets: targetNums, score: audit.puntuacion_global, problemas: selected.length },
       });
 
-      const outcome = await this.escaletaSurgeon.repair({
+      let outcome = await this.escaletaSurgeon.repair({
         title: project.title,
         genre: project.genre,
         tone: project.tone,
@@ -11080,12 +11149,13 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
         capitulosObjetivo: targetNums.map(n => byNum.get(n)),
         problemas: selected.filter(p => (p.capitulos || []).some(n => targetNums.includes(n)) || (p.capitulos || []).length === 0),
       });
-      if (!outcome.result) break;
       // [Fix274] Trazabilidad: caps descartados por la red anti-rebaja (el
       // Cirujano intento "resolver" siembra rebajando dificultad o vaciando
       // setup_capitulos; el detector determinista los rechazo antes del empalme).
-      if (outcome.result.rechazados_por_rebaja?.length) {
-        const v = outcome.result.rechazados_por_rebaja;
+      // Reutilizable para el reintento con lote reducido (Task10).
+      const logRebaja267 = async (result: typeof outcome.result) => {
+        if (!result?.rechazados_por_rebaja?.length) return;
+        const v = result.rechazados_por_rebaja;
         await storage.createActivityLog({
           projectId: project.id,
           level: "warning",
@@ -11093,8 +11163,54 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
           message: `[Fix274] Red anti-rebaja: ${v.length} intento(s) del Cirujano de "resolver" problemas de siembra REBAJANDO revelaciones fueron descartados (${v.slice(0, 4).map(x => `cap ${x.cap}: ${x.motivo}`).join("; ")}${v.length > 4 ? "; …" : ""}). Rebajar dificultad o vaciar setup_capitulos maquilla el score pero empobrece la novela; solo se empalman los capítulos que siembran de verdad.`,
           metadata: { fix: "Fix274", ronda: rounds, rechazados: v.map(x => ({ cap: x.cap, motivo: x.motivo })) },
         });
+      };
+      await logRebaja267(outcome.result);
+      if (!outcome.result || outcome.result.capitulos_reparados.length === 0) {
+        // [Task10] Reintento UNA vez con LOTE REDUCIDO antes de rendirse: los
+        // lotes grandes (8+ caps JSON completos + thinking) desbordan el techo
+        // de salida combinado o el filtro anti-alucinación descarta todo.
+        const motivoNull = outcome.failureReason
+          || (outcome.result ? "rebaja_rechazada_fix274" : "desconocido");
+        const MAX_RETRY_CAPS = 5;
+        // Lote reducido: solo caps citados por problemas de severidad ALTA.
+        let reducedNums = Array.from(new Set(altas.flatMap(p => p.capitulos || [])))
+          .filter(n => byNum.has(n) && targetNums.includes(n))
+          .sort((a, b) => a - b)
+          .slice(0, MAX_RETRY_CAPS);
+        if (reducedNums.length === 0) reducedNums = targetNums.slice(0, MAX_RETRY_CAPS);
+        if (reducedNums.length >= targetNums.length) reducedNums = reducedNums.slice(0, Math.max(1, Math.min(4, targetNums.length - 1) || 1));
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warn",
+          agentRole: "architect",
+          message: `[Fix267][Task10] El Cirujano de Escaletas no devolvió capítulos válidos (ronda ${rounds}, motivo: ${motivoNull}${outcome.raw?.timedOut ? ", timeout" : ""}${outcome.raw?.error ? `, error: ${String(outcome.raw.error).slice(0, 200)}` : ""}). Reintentando UNA vez con lote reducido de ${reducedNums.length} capítulo(s) (${reducedNums.join(", ")}).`,
+          metadata: { fix: "Fix267", ronda: rounds, motivo: motivoNull, targetsOriginales: targetNums, targetsReducidos: reducedNums },
+        });
+        const reducedProblems = selected.filter(p => (p.capitulos || []).some(n => reducedNums.includes(n)));
+        outcome = await this.escaletaSurgeon.repair({
+          title: project.title,
+          genre: project.genre,
+          tone: project.tone,
+          premise: project.premise || "",
+          projectId: project.id,
+          escaletaCompleta: escaleta,
+          capitulosObjetivo: reducedNums.map(n => byNum.get(n)),
+          problemas: (reducedProblems.length > 0 ? reducedProblems : selected.slice(0, 6)).slice(0, 8),
+        });
+        await logRebaja267(outcome.result);
+        if (!outcome.result || outcome.result.capitulos_reparados.length === 0) {
+          const motivoRetry = outcome.failureReason
+            || (outcome.result ? "rebaja_rechazada_fix274" : "desconocido");
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warn",
+            agentRole: "architect",
+            message: `[Fix267][Task10] El reintento con lote reducido también falló (motivo: ${motivoRetry}). La escaleta queda en su mejor versión con score ${audit.puntuacion_global}/10.`,
+            metadata: { fix: "Fix267", ronda: rounds, motivo: motivoRetry, score: audit.puntuacion_global },
+          });
+          break;
+        }
       }
-      if (outcome.result.capitulos_reparados.length === 0) break;
 
       // Empalme: sustituimos SOLO los caps devueltos (mismos numeros).
       const candidate: ParsedWorldBible = JSON.parse(JSON.stringify(current));

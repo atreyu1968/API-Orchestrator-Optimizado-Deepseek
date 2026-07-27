@@ -183,7 +183,13 @@ export class EscaletaSurgeonAgent extends BaseAgent {
     this.timeoutMs = 10 * 60 * 1000;
   }
 
-  async repair(input: EscaletaSurgeryInput): Promise<{ result: EscaletaSurgeryResult | null; raw: AgentResponse }> {
+  // [Task10] failureReason clasifica el motivo del null para diagnostico y
+  // para que el orquestador decida el reintento con lote reducido:
+  //   "vacio_timeout"  -> el modelo no devolvio contenido (error, timeout o vacio)
+  //   "parse"          -> el contenido no se pudo reparar/parsear como JSON valido
+  //   "sin_capitulos"  -> JSON valido pero capitulos_reparados ausente o vacio
+  //   "filtro_antialucinacion" -> devolvio caps pero NINGUNO coincide con los objetivo
+  async repair(input: EscaletaSurgeryInput): Promise<{ result: EscaletaSurgeryResult | null; raw: AgentResponse; failureReason?: "vacio_timeout" | "parse" | "sin_capitulos" | "filtro_antialucinacion" }> {
     const contexto = this.condenseEscaleta(input.escaletaCompleta);
     const problemas = input.problemas.map((p, i) =>
       `${i + 1}. [${p.area}/${p.tipo}] severidad ${p.severidad} — caps ${p.capitulos.join(", ") || "?"}\n   Problema: ${p.descripcion}\n   Sugerencia del auditor: ${p.sugerencia || "(sin sugerencia)"}`
@@ -216,7 +222,7 @@ Repara los capitulos objetivo y devuelve el JSON.
     const response = await this.generateContent(userPrompt, input.projectId);
     if (response.error || response.timedOut || !response.content?.trim()) {
       console.error(`[EscaletaSurgeon] Error o vacio: ${response.error || "timeout"}`);
-      return { result: null, raw: response };
+      return { result: null, raw: response, failureReason: "vacio_timeout" };
     }
 
     try {
@@ -224,7 +230,7 @@ Repara los capitulos objetivo y devuelve el JSON.
       const parsed = repairJson(response.content) as EscaletaSurgeryResult;
       if (!parsed || !Array.isArray(parsed.capitulos_reparados) || parsed.capitulos_reparados.length === 0) {
         console.error(`[EscaletaSurgeon] JSON invalido: capitulos_reparados ausente o vacio.`);
-        return { result: null, raw: response };
+        return { result: null, raw: response, failureReason: "sin_capitulos" };
       }
       // Solo aceptamos caps cuyo numero exista entre los objetivo (anti-alucinacion).
       const allowed = new Set(input.capitulosObjetivo.map((c: any) => c.numero ?? c.number));
@@ -233,7 +239,7 @@ Repara los capitulos objetivo y devuelve el JSON.
       );
       if (parsed.capitulos_reparados.length === 0) {
         console.error(`[EscaletaSurgeon] Ningun capitulo devuelto coincide con los objetivo.`);
-        return { result: null, raw: response };
+        return { result: null, raw: response, failureReason: "filtro_antialucinacion" };
       }
       // [Fix274] Red determinista anti-rebaja: descartamos los caps que
       // "resuelven" siembra rebajando dificultad / vaciando setup_capitulos /
@@ -263,7 +269,7 @@ Repara los capitulos objetivo y devuelve el JSON.
       return { result: parsed, raw: response };
     } catch (error) {
       console.error(`[EscaletaSurgeon] Parse error: ${(error as Error).message}`);
-      return { result: null, raw: response };
+      return { result: null, raw: response, failureReason: "parse" };
     }
   }
 
