@@ -4822,6 +4822,36 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
               },
             });
 
+            // [Fix271] Guarda determinista de resolución inflada: si tras el
+            // clímax quedan >3 capítulos de resolución, se inyecta como problema
+            // MAYOR citable (para que la cirugía/regeneración lo ataque) cuando
+            // el Beta pide revisión; si el Beta aprobó, solo aviso (conservador).
+            const bloat271 = this.detectBloatedResolution(worldBibleData);
+            if (bloat271) {
+              if (beta.puntuacion_global < BETA_THRESHOLD) {
+                const yaCitado = beta.problemas.some(p => /resoluci[oó]n|desenlace/i.test(p.descripcion || "") && (p.capitulos_afectados || []).length > 0);
+                if (!yaCitado) {
+                  // unshift (no push): garantiza que sobrevive al slice(0,10)
+                  // del feedback al Arquitecto (hallazgo del code review).
+                  beta.problemas.unshift({
+                    tipo: "pacing",
+                    severidad: "mayor",
+                    capitulos_afectados: bloat271.resolutionCaps,
+                    descripcion: `[Detector determinista Fix271] Resolución inflada: tras el clímax (cap ${bloat271.climaxCap}) quedan ${bloat271.resolutionCaps.length} capítulos de desenlace (${bloat271.resolutionCaps.join(", ")}). Máximo aceptable: 3 antes del epílogo.`,
+                    sugerencia_concreta: `Comprime el desenlace: fusiona las escenas de cierre (con elipsis agresivas) para que tras el cap ${bloat271.climaxCap} queden como mucho 3 capítulos, o convierte parte de esos capítulos en escalada/consecuencias PREVIAS al clímax.`,
+                  } as any);
+                }
+              } else {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  agentRole: "architect",
+                  message: `[Fix271] Aviso: el Beta aprobó la escaleta pero el detector determinista ve una resolución larga tras el clímax (cap ${bloat271.climaxCap} + ${bloat271.resolutionCaps.length} caps de desenlace). Se continúa (el Beta manda), pero vigila el ritmo del tercer acto.`,
+                  metadata: { fix: "Fix271", climaxCap: bloat271.climaxCap, resolutionCaps: bloat271.resolutionCaps },
+                });
+              }
+            }
+
             // Best-effort: conserva la mejor escaleta vista.
             // [Fix101] Trackeamos el score de la última iter (independiente del best)
             // para que la restauración al final del bucle compare best vs último real.
@@ -4893,6 +4923,107 @@ escaleta, "${dimNombre}" seguirá KO y se perderá el intento.
               // [Fix101] Guardamos histórico de ESTA iter para el próximo retry.
               prevScoreBeta = beta.puntuacion_global;
               prevProblemsSummaryBeta = problemsSummaryBeta;
+
+              // ═══════════════════════════════════════════════════════════
+              // [Fix271] CIRUGÍA DIRIGIDA en vez de regeneración total.
+              // La regeneración completa (Fase 1 + Fase 2 desde cero) era una
+              // lotería: arreglaba la queja citada pero re-tiraba los dados
+              // sobre todo lo demás (visto en logs: 3 iteraciones, 3 sietes
+              // con problemas DISTINTOS cada vez). Si TODOS los problemas
+              // mayores del Beta citan capítulos concretos, reparamos SOLO
+              // esos capítulos con el Cirujano de Escaletas sobre la escaleta
+              // vigente (refinamiento acumulativo) y re-evaluamos. La
+              // regeneración total queda como fallback para quejas globales
+              // sin ancla (o si la cirugía falla).
+              // ═══════════════════════════════════════════════════════════
+              let fix271SurgeryDone = false;
+              try {
+                const escaleta271 = (((worldBibleData as any).escaleta_capitulos || []) as any[]);
+                const byNum271 = new Map<number, any>();
+                for (const c of escaleta271) {
+                  const n = c?.numero ?? c?.number;
+                  if (typeof n === "number") byNum271.set(n, c);
+                }
+                const mayores271 = beta.problemas.filter(p => p.severidad === "mayor");
+                const anclados271 = beta.problemas.filter(p => (p.capitulos_afectados || []).some(n => byNum271.has(n)));
+                const todosMayoresAnclados = mayores271.length > 0 && mayores271.every(p => (p.capitulos_afectados || []).some(n => byNum271.has(n)));
+                if (todosMayoresAnclados) {
+                  const targets271 = Array.from(new Set(anclados271.flatMap(p => p.capitulos_afectados || [])))
+                    .filter(n => byNum271.has(n))
+                    .sort((a, b) => a - b)
+                    .slice(0, 10);
+                  if (targets271.length > 0) {
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "info",
+                      agentRole: "architect",
+                      message: `[Fix271] Todos los problemas mayores del Lector Beta citan capítulos concretos: en vez de regenerar la escaleta entera (lotería), el Cirujano de Escaletas repara SOLO los caps ${targets271.join(", ")} sobre la escaleta vigente. Se re-evaluará con el Beta.`,
+                      metadata: { fix: "Fix271", betaIter, targets: targets271, problemas: anclados271.length },
+                    });
+                    const outcome271 = await this.escaletaSurgeon.repair({
+                      title: project.title,
+                      genre: project.genre,
+                      tone: project.tone,
+                      premise: effectivePremise,
+                      projectId: project.id,
+                      escaletaCompleta: escaleta271,
+                      capitulosObjetivo: targets271.map(n => byNum271.get(n)),
+                      problemas: anclados271.slice(0, 12).map(p => ({
+                        area: "lector-beta",
+                        tipo: p.tipo || "ritmo",
+                        severidad: p.severidad,
+                        capitulos: (p.capitulos_afectados || []).filter(n => targets271.includes(n)),
+                        descripcion: p.descripcion,
+                        sugerencia: p.sugerencia_concreta || "",
+                      })),
+                    });
+                    if (outcome271.raw?.tokenUsage) {
+                      await this.trackTokenUsage(project.id, outcome271.raw.tokenUsage, "El Cirujano de Escaletas (feedback Beta)", "deepseek-v4-flash", undefined, "outline_review");
+                    }
+                    if (outcome271.result) {
+                      const candidate271: ParsedWorldBible = JSON.parse(JSON.stringify(worldBibleData));
+                      const candEscaleta271 = ((candidate271 as any).escaleta_capitulos || []) as any[];
+                      let spliced271 = 0;
+                      for (const rep of outcome271.result.capitulos_reparados) {
+                        const n = rep?.numero ?? rep?.number;
+                        const idx = candEscaleta271.findIndex((c: any) => (c?.numero ?? c?.number) === n);
+                        if (idx >= 0) { candEscaleta271[idx] = rep; spliced271++; }
+                      }
+                      if (spliced271 > 0) {
+                        worldBibleData = candidate271;
+                        fix271SurgeryDone = true;
+                        await storage.createActivityLog({
+                          projectId: project.id,
+                          level: "success",
+                          agentRole: "architect",
+                          message: `[Fix271] Cirugía de escaleta por feedback del Beta aplicada: ${spliced271} capítulo(s) empalmados sobre la escaleta vigente (el resto queda intacto). ${outcome271.result.resumen ? `Cambios: ${outcome271.result.resumen.slice(0, 400)}` : ""} Re-evaluando con el Lector Beta...`,
+                          metadata: { fix: "Fix271", betaIter, spliced: spliced271 },
+                        });
+                      }
+                    }
+                    if (!fix271SurgeryDone) {
+                      await storage.createActivityLog({
+                        projectId: project.id,
+                        level: "warn",
+                        agentRole: "architect",
+                        message: `[Fix271] La cirugía de escaleta no devolvió capítulos válidos. Fallback: regeneración completa del Arquitecto con el feedback del Beta.`,
+                        metadata: { fix: "Fix271", betaIter },
+                      });
+                    }
+                  }
+                } else if (mayores271.length > 0) {
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "info",
+                    agentRole: "architect",
+                    message: `[Fix271] ${mayores271.filter(p => !(p.capitulos_afectados || []).some(n => byNum271.has(n))).length} problema(s) mayor(es) del Beta son globales (sin capítulos citables): se usa la regeneración completa del Arquitecto.`,
+                    metadata: { fix: "Fix271", betaIter },
+                  });
+                }
+              } catch (surgErr271) {
+                console.warn(`[Fix271] Cirugía por feedback Beta falló: ${(surgErr271 as Error).message}. Fallback a regeneración.`);
+              }
+              if (fix271SurgeryDone) continue;
 
               // [Fix101] Bloque de histórico anti-regresión.
               const historyBlockBeta = `═══════════════════════════════════════════════════════════════════
@@ -10981,6 +11112,31 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     } catch (e) {
       console.warn(`[Fix267] persistStructuralResiduals fallo para proyecto ${projectId}: ${(e as Error).message}`);
     }
+  }
+
+  // [Fix271] Detector determinista de resolución inflada: localiza el capítulo
+  // de clímax (el ÚLTIMO con la tensión_objetivo máxima entre los caps
+  // principales) y cuenta los capítulos que quedan después (excluyendo
+  // prólogo/epílogo/nota, que van con numero <= 0 — lección section-type-by-number).
+  // Más de MAX_RESOLUTION_CAPS = desenlace inflado ("7 caps de resolución"),
+  // el defecto exacto que dejó a la novela en Beta 7/10. Devuelve null si la
+  // escaleta no trae tensiones numéricas suficientes (conservador, series-safe).
+  private detectBloatedResolution(worldBibleData: ParsedWorldBible): { climaxCap: number; resolutionCaps: number[] } | null {
+    const MAX_RESOLUTION_CAPS = 3;
+    const caps = (((worldBibleData as any)?.escaleta_capitulos || []) as any[])
+      .map((c: any) => ({ n: (c?.numero ?? c?.number) as number, t: Number(c?.tension_objetivo) }))
+      .filter((c) => typeof c.n === "number" && c.n >= 1 && Number.isFinite(c.t) && c.t > 0)
+      .sort((a, b) => a.n - b.n);
+    if (caps.length < 10) return null;
+    const maxT = Math.max(...caps.map((c) => c.t));
+    let climaxIdx = -1;
+    for (let i = caps.length - 1; i >= 0; i--) {
+      if (caps[i].t === maxT) { climaxIdx = i; break; }
+    }
+    if (climaxIdx < 0) return null;
+    const after = caps.slice(climaxIdx + 1);
+    if (after.length <= MAX_RESOLUTION_CAPS) return null;
+    return { climaxCap: caps[climaxIdx].n, resolutionCaps: after.map((c) => c.n) };
   }
 
   // [Fix143-A] Combina la crítica del Holístico y del Beta de mid-novela en un

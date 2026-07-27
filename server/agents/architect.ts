@@ -846,6 +846,13 @@ mágicas) se aplican AQUÍ con especial dureza al diseñar cada capítulo:
     En el objetivo_narrativo del capítulo de resolución, NOMBRA
     explícitamente el coste. "Gana sin perder nada" = INVÁLIDO.
 
+14b. ⛔ [Fix271] RESOLUCIÓN COMPACTA: tras el capítulo de CLÍMAX (el de
+    tensión máxima del acto 3), MÁXIMO 3 capítulos de resolución antes
+    del epílogo. Un desenlace de 4+ capítulos mata la recomendación del
+    lector objetivo. Si tienes más material de cierre (juicio, duelo,
+    reconciliaciones, nueva normalidad), FUSIONA esas escenas en menos
+    capítulos con elipsis agresivas — no las despliegues cap a cap.
+
 15. ⛔ PROHIBIDO usar revelaciones oportunas como motor de resolución
     ("¡resulta que tenía el antídoto!", "¡resulta que el villano era
     su hermano!", "¡aparece la caballería!") salvo que las pistas
