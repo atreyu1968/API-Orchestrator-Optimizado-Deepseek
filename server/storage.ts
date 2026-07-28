@@ -738,6 +738,12 @@ export class DatabaseStorage implements IStorage {
   // timeout declarado en vez de los 120s por defecto. Caso real: reanudacion
   // a los ~10 min de silencio de Fase 2 arraso 30 min de trabajo en curso.
   async getLastMeaningfulActivityLog(projectId: number): Promise<{ createdAt: Date; message: string } | null> {
+    // [Fix138] Excluye logs META que no indican un worker vivo.
+    // [Fix_Fix103Deadlock] Añadimos '[Fix103]' como patrón adicional: el propio guard
+    // escribe "Reanudación ignorada" en cada bloqueo; si el ILIKE con tilde no coincide
+    // en el PostgreSQL de producción (codificación/colación distinta), ese log se
+    // convierte en el más reciente y el siguiente intento queda bloqueado para siempre.
+    // Excluir por '[Fix103]' es ASCII puro — sin dependencia de colación.
     const [log] = await db.select({ createdAt: activityLogs.createdAt, message: activityLogs.message })
       .from(activityLogs)
       .where(and(
@@ -745,6 +751,7 @@ export class DatabaseStorage implements IStorage {
         sql`${activityLogs.message} NOT ILIKE '%Reanudación ignorada%'`,
         sql`${activityLogs.message} NOT ILIKE '%Reanudacion ignorada%'`,
         sql`${activityLogs.message} NOT ILIKE '%Auto-recovery%'`,
+        sql`${activityLogs.message} NOT ILIKE '%[Fix103]%'`,
       ))
       .orderBy(desc(activityLogs.createdAt))
       .limit(1);

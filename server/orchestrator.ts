@@ -6345,30 +6345,40 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       // ~10 min de silencio de Fase 2 reinicio desde cero y arraso 30 min de
       // trabajo (World Bible auditada + escaleta en curso). Si el ultimo log
       // declara un "Timeout: N min", la ventana de frescura pasa a N+4 min.
-      const lastRealEntry = await storage.getLastMeaningfulActivityLog(project.id);
-      if (lastRealEntry) {
-        const ageMs = Date.now() - new Date(lastRealEntry.createdAt).getTime();
-        let freshnessWindowMs = 120_000;
-        const msg = lastRealEntry.message || "";
-        const isSilentArchitectPhase = /Fase\s*[12]\s*\/\s*2/i.test(msg);
-        const timeoutMatch = isSilentArchitectPhase ? /Timeout:\s*(\d+)\s*min/i.exec(msg) : null;
-        if (timeoutMatch) {
-          const declaredMin = parseInt(timeoutMatch[1], 10);
-          if (Number.isFinite(declaredMin) && declaredMin > 0 && declaredMin <= 60) {
-            freshnessWindowMs = (declaredMin + 4) * 60_000;
+      // [Fix_Fix103Deadlock] Un proyecto en estado "failed" fue terminado explícitamente
+      // por un gate (Fix_PI_GATE u otro). No puede haber ningún orquestador vivo para él,
+      // así que el guard de frescura no tiene nada que proteger. Saltarlo evita el
+      // deadlock perpetuo donde cada intento de reanudación escribe un log propio que
+      // vuelve a bloquear el siguiente intento.
+      const projectStatusNow = await storage.getProject(project.id).then(p => p?.status ?? project.status);
+      const isTerminatedByGate = projectStatusNow === "failed" || project.status === "failed";
+
+      if (!isTerminatedByGate) {
+        const lastRealEntry = await storage.getLastMeaningfulActivityLog(project.id);
+        if (lastRealEntry) {
+          const ageMs = Date.now() - new Date(lastRealEntry.createdAt).getTime();
+          let freshnessWindowMs = 120_000;
+          const msg = lastRealEntry.message || "";
+          const isSilentArchitectPhase = /Fase\s*[12]\s*\/\s*2/i.test(msg);
+          const timeoutMatch = isSilentArchitectPhase ? /Timeout:\s*(\d+)\s*min/i.exec(msg) : null;
+          if (timeoutMatch) {
+            const declaredMin = parseInt(timeoutMatch[1], 10);
+            if (Number.isFinite(declaredMin) && declaredMin > 0 && declaredMin <= 60) {
+              freshnessWindowMs = (declaredMin + 4) * 60_000;
+            }
           }
-        }
-        if (ageMs < freshnessWindowMs) {
-          const windowDesc = freshnessWindowMs === 120_000 ? "120s" : `${Math.round(freshnessWindowMs / 60000)} min (fase silenciosa declarada, Fix244)`;
-          console.warn(`[Orchestrator] [Fix103] resumeNovel invocado pero hay actividad muy reciente del proyecto (${Math.round(ageMs/1000)}s, ventana ${windowDesc}). Probablemente hay otro orquestador vivo para este proyecto. Aborto la reanudación para no destruir su progreso.`);
-          await storage.createActivityLog({
-            projectId: project.id,
-            level: "warning",
-            agentRole: "orchestrator",
-            message: `[Fix103] Reanudación ignorada: hay actividad muy reciente del proyecto (hace ${Math.round(ageMs/1000)}s, ventana ${windowDesc}). Se conserva el progreso en curso.`,
-            metadata: { fix: "Fix103", ageMs, freshnessWindowMs },
-          });
-          return;
+          if (ageMs < freshnessWindowMs) {
+            const windowDesc = freshnessWindowMs === 120_000 ? "120s" : `${Math.round(freshnessWindowMs / 60000)} min (fase silenciosa declarada, Fix244)`;
+            console.warn(`[Orchestrator] [Fix103] resumeNovel invocado pero hay actividad muy reciente del proyecto (${Math.round(ageMs/1000)}s, ventana ${windowDesc}). Probablemente hay otro orquestador vivo para este proyecto. Aborto la reanudación para no destruir su progreso.`);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              agentRole: "orchestrator",
+              message: `[Fix103] Reanudación ignorada: hay actividad muy reciente del proyecto (hace ${Math.round(ageMs/1000)}s, ventana ${windowDesc}). Se conserva el progreso en curso.`,
+              metadata: { fix: "Fix103", ageMs, freshnessWindowMs },
+            });
+            return;
+          }
         }
       }
 
