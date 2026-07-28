@@ -2884,109 +2884,219 @@ ${problemasTxt ? `PROBLEMAS RESIDUALES:\n${problemasTxt}\n` : ""}${fb ? `FEEDBAC
 
       // ═══════════════════════════════════════════════════════════════
       // [Fix18] AUDITOR DE INTEGRIDAD NARRATIVA — examina foreshadowing,
-      // coherencia del antagonista y ritmo del tercer acto. Si encuentra
-      // problemas de severidad "alta" o puntuación < 7, re-ejecuta al
-      // Arquitecto inyectando plotIntegrityFeedback. [Fix101] Máximo 3
-      // iteraciones (1 análisis + 2 reintentos) e inyección de histórico
-      // para evitar regresiones. Best-effort: conserva la mejor escaleta
-      // vista. Solo en generación nueva.
+      // coherencia del antagonista y ritmo del tercer acto.
+      // [Fix101] Máximo 3 iteraciones con histórico anti-regresión.
+      // [Fix_PI_SURGEON] En cada retry, el Cirujano de Escaletas repara
+      // SOLO los capítulos citados (mismo patrón Fix267/Fix271) antes de
+      // caer a regeneración completa del Arquitecto.
+      // [Fix_PI_RESTART] Si la trayectoria es plana o regresiva al agotar
+      // las iteraciones Y quedan problemas altos, se reinicia la escaleta
+      // desde cero (manteniendo el World Bible) hasta MAX_PI_RESTARTS veces.
+      // [Fix_PI_GATE] Si tras todos los reinicios persisten altas bajo el
+      // umbral, se detiene la generación — un libro con grietas estructurales
+      // de integridad es "nacido muerto" y no convergirá en post-finalización.
+      // Solo en generación nueva.
       // ═══════════════════════════════════════════════════════════════
       try {
         if (!this.aborted) {
           const MAX_PI_ITERATIONS = 3; // [Fix101] subido de 2 a 3
+          const MAX_PI_RESTARTS = 2;   // [Fix_PI_RESTART] reinicios desde cero
           const PI_THRESHOLD = 7;
           let bestPlotIntegrity: { data: ParsedWorldBible; score: number; problemsSummary: string } | null = null;
-          let lastSeenScore = 0;
-          // [Fix101] Histórico anti-regresión para inyectar al Arquitecto.
-          let prevScorePI: number | null = null;
-          let prevProblemsSummaryPI = "";
+          let piRestarted = 0;
+          let lastSeenScore = 0; // score del worldBibleData actual al salir del bucle
 
-          for (let piIter = 0; piIter < MAX_PI_ITERATIONS; piIter++) {
-            if (this.aborted) break;
-            this.callbacks.onAgentStatus("architect", "thinking", "El Auditor de Integridad Narrativa está revisando la escaleta...");
-            const computedMetrics = computePlotIntegrityMetrics(worldBibleData.escaleta_capitulos as any[]);
-            const piOutcome = await this.plotIntegrityAuditor.analyze({
-              title: project.title,
-              genre: project.genre,
-              tone: project.tone,
-              premise: effectivePremise,
-              chapterCount: project.chapterCount,
-              worldBible: worldBibleData.world_bible,
-              escaletaCapitulos: worldBibleData.escaleta_capitulos as any[],
-              projectId: project.id,
-              computedMetrics,
-            });
+          // [Fix_PI_RESTART] Bucle exterior de reinicios desde cero.
+          while (piRestarted <= MAX_PI_RESTARTS && !this.aborted) {
+            lastSeenScore = 0;
+            let prevScorePI: number | null = null;
+            let prevProblemsSummaryPI = "";
+            const piScores: number[] = []; // trayectoria de esta ronda
+            let needsRestart = false;
 
-            if (piOutcome.raw?.tokenUsage) {
-              await this.trackTokenUsage(project.id, piOutcome.raw.tokenUsage, "El Auditor de Integridad Narrativa", "deepseek-v4-flash", undefined, "plot_integrity_check");
-            }
+            for (let piIter = 0; piIter < MAX_PI_ITERATIONS; piIter++) {
+              if (this.aborted) break;
+              this.callbacks.onAgentStatus("architect", "thinking", "El Auditor de Integridad Narrativa está revisando la escaleta...");
+              const computedMetrics = computePlotIntegrityMetrics(worldBibleData.escaleta_capitulos as any[]);
+              const piOutcome = await this.plotIntegrityAuditor.analyze({
+                title: project.title,
+                genre: project.genre,
+                tone: project.tone,
+                premise: effectivePremise,
+                chapterCount: project.chapterCount,
+                worldBible: worldBibleData.world_bible,
+                escaletaCapitulos: worldBibleData.escaleta_capitulos as any[],
+                projectId: project.id,
+                computedMetrics,
+              });
 
-            const audit = piOutcome.result;
-            if (!audit) {
-              console.warn(`[Orchestrator] Auditor de Integridad Narrativa no devolvió resultado válido (iter ${piIter + 1}). Continuando.`);
-              break;
-            }
+              if (piOutcome.raw?.tokenUsage) {
+                await this.trackTokenUsage(project.id, piOutcome.raw.tokenUsage, "El Auditor de Integridad Narrativa", "deepseek-v4-flash", undefined, "plot_integrity_check");
+              }
 
-            const altas = audit.problemas.filter(p => p.severidad === "alta").length;
-            const medias = audit.problemas.filter(p => p.severidad === "media").length;
-            const problemsSummaryPI = audit.problemas.slice(0, 10)
-              .map((p, i) => `${i + 1}. [${p.severidad}] ${p.descripcion}`)
-              .join("\n");
-            console.log(`[Orchestrator] Auditor de Integridad — iter ${piIter + 1}/${MAX_PI_ITERATIONS}: score ${audit.puntuacion_global}/10, veredicto "${audit.veredicto}", ${altas} altas + ${medias} medias. ${audit.resumen}`);
+              const audit = piOutcome.result;
+              if (!audit) {
+                console.warn(`[Orchestrator] Auditor de Integridad Narrativa no devolvió resultado válido (iter ${piIter + 1}). Continuando.`);
+                break;
+              }
 
-            await storage.createActivityLog({
-              projectId: project.id,
-              level: audit.veredicto === "reescribir" ? "warn" : "info",
-              agentRole: "architect",
-              message: `🧩 Auditor de Integridad Narrativa — iter ${piIter + 1}/${MAX_PI_ITERATIONS} — Score ${audit.puntuacion_global}/10 (${audit.veredicto}). ${altas} problemas altos, ${medias} medios. ${audit.resumen}`,
-              metadata: { plotIntegrityScore: audit.puntuacion_global, veredicto: audit.veredicto, problemas: audit.problemas as any, iteration: piIter + 1 },
-            });
+              const altas = audit.problemas.filter(p => p.severidad === "alta").length;
+              const medias = audit.problemas.filter(p => p.severidad === "media").length;
+              const problemsSummaryPI = audit.problemas.slice(0, 10)
+                .map((p, i) => `${i + 1}. [${p.severidad}] ${p.descripcion}`)
+                .join("\n");
+              const restartLabel = piRestarted > 0 ? ` (reinicio ${piRestarted}/${MAX_PI_RESTARTS})` : "";
+              console.log(`[Orchestrator] Auditor de Integridad — iter ${piIter + 1}/${MAX_PI_ITERATIONS}${restartLabel}: score ${audit.puntuacion_global}/10, veredicto "${audit.veredicto}", ${altas} altas + ${medias} medias. ${audit.resumen}`);
 
-            // [Fix101] Aviso explícito al usuario si esta iter empeoró respecto
-            // al mejor visto (oscilación del Arquitecto al aplicar correcciones).
-            if (bestPlotIntegrity && audit.puntuacion_global < bestPlotIntegrity.score) {
               await storage.createActivityLog({
                 projectId: project.id,
-                level: "warn",
+                level: audit.veredicto === "reescribir" ? "warn" : "info",
                 agentRole: "architect",
-                message: `[Fix101] El reintento del Arquitecto empeoró la integridad narrativa: ${audit.puntuacion_global}/10 (esta) < ${bestPlotIntegrity.score}/10 (mejor anterior). Si el bucle termina aquí, se restaurará la mejor escaleta vista.`,
-                metadata: { thisScore: audit.puntuacion_global, bestScore: bestPlotIntegrity.score, iteration: piIter + 1 },
+                message: `🧩 Auditor de Integridad Narrativa — iter ${piIter + 1}/${MAX_PI_ITERATIONS}${restartLabel} — Score ${audit.puntuacion_global}/10 (${audit.veredicto}). ${altas} problemas altos, ${medias} medios. ${audit.resumen}`,
+                metadata: { plotIntegrityScore: audit.puntuacion_global, veredicto: audit.veredicto, problemas: audit.problemas as any, iteration: piIter + 1, restart: piRestarted },
               });
-            }
 
-            // Best-effort buffer: guarda la mejor escaleta vista. Trackeamos
-            // también el último score para evitar una re-auditoría al cierre.
-            lastSeenScore = audit.puntuacion_global;
-            if (!bestPlotIntegrity || audit.puntuacion_global > bestPlotIntegrity.score) {
-              bestPlotIntegrity = { data: worldBibleData, score: audit.puntuacion_global, problemsSummary: problemsSummaryPI };
-            }
-
-            const needsRetry = audit.puntuacion_global < PI_THRESHOLD && audit.instrucciones_revision?.trim();
-            const lastIter = piIter === MAX_PI_ITERATIONS - 1;
-            if (!needsRetry || lastIter) {
-              // [Fix101] Si salimos sin alcanzar umbral en última iter, lo decimos.
-              if (lastIter && needsRetry) {
+              // [Fix101] Aviso si esta iter empeoró respecto al mejor visto.
+              if (bestPlotIntegrity && audit.puntuacion_global < bestPlotIntegrity.score) {
                 await storage.createActivityLog({
                   projectId: project.id,
                   level: "warn",
                   agentRole: "architect",
-                  message: `[Fix101] Auditor de Integridad Narrativa agotó ${MAX_PI_ITERATIONS} iteraciones sin alcanzar el umbral ${PI_THRESHOLD}/10. Mejor score logrado: ${bestPlotIntegrity?.score}/10. Se continúa con la mejor escaleta vista.`,
-                  metadata: { bestScore: bestPlotIntegrity?.score, threshold: PI_THRESHOLD },
+                  message: `[Fix101] El reintento del Arquitecto empeoró la integridad narrativa: ${audit.puntuacion_global}/10 (esta) < ${bestPlotIntegrity.score}/10 (mejor anterior). Si el bucle termina aquí, se restaurará la mejor escaleta vista.`,
+                  metadata: { thisScore: audit.puntuacion_global, bestScore: bestPlotIntegrity.score, iteration: piIter + 1 },
                 });
               }
-              break;
-            }
 
-            // [Fix101] Guardamos el estado de ESTA iter como histórico
-            // para inyectarlo al Arquitecto en el próximo intento.
-            prevScorePI = audit.puntuacion_global;
-            prevProblemsSummaryPI = problemsSummaryPI;
+              lastSeenScore = audit.puntuacion_global;
+              piScores.push(audit.puntuacion_global);
+              if (!bestPlotIntegrity || audit.puntuacion_global > bestPlotIntegrity.score) {
+                bestPlotIntegrity = { data: worldBibleData, score: audit.puntuacion_global, problemsSummary: problemsSummaryPI };
+              }
 
-            console.log(`[Orchestrator] Auditor de Integridad pidió revisión. Re-ejecutando Arquitecto con plotIntegrityFeedback (+ histórico Fix101)...`);
-            this.callbacks.onAgentStatus("architect", "thinking", `Integridad narrativa baja (${audit.puntuacion_global}/10). El Arquitecto está corrigiendo presagios, antagonista y pacing...`);
+              const needsRetry = audit.puntuacion_global < PI_THRESHOLD && audit.instrucciones_revision?.trim();
+              const lastIter = piIter === MAX_PI_ITERATIONS - 1;
 
-            // [Fix101] Bloque de histórico anti-regresión.
-            const historyBlockPI = `═══════════════════════════════════════════════════════════════════
+              if (!needsRetry) break; // aprobado o sin instrucciones
+
+              if (lastIter) {
+                // [Fix_PI_RESTART] Evaluar trayectoria: plana = todos los scores iguales;
+                // regresiva = el último ≤ el primero. Si hay altas sin resolver, reiniciar.
+                const isFlat = piScores.length > 1 && piScores.every(s => s === piScores[0]);
+                const isRegressive = piScores.length > 1 && piScores[piScores.length - 1] <= piScores[0];
+                const hasHighProblems = altas > 0;
+
+                if ((isFlat || isRegressive) && hasHighProblems && piRestarted < MAX_PI_RESTARTS) {
+                  needsRestart = true;
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warn",
+                    agentRole: "architect",
+                    message: `[Fix_PI_RESTART] Auditor de Integridad: trayectoria ${isRegressive ? "regresiva" : "plana"} (${piScores.join("→")}/10) con ${altas} problema(s) alto(s) sin resolver. El Arquitecto no puede corregir esta escaleta incrementalmente. Reiniciando desde cero (intento ${piRestarted + 1}/${MAX_PI_RESTARTS}).`,
+                    metadata: { scores: piScores, altas, restart: piRestarted + 1 },
+                  });
+                } else {
+                  // Ascendente o sin altas: continúa con la mejor vista (advisory)
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "warn",
+                    agentRole: "architect",
+                    message: `[Fix101] Auditor de Integridad Narrativa agotó ${MAX_PI_ITERATIONS} iteraciones sin alcanzar el umbral ${PI_THRESHOLD}/10. Mejor score logrado: ${bestPlotIntegrity?.score}/10. ${altas === 0 ? "Sin problemas altos — se continúa." : `Trayectoria ascendente (${piScores.join("→")}/10) — se continúa con la mejor escaleta vista.`}`,
+                    metadata: { bestScore: bestPlotIntegrity?.score, threshold: PI_THRESHOLD, scores: piScores, altas },
+                  });
+                }
+                break;
+              }
+
+              // ── [Fix_PI_SURGEON] CIRUJANO QUIRÚRGICO — primer mecanismo de retry ──
+              // Antes de regenerar la escaleta entera, repara SOLO los capítulos
+              // citados en los problemas (mismo patrón Fix267/Fix271). Más barato,
+              // menos regresiones. Si falla, cae al Arquitecto completo (fallback).
+              let surgeonFixed = false;
+              try {
+                const escaletaPI = (worldBibleData.escaleta_capitulos || []) as any[];
+                const byNumPI = new Map<number, any>();
+                for (const c of escaletaPI) {
+                  const n = c?.numero ?? c?.number;
+                  if (typeof n === "number") byNumPI.set(n, c);
+                }
+                const targetsPI = Array.from(new Set(
+                  audit.problemas
+                    .filter(p => p.severidad === "alta" || p.severidad === "media")
+                    .flatMap(p => p.capitulos || [])
+                    .filter(n => byNumPI.has(n))
+                )).sort((a, b) => a - b).slice(0, 10);
+
+                if (targetsPI.length > 0) {
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "info",
+                    agentRole: "architect",
+                    message: `[Fix_PI_SURGEON] Integridad ${audit.puntuacion_global}/10: en vez de regenerar la escaleta entera, el Cirujano repara SOLO los caps ${targetsPI.join(", ")} (${altas} alta(s), ${medias} media(s)). Se re-auditará.`,
+                    metadata: { targets: targetsPI, altas, medias, iter: piIter + 1 },
+                  });
+
+                  const surgOutcomePI = await this.escaletaSurgeon.repair({
+                    title: project.title,
+                    genre: project.genre,
+                    tone: project.tone,
+                    premise: effectivePremise,
+                    projectId: project.id,
+                    escaletaCompleta: escaletaPI,
+                    capitulosObjetivo: targetsPI.map(n => byNumPI.get(n)),
+                    problemas: audit.problemas
+                      .filter(p => p.severidad === "alta" || p.severidad === "media")
+                      .slice(0, 10)
+                      .map(p => ({
+                        area: p.area || "foreshadowing",
+                        tipo: p.tipo || "siembra",
+                        severidad: p.severidad,
+                        capitulos: (p.capitulos || []).filter(n => targetsPI.includes(n)),
+                        descripcion: p.descripcion,
+                        sugerencia: p.sugerencia || "",
+                      })),
+                  });
+
+                  if (surgOutcomePI.raw?.tokenUsage) {
+                    await this.trackTokenUsage(project.id, surgOutcomePI.raw.tokenUsage, "El Cirujano de Escaletas (Integridad Narrativa)", "deepseek-v4-flash", undefined, "outline_review");
+                  }
+
+                  const surgResultPI = surgOutcomePI.result;
+                  if (surgResultPI && (surgResultPI.capitulos_reparados?.length ?? 0) > 0) {
+                    const candidatePI: ParsedWorldBible = JSON.parse(JSON.stringify(worldBibleData));
+                    const candEscaletaPI = ((candidatePI as any).escaleta_capitulos || []) as any[];
+                    let splicedPI = 0;
+                    for (const rep of (surgResultPI.capitulos_reparados || [])) {
+                      const n = rep?.numero ?? rep?.number;
+                      const idx = candEscaletaPI.findIndex((c: any) => (c?.numero ?? c?.number) === n);
+                      if (idx >= 0) { candEscaletaPI[idx] = rep; splicedPI++; }
+                    }
+                    if (splicedPI > 0) {
+                      worldBibleData = candidatePI;
+                      surgeonFixed = true;
+                      await storage.createActivityLog({
+                        projectId: project.id,
+                        level: "success",
+                        agentRole: "architect",
+                        message: `[Fix_PI_SURGEON] Cirugía de integridad aplicada: ${splicedPI} capítulo(s) empalmados sobre la escaleta vigente (el resto queda intacto). ${surgResultPI.resumen ? `Cambios: ${surgResultPI.resumen.slice(0, 350)}` : ""} Re-auditando con el Auditor de Integridad...`,
+                        metadata: { spliced: splicedPI, iter: piIter + 1 },
+                      });
+                    }
+                  }
+                }
+              } catch (surgPIErr) {
+                console.warn(`[Fix_PI_SURGEON] Cirugía de integridad fallida: ${(surgPIErr as Error).message}. Fallback a regeneración completa.`);
+              }
+
+              // Si el Cirujano resolvió algo, actualizar histórico y re-auditar.
+              prevScorePI = audit.puntuacion_global;
+              prevProblemsSummaryPI = problemsSummaryPI;
+              if (surgeonFixed) continue;
+
+              // ── Fallback: regeneración completa del Arquitecto (comportamiento anterior) ──
+              console.log(`[Orchestrator] Auditor de Integridad pidió revisión. Re-ejecutando Arquitecto con plotIntegrityFeedback (+ histórico Fix101)...`);
+              this.callbacks.onAgentStatus("architect", "thinking", `Integridad narrativa baja (${audit.puntuacion_global}/10). El Arquitecto está corrigiendo presagios, antagonista y pacing...`);
+
+              const historyBlockPI = `═══════════════════════════════════════════════════════════════════
 CONTEXTO DE TU INTENTO ANTERIOR (Fix101) — ANTI-REGRESIÓN
 ═══════════════════════════════════════════════════════════════════
 Tu pasada anterior fue evaluada por el Auditor de Integridad Narrativa y obtuvo ${prevScorePI}/10. Estos fueron los problemas detectados entonces (NO los reintroduzcas y NO rompas las decisiones que ya funcionaban):
@@ -2997,25 +3107,114 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
 ═══════════════════════════════════════════════════════════════════
 
 `;
-            const feedbackWithHistoryPI = historyBlockPI + audit.instrucciones_revision;
+              const feedbackWithHistoryPI = historyBlockPI + audit.instrucciones_revision;
 
+              try {
+                const retryResult = await this.architect.execute({
+                  title: project.title,
+                  premise: effectivePremise,
+                  genre: project.genre,
+                  tone: project.tone,
+                  chapterCount: project.chapterCount,
+                  minChapterCount: (project as any).minChapterCount ?? null,
+                  maxChapterCount: (project as any).maxChapterCount ?? null,
+                  hasPrologue: project.hasPrologue,
+                  hasEpilogue: project.hasEpilogue,
+                  hasAuthorNote: project.hasAuthorNote,
+                  architectInstructions: project.architectInstructions || undefined,
+                  plotIntegrityFeedback: feedbackWithHistoryPI,
+                  seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
+                  seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
+                  kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
+                  forbiddenNames,
+                  projectId: project.id,
+                  previousVolumesFullText,
+                  pseudonymCatalog,
+                  extendedGuideContent: extendedGuideContent || undefined,
+                });
+
+                if (retryResult.tokenUsage) {
+                  await this.trackTokenUsage(project.id, retryResult.tokenUsage, "El Arquitecto (revisión integridad narrativa)", "deepseek-v4-flash", undefined, "world_bible");
+                }
+
+                if (!retryResult.error && !retryResult.timedOut && retryResult.content?.trim()) {
+                  const reviewedData = this.parseArchitectOutput(retryResult.content);
+                  const reviewedLen = reviewedData?.escaleta_capitulos?.length || 0;
+                  const acceptCount = this.isAcceptableEscaletaCount(project, reviewedLen);
+                  const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
+                  if (reviewedData && reviewedData.world_bible?.personajes?.length && acceptCount) {
+                    console.log(`[Orchestrator] Arquitecto revisó tras Auditor: ${reviewedLen}/${expectedChapters} capítulos. Sustituyendo y re-auditando.`);
+                    worldBibleData = reviewedData;
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "info",
+                      agentRole: "architect",
+                      message: `✅ El Arquitecto rediseñó el outline aplicando las correcciones del Auditor de Integridad Narrativa.`,
+                    });
+                    continue;
+                  } else {
+                    // [Fix235] Empalme si llegó truncado.
+                    const repaired = this.repairTruncatedEscaleta(project, reviewedData, worldBibleData);
+                    if (repaired) {
+                      worldBibleData = repaired.data;
+                      await storage.createActivityLog({
+                        projectId: project.id,
+                        level: "info",
+                        agentRole: "architect",
+                        message: `[Fix235] Reintento del Arquitecto (Integridad Narrativa) llegó truncado (${reviewedLen} caps) y se reparó por EMPALME: ${repaired.keptFromRetry} caps revisados + ${repaired.filledFromPrevious} de la escaleta previa. Se re-audita en vez de perder la revisión.`,
+                        metadata: { fix: "Fix235", auditor: "integridad", keptFromRetry: repaired.keptFromRetry, filledFromPrevious: repaired.filledFromPrevious },
+                      });
+                      continue;
+                    }
+                    const rangeLabel = this.formatAcceptableEscaletaRange(project);
+                    console.warn(`[Orchestrator] Revisión por Auditor de Integridad RECHAZADA: ${reviewedLen} caps fuera del rango aceptable ${rangeLabel} (o sin personajes). Manteniendo mejor visto.`);
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "warning",
+                      agentRole: "architect",
+                      message: `[Fix104] Reintento del Arquitecto (Integridad Narrativa) RECHAZADO: produjo ${reviewedLen} caps fuera del rango aceptable ${rangeLabel}. Se conserva la mejor escaleta vista y se continúa el pipeline.`,
+                      metadata: { fix: "Fix104", reviewedLen, rangeLabel, auditor: "integridad" },
+                    });
+                    break;
+                  }
+                } else {
+                  console.warn(`[Orchestrator] Revisión por Auditor falló: ${retryResult.error || "vacío/timeout"}. Manteniendo mejor visto.`);
+                  break;
+                }
+              } catch (retryErr) {
+                console.error(`[Orchestrator] Excepción en revisión por Auditor: ${(retryErr as Error).message}. Manteniendo mejor visto.`);
+                break;
+              }
+            } // fin for piIter
+
+            if (!needsRestart || this.aborted) break; // salir del while exterior
+
+            // ── [Fix_PI_RESTART] REINICIO DESDE CERO ──────────────────────────
+            // Trayectoria plana/regresiva con altas pendientes: el Arquitecto no
+            // puede corregir esta escaleta incrementalmente. Mantenemos el World
+            // Bible (Fase 1, ya auditado) y generamos una escaleta nueva desde
+            // cero SIN plotIntegrityFeedback (pizarra limpia).
+            piRestarted++;
+            this.callbacks.onAgentStatus("architect", "thinking", `Integridad narrativa no convergible (reinicio ${piRestarted}/${MAX_PI_RESTARTS}). El Arquitecto genera una nueva escaleta desde cero...`);
             try {
-              const retryResult = await this.architect.execute({
+              // Reutilizamos el World Bible actual como base de Fase 1 (Fix106).
+              const currentPhase1Json = { world_bible: worldBibleData.world_bible };
+              const freshResult = await this.architect.execute({
                 title: project.title,
                 premise: effectivePremise,
                 genre: project.genre,
                 tone: project.tone,
                 chapterCount: project.chapterCount,
-                // [Fix90 post-review] Mantener rango en retry de integridad.
                 minChapterCount: (project as any).minChapterCount ?? null,
                 maxChapterCount: (project as any).maxChapterCount ?? null,
                 hasPrologue: project.hasPrologue,
                 hasEpilogue: project.hasEpilogue,
                 hasAuthorNote: project.hasAuthorNote,
                 architectInstructions: project.architectInstructions || undefined,
-                plotIntegrityFeedback: feedbackWithHistoryPI,
+                // Sin plotIntegrityFeedback — escaleta limpia desde el WB actual.
+                reusePhase1Json: JSON.stringify(currentPhase1Json),
                 seriesUnifiedWorldBible: seriesUnifiedWorldBibleStr || undefined,
-            seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
+                seriesMilestonesAndThreads: seriesMilestonesBlockStr || undefined,
                 kindleUnlimitedOptimized: (project as any).kindleUnlimitedOptimized || false,
                 forbiddenNames,
                 projectId: project.id,
@@ -3024,72 +3223,55 @@ REGLA CRÍTICA: conserva todas las decisiones narrativas anteriores que NO estuv
                 extendedGuideContent: extendedGuideContent || undefined,
               });
 
-              if (retryResult.tokenUsage) {
-                await this.trackTokenUsage(project.id, retryResult.tokenUsage, "El Arquitecto (revisión integridad narrativa)", "deepseek-v4-flash", undefined, "world_bible");
+              if (freshResult.tokenUsage) {
+                await this.trackTokenUsage(project.id, freshResult.tokenUsage, `El Arquitecto (reinicio integridad ${piRestarted})`, "deepseek-v4-flash", undefined, "world_bible");
               }
 
-              if (!retryResult.error && !retryResult.timedOut && retryResult.content?.trim()) {
-                const reviewedData = this.parseArchitectOutput(retryResult.content);
-                // [Fix90 post-review] Validación range-aware.
-                const reviewedLen = reviewedData?.escaleta_capitulos?.length || 0;
-                const acceptCount = this.isAcceptableEscaletaCount(project, reviewedLen);
-                const expectedChapters = project.chapterCount + (project.hasPrologue ? 1 : 0) + (project.hasEpilogue ? 1 : 0) + (project.hasAuthorNote ? 1 : 0);
-                if (reviewedData && reviewedData.world_bible?.personajes?.length && acceptCount) {
-                  console.log(`[Orchestrator] Arquitecto revisó tras Auditor: ${reviewedLen}/${expectedChapters} capítulos. Sustituyendo y re-auditando.`);
-                  worldBibleData = reviewedData;
+              if (!freshResult.error && !freshResult.timedOut && freshResult.content?.trim()) {
+                const freshData = this.parseArchitectOutput(freshResult.content);
+                const freshLen = freshData?.escaleta_capitulos?.length || 0;
+                if (freshData && freshData.world_bible?.personajes?.length && this.isAcceptableEscaletaCount(project, freshLen)) {
+                  worldBibleData = freshData;
                   await storage.createActivityLog({
                     projectId: project.id,
                     level: "info",
                     agentRole: "architect",
-                    message: `✅ El Arquitecto rediseñó el outline aplicando las correcciones del Auditor de Integridad Narrativa.`,
+                    message: `[Fix_PI_RESTART] Nueva escaleta generada desde cero (reinicio ${piRestarted}/${MAX_PI_RESTARTS}): ${freshLen} capítulos. Se re-audita con el Auditor de Integridad Narrativa.`,
+                    metadata: { restart: piRestarted, freshLen },
                   });
-                  continue;
-                } else {
-                  // [Fix235] Antes de rechazar: si el retry vino TRUNCADO,
-                  // empalmar cabeza revisada + cola de la escaleta previa y
-                  // dejar que el auditor re-audite el resultado.
-                  const repaired = this.repairTruncatedEscaleta(project, reviewedData, worldBibleData);
-                  if (repaired) {
-                    worldBibleData = repaired.data;
-                    await storage.createActivityLog({
-                      projectId: project.id,
-                      level: "info",
-                      agentRole: "architect",
-                      message: `[Fix235] Reintento del Arquitecto (Integridad Narrativa) llegó truncado (${reviewedLen} caps) y se reparó por EMPALME: ${repaired.keptFromRetry} caps revisados + ${repaired.filledFromPrevious} de la escaleta previa. Se re-audita en vez de perder la revisión.`,
-                      metadata: { fix: "Fix235", auditor: "integridad", keptFromRetry: repaired.keptFromRetry, filledFromPrevious: repaired.filledFromPrevious },
-                    });
-                    continue;
-                  }
-                  const rangeLabel = this.formatAcceptableEscaletaRange(project);
-                  console.warn(`[Orchestrator] Revisión por Auditor de Integridad RECHAZADA: ${reviewedLen} caps fuera del rango aceptable ${rangeLabel} (o sin personajes). Manteniendo mejor visto.`);
-                  // [Fix104] Visibilidad al usuario.
-                  await storage.createActivityLog({
-                    projectId: project.id,
-                    level: "warning",
-                    agentRole: "architect",
-                    message: `[Fix104] Reintento del Arquitecto (Integridad Narrativa) RECHAZADO: produjo ${reviewedLen} caps fuera del rango aceptable ${rangeLabel}. Se conserva la mejor escaleta vista y se continúa el pipeline.`,
-                    metadata: { fix: "Fix104", reviewedLen, rangeLabel, auditor: "integridad" },
-                  });
-                  break;
+                  continue; // re-entrar en el while con escaleta nueva
                 }
-              } else {
-                console.warn(`[Orchestrator] Revisión por Auditor falló: ${retryResult.error || "vacío/timeout"}. Manteniendo mejor visto.`);
-                break;
               }
-            } catch (retryErr) {
-              console.error(`[Orchestrator] Excepción en revisión por Auditor: ${(retryErr as Error).message}. Manteniendo mejor visto.`);
+              console.warn(`[Fix_PI_RESTART] Generación limpia fallida en reinicio ${piRestarted}. Continuando con mejor vista.`);
               break;
+            } catch (restartErr) {
+              console.error(`[Fix_PI_RESTART] Excepción en reinicio ${piRestarted}: ${(restartErr as Error).message}. Continuando con mejor vista.`);
+              break;
+            }
+          } // fin while piRestarted
+
+          // [Fix_PI_GATE] GATE DURO: si el mejor score sigue bajo el umbral con
+          // problemas altos activos, detener la generación. Un libro sobre esta
+          // base no convergirá en post-finalización (nacido muerto).
+          if (!this.aborted && bestPlotIntegrity && bestPlotIntegrity.score < PI_THRESHOLD) {
+            const hasHighInBest = bestPlotIntegrity.problemsSummary.includes("[alta]");
+            if (hasHighInBest) {
+              const altaLines = bestPlotIntegrity.problemsSummary.split("\n").filter(l => l.includes("[alta]")).slice(0, 3).join("; ");
+              await storage.updateProject(project.id, { status: "failed" });
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "error",
+                agentRole: "architect",
+                message: `[Fix_PI_GATE] GATE DE INTEGRIDAD NARRATIVA: la escaleta no alcanzó ${PI_THRESHOLD}/10 tras ${MAX_PI_ITERATIONS} iters × ${piRestarted} reinicio(s). Mejor score: ${bestPlotIntegrity.score}/10 con problemas altos sin resolver (${altaLines}). Se detiene la generación — escribir un libro sobre esta base garantiza una novela que no convergirá en post-finalización. Relanza el proyecto para intentar con una escaleta nueva.`,
+                metadata: { bestScore: bestPlotIntegrity.score, threshold: PI_THRESHOLD, restarts: piRestarted, altas: altaLines },
+              });
+              return;
             }
           }
 
-          // Best-effort: si el último audit puntuó peor que el mejor visto y
-          // la referencia cambió (hubo un retry posterior), recupera la mejor.
-          // Como en el último iter se hace break ANTES de reemplazar (el
-          // chequeo `lastIter` está en el `break` de needsRetry), el
-          // `lastSeenScore` corresponde siempre al `worldBibleData` actual.
+          // Best-effort: recuperar la mejor escaleta vista si la actual es peor.
           if (bestPlotIntegrity && bestPlotIntegrity.data !== worldBibleData && bestPlotIntegrity.score > lastSeenScore) {
             console.log(`[Orchestrator] Recuperando mejor escaleta vista por Auditor (${bestPlotIntegrity.score} > ${lastSeenScore}).`);
-            // [Fix101] Restauración visible para el usuario.
             await storage.createActivityLog({
               projectId: project.id,
               level: "info",
