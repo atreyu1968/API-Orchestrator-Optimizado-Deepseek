@@ -29,6 +29,11 @@ description: 5 fixes para que la escaleta salga estructuralmente sana y el bucle
 **Why:** El Arquitecto no tenía restricción explícita por género; para un thriller generaba caps del Acto 2 de pura introspección porque las reglas generales (variedad de forma, esqueleto variado) no prohibían la introspección como forma dominante. El Holístico luego los marcaba como "el Acto 2 se aplana".
 **How:** architect.ts Phase 2 prompt, check #26 tras Fix239.
 
+## FixXRef — Inyección de material de caps referenciados en rewriteChapterForQA
+**Regla:** Cuando `correctionInstructions` menciona un número de capítulo distinto al actual CON verbo de transferencia (mover, integrar, incorporar, trasladar, absorber, extraer...), el orchestrator: (1) carga el texto completo de esos caps de BD, (2) lo inyecta como bloque "MATERIAL DE REFERENCIA" al final de `correctionInstructions`, y (3) activa flag `hasCrossChapRef` que suspende Reglas 3 y 5 del prompt quirúrgico (las que prohíben nuevo material y exigen ±10% de longitud). El bloque fluye tanto al Cirujano PASO 1 como al Ghostwriter PASO 2.
+**Why:** El Cirujano declaraba "sin ese material es imposible" porque no tenía el texto del cap origen. El Ghostwriter SÍ recibía todos los caps vía followingChaptersFullText pero sus Reglas 3/5 le prohibían incorporar material nuevo, así que o no aplicaba el cambio o lo aplicaba y quedaba fuera del rango de longitud → revert.
+**How:** orchestrator.ts, bloque `[FixXRef]` justo antes del `updateChapter` a "revision" en `rewriteChapterForQA`. Max 3 caps referenciados, max 7000 chars por cap (cabeza+cola si es largo). Solo activa si hay verbo de transferencia real (no solo referencia contextual).
+
 ## Fix E — Lote del brazo de ritmo hacia atrás (Act2PacingPolishArm)
 **Regla:** Cuando `runAct2PacingPolishArm` identifica caps problemáticos, añade hasta 2 caps inmediatamente anteriores del tramo como caps de "contexto". Se procesan primero con directiva específica: "prepara el terreno para la escalada del cap siguiente (solo afina el cierre, no alteres hechos)". Lista separada `pacingContextNums` para no contaminar el tipo `Act2Problem[]`.
 **Why:** La inercia del Acto 2 arranca 1-2 caps antes del cap que el lector percibe como lento. Reescribir solo el cap detectado produce una directiva de ritmo que choca con el cap anterior que lo estableció.

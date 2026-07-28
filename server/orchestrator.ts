@@ -22125,6 +22125,86 @@ RESPONDE ÚNICAMENTE CON JSON:
       }
     }
 
+    // ════════════════════════════════════════════════════════════════
+    // [FixXRef] INYECCIÓN DE MATERIAL DE CAPÍTULOS REFERENCIADOS
+    // Si la instrucción menciona explícitamente otro capítulo (p.ej. "integrar
+    // el contenido del capítulo 19", "mover la revelación del cap 27"), tanto el
+    // Cirujano (PASO 1) como el Ghostwriter (PASO 2) ven el texto completo de
+    // ese capítulo como bloque de referencia. Sin esto el Cirujano declara
+    // "sin ese material es imposible" y el Ghostwriter no sabe que debe buscarlo
+    // en followingChaptersFullText. El flag hasCrossChapRef también relaja las
+    // Reglas 3 y 5 del prompt quirúrgico (las que prohíben nuevo material y
+    // exigen mantener la longitud): una transferencia cross-cap legítimamente
+    // introduce contenido nuevo y puede hacer crecer el capítulo destino.
+    // ════════════════════════════════════════════════════════════════
+    let hasCrossChapRef = false;
+    {
+      // Detectar números de capítulo citados en la instrucción distintos del actual.
+      const crossRefNums: number[] = [];
+      const crossRefRe = /\bcap[íi]tulos?\s*\.?\s*([0-9]+)/gi;
+      let crossRefM: RegExpExecArray | null;
+      while ((crossRefM = crossRefRe.exec(correctionInstructions)) !== null) {
+        const n = parseInt(crossRefM[1], 10);
+        if (n !== sectionData.numero && n > 0 && !crossRefNums.includes(n)) crossRefNums.push(n);
+      }
+      // También "cap 27", "cap. 27" sin la palabra "capítulo" completa
+      const shortCapRe = /\bcap\.?\s*([0-9]+)\b/gi;
+      while ((crossRefM = shortCapRe.exec(correctionInstructions)) !== null) {
+        const n = parseInt(crossRefM[1], 10);
+        if (n !== sectionData.numero && n > 0 && !crossRefNums.includes(n)) crossRefNums.push(n);
+      }
+
+      // Verificar que la instrucción implica transferencia (no solo referencia contextual)
+      const transferVerbs = /\b(?:mov[ea]r|traslad[ao]r?|integr[ao]r?|incorpor[ao]r?|a[ñn]adir|absorb[ae]r?|incluir|tomar.*de|extraer.*de|copiar.*de|llevar.*al|colocar.*en)\b/i;
+      const isTransfer = transferVerbs.test(correctionInstructions);
+
+      if (crossRefNums.length > 0 && isTransfer) {
+        hasCrossChapRef = true;
+        const allChaptersForXRef = await storage.getChaptersByProject(project.id);
+        const MAX_XREF_CHARS = 7000; // ~1800 palabras por cap referenciado
+        const materialBlocks: string[] = [];
+
+        for (const refNum of crossRefNums.slice(0, 3)) {
+          const refChap = allChaptersForXRef.find(c => c.chapterNumber === refNum);
+          if (!refChap || !refChap.content) continue;
+          const chapLabel = refNum === 0 ? "PRÓLOGO" : refNum === -1 ? "EPÍLOGO" : `CAPÍTULO ${refNum}`;
+          const chapText = refChap.content.trim();
+          // Incluir el capítulo completo si es breve, o cabeza+cola si es largo
+          const excerpt = chapText.length > MAX_XREF_CHARS
+            ? chapText.slice(0, Math.floor(MAX_XREF_CHARS * 0.6)) +
+              `\n\n[... ${Math.round((chapText.length - MAX_XREF_CHARS) / 5)} palabras omitidas por brevedad ...]\n\n` +
+              chapText.slice(chapText.length - Math.floor(MAX_XREF_CHARS * 0.4))
+            : chapText;
+          materialBlocks.push(
+            `═══════════════════════════════════════════════════════════════════\n` +
+            `MATERIAL DE REFERENCIA — ${chapLabel} (fuente del contenido a integrar en este capítulo)\n` +
+            `═══════════════════════════════════════════════════════════════════\n` +
+            excerpt + `\n` +
+            `═══════════════════════════════════════════════════════════════════`
+          );
+        }
+
+        if (materialBlocks.length > 0) {
+          correctionInstructions =
+            correctionInstructions.trim() + `\n\n` +
+            `⚠️ EXCEPCIÓN OBLIGATORIA [FixXRef — transferencia cross-capítulo]: ` +
+            `La instrucción anterior exige INCORPORAR material de otro capítulo en éste. ` +
+            `Las reglas 3 ("no introduzcas información nueva") y 5 ("mantén la longitud ±10%") ` +
+            `QUEDAN SUSPENDIDAS para el material a transferir: ese contenido es la esencia ` +
+            `de la instrucción, no una adición espontánea. El texto del capítulo origen ` +
+            `está disponible a continuación para que puedas tomarlo literalmente o adaptarlo ` +
+            `con la voz narrativa de este capítulo destino.\n\n` +
+            materialBlocks.join("\n\n");
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "info",
+            message: `[FixXRef] ${sectionLabel}: instrucción de transferencia cross-cap detectada (refs: ${crossRefNums.join(", ")}). Material de los caps referenciados inyectado en el prompt del Cirujano/Narrador para que puedan ejecutar la integración sin inventar.`,
+            agentRole: "editor",
+          });
+        }
+      }
+    }
+
     await storage.updateChapter(chapter.id, { 
       status: "revision",
       needsRevision: true,
@@ -22948,9 +23028,9 @@ Contexto: La novela ya está finalizada. Estás corrigiendo issues detectados en
 REGLAS INVIOLABLES:
 1. PRESERVA INTACTO el 90%+ del texto original. Solo modifica los pasajes que arrastran el problema señalado.
 2. NO reescribas escenas completas que ya funcionan. NO cambies prosa, diálogos, descripciones ni estructura que no estén directamente implicados en el issue.
-3. NO introduzcas información, eventos, personajes, objetos ni detalles nuevos que no estuvieran ya implícitos en el manuscrito original.
+3. ${hasCrossChapRef ? `EXCEPCIÓN ACTIVA [FixXRef]: la instrucción exige transferir contenido de OTRO capítulo a éste. Tienes permiso explícito para incorporar ese material — está detallado abajo en el bloque "MATERIAL DE REFERENCIA". El resto del texto original sigue bajo la regla de preservar el 90%.` : `NO introduzcas información, eventos, personajes, objetos ni detalles nuevos que no estuvieran ya implícitos en el manuscrito original.`}
 4. Mantén EXACTAMENTE el mismo arco narrativo, los mismos beats y el mismo final. Lo que cambia es la coherencia local, no la trama.
-5. Mantén la longitud aproximada del original (${originalWordCount} palabras ± 10%). NO acortes ni alargues sustancialmente.
+5. ${hasCrossChapRef ? `EXCEPCIÓN ACTIVA [FixXRef]: al incorporar material de otro capítulo el capítulo puede crecer. Adapta la longitud de forma natural — no recortes el original para hacer sitio; AÑADE el material transferido al final o en el punto cronológico correcto.` : `Mantén la longitud aproximada del original (${originalWordCount} palabras ± 10%). NO acortes ni alargues sustancialmente.`}
 6. Mantén el tono, la voz narrativa y el registro lingüístico originales — el lector NO debe notar la corrección.
 7. Si el issue señala una contradicción entre capítulos, ajusta SOLO la frase/párrafo conflictivo de este capítulo, no la escena entera.
 8. Antes de editar un pasaje, pregúntate: "¿Este cambio es estrictamente necesario para resolver el issue?". Si la respuesta es "no" o "tal vez", NO LO TOQUES.
