@@ -1,6 +1,7 @@
 import { storage } from "./storage";
 import { Orchestrator } from "./orchestrator";
 import type { Project } from "@shared/schema";
+import { isProjectCompletedStatus } from "@shared/schema";
 import { tryMarkPolishActive, clearPolishActive, isPolishActive, clearPolishStopRequest } from "./utils/polish-registry";
 
 // [Fix177] Auto-resume del pulido advisory (Holistico+Beta) tras un reinicio.
@@ -106,6 +107,24 @@ export async function autoResumePendingPolish(): Promise<void> {
     for (const project of pending) {
       if (isPolishActive(project.id)) {
         console.log(`[PolishAutoResume] Proyecto ${project.id} ya tiene un pulido activo, se omite.`);
+        continue;
+      }
+
+      // [FixStalePolishFlag] Si el proyecto ya está en estado terminal completado y
+      // NO está en applying_editorial, el bucle de pulido terminó correctamente pero
+      // el proceso fue matado entre el final del sub-loop de notas y la ejecución del
+      // finally que limpia el flag. El flag es un artefacto — limpiar sin relanzar.
+      // Sin este check el arranque relanzaría el bucle entero innecesariamente,
+      // consumiendo tokens y bloqueando apply-corrections hasta que termine.
+      if (isProjectCompletedStatus((project as any).status)) {
+        console.log(`[PolishAutoResume] Proyecto ${project.id} ya está completado (${(project as any).status}); limpiando flag huérfano sin relanzar.`);
+        await storage.updateProject(project.id, { autoPolishPending: false }).catch(() => {});
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `[FixStalePolishFlag] Flag autoPolishPending limpiado al arrancar: el proyecto ya está en estado "${(project as any).status}" — el bucle de pulido terminó correctamente pero el proceso fue interrumpido antes del cleanup. No se relanza.`,
+          agentRole: "orchestrator",
+        }).catch(() => {});
         continue;
       }
 
