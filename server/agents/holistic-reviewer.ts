@@ -430,6 +430,12 @@ Has terminado de leer la novela completa. Redacta ahora tu INFORME EDITORIAL HOL
     if (!response.content || !response.content.trim()) {
       throw new Error("HolisticReviewer devolvió un informe vacío.");
     }
+    if (response.truncated) {
+      // [Fix271] El informe llegó cortado por techo de salida: los bloques JSON
+      // (puntuación, veredictos admin) se parsean con la ruta tolerante
+      // (repairJson) y pueden faltar si el corte cayó antes de sus marcadores.
+      console.warn(`[HolisticReviewer] [Fix271] Informe marcado truncated=true; los bloques JSON se extraerán con parser tolerante y pueden estar incompletos.`);
+    }
 
     return {
       notesText: response.content.trim(),

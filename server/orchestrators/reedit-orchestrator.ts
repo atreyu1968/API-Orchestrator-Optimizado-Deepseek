@@ -29,6 +29,7 @@ import { groundInstructionInChapter } from "../utils/instruction-grounding";
 import { parseHolisticBetaForReedit, type ReeditPendingEditorialParse, type ReeditEditorialInstruction } from "../utils/reedit-editorial-parser";
 // [Fix33] Logger persistente por proyecto.
 import { logReeditEvent } from "../utils/reedit-logger";
+import { repairJson } from "../utils/json-repair";
 import { waitForOffPeakIfEnabled } from "../utils/peak-hours";
 import { buildSeriesContextForReviewers } from "../utils/series-context-builder";
 
@@ -45,6 +46,39 @@ function getChapterSortOrder(chapterNumber: number): number {
 
 function sortChaptersByNarrativeOrder<T extends { chapterNumber: number }>(chapters: T[]): T[] {
   return [...chapters].sort((a, b) => getChapterSortOrder(a.chapterNumber) - getChapterSortOrder(b.chapterNumber));
+}
+
+// [Fix271] Parser único para las respuestas JSON de los agentes locales del
+// reedit. Consulta `response.truncated` (la base marca las respuestas cortadas
+// por techo de salida tras agotar los boosts acotados): si está activo, va
+// DIRECTO a repairJson() —que ya devuelve OBJETO parseado, nunca envolver en
+// JSON.parse— en lugar de un JSON.parse a ciegas. Sin truncado, intenta el
+// parse directo y solo cae a repairJson() como reparación única. Nunca lanza
+// ni dispara reintentos adicionales del modelo.
+function parseAgentJsonResponse(label: string, response: { content: string; truncated?: boolean }): any | null {
+  if (response.truncated) {
+    console.warn(`[${label}] [Fix271] Respuesta marcada truncated=true (cortada por techo de salida); usando repairJson() en lugar de JSON.parse directo.`);
+    try {
+      return repairJson(response.content);
+    } catch (e) {
+      console.error(`[${label}] [Fix271] repairJson() no pudo reparar la respuesta truncada: ${(e as Error).message}`);
+      return null;
+    }
+  }
+  const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    try {
+      const repaired = repairJson(response.content);
+      console.warn(`[${label}] JSON.parse falló pero repairJson() recuperó la respuesta.`);
+      return repaired;
+    } catch {
+      console.error(`[${label}] Failed to parse response: ${(e as Error).message}`);
+      return null;
+    }
+  }
 }
 
 interface StructureAnalysis {
@@ -166,14 +200,8 @@ RESPONDE EN JSON.`;
     
     const response = await this.generateContent(prompt);
     let result: any = { score: 7, issues: [], strengths: [], suggestions: [] };
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      }
-    } catch (e) {
-      console.error("[ReeditEditor] Failed to parse response:", e);
-    }
+    const parsedEditor = parseAgentJsonResponse("ReeditEditor", response);
+    if (parsedEditor) result = parsedEditor;
     result.tokenUsage = response.tokenUsage;
     return result;
   }
@@ -345,14 +373,8 @@ RESPONDE EN JSON.`;
     
     const response = await this.generateContent(prompt);
     let result: any = { editedContent: content, changesLog: "No changes", fluencyChanges: [] };
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      }
-    } catch (e) {
-      console.error("[ReeditCopyEditor] Failed to parse response:", e);
-    }
+    const parsedCopy = parseAgentJsonResponse("ReeditCopyEditor", response);
+    if (parsedCopy) result = parsedCopy;
     result.tokenUsage = response.tokenUsage;
     return result;
   }
@@ -702,12 +724,8 @@ Detecta anacronismos tecnológicos, lingüísticos, sociales, materiales y conce
       resumen: "Análisis completado", 
       puntuacionHistorica: 8 
     };
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) result = JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      console.error("[AnachronismDetector] Failed to parse:", e);
-    }
+    const parsedAnachronism = parseAgentJsonResponse("AnachronismDetector", response);
+    if (parsedAnachronism) result = parsedAnachronism;
     result.tokenUsage = response.tokenUsage;
     return result;
   }
@@ -829,10 +847,8 @@ RESPONDE SOLO EN JSON:
           totalTokens.outputTokens += response.tokenUsage.outputTokens || 0;
           totalTokens.thinkingTokens += response.tokenUsage.thinkingTokens || 0;
         }
-        const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const result = JSON.parse(jsonMatch[0]);
-          
+        const result = parseAgentJsonResponse("WorldBibleExtractor", response);
+        if (result) {
           if (result.personajes) allPersonajes.push(...result.personajes);
           if (result.ubicaciones) allUbicaciones.push(...result.ubicaciones);
           if (result.timeline) allTimeline.push(...result.timeline);
@@ -999,12 +1015,8 @@ Evalúa estructura, coherencia de trama y coherencia del mundo. Identifica probl
       resumenEjecutivo: "Análisis completado sin hallazgos significativos",
       puntuacionArquitectura: 8
     };
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) result = JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      console.error("[ArchitectAnalyzer] Failed to parse:", e);
-    }
+    const parsedArchitect = parseAgentJsonResponse("ArchitectAnalyzer", response);
+    if (parsedArchitect) result = parsedArchitect;
     result.tokenUsage = response.tokenUsage;
     return result;
   }
@@ -1106,10 +1118,10 @@ Reescribe el capítulo COMPLETO integrando las correcciones de forma natural. Ma
       resumenCambios: "No se pudieron aplicar correcciones",
       confianzaCorreccion: 0
     };
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
+    {
+      const parsedFixer = parseAgentJsonResponse("StructuralFixer", response);
+      if (parsedFixer) {
+        result = parsedFixer;
         console.log(`[StructuralFixer] Chapter ${chapterNumber} fixed with ${result.correccionesRealizadas?.length || 0} corrections:`);
         if (result.correccionesRealizadas?.length > 0) {
           result.correccionesRealizadas.forEach((c: any, i: number) => {
@@ -1121,8 +1133,6 @@ Reescribe el capítulo COMPLETO integrando las correcciones de forma natural. Ma
           console.log(`  Resumen: ${result.resumenCambios.substring(0, 200)}${result.resumenCambios.length > 200 ? '...' : ''}`);
         }
       }
-    } catch (e) {
-      console.error("[StructuralFixer] Failed to parse:", e);
     }
     result.tokenUsage = response.tokenUsage;
     return result;
@@ -1373,11 +1383,10 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO.`;
       resumenEjecutivo: "No se pudieron aplicar correcciones"
     };
 
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-        
+    {
+      const parsedRewriter = parseAgentJsonResponse("NarrativeRewriter", response);
+      if (parsedRewriter) {
+        result = parsedRewriter;
         console.log(`[NarrativeRewriter] Chapter ${chapterNumber} rewritten successfully:`);
         console.log(`  Planificación: ${result.fasePlanificacion?.solucionPropuesta?.substring(0, 150) || 'N/A'}...`);
         console.log(`  Cambios realizados: ${result.cambiosRealizados?.length || 0}`);
@@ -1396,8 +1405,6 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO.`;
         
         console.log(`  Resumen: ${result.resumenEjecutivo?.substring(0, 200) || 'N/A'}`);
       }
-    } catch (e) {
-      console.error("[NarrativeRewriter] Failed to parse response:", e);
     }
 
     result.tokenUsage = response.tokenUsage;
@@ -1520,14 +1527,8 @@ Proporciona tu evaluación en formato JSON, con todos los textos en ESPAÑOL.`;
     
     const response = await this.generateContent(prompt);
     let result: any = { bestsellerScore: 7, strengths: [], weaknesses: [], recommendations: [], marketPotential: "moderate" };
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      }
-    } catch (e) {
-      console.error("[ReeditFinalReviewer] Failed to parse response:", e);
-    }
+    const parsedFinal = parseAgentJsonResponse("ReeditFinalReviewer", response);
+    if (parsedFinal) result = parsedFinal;
     result.tokenUsage = response.tokenUsage;
     return result;
   }

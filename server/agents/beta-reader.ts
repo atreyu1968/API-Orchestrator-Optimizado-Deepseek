@@ -461,6 +461,12 @@ Acabas de cerrar el libro. Redacta ahora tus IMPRESIONES DE LECTOR BETA siguiend
     if (!response.content || !response.content.trim()) {
       throw new Error("BetaReader devolvió un informe vacío.");
     }
+    if (response.truncated) {
+      // [Fix271] El informe llegó cortado por techo de salida: los bloques JSON
+      // (puntuación, instrucciones, veredictos admin) se parsean con la ruta
+      // tolerante (repairJson) y pueden faltar si el corte cayó antes de sus marcadores.
+      console.warn(`[BetaReader] [Fix271] Informe marcado truncated=true; los bloques JSON se extraerán con parser tolerante y pueden estar incompletos.`);
+    }
 
     // [Fix170] ELIMINADO el enforcement Fix75 de minimo 3 instrucciones (el
     // reintento forzado fabricaba pegas de relleno que alargaban el auto-loop

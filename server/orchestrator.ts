@@ -1971,6 +1971,13 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
           let phase1Json: any;
           try {
+            // [Fix271] Si la base marcó la respuesta como cortada por techo de
+            // salida, no intentamos JSON.parse a ciegas: vamos directo a la
+            // rama de reparación (repairJson ya devuelve OBJETO parseado).
+            if (phase1OnlyResult.truncated) {
+              console.warn(`[Orchestrator] [Fix271] Fase 1 iter ${wbaIter + 1} marcada truncated=true; saltando JSON.parse directo y usando repairJson().`);
+              throw new Error("respuesta marcada truncated=true (finish_reason=length)");
+            }
             phase1Json = JSON.parse(phase1OnlyResult.content);
           } catch (e) {
             // [Fix242] Antes un JSON con defectos menores (comas colgantes,
@@ -17131,11 +17138,23 @@ Responde SOLO con un JSON válido con la estructura:
       // Parse the new chapter outlines
       let newChapterOutlines: any[] = [];
       try {
-        const jsonMatch = architectResult.content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          newChapterOutlines = parsed.escaleta_capitulos || [];
+        let parsed: any = null;
+        if (architectResult.truncated) {
+          // [Fix271] Respuesta del Arquitecto cortada por techo de salida:
+          // repairJson() (devuelve OBJETO parseado) en lugar de JSON.parse a ciegas.
+          console.warn(`[Orchestrator:Extend] [Fix271] Escaleta de extensión marcada truncated=true; usando repairJson() en lugar de JSON.parse directo.`);
+          parsed = repairJson(architectResult.content);
+        } else {
+          const jsonMatch = architectResult.content.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              parsed = JSON.parse(jsonMatch[0]);
+            } catch {
+              parsed = repairJson(architectResult.content);
+            }
+          }
         }
+        if (parsed) newChapterOutlines = parsed.escaleta_capitulos || [];
       } catch (e) {
         console.error("[Orchestrator:Extend] Failed to parse architect response:", e);
         this.callbacks.onError("Error al parsear la escaleta de extensión");

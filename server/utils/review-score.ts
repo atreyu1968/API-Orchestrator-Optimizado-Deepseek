@@ -12,6 +12,20 @@
 // Devuelve el entero 1..10 clampado, o null si no se encontró el bloque o
 // el JSON no era válido. Nunca lanza.
 
+import { repairJson } from "./json-repair";
+
+// [Fix271] Parse tolerante de un bloque JSON entre marcadores: si JSON.parse
+// falla (bloque cortado por techo de salida o con defectos menores), cae a
+// repairJson() — que ya devuelve OBJETO parseado, nunca envolver en JSON.parse.
+// Lanza si tampoco es reparable (los callers ya envuelven en try/catch).
+function parseBlockJson(jsonText: string): any {
+  try {
+    return JSON.parse(jsonText);
+  } catch {
+    return repairJson(jsonText);
+  }
+}
+
 export function extractScoreFromMarkers(text: string, key: string): number | null {
   try {
     const startMarker = `<!-- ${key}_INICIO -->`;
@@ -24,7 +38,7 @@ export function extractScoreFromMarkers(text: string, key: string): number | nul
     const fenced = inner.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     const jsonText = (fenced ? fenced[1] : inner).trim();
     if (!jsonText) return null;
-    const parsed = JSON.parse(jsonText);
+    const parsed = parseBlockJson(jsonText);
     const raw = parsed?.puntuacion_global;
     const n = typeof raw === "number" ? raw : Number(raw);
     if (!Number.isFinite(n)) return null;
@@ -52,7 +66,7 @@ export function countAutoInstructions(text: string): number {
     const fenced = inner.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     const jsonText = (fenced ? fenced[1] : inner).trim();
     if (!jsonText) return -1;
-    const parsed = JSON.parse(jsonText);
+    const parsed = parseBlockJson(jsonText);
     const arr = parsed?.instrucciones;
     if (!Array.isArray(arr)) return -1;
     return arr.length;
@@ -110,6 +124,12 @@ export function extractAdminActionVerdicts(text: string): AdminActionVerdict[] {
   ];
   for (const c of candidates) {
     try { parsed = JSON.parse(c); break; } catch { /* try next */ }
+  }
+  // [Fix271] Último recurso: repairJson() (devuelve objeto parseado) para
+  // bloques cortados por techo de salida o con defectos que los saneados
+  // básicos no cubren.
+  if (!parsed) {
+    try { parsed = repairJson(jsonText); } catch { return []; }
   }
   if (!parsed) return [];
 
