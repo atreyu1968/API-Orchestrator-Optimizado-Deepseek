@@ -22103,38 +22103,70 @@ RESPONDE ÚNICAMENTE CON JSON:
         if (report.applied.length > 0) {
           const newWc = report.finalContent.split(/\s+/).filter(w => w.length > 0).length;
 
-          await storage.updateChapter(chapter.id, {
-            content: report.finalContent,
-            wordCount: newWc,
-            status: "completed",
-            needsRevision: false,
-            revisionReason: null,
-            preEditContent: originalContent,
-            preEditAt: new Date() as any,
-          });
+          // [Fix_SurgeryWordFloor] Guard de longitud post-cirugía: la cirugía
+          // determinista no tiene redes de longitud propias (el flujo normal del
+          // Ghostwriter sí las tiene). Si el resultado cae por debajo del mínimo
+          // del proyecto O la reducción supera el 35% del word count original, la
+          // cirugía sería destructiva en extensión — se rechaza sin guardar y se
+          // cae al flujo completo del Ghostwriter, que sí impone el suelo de
+          // palabras. Evita el patrón "Fix225 reemplaza un bloque largo por un
+          // párrafo corto y deja el capítulo a 400w".
+          const surgeryFloor = (project as any).minWordsPerChapter || 1800;
+          const surgeryMaxReductionRatio = 0.35; // 35 %
+          const surgeryTooShort = newWc < surgeryFloor;
+          const surgeryTooDrastic =
+            originalWordCount > 0 &&
+            (originalWordCount - newWc) / originalWordCount > surgeryMaxReductionRatio;
 
-          this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+          if (surgeryTooShort || surgeryTooDrastic) {
+            const reductionPct = originalWordCount > 0
+              ? Math.round((originalWordCount - newWc) / originalWordCount * 100)
+              : 0;
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              message: `${sectionLabel}: cirugía RECHAZADA — reduciría de ${originalWordCount}→${newWc} palabras (${
+                surgeryTooShort
+                  ? `por debajo del mínimo ${surgeryFloor}w`
+                  : `reducción del ${reductionPct}% supera el límite del 35%`
+              }). Se cae al Ghostwriter para reescritura completa con redes de longitud. [Fix_SurgeryWordFloor]`,
+              agentRole: "surgical-patcher",
+            });
+            // No guardamos ni retornamos: caemos al flujo de reescritura completa.
+          } else {
+            await storage.updateChapter(chapter.id, {
+              content: report.finalContent,
+              wordCount: newWc,
+              status: "completed",
+              needsRevision: false,
+              revisionReason: null,
+              preEditContent: originalContent,
+              preEditAt: new Date() as any,
+            });
 
-          const pctChange = ((Math.abs(report.finalLength - report.originalLength) / Math.max(report.originalLength, 1)) * 100).toFixed(1);
-          const failedNote = report.failed.length > 0
-            ? ` ${report.failed.length} operación(es) descartada(s) por no encontrar el texto literal.`
-            : "";
-          // [Fix212] Anclaje tolerante nivel 2 (coincidencia normalizada unica).
-          const fuzzyNote = (report.fuzzyApplied || 0) > 0
-            ? ` ${report.fuzzyApplied} ancladas por coincidencia normalizada (tildes/comillas/espacios, Fix212).`
-            : "";
+            this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
 
-          await storage.createActivityLog({
-            projectId: project.id,
-            level: "success",
-            message: `${sectionLabel}: cirugía aplicada — ${report.applied.length}/${operations.length} operaciones puntuales (${report.originalLength}→${report.finalLength} caracteres, ${pctChange}% de cambio).${failedNote}${fuzzyNote}`,
-            agentRole: "surgical-patcher",
-          });
+            const pctChange = ((Math.abs(report.finalLength - report.originalLength) / Math.max(report.originalLength, 1)) * 100).toFixed(1);
+            const failedNote = report.failed.length > 0
+              ? ` ${report.failed.length} operación(es) descartada(s) por no encontrar el texto literal.`
+              : "";
+            // [Fix212] Anclaje tolerante nivel 2 (coincidencia normalizada unica).
+            const fuzzyNote = (report.fuzzyApplied || 0) > 0
+              ? ` ${report.fuzzyApplied} ancladas por coincidencia normalizada (tildes/comillas/espacios, Fix212).`
+              : "";
 
-          this.callbacks.onAgentStatus("surgical-patcher", "completed",
-            `${sectionLabel}: cirugía aplicada (${report.applied.length} operaciones, ${pctChange}% de cambio).`
-          );
-          return;
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "success",
+              message: `${sectionLabel}: cirugía aplicada — ${report.applied.length}/${operations.length} operaciones puntuales (${report.originalLength}→${report.finalLength} caracteres, ${pctChange}% de cambio).${failedNote}${fuzzyNote}`,
+              agentRole: "surgical-patcher",
+            });
+
+            this.callbacks.onAgentStatus("surgical-patcher", "completed",
+              `${sectionLabel}: cirugía aplicada (${report.applied.length} operaciones, ${pctChange}% de cambio).`
+            );
+            return;
+          }
         }
 
         // [Fix69-B] Operaciones generadas pero ninguna encontró el texto literal.
