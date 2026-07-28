@@ -1,0 +1,70 @@
+
+Library
+Tasks
+Plan
+#6 - Plan
+Aunque los techos de salida ya se subieron (Fix268b), una entrada excepcionalmente grande aún podría agotar el presupuesto combinado razonamiento+contenido y dejar el JSON vacío en silencio. Añadir en server/agents/base-agent.ts una red de seguridad: si un agente con useThinking=true devuelve content vacío/truncado con finish_reason=length, reintentar una vez con maxOutputTokens duplicado y registrar el evento en logs para diagnóstico.
+
+Dependencies
+Git
+Git
+Version control for your App
+Remote Updates
+origin/main•upstream
+last fetched 3 min ago
+Commit
+There are no changes to commit.
+Preview
+Agent
+Quiero evitar la nota baja del beta y del auditor de integridad
+
+1 hour ago
+Improving quality gates
+Antes de proponer cambios, necesito entender qué exactamente generan esos dos agentes y dónde están sus prompts.
+
+Piensa como lograrlo pero no implementes hasta terminar la novela actual
+
+1 hour ago
+Primero entiendo el código relevante en paralelo, luego analizo.
+
+Bien — el subagente me dio la info del Auditor de Integridad. Leo el Beta de Escaletas y el Cirujano en paralelo para tener el cuadro completo antes de pensar.
+
+Tengo todo lo que necesito. Aquí está el diagnóstico y el plan.
+
+Por qué los dos gates fallan de forma recurrente
+Ambos problemas comparten el mismo patrón de fondo: el Arquitecto genera la escaleta sin compromisos explícitos de siembra/ritmo, y luego el Cirujano intenta reparar aguas abajo algo que debería haberse planificado aguas arriba.
+
+Auditor de Integridad — siembra huérfana
+Qué pasa exactamente:
+El Auditor pide "≥2 menciones específicas antes del clímax". El Arquitecto suele añadir una en el cap 9 (genérica, decorativa) y una en el cap 20 (justo antes del clímax). El Auditor no las cuenta como válidas porque:
+
+La del cap 9 no menciona explícitamente la capacidad concreta ("dibujo de Mar" vs. "habilidad acústica de Mar").
+La del cap 20 está demasiado cerca del clímax para sembrar.
+Por qué el Cirujano no lo resuelve:
+El Cirujano recibe como lote los capítulos citados en problema.capitulos — que suelen ser el capítulo donde aparece la capacidad (p. ej. cap 22) y los inmediatamente anteriores. No tiene capítulos del Acto 1. No puede añadir una siembra específica en cap 5 porque cap 5 no está en su lote.
+
+Fix274 (lote ampliado con "sembrable caps") existe en el camino del Beta pero no se aplica al camino del Auditor de Integridad — esa es la brecha.
+
+Plan:
+
+Inventario de revelaciones en la World Bible — Campo nuevo revelaciones_climax: para cada revelación nuclear, el Arquitecto declara el capítulo de pago y los 2 capítulos de siembra específica. El Auditor de World Bible valida que existan y que las siembras sean del Acto 1 y Acto 2, no del Acto 3.
+Lote del Cirujano PI ampliado con caps del Acto 1 — Cuando el Auditor de Integridad detecta revelacion_huerfana, añadir automáticamente al lote del Cirujano los 2-3 capítulos del Acto 1 más ligeros (los que tienen menos beats comprometidos), igual que Fix274 hace para el Beta. Así el Cirujano puede plantar la siembra donde tiene que plantarse.
+Criterio de siembra más estricto en el prompt del Auditor — Hoy dice "2 menciones/atmósferas". Añadir: "cada siembra válida debe (a) estar en un acto anterior al de la revelación, (b) referenciar explícitamente la capacidad/objeto concreto — no una versión genérica o decorativa — y (c) ser distinta entre sí."
+Lector Beta — "middle slump" del Acto 2
+Qué pasa exactamente:
+El Arquitecto genera capítulos de Acto 2 con beats de "catarsis emocional", "confesión", "introspección" porque el LLM los ve como desarrollo de personaje legítimo. Son correctos para una novela literaria; son un veneno para un thriller fast-paced. El Beta los detecta y da 6/10. El Cirujano convierte los beats a "acción + catarsis" pero usa lenguaje superficial — la etiqueta cambia, la estructura subyacente no. El Beta re-lee y sigue viendo lo mismo.
+
+Por qué el Cirujano no lo resuelve:
+El Cirujano recibe los capítulos del Acto 2 problemáticos (p. ej. 13-18) pero no los caps 10-12 que los preceden. Parcha el interior de la secuencia sin poder cambiar cómo entra en ella. Además, sin una regla concreta sobre qué "cuenta" como acción en el thriller, el Cirujano escribe "Keira investiga bajo tensión" — que el Beta sigue clasificando como pasivo.
+
+Plan:
+
+Restricciones de género en la generación de escaleta — Cuando el género es thriller/suspense/noir, inyectar en el prompt del Arquitecto un bloque de restricciones per-acto: "Cada capítulo del Acto 2 debe incluir al menos uno de: persecución activa, descubrimiento de evidencia bajo presión, confrontación directa con antagonista o sus aliados, acto de sabotaje/huida. Los capítulos dedicados ÚNICAMENTE a catarsis emocional, confesiones estáticas o retrospección están prohibidos en el Acto 2 de un thriller." Esto se aplica en el momento de generación, no en el parche posterior.
+Lote del Cirujano Beta ampliado hacia atrás — Cuando el Beta flags una secuencia de pacing (caps X a Y), incluir también los N-2 y N-1 caps anteriores al inicio de la secuencia problemática. El momentum debe reorientarse antes de entrar al tramo flojo, no sólo dentro de él.
+Orden de implementación sugerido
+Prioridad	Cambio	Por qué primero
+1	Inventario revelaciones_climax en World Bible + validación en Auditor WB	Previene el problema antes de generar la escaleta; el retorno es el más alto
+2	Lote ampliado al Cirujano PI con caps Acto 1	Arregla el caso cuando la siembra llega en Acto 2 con 1 sola mención anterior
+3	Restricciones de género en generación de escaleta (thriller)	Previene el middle slump antes del Beta
+4	Lote del Cirujano Beta ampliado hacia atrás	Mejora la reparación cuando la generación no aplicó las restricciones
+5	Criterio de siembra más estricto en prompt del Auditor	Refinamiento fino, menos urgente que los estructurales
