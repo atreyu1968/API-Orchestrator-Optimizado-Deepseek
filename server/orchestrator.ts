@@ -3026,6 +3026,40 @@ ${problemasTxt ? `PROBLEMAS RESIDUALES:\n${problemasTxt}\n` : ""}${fb ? `FEEDBAC
                     .filter(n => byNumPI.has(n))
                 )).sort((a, b) => a - b).slice(0, 10);
 
+                // [FixB-PI-Sembrable] Si algun problema del Auditor de Integridad es
+                // "revelacion_huerfana", el Cirujano necesita caps del Acto 1 donde
+                // plantar la siembra. Sin ellos, la unica salida es vaciar setup_capitulos
+                // (rebaja prohibida). Anadimos hasta 3 caps inmediatamente anteriores al
+                // primero citado, preferiendo los que pertenezcan al acto 1 de la escaleta.
+                const problemasPI = audit.problemas.filter(
+                  p => (p.severidad === "alta" || p.severidad === "media") &&
+                       (p.tipo === "revelacion_huerfana" || problemaExigeSiembra(p))
+                );
+                if (targetsPI.length > 0 && problemasPI.length > 0) {
+                  const escaletaPI2 = ((worldBibleData as any).escaleta_capitulos || []) as any[];
+                  const act1NumsPI = new Set(
+                    escaletaPI2
+                      .filter((c: any) => c?.acto === 1 || c?.acto === "1" || c?.acto === "Acto 1")
+                      .map((c: any) => c?.numero ?? c?.number)
+                      .filter((n: any) => typeof n === "number")
+                  );
+                  const earliest = targetsPI[0];
+                  const extraPI: number[] = [];
+                  // Primero intentar caps del Acto 1 no incluidos todavía
+                  for (const n of Array.from(act1NumsPI).sort((a, b) => (b as number) - (a as number)) as number[]) {
+                    if (extraPI.length >= 3) break;
+                    if (n < earliest && byNumPI.has(n) && !targetsPI.includes(n)) extraPI.push(n);
+                  }
+                  // Si no hay suficientes del Acto 1, tomar caps inmediatamente anteriores
+                  for (let n = earliest - 1; n >= 1 && extraPI.length < 3; n--) {
+                    if (byNumPI.has(n) && !targetsPI.includes(n) && !extraPI.includes(n)) extraPI.push(n);
+                  }
+                  if (extraPI.length > 0) {
+                    targetsPI.unshift(...extraPI.sort((a, b) => a - b));
+                    console.log(`[Orchestrator] [FixB-PI-Sembrable] Lote de Cirujano PI ampliado con cap(s) de siembra ${extraPI.join(", ")} (revelacion_huerfana detectada; primero citado: cap ${earliest}).`);
+                  }
+                }
+
                 if (targetsPI.length > 0) {
                   await storage.createActivityLog({
                     projectId: project.id,
@@ -14150,6 +14184,24 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       return rank(a.severidad) - rank(b.severidad);
     }).slice(0, MAX_PACING_REWRITES);
 
+    // [FixE-PacingBatchBack] Si el primer cap problematico del tramo tiene caps
+    // inmediatamente anteriores en el tramo analizado, los incluimos como caps
+    // de "contexto" (lista separada para no contaminar el tipo Act2Problem[]).
+    // Razon: la inercia del Acto 2 suele arrancar 1-2 caps ANTES del cap que el
+    // lector percibe como lento — reescribir solo el cap detectado sin preparar
+    // el terreno hace que la directiva de ritmo choque con el cap que le precede.
+    const pacingContextNums: number[] = [];
+    if (ordered.length > 0) {
+      const earliestProb = ordered[0].numero;
+      const tramoNums = new Set(tramo.map(c => c.chapterNumber));
+      for (let n = earliestProb - 1; n >= 1 && pacingContextNums.length < 2; n--) {
+        if (tramoNums.has(n) && !ordered.some(p => p.numero === n)) pacingContextNums.push(n);
+      }
+      if (pacingContextNums.length > 0) {
+        console.log(`[Orchestrator] [FixE-PacingBatchBack] Lote de ritmo ampliado con cap(s) de contexto ${pacingContextNums.join(", ")} (tramo central; primer cap problematico: ${earliestProb}).`);
+      }
+    }
+
     await storage.createActivityLog({
       projectId: project.id, level: "info", agentRole: "act2-pacing-editor",
       message: `[Fix201] Brazo de ritmo del pulido activado: el Beta se queja del tramo central (${result.puntuacion_acto2}/10 segun Act2PacingEditor). Reescritura dirigida de ${ordered.length} capitulo(s): ${ordered.map(p => p.numero).join(", ")}. El bestSnapshot del bucle revierte si el combinado empeora.`,
@@ -14159,6 +14211,30 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
     const betaExcerpt = betaNotes.trim().slice(0, 4000);
     // [Fix230] Solo cuentan los capitulos que CAMBIAN de verdad (ver Fix135-B).
     const attemptedBefore = new Map<number, string>();
+
+    // [FixE-PacingBatchBack] Procesar primero los caps de contexto anteriores al
+    // primer cap problemático. Directiva específica: preparar el terreno para la
+    // escalada del cap siguiente, no reescribir por un problema propio.
+    for (const ctxNum of pacingContextNums.sort((a, b) => a - b)) {
+      if (this.aborted) break;
+      const ctxChap = allChapters.find(c => c.chapterNumber === ctxNum);
+      const ctxSection = allSections.find(s => s.numero === ctxNum);
+      if (!ctxChap || !ctxSection || !ctxChap.content) continue;
+      const ctxDirectiva = [
+        `[FixE-PacingBatchBack] PREPARACIÓN DE TERRENO RÍTMICO. Este capítulo no tiene problemas propios de ritmo, pero el capítulo siguiente ha sido diagnosticado con inercia (meseta, escalada plana, falta de tensión). Tu misión: revisa tu CIERRE y asegúrate de que deja una presión abierta, una pregunta sin resolver o un coste real que OBLIGUE al lector a seguir. No alteres hechos ni trama; solo afina el remate final del capítulo para que sirva de rampa de lanzamiento.`,
+        `CONTEXTO DEL LECTOR BETA (queja original de ritmo):\n${betaExcerpt}`,
+        `LÍMITES: conserva hechos, canon, continuidad y World Bible. Solo ajusta el tono/ritmo del cierre.`,
+      ].join("\n\n");
+      try {
+        attemptedBefore.set(ctxNum, ctxChap.content);
+        await this.rewriteChapterForQA(
+          project, ctxChap, ctxSection, worldBibleData, guiaEstilo, "editorial", ctxDirectiva,
+        );
+      } catch (e) {
+        console.warn(`[FixE-PacingBatchBack] Reescritura de contexto del cap ${ctxNum} fallida (no bloqueante): ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
     for (const prob of ordered) {
       if (this.aborted) break;
       const chapter = allChapters.find(c => c.chapterNumber === prob.numero);

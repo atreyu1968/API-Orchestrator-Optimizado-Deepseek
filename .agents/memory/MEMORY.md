@@ -21,6 +21,7 @@
 - [Renumeración de capítulos tras borrar/fusionar](chapter-renumber-after-delete.md) — compactar a 1..N con helper compartido; NUNCA renumerar dentro del bucle que resuelve targets por número; toda mutación de numeración debe remapear las tarjetas admin pendientes.
 - [Puertas de densidad de material](material-density-gates.md) — un juez que dice "al límite" y da apto es fuga; contar lo estructurado en código y propagar déficits a la fase siguiente, no dejarlos en el log.
 - [Ideas futuras de calidad de serie](series-quality-ideas.md) — el usuario pidio recordar: repeticion semantica ENTRE volumenes y deriva de voz entre tomos (ofrecer cuando pida mas mejoras de series).
+- [Fixes A-E calidad de escaleta](fixes-escaleta-quality.md) — 5 fixes implementados: revelaciones_climax (WB), lote PI sembrable, criterio siembra 3 criterios, restricciones thriller Acto 2, lote ritmo hacia atrás.
 - [Canon de nombres de serie](series-canon-names.md) — hitos/hilos = canon literal en generacion; en texto ya escrito, un nombre divergente puede ser alias/retcon legitimo: auditar contexto antes de corregir.
 - [Capa correcta para guardias de craft](craft-guard-layering.md) — una regla de PROSA (ghostwriter) no recupera un beat que la ESCALETA nunca asigno; los fallos "told-not-shown" de eventos decisivos se guardan en el Arquitecto, no solo en el ghostwriter.
 - [Cambios de trama que arrastran caps posteriores](cascade-plot-changes.md) — reescribir un solo cap esta condenado; cascada coordinada con el origen como puerta, sin lanzarla desatendida.

@@ -411,7 +411,21 @@ Genera un JSON con estas claves:
     "sentidos_dominantes": [],
     "imagenes_recurrentes_permitidas": [],
     "imagenes_prohibidas_cliche": []
-  }
+  },
+  "revelaciones_climax": [
+    {
+      "hecho": "Descripción del giro o revelación nuclear (el hecho que cambia todo al final)",
+      "capitulo_reveal": 0,
+      "siembras_obligatorias": [
+        {
+          "capitulo": 0,
+          "token_concreto": "Objeto / nombre / acción / dato específico que aparece aquí y anticipa el hecho (NO atmósfera genérica)",
+          "forma": "objeto_fisico | dialogo | pensamiento_protagonista | detalle_escena | dato_factual"
+        }
+      ],
+      "restriccion": "El personaje_revelador o el hecho_revelado NO deben mencionarse jamás en los caps de siembra de forma que desvele el giro — solo sombra y token"
+    }
+  ]
 }
 
 "matriz_arcos": {
@@ -986,6 +1000,10 @@ C. RITMO ACTO 3: distribuye "eventos_pivotales" sin que el acto 3 acumule >50% d
 23. [Fix223] Recorre el acto 2 (caps del 25% al 75%) verificando el bloque "propulsion" de cada cap: (a) ningún tramo de 3+ caps consecutivos sin "cambio_irreversible" real (≥25 caracteres, no relleno); (b) ninguna "decision_final" pasiva ("seguir investigando", "esperar", "reflexionar", "hablar con X") en 2 caps seguidos; (c) en cada ventana de 4 caps, al menos uno modifica un vector primario (objetivo, relacion o poder); (d) aplica la PRUEBA DE ELIMINACIÓN a cada cap del tramo — si puede quitarse y los personajes llegan igual al siguiente, fusiónalo o dale una consecuencia irreversible. Si algo falla, rediseña ACONTECIMIENTOS (costes, decisiones, consecuencias), no el estilo.
 24. [Fix232] SECUENCIAS MACRO (anti "tres viajes idénticos"). Las reglas anteriores miran capítulo a capítulo; ahora mira el acto 2 por TRAMOS. Segmenta el acto 2 en secuencias (grupos de 3-5 caps unidos por un mismo objetivo inmediato o un mismo desplazamiento: un viaje, una infiltración, una huida). Comprueba: (a) DOS secuencias NO pueden compartir la misma función (dos viajes hacia el mismo destino, dos huidas del mismo perseguidor) NI el mismo ciclo interno (peligro → descanso → conversación reveladora → nuevo peligro repetido con distinto decorado): cambia la estructura interna de una o condénsalas en una sola; (b) ningún desplazamiento hacia un mismo destino puede ocupar más de 3 capítulos — un viaje largo se cuenta con ELIPSIS o montaje declarados en la cronología, conservando SOLO los hitos imprescindibles (la información o decisión que ningún otro cap aporta); (c) aplica la PRUEBA DE ELIMINACIÓN a nivel de SECUENCIA: si un tramo entero puede quitarse y los personajes llegan igual (misma información, mismas pérdidas, misma posición) al tramo siguiente, ese tramo sobra — condénsalo en 1-2 caps o dale consecuencias que los tramos vecinos no aportan. El lector detecta la repetición de secuencia ANTES que la de capítulo: tres tramos funcionalmente idénticos son el "segundo acto inflado" aunque cada cap individual pase todas las reglas.
 25. [Fix239] PAGO Y ESCENIFICACIÓN. (a) Recorre los objetos/documentos/heridas con peso dramático introducidos en la escaleta: cada uno debe tener capítulo de PAGO o de CIERRE explícito en página (usado, destruido, descartado con motivo o revelado como señuelo) — un pasaporte que nunca se usa o un sobre que nunca se resuelve es un hilo suelto PROHIBIDO. (b) Cada herida física relevante tiene trayectoria continua: caps donde limita la acción → cap de curación/estabilización o de consecuencia; prohibido que desaparezca capítulos y reaparezca sin explicación. (c) La motivación de cada antagonista/traidor relevante tiene al menos UNA escena en vivo (vulnerabilidad visible), no solo una carta/nota; y el antagonista principal proyecta sombra sobre el acto 2 con actos de consecuencia en página. Si algo falla, añade la escena o el capítulo de cierre ANTES de responder.
+26. [FixD-Genre] RESTRICCIONES POR GÉNERO EN EL ACTO 2. Aplica SOLO si el género incluye "thriller", "suspense", "policial", "espionaje", "noir" o cualquier combinación con esas palabras:
+   (a) ACCIÓN EXTERNA OBLIGATORIA: Recorre cada capítulo del acto 2 y verifica que su "beats" o "objetivo_narrativo" incluye AL MENOS UN beat de acción externa — cualquier cosa que involucre al protagonista en el mundo físico bajo presión: persecución activa o evasión, descubrimiento de evidencia física bajo riesgo, confrontación directa con el antagonista o sus agentes, operación de vigilancia/infiltración con coste real, sabotaje, detención/interrogatorio o acto de rescate. Un capítulo cuyo único contenido sea reflexión interna, recuerdo, conversación de exposición o análisis emocional SIN ningún beat de presión externa = PROHIBIDO en el acto 2 de un thriller. Si detectas ese cap, añade un beat externo concreto (el antagonista presiona, una amenaza irrumpe, llega información que fuerza una acción) o fusiona el cap con el adyacente.
+   (b) PROHIBICIÓN DE 'NINGUNA' CONSECUTIVA EN THRILLER: En ningún tramo de 2 caps consecutivos del acto 2 puede "informacion_nueva" ser "ninguna", vacía, "reflexión interna" o equivalente. En un thriller cada cap AVANZA la investigación / el peligro con una pieza concreta (pista, nombre, fecha, objeto, dato operativo). Si falla, añade la pieza que falta.
+   (c) SIEMBRAS CON TOKEN CONCRETO: Para cada entrada de "revelaciones_climax" del world_bible, verifica que cada "siembra_obligatoria" declarada aparece TEXTUALMENTE como un token (objeto, nombre, dato) en el "objetivo_narrativo", "informacion_nueva" o "beats" del capítulo correspondiente — no como atmósfera genérica. Un nombre que no aparece, un objeto no mencionado = siembra fantasma. Añade la mención o reemplaza por una siembra real. IMPORTANTE: las siembras deben estar en un acto ANTERIOR al del reveal (si el reveal es acto 3, las siembras van en actos 1-2; si es tarde en el acto 2, al menos una siembra debe estar en el acto 1).
 Si algo falla, REGENERA antes de responder. Esto es lo más importante.
 
 Responde ÚNICAMENTE con el JSON.
@@ -1511,6 +1529,10 @@ ${input.writtenChaptersFullText}
         } : undefined,
         // [Fix197] El canon factual viaja tambien a Fase 2 para que la escaleta no lo contradiga
         canon_historico: phase1Json.world_bible?.canon_historico,
+        // [FixA] Revelaciones nucleares del clímax: viajan a Fase 2 para que
+        // la escaleta verifique (check #26) que cada token de siembra aparece
+        // textualmente en los caps declarados y que están en un acto anterior.
+        revelaciones_climax: phase1Json.world_bible?.revelaciones_climax,
       },
       matriz_arcos: phase1Json.matriz_arcos,
       momentum_plan: phase1Json.momentum_plan,
