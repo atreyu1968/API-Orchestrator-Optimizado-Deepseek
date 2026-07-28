@@ -44,3 +44,4 @@
 - [Bucles de re-evaluacion sin freno](reevaluation-treadmill.md) — un juez que re-lee tras cada correccion SIEMPRE encuentra algo nuevo; todo boton/bucle "resolver issues" necesita freno de convergencia (nota alta + pasadas/no-mejora) que declare TERMINADO.
 - [Reparadores que rebajan ambición](repair-agent-ambition-downgrade.md) — un auditor de solo-consistencia deja "aprobar" degradando (bajar dificultad/vaciar setups); red anti-rebaja determinista + lote con caps sembrables.
 - [Endpoint sin boton = via muerta](endpoint-without-ui-button.md) — si un mensaje/aviso recomienda una accion ("relanza el pulido"), verificar que exista boton UI que la dispare; un endpoint sin UI deja al usuario sin salida.
+- [Cirugía sobre capítulo ya corto: dos bugs encadenados](short-chapter-surgery-trap.md) — zona gris [FLEXIBLE_MIN, TARGET_MIN) + Fix_SurgeryWordFloor cayendo a Fix69-B; doble fix: pre-check + flag.
