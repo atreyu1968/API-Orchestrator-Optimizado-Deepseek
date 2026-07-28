@@ -16993,6 +16993,34 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             chapter.wordCount = workingContent.split(/\s+/).filter(w => w.length > 0).length;
           }
 
+          // [Fix_EditorialExpansionMandate] Si el capítulo está por debajo del 115% del
+          // mínimo de palabras del proyecto, el Ghostwriter tiende a honrar la Regla 5
+          // del prompt quirúrgico ("mantén ±10% del original") y producir una reescritura
+          // que acaba por debajo del mínimo — la red de seguridad la revierte y el capítulo
+          // queda sin cambios. El problema es especialmente frecuente en instrucciones de
+          // arco que piden "reducir X" (introspección, relleno) en un capítulo ya corto:
+          // el Ghostwriter recorta y cae bajo el suelo.
+          // Fix: inyectamos un mandato explícito ANTES de las instrucciones editoriales
+          // que (a) anula la Regla 5 para este capítulo, (b) fija un rango mínimo–máximo
+          // concreto y (c) redirige "reduce X" hacia "añade Y que compense".
+          const _editorialChapMin = (project as any).minWordsPerChapter || 2200;
+          const _editorialChapMax = (project as any).maxWordsPerChapter || Math.round(_editorialChapMin * 1.15);
+          const _currentChapWc = chapter.wordCount || workingContent.split(/\s+/).filter((w: string) => w.length > 0).length;
+          const _editorialExpansionThreshold = Math.round(_editorialChapMin * 1.15);
+          let _estructuralesFormattedFinal = estructuralesFormatted;
+          if (_currentChapWc < _editorialExpansionThreshold) {
+            _estructuralesFormattedFinal =
+              `⚠️ MANDATO DE EXTENSIÓN [Fix_EditorialExpansionMandate]: Este capítulo tiene ${_currentChapWc} palabras, ` +
+              `cerca del mínimo del proyecto (${_editorialChapMin}w). ` +
+              `EXCEPCIÓN OBLIGATORIA A LA REGLA 5: ignora la restricción ±10% — el capítulo resultante DEBE tener entre ` +
+              `${_editorialChapMin} y ${_editorialChapMax} palabras. ` +
+              `Implementa las instrucciones editoriales AÑADIENDO material nuevo (beats de acción, diálogos, ` +
+              `tensión, desarrollo de escena) en lugar de recortar el texto existente. ` +
+              `Si una instrucción pide "reducir introspección" o "eliminar relleno", hazlo COMPENSANDO con ` +
+              `acción o dramatización que ocupe ese espacio — no borrando párrafos en neto.\n\n` +
+              estructuralesFormatted;
+          }
+
           const rewriteResult = await this.rewriteChapterForQA(
             project,
             chapter,
@@ -17000,7 +17028,7 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
             worldBibleData,
             guiaEstilo,
             "editorial",
-            estructuralesFormatted
+            _estructuralesFormattedFinal
           );
 
           // Si la nota fue reenrutada/traducida a otro(s) capítulo(s) (caso
