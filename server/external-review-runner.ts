@@ -16,6 +16,8 @@ import { storage } from "./storage";
 import { DensityPrunerAgent } from "./agents/density-pruner";
 import { RetroactiveSeederAgent } from "./agents/retroactive-seeder";
 import { SurgicalPatcherAgent } from "./agents/surgical-patcher";
+import { ChapterRewriteAgent } from "./agents/chapter-rewriter";
+import { OccurrenceScannerAgent } from "./agents/occurrence-scanner";
 import type { ReviewIntervention, ExternalReviewPlan } from "./agents/critique-classifier";
 import type { Project } from "@shared/schema";
 
@@ -98,6 +100,8 @@ export async function runExternalReview(
   const densityAgent = new DensityPrunerAgent();
   const seederAgent = new RetroactiveSeederAgent();
   const surgicalAgent = new SurgicalPatcherAgent();
+  const rewriterAgent = new ChapterRewriteAgent();
+  const scannerAgent = new OccurrenceScannerAgent();
 
   // Track gesturalTics seen so far for density passes
   const knownTics = [
@@ -122,7 +126,7 @@ export async function runExternalReview(
 
     try {
       if (intervention.type === "puntual") {
-        await runPuntual(projectId, intervention, surgicalAgent, send);
+        await runPuntual(projectId, intervention, surgicalAgent, scannerAgent, send);
 
       } else if (intervention.type === "densidad") {
         await runDensidad(projectId, intervention, densityAgent, knownTics, send);
@@ -131,7 +135,7 @@ export async function runExternalReview(
         await runSiembra(projectId, intervention, seederAgent, send);
 
       } else if (intervention.type === "estructural") {
-        await runEstructural(projectId, intervention, project, send);
+        await runEstructural(projectId, intervention, rewriterAgent, send);
       }
 
       plan = updateInterventionStatus(plan, intervention.id, "done");
@@ -163,11 +167,83 @@ async function runPuntual(
   projectId: number,
   intervention: ReviewIntervention,
   agent: SurgicalPatcherAgent,
+  scanner: OccurrenceScannerAgent,
   send: SendFn
 ): Promise<void> {
   const chapters = await storage.getChaptersByProject(projectId);
-  const targets = chapters.filter(c => intervention.capitulosAfectados.includes(c.chapterNumber));
+  const targets = chapters
+    .filter(c => intervention.capitulosAfectados.includes(c.chapterNumber))
+    .sort((a, b) => a.chapterNumber - b.chapterNumber);
 
+  if (targets.length === 0) return;
+
+  // ── Ruta A: intervención multi-capítulo → escáner semántico global ──────────
+  // Para problemas que aparecen en varios capítulos con distintas fórmulas
+  // (Ej: "Kincaid presentado como culpable" en prólogo + cap 2 + cap 3),
+  // primero escaneamos todos juntos para encontrar TODAS las ocurrencias,
+  // luego las aplicamos capítulo a capítulo con el patcher normalizado.
+  if (targets.length > 1) {
+    send({ type: "intervention_progress", id: intervention.id, message: `Escaneando ${targets.length} capítulos en busca de todas las ocurrencias...` });
+
+    const scanResult = await scanner.scan({
+      problem: intervention.instruccion,
+      chapters: targets.map(c => ({
+        chapterNumber: c.chapterNumber,
+        chapterTitle: c.title || "",
+        content: c.content || "",
+      })),
+    });
+
+    if (scanResult.matches.length > 0) {
+      // Agrupar ocurrencias por capítulo
+      const byChapter = new Map<number, typeof scanResult.matches>();
+      for (const m of scanResult.matches) {
+        if (!byChapter.has(m.chapterNumber)) byChapter.set(m.chapterNumber, []);
+        byChapter.get(m.chapterNumber)!.push(m);
+      }
+
+      // Aplicar por capítulo con el patcher normalizado (Fix212)
+      for (const chapter of targets) {
+        const matches = byChapter.get(chapter.chapterNumber);
+        if (!matches?.length) continue;
+
+        const patchOps = matches.map(m => ({
+          type: "find_exact_and_replace" as const,
+          find_exact: m.anchorText,
+          replace_with: m.replacementText,
+          justification: m.justification,
+        }));
+
+        const report = agent.applyOperations(chapter.content || "", patchOps);
+        if (report.applied.length > 0) {
+          await storage.updateChapter(chapter.id, { content: report.finalContent });
+          const fuzzyNote = (report.fuzzyApplied ?? 0) > 0 ? ` (${report.fuzzyApplied} fuzzy)` : "";
+          send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: ${report.applied.length}/${matches.length} ocurrencias corregidas${fuzzyNote}` });
+        } else if (report.failed.length > 0) {
+          send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: ${report.failed.length} anclas no encontradas — omitido` });
+        }
+      }
+      send({ type: "intervention_progress", id: intervention.id, message: `Total: ${scanResult.matches.length} ocurrencias identificadas` });
+
+    } else {
+      // Escáner no encontró nada — caer a la ruta individual por si el scanner erró
+      send({ type: "intervention_progress", id: intervention.id, message: `Escáner global sin resultados${scanResult.not_found_reason ? ": " + scanResult.not_found_reason : ""}. Aplicando cirugía individual...` });
+      await runPuntualPerChapter(targets, intervention, agent, send);
+    }
+
+  } else {
+    // ── Ruta B: un solo capítulo → cirugía directa ───────────────────────────
+    await runPuntualPerChapter(targets, intervention, agent, send);
+  }
+}
+
+/** Cirugía capítulo a capítulo (ruta fallback o single-chapter). */
+async function runPuntualPerChapter(
+  targets: Array<{ id: number; chapterNumber: number; title: string | null; content: string | null }>,
+  intervention: ReviewIntervention,
+  agent: SurgicalPatcherAgent,
+  send: SendFn
+): Promise<void> {
   for (const chapter of targets) {
     send({ type: "intervention_progress", id: intervention.id, message: `Cirujano en cap ${chapter.chapterNumber}` });
 
@@ -301,40 +377,50 @@ async function runSiembra(
 async function runEstructural(
   projectId: number,
   intervention: ReviewIntervention,
-  _project: Project,
+  rewriter: ChapterRewriteAgent,
   send: SendFn
 ): Promise<void> {
-  // Las intervenciones estructurales se canalizan a través del flujo
-  // applyEditorialNotes existente (vía la instrucción de la intervención).
-  // Lo hacemos de forma dinámica para no crear dependencia circular.
+  // Usa ChapterRewriteAgent (ARE) en lugar de applyEditorialNotes.
+  // La diferencia clave: el ARE recibe las contradicciones a eliminar
+  // explícitamente y reescribe el capítulo completo desde cero, sin dejar
+  // restos del texto anterior que sean incompatibles con la corrección.
   send({ type: "intervention_progress", id: intervention.id, message: "Iniciando reescritura estructural..." });
 
-  const { Orchestrator } = await import("./orchestrator");
-  const project = await storage.getProject(projectId);
-  if (!project) throw new Error("Proyecto no encontrado");
+  const chapters = await storage.getChaptersByProject(projectId);
+  const targets = chapters
+    .filter(c => intervention.capitulosAfectados.includes(c.chapterNumber))
+    .sort((a, b) => a.chapterNumber - b.chapterNumber);
 
-  const orchestrator = new Orchestrator({
-    onAgentStatus: async (_role, _status, msg) => {
-      if (msg) send({ type: "intervention_progress", id: intervention.id, message: msg });
-    },
-    onChapterComplete: async (chapNum, wc) => {
-      send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapNum} reescrito (${wc} palabras)` });
-    },
-    onChapterRewrite: async () => {},
-    onChapterStatusChange: () => {},
-    onProjectComplete: async () => {},
-    onError: async (e) => { throw new Error(e); },
-  });
+  if (targets.length === 0) {
+    send({ type: "intervention_progress", id: intervention.id, message: "No se encontraron capítulos afectados" });
+    return;
+  }
 
-  // Construir instrucción editorial como objeto compatible
-  const instruction = {
-    capitulos_afectados: intervention.capitulosAfectados,
-    categoria: "estructural",
-    descripcion: intervention.descripcion,
-    instrucciones_correccion: intervention.instruccion,
-    tipo: "estructural" as const,
-    prioridad: intervention.prioridad,
-  };
+  const contradictions = intervention.contradictionsToRemove ?? [];
 
-  await orchestrator.applyEditorialNotes(project, "", [instruction]);
+  for (const chapter of targets) {
+    send({ type: "intervention_progress", id: intervention.id, message: `Reescribiendo cap ${chapter.chapterNumber}${contradictions.length ? ` (${contradictions.length} contradicción(es) a eliminar)` : ""}...` });
+
+    const result = await rewriter.rewrite({
+      chapterNumber: chapter.chapterNumber,
+      chapterTitle: chapter.title || "",
+      content: chapter.content || "",
+      instruction: intervention.instruccion,
+      contradictionsToRemove: contradictions,
+    });
+
+    if (!result.rewrittenContent || result.rewrittenContent.trim().length < 100) {
+      throw new Error(`Cap ${chapter.chapterNumber}: el rewriter devolvió contenido vacío o demasiado corto`);
+    }
+
+    // Guardar con backup en pre_edit_content
+    await storage.updateChapter(chapter.id, {
+      content: result.rewrittenContent,
+      preEditContent: chapter.content ?? undefined,
+    });
+
+    const wordCount = result.rewrittenContent.split(/\s+/).length;
+    const summary = result.changeSummary ? ` — ${result.changeSummary.substring(0, 80)}` : "";
+    send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber} reescrito (${wordCount} palabras)${summary}` });
+  }
 }

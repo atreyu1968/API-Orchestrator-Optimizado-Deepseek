@@ -28,6 +28,12 @@ export interface ReviewIntervention {
   sembraRevelacion?: string;
   /** Para tipo "siembra": lo que el lector sabe en ese punto. */
   sembraContextoLector?: string;
+  /**
+   * Para tipo "estructural": fragmentos literales del texto que son INCOMPATIBLES
+   * con la instrucción y que el ChapterRewriteAgent debe eliminar por completo.
+   * Si están vacíos, el agente solo aplica la instrucción sin eliminaciones explícitas.
+   */
+  contradictionsToRemove?: string[];
   prioridad: InterventionPriority;
   status: InterventionStatus;
   completedAt?: string;
@@ -69,6 +75,12 @@ REGLAS:
 - Las instrucciones deben ser accionables: ¿qué hace exactamente el agente?
 - capitulosAfectados: array de números de capítulo. Usa -1 para prólogo, -2 para epílogo.
 
+CAMPO contradictionsToRemove (OBLIGATORIO para type="estructural"):
+Para cada intervención estructural, identifica los fragmentos narrativos INCOMPATIBLES con la corrección. Son pasajes concretos del texto que deben DESAPARECER por completo (no reformularse). Expresa cada contradicción como una descripción del tipo de contenido a eliminar (no necesitas conocer el texto exacto: el agente de reescritura localizará los pasajes). Ejemplos:
+- "Cualquier frase que afirme que Kincaid mató directamente a Linnea antes del capítulo 25"
+- "El fragmento donde Sloane concluye en cap 2 que la señal es de Linnea sin investigación previa"
+- "La referencia al 'Protocolo de Sellado Termonuclear' en el clímax"
+
 FORMATO DE SALIDA — únicamente JSON válido:
 {
   "overallSummary": "diagnóstico en 2-3 frases",
@@ -82,6 +94,7 @@ FORMATO DE SALIDA — únicamente JSON válido:
       "descripcion": "qué problema resuelve",
       "capitulosAfectados": [n, ...],
       "instruccion": "instrucción concreta para el agente ejecutor",
+      "contradictionsToRemove": ["solo si type=estructural: descripción de contenido incompatible a eliminar", "..."],
       "sembraRevelacion": "solo si type=siembra: la revelación a preparar",
       "sembraContextoLector": "solo si type=siembra: lo que el lector sabe en ese punto",
       "prioridad": "alta|media|baja",
@@ -130,6 +143,9 @@ Extrae todas las intervenciones accionables. Responde ÚNICAMENTE con el JSON.`;
             instruccion: i.instruccion || i.descripcion || "",
             sembraRevelacion: i.sembraRevelacion || undefined,
             sembraContextoLector: i.sembraContextoLector || undefined,
+            contradictionsToRemove: Array.isArray(i.contradictionsToRemove) && i.contradictionsToRemove.length
+              ? i.contradictionsToRemove.filter((c: unknown) => typeof c === "string" && c.length > 0)
+              : undefined,
             prioridad: (["alta", "media", "baja"].includes(i.prioridad) ? i.prioridad : "media") as InterventionPriority,
             status: "pending" as InterventionStatus,
           }))
