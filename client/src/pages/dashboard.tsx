@@ -2109,6 +2109,18 @@ export default function Dashboard() {
                 <CardTitle className="text-lg">Acciones del Proyecto</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
+                {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => setShowExternalReviewDialog(true)}
+                    data-testid="button-external-review-top"
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                  >
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Revisión Editorial Externa
+                  </Button>
+                )}
                 <div className="flex gap-2 flex-wrap">
                   <Button
                     variant="outline"
@@ -2170,6 +2182,19 @@ export default function Dashboard() {
                     >
                       <Plus className="h-4 w-4 mr-2" />
                       Extender
+                    </Button>
+                  )}
+
+                  {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowExternalReviewDialog(true)}
+                      data-testid="button-external-review-actions"
+                      className="border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-950"
+                    >
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Revisión Editorial
                     </Button>
                   )}
 
