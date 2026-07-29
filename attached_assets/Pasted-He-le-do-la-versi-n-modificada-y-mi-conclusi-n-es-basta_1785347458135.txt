@@ -1,0 +1,199 @@
+He leído la versión modificada y mi conclusión es bastante clara: **las correcciones se han aplicado solo parcialmente y, sobre todo, no de forma coherente**. Hay mejoras reales, pero parecen haberse añadido sobre la novela anterior en lugar de sustituir y armonizar las escenas afectadas.
+
+Como lector/editor, **todavía no consideraría esta la versión corregida definitiva**.
+
+### Lo que sí se ha aplicado bien
+
+El **Monitor Test** ha mejorado en bastantes escenas. Ahora se insiste en línea base, desviaciones, contexto y probabilidades, y se aclara que una reacción no demuestra por sí sola una mentira. Por ejemplo, ya aparece expresamente definido como metodología probabilística y se matiza la interpretación de Emmett y Tap. 
+
+También se ha resuelto parcialmente el problema de la **antena**: Tap admite que cortó la derivación secundaria para ocultar su transmisión, mientras que la línea principal habría sufrido una intervención diferente. Esa separación era precisamente una de las correcciones que necesitábamos. 
+
+Igualmente funciona mejor la revelación posterior de Tap: en el capítulo 22 distingue explícitamente entre la señal inicial emitida por él y «la otra», la que aparece desde hace años. Esto evita que ambas señales sean exactamente el mismo fenómeno. 
+
+Y el capítulo 30 conserva correctamente la idea de la **tercera vía moral de Sloane**: revelar Kincaid y Thalassia sin destruir innecesariamente a Sana, Tap y Emmett. Además, ya se dice que la investigación puede prolongarse durante meses, lo cual es más creíble que una resolución jurídica instantánea. 
+
+Es decir: **el sistema entendió varias de las instrucciones**, pero no reconstruyó la novela alrededor de ellas.
+
+### El problema más grave: B-07 no se ha incorporado realmente
+
+Esta era una modificación estructural importante y prácticamente no está en el manuscrito.
+
+La B-07 debía aparecer desde los primeros capítulos como una **baliza autónoma real**, oficialmente fuera de servicio, capaz de conservar energía y retransmitir periódicamente. Esa explicación solucionaba el problema técnico de una señal «viajando» durante diez años.
+
+En esta versión reaparece justo la explicación que queríamos eliminar. En el prólogo Linnea envía directamente el mensaje, se dice que la señal «viaja a través de la tormenta», después que «se movía a través de la ionosfera» y finalmente que diez años después Sloane la encontraría. 
+
+Y el capítulo 3 insiste en que el mensaje llevaba «una década esperando en la ionosfera». 
+
+Más tarde se habla genéricamente de «la baliza de Linnea» que lleva años retransmitiendo, pero sin haber construido previamente la B-07 con su identidad, funcionamiento, alimentación, estado oficial y programación. 
+
+Ese parche produce una novela en la que conviven **dos explicaciones distintas de la señal**.
+
+Esto debe corregirse obligatoriamente.
+
+### La señal 3-2-4 sigue revelándose demasiado pronto
+
+Este cambio tampoco está correctamente aplicado.
+
+Queríamos:
+
+**3-2-4 → anomalía → patrón estructurado → posible origen local → posible B-07 → evidencia acumulada → relación con Linnea.**
+
+Pero aquí el capítulo 2 vuelve prácticamente a la versión antigua:
+
+> 3-2-4.
+> Linnea.
+
+Y Sloane determina enseguida que está diseñada exclusivamente para ella y que Linnea la ha dejado esperando diez años. 
+
+En el capítulo 3 ya empieza:
+
+> L-N-N.
+> Linnea.
+> No era una coincidencia.
+> Nunca lo había sido.
+
+
+
+Eso elimina la investigación científica que habíamos introducido y hace que Sloane vuelva a **encontrar primero la respuesta y buscar después las pruebas**.
+
+Es justo lo contrario de lo que debía caracterizarla.
+
+### El Monitor Test está mejor... pero conserva pseudociencia importante
+
+Aquí la corrección está aproximadamente a medio camino.
+
+Hay numerosos recordatorios de que los resultados son probabilísticos y deben contrastarse con línea basal y contexto. Eso funciona.
+
+Pero sigue apareciendo esta explicación:
+
+> cuando un diestro miente mira hacia la izquierda; cuando dice la verdad mantiene la mirada o mira hacia la derecha
+
+y se atribuye además a diferencias hemisféricas. 
+
+Eso es precisamente el tipo de «detector de mentiras corporal» que queríamos eliminar.
+
+También sigue habiendo escenas en las que se añade «sugiere, no demuestra», pero inmediatamente después Sloane **actúa narrativamente como si hubiera demostrado la conclusión**.
+
+Es decir, se ha corregido el vocabulario más que la lógica.
+
+### La manipulación de Linnea se revela demasiado pronto
+
+Este es, para mí, el error narrativo más perjudicial.
+
+La idea era **sembrar indicios desde los capítulos 10–18** para que en el 27 el lector comprendiera:
+
+> «Estaba delante de mí y no lo había interpretado correctamente.»
+
+Pero esta nueva versión cuenta prácticamente todo en el **capítulo 3**.
+
+Sloane concluye allí que Linnea la preparó específicamente para llegar a Boreas, encontrar la señal, descifrarla y exponer a sus asesinos. Y acto seguido concluye que Linnea sabía que iba a morir y que había planificado su propia muerte. 
+
+Además, las notas de Linnea detallan quién es fiable, quién es cobarde, quién guarda la USB y presentan a Kincaid como «el verdugo». 
+
+Entonces llegamos al capítulo 27 y Linnea «revela» que entrenó deliberadamente a Sloane, que sabía que la culpa la llevaría a Boreas y que la necesitaba para terminar el plan. 
+
+Pero ya no es una revelación.
+
+El capítulo 3 nos lo contó veinticuatro capítulos antes.
+
+**Hay que mantener las pistas tempranas, pero eliminar las conclusiones.**
+
+El lector debe sospechar de Linnea antes del 27.
+
+No debe saber lo que hizo.
+
+### Kincaid tampoco ha ganado la ambigüedad que buscábamos
+
+Hay algunos buenos intentos. Su participación original en el Monitor Test y ciertas objeciones metodológicas permiten ver que no siempre fue el monstruo que terminó siendo.
+
+Pero el prólogo lo destruye casi por completo.
+
+Antes incluso de que conozcamos a Sloane, Linnea define a Kincaid como:
+
+> «el verdugo de Thalassia Corp»
+
+
+
+También lo acusa directamente del encubrimiento de tres muertes. 
+
+Y después vemos directamente a Kincaid asesinarla estrangulándola. 
+
+Eso significa que cuando Sloane empieza a investigarlo, **el lector ya sabe que es el asesino**.
+
+Puede existir ambigüedad sobre sus motivaciones, pero no sobre su culpabilidad.
+
+Más adelante incluso Sloane atribuye los cortes de la antena a Kincaid antes de disponer de pruebas suficientes. El texto afirma directamente que «Kincaid sabía lo que hacía» y que había aislado deliberadamente la base. 
+
+La novela debería permitir durante bastante más tiempo esta pregunta:
+
+**¿Kincaid es un asesino que se presenta como pragmático o Sloane está reinterpretándolo todo porque necesita encontrar al culpable?**
+
+Ahora mismo la respuesta está dada desde el prólogo.
+
+### El clímax conserva exactamente el problema que queríamos corregir
+
+Este cambio no se ha aplicado.
+
+Kincaid continúa muriendo accidentalmente al abalanzarse sobre Sloane con un destornillador y caer sobre él. 
+
+Y continúa existiendo:
+
+**«Protocolo de Sellado Termonuclear — Secuencia de Detonación»**
+
+
+
+Por tanto seguimos teniendo el salto hacia *Mission Impossible* que precisamente queríamos reducir.
+
+Además aparece una inconsistencia nueva. El sistema exige:
+
+> «autenticar con huella dactilar de nivel 10»
+
+Sloane incluso dice:
+
+> «Necesito su huella.»
+
+Pero Ronan encuentra una tarjeta, la desliza y la tarjeta **por sí sola confirma la autenticación de nivel 10**, sin huella. 
+
+Esto parece el resultado de intentar eliminar el truco del dedo del cadáver sin reconstruir el mecanismo completo.
+
+### Hay incluso un problema serio de continuidad entre los capítulos 27 y 28
+
+El capítulo 27 termina con Sloane perdiendo el conocimiento mientras la cuenta atrás marca aproximadamente 4:40.
+
+El capítulo 28 arranca directamente con otro forcejeo, sin que Sloane despierte ni se explique qué ha sucedido, y Kincaid cae sobre el destornillador. 
+
+Parece que se han fusionado **dos versiones alternativas del clímax**.
+
+Eso debe corregirse antes de cualquier publicación.
+
+### El final está mejor, pero aún tiene restos de versiones fusionadas
+
+Aquí sí se ha solucionado una parte: aparece claramente:
+
+> «Dos días después, en Christchurch.»
+
+Eso separa McMurdo de Nueva Zelanda. 
+
+Pero inmediatamente el escenario vuelve a moverse sin transición: salen del aeropuerto, luego Sloane camina hacia «el borde de la pista», después aparecen árboles, una calle y un autobús, y de pronto está «en la acera frente al edificio de la fiscalía». 
+
+Es mejor que antes, pero sigue necesitando una última limpieza de continuidad espacial.
+
+## Mi valoración de esta nueva versión
+
+**No continuaría corrigiendo detalles sobre este archivo tal como está.** El problema ya no es únicamente literario: es de **control de versiones**.
+
+Parece que el sistema ha hecho esto:
+
+**manuscrito antiguo + fragmentos de las correcciones + nuevas frases destinadas a justificar las correcciones.**
+
+Y debería haber hecho:
+
+**manuscrito corregido completo, sustituyendo las escenas incompatibles.**
+
+Paradójicamente, hay ideas mejores que antes, pero ahora existen más contradicciones internas.
+
+Como lector le daría actualmente **7/10**. No porque la historia haya empeorado —sigo pensando que tiene potencial de 8,5–9—, sino porque un lector atento encontrará inconsistencias que parecen errores de montaje.
+
+La buena noticia es que **no hay que reinventar la novela**. Tenemos perfectamente identificado qué ocurrió: el sistema aplicó las correcciones como parches en lugar de reconstruir la continuidad.
+
+Mi prioridad sería ahora corregir **Prólogo + capítulos 1–4 + 27–30**, porque ahí están las contradicciones estructurales graves. Después haría una pasada de los capítulos 5–26 para eliminar los restos de anticipaciones, sobreexplicación y conclusiones demasiado categóricas. Con eso sí tendríamos una versión verdaderamente coherente con el plan editorial que definimos.
