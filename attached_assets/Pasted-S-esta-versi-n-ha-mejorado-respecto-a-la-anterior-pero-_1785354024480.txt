@@ -1,0 +1,286 @@
+Sí: **esta versión ha mejorado respecto a la anterior, pero todavía no es coherente como manuscrito definitivo**. El problema ya no es tanto que las correcciones no estén, sino que **conviven correcciones nuevas con restos incompatibles de versiones anteriores**.
+
+La novela sigue teniendo una apertura potente y una atmósfera muy buena desde las primeras líneas del prólogo.  Pero ahora mismo le daría **7,5/10 como historia y 6,5/10 como manuscrito terminado**, porque hay contradicciones de continuidad que un lector detectará.
+
+### Lo que ahora sí funciona mejor
+
+**B-07 ya existe desde el principio.** Eso es un avance importante. Ronan identifica una baliza fuera de servicio cuyo sistema automático sigue funcionando y Sloane detecta después una modulación anómala. 
+
+También mejora mucho que el **3-2-4 no se convierta inmediatamente en una certeza absoluta**. En el capítulo 2 Sloane reconoce el patrón, recuerda a Linnea, pero se obliga a contemplar interferencias y otras explicaciones. 
+
+En el capítulo 3 sucede algo similar: aparece «L-N-N», pero el texto afirma expresamente que necesita datos y no certezas. 
+
+Eso es exactamente la dirección que buscábamos.
+
+La **ambigüedad de Kincaid** también es mejor en bastantes tramos. Hay escenas donde admite errores reales, manipulación de datos y decisiones éticamente cuestionables sin reducir todo a «soy el villano». 
+
+Y el giro de Linnea en el 27 sigue siendo uno de los mejores momentos: reconoce que preparó deliberadamente a Sloane, que conocía su culpa y que la utilizó para completar el plan. 
+
+El problema es que varias cosas alrededor todavía lo sabotean.
+
+## 1. El prólogo sigue destruyendo parte del misterio
+
+Este es ahora mismo **el problema editorial número uno**.
+
+El prólogo nos cuenta que:
+
+* Linnea sabe que va a morir.
+* Su muerte forma parte del rastro que deja a Sloane.
+* Kincaid es «el verdugo de Thalassia».
+* Linnea lo acusa de participar en tres muertes.
+* La transmisión está dirigida expresamente a Sloane.
+* Vemos a Kincaid matar físicamente a Linnea.
+
+Todo eso ocurre antes de empezar el capítulo 1.   
+
+Por tanto, cuando Sloane se pregunta durante veinte capítulos:
+
+> ¿Kincaid está implicado?
+
+el lector piensa:
+
+> Sí. Lo vi asesinarla en el prólogo.
+
+Y cuando en el capítulo 27 descubrimos:
+
+> Linnea había preparado deliberadamente a Sloane.
+
+el lector puede responder:
+
+> También lo sabía desde el prólogo.
+
+El prólogo está **demasiado informado**.
+
+Yo conservaría la escena, pero ocultaría justamente esas dos respuestas.
+
+Podemos saber que Linnea prepara algo y que teme morir.
+
+Pero no deberíamos conocer todavía:
+
+**quién va a matarla ni hasta qué punto Sloane forma parte deliberada del plan.**
+
+Ese único cambio aumentaría muchísimo la novela.
+
+## 2. B-07 está mejor, pero aún necesita una definición única
+
+Ahora B-07 existe, pero se describe de varias maneras.
+
+En el capítulo 1 Ronan dice que está «desmantelada», aunque su circuito de retransmisión nunca se apagó y emite un pulso cada tres horas. 
+
+Después figura oficialmente fuera de servicio, pero operativa.
+
+La solución que habíamos construido es más clara:
+
+**B-07 es una baliza autónoma oficialmente retirada de servicio, pero físicamente instalada y capaz de permanecer en suspensión y retransmitir mediante alimentación de larga duración/recarga auxiliar.**
+
+No «desmantelada».
+
+Además encontré un pequeño error importante: en el capítulo 3 se dice que B-07 pertenecía a la «primera expansión **ártica**». Estamos en la Antártida. 
+
+Debe decir **antártica**.
+
+## 3. El Monitor Test todavía tiene dos personalidades diferentes
+
+La corrección se ha aplicado parcialmente.
+
+Por una parte, el texto ya intenta establecer que nerviosismo ≠ mentira y que deben utilizarse línea basal, desviaciones y contexto.
+
+Eso funciona.
+
+Pero sigue apareciendo la antigua afirmación de que un diestro que miente tiende a mirar hacia la izquierda y quien dice la verdad hacia la derecha. 
+
+Eso hay que eliminar.
+
+Pero hay algo bastante más grave en el capítulo 28.
+
+De repente el Monitor Test se redefine como:
+
+> una técnica de interrogación aprendida en «un curso de supervivencia de la agencia»,
+
+basada en hacer creer al sujeto que un sistema está monitorizando sus movimientos. 
+
+Eso contradice **toda la novela**.
+
+Hasta entonces el Monitor Test es un protocolo desarrollado por:
+
+**Ryland + Kincaid + Linnea**
+
+basado en línea basal, desviación, presión y contexto.
+
+En el capítulo 28 se convierte súbitamente en una especie de farol psicológico que Sloane aprendió en «la agencia».
+
+Ese fragmento pertenece claramente a otra versión.
+
+Hay que reescribirlo entero.
+
+## 4. Hay una contradicción enorme entre los capítulos 27, 28 y 29
+
+Este es el fallo técnico más serio del manuscrito actual.
+
+Al final del capítulo 27:
+
+Kincaid **desactiva la amenaza**, le dice a Sloane que se marche y abandona el Núcleo. Sloane cae inconsciente y oye voces acercándose. 
+
+Pero empieza el capítulo 28 y:
+
+Kincaid vuelve a estar sentado en el Núcleo junto a ella.
+
+Dice que Sloane lleva diez minutos inconsciente.
+
+Tiene un destornillador.
+
+Y el texto señala expresamente que **no hay ninguna autodestrucción activada**. 
+
+Después Sloane lo deja **vivo, inconsciente y atado a una mesa**. 
+
+Perfecto. Esa solución me gusta más que la muerte accidental.
+
+Pero empieza el 29 y Sana pregunta:
+
+> —La autodestrucción se detuvo.
+
+Y Sloane responde:
+
+> —Muerto.
+
+
+
+No.
+
+**Kincaid está vivo y atado en el Núcleo.**
+
+Además en el 28 se dice explícitamente que **no había autodestrucción activa**.
+
+Tenemos tres versiones superpuestas:
+
+**Capítulo 27:** Kincaid cancela la cuenta atrás y se marcha.
+
+**Capítulo 28:** no hay cuenta atrás; Sloane reduce a Kincaid y lo deja vivo.
+
+**Capítulo 29:** Kincaid está muerto y se ha detenido una autodestrucción.
+
+Esto debe resolverse obligatoriamente.
+
+### Y yo elegiría la versión del capítulo 28
+
+Es mucho mejor que el antiguo destornillador mortal.
+
+Que Kincaid **sobreviva** tiene más potencia.
+
+Pero añadiría una decisión moral:
+
+Sloane podría marcharse y dejarlo atrapado.
+
+No lo hace.
+
+Ordena que lo saquen también.
+
+Ahí culmina su arco:
+
+**Kincaid sacrifica personas por el orden.**
+
+**Linnea sacrifica a Sloane por la verdad.**
+
+**Sloane se niega a sacrificar a Kincaid, incluso después de todo.**
+
+Eso convierte el tema en acción.
+
+## 5. El capítulo 30 todavía cree que Kincaid murió
+
+Aunque el capítulo 28 ahora lo deja vivo, en el 30 Sloane afirma que las pruebas incluyen:
+
+> «el cadáver de Kincaid en el hielo».
+
+
+
+Otro resto de la versión anterior.
+
+Si mantenemos a Kincaid vivo, esto debe convertirse en algo mucho mejor:
+
+> «el testimonio de Kincaid»
+
+o
+
+> «Kincaid bajo custodia».
+
+Y eso permitiría un final judicial mucho más fuerte: **el hombre que mató para evitar que la verdad saliera tiene que vivir viendo cómo sale.**
+
+## 6. Linnea sigue estando un poco demasiado explicada
+
+La dirección es mejor.
+
+En los primeros capítulos hay frases del tipo:
+
+> quizá Linnea había preparado un camino, quizá no.
+
+Eso está bien.
+
+Pero todavía hay demasiadas expresiones que anuncian constantemente:
+
+* migas de pan;
+* Linnea la preparó;
+* verdad enterrada;
+* hielo que guarda secretos;
+* alguien vendrá;
+* ella sabrá qué hacer.
+
+Y luego el capítulo 27 vuelve a explicar todo explícitamente.
+
+Para que el giro tenga máximo impacto, antes del 27 deberíamos llegar a:
+
+> «Linnea parece haber previsto muchas cosas.»
+
+No todavía a:
+
+> «Linnea me diseñó para este momento.»
+
+La diferencia es pequeña, pero decisiva.
+
+## 7. El final emocional sí me gusta
+
+Aquí mantendría bastante.
+
+La idea final de que Sloane pueda aceptar simultáneamente:
+
+**Linnea me quería.**
+
+y
+
+**Linnea me utilizó.**
+
+funciona muy bien. 
+
+Y la relación con Ronan queda abierta:
+
+> —No sé qué somos ahora.
+> —No hace falta saberlo ahora.
+
+Me parece el tono correcto. 
+
+No lo convertiría en beso ni pareja cerrada.
+
+---
+
+# Mi valoración ahora
+
+**Historia:** 8/10
+**Personajes:** 8/10
+**Atmósfera:** 9/10
+**Premisa:** 9/10
+**Ritmo:** 7,5/10
+**Coherencia actual del manuscrito:** 6,5/10
+**Potencial:** **9/10**
+
+Y esto es importante: **ahora estoy más convencido del potencial de la novela que cuando leí la primera versión**.
+
+Ya no veo un problema de concepción.
+
+Veo un problema de **ensamblaje de versiones**.
+
+Los capítulos corregidos que hemos ido haciendo son bastante más coherentes que los correspondientes fragmentos de este archivo. Por eso yo **no intentaría seguir parcheando este manuscrito automáticamente**.
+
+Seguiría exactamente con el procedimiento que llevábamos: **reescribir 7, 8, 9… hasta 30 tomando como continuidad únicamente los capítulos corregidos 1–6**, y cuando terminemos reunir esas versiones en un manuscrito limpio.
+
+Y, además, antes de cerrar el libro, **reescribiría el prólogo para que no revele el asesinato de Kincaid ni la manipulación completa de Linnea**.
+
+Si hacemos esas dos cosas, creo que *La Última Señal* puede quedar claramente por encima de la versión que acabas de subir.
