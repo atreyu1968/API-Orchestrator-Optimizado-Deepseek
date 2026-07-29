@@ -1644,7 +1644,7 @@ export default function Dashboard() {
                     )}
 
                     {/* Revisión Editorial Externa */}
-                    {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (
+                    {completedChapters > 0 && (
                       <div className="mt-4 pt-4 border-t border-border/50">
                         <button
                           type="button"
@@ -2109,7 +2109,7 @@ export default function Dashboard() {
                 <CardTitle className="text-lg">Acciones del Proyecto</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (
+                {completedChapters > 0 && currentProject.status !== "generating" && (
                   <Button
                     variant="default"
                     size="sm"
@@ -2185,7 +2185,7 @@ export default function Dashboard() {
                     </Button>
                   )}
 
-                  {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (
+                  {completedChapters > 0 && currentProject.status !== "generating" && (
                     <Button
                       variant="outline"
                       size="sm"
