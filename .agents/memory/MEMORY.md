@@ -46,3 +46,4 @@
 - [Reparadores que rebajan ambición](repair-agent-ambition-downgrade.md) — un auditor de solo-consistencia deja "aprobar" degradando (bajar dificultad/vaciar setups); red anti-rebaja determinista + lote con caps sembrables.
 - [Endpoint sin boton = via muerta](endpoint-without-ui-button.md) — si un mensaje/aviso recomienda una accion ("relanza el pulido"), verificar que exista boton UI que la dispare; un endpoint sin UI deja al usuario sin salida.
 - [Cirugía sobre capítulo ya corto: dos bugs encadenados](short-chapter-surgery-trap.md) — zona gris [FLEXIBLE_MIN, TARGET_MIN) + Fix_SurgeryWordFloor cayendo a Fix69-B; doble fix: pre-check + flag.
+- [Sistema de Revisión Editorial Externa](external-review-system.md) — flujo independiente: 3 agentes nuevos + runner + 3 rutas + diálogo UI 3 pasos; orden puntual→densidad→siembra→estructural.

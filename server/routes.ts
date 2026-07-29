@@ -1692,6 +1692,131 @@ export async function registerRoutes(
     }
   });
 
+  // ─── REVISIÓN EDITORIAL EXTERNA ──────────────────────────────────────────
+  // Flujo independiente del pipeline principal. Tres endpoints:
+  //  POST .../external-review/parse  → clasifica crítica → guarda plan en BD
+  //  POST .../external-review/run    → ejecuta intervenciones del plan
+  //  GET  .../external-review        → devuelve estado/plan actual
+
+  app.post("/api/projects/:id/external-review/parse", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { critiqueText } = req.body || {};
+      const project = await storage.getProject(id);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      if (!isProjectCompletedStatus(project.status)) {
+        return res.status(400).json({ error: "El proyecto debe estar completado para aplicar una revisión editorial" });
+      }
+      if (!critiqueText || typeof critiqueText !== "string" || !critiqueText.trim()) {
+        return res.status(400).json({ error: "Debes proporcionar 'critiqueText'" });
+      }
+      if (critiqueText.length > 300_000) {
+        return res.status(400).json({ error: "La crítica es demasiado larga (máx 300.000 caracteres)" });
+      }
+
+      await storage.updateProject(id, { externalReviewStatus: "parsing" } as any);
+      res.status(202).json({ accepted: true, projectId: id });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const msg = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(s => { try { s.write(msg); } catch {} });
+        }
+      };
+
+      const { CritiqueClassifierAgent } = await import("./agents/critique-classifier");
+      const classifier = new CritiqueClassifierAgent();
+      const chapters = await storage.getChaptersByProject(id);
+      const chapterIndex = chapters.map(c => ({ numero: c.chapterNumber, titulo: c.title || `Capítulo ${c.chapterNumber}` }));
+
+      classifier.classify({ critiqueText, chapterIndex, projectTitle: project.title })
+        .then(async (result) => {
+          const plan = {
+            critiqueText,
+            parsedAt: new Date().toISOString(),
+            overallSummary: result.overallSummary,
+            currentScore: result.currentScore,
+            potentialScore: result.potentialScore,
+            interventions: result.interventions,
+          };
+          await storage.updateProject(id, { externalReviewStatus: "parsed", pendingExternalReview: plan as any } as any);
+          sendToStreams({ type: "external_review_parsed", plan });
+          await persistActivityLog(id, "success", `Crítica analizada: ${plan.interventions.length} intervenciones identificadas`, "editor");
+        })
+        .catch(async (err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          await storage.updateProject(id, { externalReviewStatus: "failed" } as any);
+          sendToStreams({ type: "external_review_parse_error", message: msg });
+          await persistActivityLog(id, "error", `Error analizando crítica: ${msg}`, "editor");
+        });
+
+    } catch (error) {
+      console.error("Error parsing external critique:", error);
+      if (!res.headersSent) res.status(500).json({ error: "Error al analizar la crítica" });
+    }
+  });
+
+  app.post("/api/projects/:id/external-review/run", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { interventionIds } = req.body || {}; // null = all pending
+      const project = await storage.getProject(id);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      if (!isProjectCompletedStatus(project.status)) {
+        return res.status(400).json({ error: "El proyecto debe estar completado" });
+      }
+      if (!(project as any).pendingExternalReview) {
+        return res.status(400).json({ error: "No hay plan de revisión externo. Parsea primero la crítica." });
+      }
+      if ((project as any).externalReviewStatus === "running") {
+        return res.status(409).json({ error: "Ya hay una revisión en curso" });
+      }
+
+      res.status(202).json({ accepted: true, projectId: id });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const msg = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(s => { try { s.write(msg); } catch {} });
+        }
+      };
+
+      const { runExternalReview } = await import("./external-review-runner");
+      runExternalReview(
+        project,
+        Array.isArray(interventionIds) ? interventionIds : null,
+        sendToStreams
+      ).catch(async (err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        await storage.updateProject(id, { externalReviewStatus: "failed" } as any);
+        sendToStreams({ type: "external_review_done", status: "failed", error: msg });
+        await persistActivityLog(id, "error", `Error en revisión externa: ${msg}`, "editor");
+      });
+
+    } catch (error) {
+      console.error("Error running external review:", error);
+      if (!res.headersSent) res.status(500).json({ error: "Error al iniciar la revisión" });
+    }
+  });
+
+  app.get("/api/projects/:id/external-review", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProject(id);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      res.json({
+        externalReviewStatus: (project as any).externalReviewStatus ?? null,
+        pendingExternalReview: (project as any).pendingExternalReview ?? null,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Error al obtener revisión" });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   // STEP 2 (apply): apply editorial notes. Accepts EITHER:
   //  - { notes }                     → legacy mode: parse + apply in one shot
   //  - { instructions: [...] }       → preview mode: apply pre-parsed instructions filtered by the user

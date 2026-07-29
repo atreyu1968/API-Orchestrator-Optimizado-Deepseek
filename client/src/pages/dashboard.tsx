@@ -10,13 +10,14 @@ import { StructuralGuidancePanel } from "@/components/structural-guidance-panel"
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DuplicateManager } from "@/components/duplicate-manager";
 import { SelectiveBackupDialog } from "@/components/selective-backup-dialog";
+import { ExternalReviewDialog } from "@/components/external-review-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp, Eye, ArrowLeft, FileUp, Undo2, RotateCcw, BookOpen, AlertTriangle } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2, Wrench, FilePen, ChevronDown, ChevronUp, ChevronRight, Eye, ArrowLeft, FileUp, Undo2, RotateCcw, BookOpen, AlertTriangle, Sparkles } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Publisher } from "@shared/schema";
@@ -77,6 +78,7 @@ export default function Dashboard() {
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [showBackupDialog, setShowBackupDialog] = useState(false);
+  const [showExternalReviewDialog, setShowExternalReviewDialog] = useState(false);
   const [showArchitectDialog, setShowArchitectDialog] = useState(false);
   const [architectInstructions, setArchitectInstructions] = useState("");
   const [showExtendDialog, setShowExtendDialog] = useState(false);
@@ -1641,6 +1643,27 @@ export default function Dashboard() {
                       </div>
                     )}
 
+                    {/* Revisión Editorial Externa */}
+                    {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (
+                      <div className="mt-4 pt-4 border-t border-border/50">
+                        <button
+                          type="button"
+                          onClick={() => setShowExternalReviewDialog(true)}
+                          className="w-full flex items-center justify-between gap-2 text-sm font-medium hover-elevate p-2 rounded-md"
+                          data-testid="button-external-review"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-purple-500" />
+                            Revisión Editorial Externa
+                          </span>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                        <p className="text-xs text-muted-foreground px-2 mt-0.5">
+                          Aplica una crítica de lector externo con agentes especializados (poda, siembra, cirugía)
+                        </p>
+                      </div>
+                    )}
+
                     {/* Notas del Editor Humano — corrección quirúrgica a partir de texto libre */}
                     {(currentProject.status === "completed" || currentProject.status === "completed_with_issues") && (
                       <div className="mt-4 pt-4 border-t border-border/50">
@@ -2274,6 +2297,15 @@ export default function Dashboard() {
       </div>
 
       <SelectiveBackupDialog open={showBackupDialog} onOpenChange={setShowBackupDialog} />
+
+      {currentProject && (
+        <ExternalReviewDialog
+          open={showExternalReviewDialog}
+          onOpenChange={setShowExternalReviewDialog}
+          projectId={currentProject.id}
+          projectTitle={currentProject.title}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmDialog === "cancel"}

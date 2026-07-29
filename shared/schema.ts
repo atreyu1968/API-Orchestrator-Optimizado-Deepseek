@@ -170,6 +170,11 @@ export const projects = pgTable("projects", {
   // o las ejecute manualmente desde la herramienta de gestión de capítulos.
   // Cada item: { id, type, targetChapter, secondaryChapter?, reason, source, createdAt }.
   pendingAdminActions: jsonb("pending_admin_actions").default([]),
+  // Revisión editorial externa — plan generado por el CritiqueClassifierAgent.
+  // Shape: ExternalReviewPlan (see server/agents/critique-classifier.ts).
+  // null = sin revisión activa.
+  externalReviewStatus: text("external_review_status"), // "parsing"|"running"|"completed"|"failed"|null
+  pendingExternalReview: jsonb("pending_external_review"),
   // [Fix115] Guidance estructural pendiente: cuando el bucle del Auditor
   // Estructural agota todos sus reintentos (incluyendo audit on-demand de
   // World Bible) y el mejor score sigue < MIN_PUBLISHABLE_SA_SCORE (7/10), el
