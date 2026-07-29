@@ -9,6 +9,7 @@ import { ConsoleOutput, type LogEntry } from "@/components/console-output";
 import { StructuralGuidancePanel } from "@/components/structural-guidance-panel";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DuplicateManager } from "@/components/duplicate-manager";
+import { SelectiveBackupDialog } from "@/components/selective-backup-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -75,6 +76,7 @@ export default function Dashboard() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmType>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [showBackupDialog, setShowBackupDialog] = useState(false);
   const [showArchitectDialog, setShowArchitectDialog] = useState(false);
   const [architectInstructions, setArchitectInstructions] = useState("");
   const [showExtendDialog, setShowExtendDialog] = useState(false);
@@ -2251,41 +2253,18 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Exporta o importa todos los datos de la aplicación (proyectos, capítulos, configuraciones).
+                Exporta o importa proyectos seleccionados o todos los datos de la aplicación.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleExportData}
-                  disabled={isExporting}
-                  data-testid="button-export-data"
+                  onClick={() => setShowBackupDialog(true)}
+                  data-testid="button-backup-selective"
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  {isExporting ? "Exportando..." : "Exportar Datos"}
+                  Exportar / Importar
                 </Button>
-                
-                <label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={isImporting}
-                    asChild
-                    data-testid="button-import-data"
-                  >
-                    <span>
-                      <Upload className="h-4 w-4 mr-2" />
-                      {isImporting ? "Importando..." : "Importar Datos"}
-                    </span>
-                  </Button>
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleImportData}
-                    className="hidden"
-                    data-testid="input-import-file"
-                  />
-                </label>
               </div>
             </CardContent>
           </Card>
@@ -2293,6 +2272,8 @@ export default function Dashboard() {
           <DuplicateManager />
         </div>
       </div>
+
+      <SelectiveBackupDialog open={showBackupDialog} onOpenChange={setShowBackupDialog} />
 
       <ConfirmDialog
         open={confirmDialog === "cancel"}

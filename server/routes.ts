@@ -7512,17 +7512,23 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   // Data Migration Endpoints
   app.get("/api/data-export", async (req: Request, res: Response) => {
     try {
+      // ?projectIds=1,2,3 → exportación selectiva; sin parámetro → todo.
+      const projectIdsParam = typeof req.query.projectIds === "string" ? req.query.projectIds : null;
+      const filterIds: Set<number> | null = projectIdsParam
+        ? new Set(projectIdsParam.split(",").map(Number).filter(n => !isNaN(n) && n > 0))
+        : null;
+
       const [
-        projects,
-        chapters,
-        worldBibles,
-        pseudonyms,
-        styleGuides,
-        extendedGuides,
-        generatedGuides,
-        series,
-        continuitySnapshots,
-        thoughtLogs,
+        allProjects,
+        allChapters,
+        allWorldBibles,
+        allPseudonyms,
+        allStyleGuides,
+        allExtendedGuides,
+        allGeneratedGuides,
+        allSeries,
+        allContinuitySnapshots,
+        allThoughtLogs,
       ] = await Promise.all([
         storage.getAllProjects(),
         storage.getAllChapters(),
@@ -7536,8 +7542,44 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         storage.getAllThoughtLogs(),
       ]);
 
+      let projects = allProjects;
+      let chapters = allChapters;
+      let worldBibles = allWorldBibles;
+      let pseudonyms = allPseudonyms;
+      let styleGuides = allStyleGuides;
+      let extendedGuides = allExtendedGuides;
+      let generatedGuides = allGeneratedGuides;
+      let series = allSeries;
+      let continuitySnapshots = allContinuitySnapshots;
+      let thoughtLogs = allThoughtLogs;
+
+      if (filterIds && filterIds.size > 0) {
+        projects = allProjects.filter(p => filterIds.has(p.id));
+        const pIds = new Set(projects.map(p => p.id));
+        chapters = allChapters.filter(c => pIds.has(c.projectId));
+        worldBibles = allWorldBibles.filter(w => pIds.has(w.projectId));
+        continuitySnapshots = allContinuitySnapshots.filter(s => pIds.has((s as any).projectId));
+        thoughtLogs = allThoughtLogs.filter(t => pIds.has((t as any).projectId));
+
+        // Solo incluir recursos (pseudónimos, series, guías) que los proyectos seleccionados referencian.
+        const usedPseudonymIds = new Set(projects.map(p => p.pseudonymId).filter(Boolean) as number[]);
+        const usedSeriesIds = new Set(projects.map(p => (p as any).seriesId).filter(Boolean) as number[]);
+        const usedStyleGuideIds = new Set(projects.map(p => (p as any).styleGuideId).filter(Boolean) as number[]);
+        const usedExtendedGuideIds = new Set(projects.map(p => (p as any).extendedGuideId).filter(Boolean) as number[]);
+
+        pseudonyms = allPseudonyms.filter(p => usedPseudonymIds.has(p.id));
+        series = allSeries.filter(s => usedSeriesIds.has(s.id));
+        styleGuides = allStyleGuides.filter(g => usedStyleGuideIds.has(g.id));
+        extendedGuides = allExtendedGuides.filter(g => usedExtendedGuideIds.has(g.id));
+        generatedGuides = allGeneratedGuides.filter(g =>
+          (g.pseudonymId != null && usedPseudonymIds.has(g.pseudonymId)) ||
+          (g.seriesId != null && usedSeriesIds.has(g.seriesId))
+        );
+      }
+
       res.json({
         exportedAt: new Date().toISOString(),
+        selective: filterIds != null,
         data: {
           pseudonyms,
           styleGuides,
@@ -7559,7 +7601,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
   app.post("/api/data-import", async (req: Request, res: Response) => {
     try {
-      const { data, sourceUrl } = req.body;
+      const { data, sourceUrl, projectIds: projectIdsFilter } = req.body;
+      // projectIdsFilter: array de IDs ORIGINALES del backup a importar (null = todo).
+      const importFilterIds: Set<number> | null = Array.isArray(projectIdsFilter) && projectIdsFilter.length > 0
+        ? new Set(projectIdsFilter.map(Number).filter((n: number) => !isNaN(n) && n > 0))
+        : null;
       
       let importData = data;
       
@@ -7783,8 +7829,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
       const projectIdMap = new Map<number, number>();
       
-      if (importData.projects?.length) {
-        for (const item of importData.projects) {
+      // Determinar qué proyectos realmente se importan (para filtrar capítulos/worldBibles).
+      const projectsToImport = importFilterIds
+        ? (importData.projects ?? []).filter((p: any) => importFilterIds.has(p.id))
+        : (importData.projects ?? []);
+
+      if (projectsToImport.length) {
+        for (const item of projectsToImport) {
           try {
             const oldId = item.id;
             const data = prepareForInsert(item);
