@@ -287,9 +287,18 @@ export function ChapterViewer({ chapter }: ChapterViewerProps) {
       );
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (updatedChapter: any) => {
       setIsEditing(false);
       if (chapter) {
+        // Actualizar el caché inmediatamente con el capítulo devuelto por el servidor,
+        // sin esperar el refetch — así el modo lectura muestra el texto nuevo al instante.
+        queryClient.setQueryData(
+          ["/api/projects", chapter.projectId, "chapters"],
+          (old: any) => Array.isArray(old)
+            ? old.map((c: any) => c.id === chapter.id ? { ...c, ...updatedChapter } : c)
+            : old,
+        );
+        // Invalidar en background para confirmar con el servidor.
         queryClient.invalidateQueries({ queryKey: ["/api/projects", chapter.projectId, "chapters"] });
       }
       toast({ title: "Texto guardado", description: "El capítulo se ha actualizado." });
