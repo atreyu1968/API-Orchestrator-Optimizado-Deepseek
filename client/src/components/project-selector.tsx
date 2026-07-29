@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronDown, Search, X, Filter } from "lucide-react";
+import { ChevronDown, Search, X, Filter, Sparkles } from "lucide-react";
 import type { Project, Pseudonym, Series } from "@shared/schema";
 
 interface ProjectSelectorProps {
@@ -176,9 +176,16 @@ export function ProjectSelector({
           {selectedProject ? (
             <div className="flex items-center gap-2 truncate">
               <span className="truncate">{selectedProject.title}</span>
-              <Badge variant="secondary" className={`text-xs shrink-0 ${statusColors[selectedProject.status] || ""}`}>
-                {statusLabels[selectedProject.status] || selectedProject.status}
-              </Badge>
+              {selectedProject.externalReviewStatus === "completed" ? (
+                <Badge variant="secondary" className="text-xs shrink-0 bg-purple-500/20 text-purple-700 dark:text-purple-300">
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  Revisado por editor
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className={`text-xs shrink-0 ${statusColors[selectedProject.status] || ""}`}>
+                  {statusLabels[selectedProject.status] || selectedProject.status}
+                </Badge>
+              )}
             </div>
           ) : (
             <span className="text-muted-foreground">Seleccionar proyecto</span>
@@ -302,9 +309,16 @@ export function ProjectSelector({
                 >
                   <div className="flex items-center justify-between gap-1">
                     <span className="truncate font-medium">{project.title}</span>
-                    <Badge variant="secondary" className={`text-xs shrink-0 ${statusColors[project.status] || ""}`}>
-                      {statusLabels[project.status] || project.status}
-                    </Badge>
+                    {project.externalReviewStatus === "completed" ? (
+                      <Badge variant="secondary" className="text-xs shrink-0 bg-purple-500/20 text-purple-700 dark:text-purple-300">
+                        <Sparkles className="h-3 w-3 mr-1" />
+                        Revisado
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className={`text-xs shrink-0 ${statusColors[project.status] || ""}`}>
+                        {statusLabels[project.status] || project.status}
+                      </Badge>
+                    )}
                   </div>
                   {(authorName || seriesName) && (
                     <div className="flex items-center gap-1.5 mt-0.5">

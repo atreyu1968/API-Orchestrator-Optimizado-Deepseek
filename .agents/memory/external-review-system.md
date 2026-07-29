@@ -27,6 +27,9 @@ Dos campos añadidos a `projects`:
 - `client/src/components/external-review-dialog.tsx` — diálogo de 3 pasos: plantilla/crítica → plan con checkboxes → ejecución con logs en tiempo real
 - Accesible desde dashboard en proyectos completados: botón "Revisión Editorial Externa" con icono Sparkles
 
+## Badge "Revisado por editor"
+Cuando `externalReviewStatus === "completed"`, el `ProjectSelector` muestra un badge morado "✨ Revisado por editor" en lugar del badge de estado de generación. Aplica tanto al botón de cabecera como a cada fila del desplegable.
+
 ## Patrones clave
 
 **Why:** `applyOperations` del SurgicalPatcherAgent se reutiliza para las podas del DensityPruner (mismo formato find_exact/replace_with). No duplicar la lógica de anclaje normalizado.

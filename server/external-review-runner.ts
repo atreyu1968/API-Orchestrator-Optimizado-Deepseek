@@ -270,16 +270,26 @@ async function runSiembra(
     });
 
     if (result.operations.length > 0) {
-      let content = chapter.content || "";
-      for (const op of result.operations) {
-        const idx = content.indexOf(op.anchor_after);
-        if (idx === -1) continue;
-        const insertAt = idx + op.anchor_after.length;
-        content = content.substring(0, insertAt) + "\n\n" + op.seed_text + content.substring(insertAt);
-        previousSeeds.push(op.justification);
+      // Convertir a formato find/replace y aplicar con el patcher normalizado
+      // (Fix212: maneja tildes, comillas tipográficas, espacios distintos).
+      const patcher = new SurgicalPatcherAgent();
+      const patchOps = result.operations.map(op => ({
+        type: "find_exact_and_replace" as const,
+        find_exact: op.anchor_after,
+        replace_with: op.anchor_after + "\n\n" + op.seed_text,
+        justification: op.justification,
+      }));
+      const report = patcher.applyOperations(chapter.content || "", patchOps);
+
+      if (report.applied.length > 0) {
+        await storage.updateChapter(chapter.id, { content: report.finalContent });
+        for (const op of result.operations) previousSeeds.push(op.justification);
+        const skipped = report.failed.length > 0 ? ` (${report.failed.length} ancla(s) no encontrada(s))` : "";
+        send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: ${report.applied.length} semilla(s) plantada(s)${skipped}` });
+      } else {
+        // Ningún ancla encontrada: loguear pero no fallar la intervención entera
+        send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: anclas no encontradas — omitido` });
       }
-      await storage.updateChapter(chapter.id, { content });
-      send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: ${result.operations.length} semilla(s) plantada(s)` });
     } else if (result.not_applicable_reason) {
       send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: ${result.not_applicable_reason}` });
     }
