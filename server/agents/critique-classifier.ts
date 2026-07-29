@@ -19,24 +19,36 @@ export type InterventionStatus = "pending" | "running" | "done" | "skipped" | "f
 
 export interface ReviewIntervention {
   id: string;
+
   type: InterventionType;
+
   titulo: string;
+
   descripcion: string;
+
   capitulosAfectados: number[];
+
   instruccion: string;
   /** Para tipo "siembra": la revelación que se quiere preparar. */
+
   sembraRevelacion?: string;
   /** Para tipo "siembra": lo que el lector sabe en ese punto. */
+
   sembraContextoLector?: string;
   /**
    * Para tipo "estructural": fragmentos literales del texto que son INCOMPATIBLES
    * con la instrucción y que el ChapterRewriteAgent debe eliminar por completo.
    * Si están vacíos, el agente solo aplica la instrucción sin eliminaciones explícitas.
    */
+
   contradictionsToRemove?: string[];
+
   prioridad: InterventionPriority;
+
   status: InterventionStatus;
+
   completedAt?: string;
+
   errorMsg?: string;
 }
 
@@ -61,7 +73,7 @@ TIPOS DE INTERVENCIÓN:
 • "puntual": corrección pequeña en ≤3 capítulos concretos. Ej: una incoherencia de continuidad, un detalle técnico incorrecto, frases de cierre repetidas en capítulos específicos.
 • "densidad": poda de redundancias en un rango de capítulos. Ej: "los capítulos 11–19 se explican demasiado". CapitulosAfectados = el rango completo.
 • "siembra": añadir semillas retroactivas en capítulos tempranos para preparar una revelación. Requiere definir "sembraRevelacion" y "sembraContextoLector".
-• "estructural": reescritura amplia de capítulo(s), cambio de muerte/clímax, inserción de escena nueva. Solo cuando la crítica lo pide explícitamente.
+• "estructural": reescritura amplia de capítulo(s), cambio de muerte/clímax, inserción de escena nueva. Solo cuando la crítica lo pide explícitamente. Requiere identificar los fragmentos del texto original que contradicen la nueva versión (campo "contradictionsToRemove").
 
 PRIORIDADES:
 • "alta": el crítico dice que ES FUNDAMENTAL corregirlo antes de publicar.
@@ -94,9 +106,9 @@ FORMATO DE SALIDA — únicamente JSON válido:
       "descripcion": "qué problema resuelve",
       "capitulosAfectados": [n, ...],
       "instruccion": "instrucción concreta para el agente ejecutor",
-      "contradictionsToRemove": ["solo si type=estructural: descripción de contenido incompatible a eliminar", "..."],
       "sembraRevelacion": "solo si type=siembra: la revelación a preparar",
       "sembraContextoLector": "solo si type=siembra: lo que el lector sabe en ese punto",
+      "contradictionsToRemove": ["solo si type=estructural: descripción del contenido incompatible a eliminar", "..."],
       "prioridad": "alta|media|baja",
       "status": "pending"
     }

@@ -39,7 +39,7 @@ const SYSTEM_PROMPT = `Eres el Agente de Reescritura Estructural (ARE). Recibes 
 REGLAS ABSOLUTAS:
 1. Elimina por completo los fragmentos listados en CONTRADICCIONES A ELIMINAR. No los reformules, no los atenúes, no los parafrasees: BÓRRALOs y reconstruye la escena sin ellos. Si un párrafo entero depende de una contradicción, reescribe el párrafo desde cero.
 2. Aplica la instrucción en TODOS los lugares del capítulo donde sea relevante, no solo en el primer párrafo que menciones.
-3. Mantén el estilo prosaico, el tono y la extensión aproximada del capítulo original.
+3. Mantén el estilo prosaico, el tono y la extensión aproximada del capítulo original (±15 %).
 4. Cambia únicamente lo que la instrucción pide. No inventes subtramas, personajes, giros ni contenido no solicitado.
 5. El resultado debe ser un capítulo COHERENTE leído de principio a fin, no un palimpsesto de versiones.
 

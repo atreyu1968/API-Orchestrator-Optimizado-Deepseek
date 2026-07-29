@@ -9,7 +9,7 @@
  *   1. puntual      — correcciones localizadas (SurgicalPatcher existente)
  *   2. densidad     — poda de redundancias (DensityPrunerAgent nuevo)
  *   3. siembra      — semillas retroactivas (RetroactiveSeederAgent nuevo)
- *   4. estructural  — reescrituras amplias (applyEditorialNotes existente)
+ *   4. estructural  — reescrituras amplias (ChapterRewriteAgent)
  */
 
 import { storage } from "./storage";
@@ -20,7 +20,6 @@ import { ChapterRewriteAgent } from "./agents/chapter-rewriter";
 import { OccurrenceScannerAgent } from "./agents/occurrence-scanner";
 import type { ReviewIntervention, ExternalReviewPlan } from "./agents/critique-classifier";
 import type { Project } from "@shared/schema";
-
 type SendFn = (data: Record<string, unknown>) => void;
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
