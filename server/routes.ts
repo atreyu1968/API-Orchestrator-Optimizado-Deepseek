@@ -1704,9 +1704,6 @@ export async function registerRoutes(
       const { critiqueText } = req.body || {};
       const project = await storage.getProject(id);
       if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
-      if (!isProjectCompletedStatus(project.status)) {
-        return res.status(400).json({ error: "El proyecto debe estar completado para aplicar una revisión editorial" });
-      }
       if (!critiqueText || typeof critiqueText !== "string" || !critiqueText.trim()) {
         return res.status(400).json({ error: "Debes proporcionar 'critiqueText'" });
       }
@@ -1763,9 +1760,6 @@ export async function registerRoutes(
       const { interventionIds } = req.body || {}; // null = all pending
       const project = await storage.getProject(id);
       if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
-      if (!isProjectCompletedStatus(project.status)) {
-        return res.status(400).json({ error: "El proyecto debe estar completado" });
-      }
       if (!(project as any).pendingExternalReview) {
         return res.status(400).json({ error: "No hay plan de revisión externo. Parsea primero la crítica." });
       }
