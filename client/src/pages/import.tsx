@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -30,6 +30,8 @@ import {
   BookOpen,
   User,
   FileEdit,
+  Sparkles,
+  ChevronRight,
 } from "lucide-react";
 import { ExternalReviewDialog } from "@/components/external-review-dialog";
 import type { ImportedManuscript, ImportedChapter, Pseudonym } from "@shared/schema";
@@ -352,12 +354,13 @@ function ManuscriptCard({ manuscript, onSelect, onDelete, onExternalReview }: {
           {(manuscript.processedChapters ?? 0) > 0 && (
             <Button
               size="sm"
-              variant="outline"
+              variant="ghost"
               onClick={(e) => { e.stopPropagation(); onExternalReview(); }}
               data-testid={`button-external-review-manuscript-${manuscript.id}`}
               title="Aplicar revisión editorial externa"
+              className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-950/30"
             >
-              <FileEdit className="h-3.5 w-3.5 mr-1" />
+              <Sparkles className="h-3.5 w-3.5 mr-1" />
               Revisar
             </Button>
           )}
@@ -546,16 +549,6 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
             <Download className="h-4 w-4 mr-2" />
             Exportar MD
           </Button>
-          {(manuscript.processedChapters ?? 0) > 0 && (
-            <Button
-              variant="outline"
-              onClick={() => setShowExternalReview(true)}
-              data-testid="button-external-review-detail"
-            >
-              <FileEdit className="h-4 w-4 mr-2" />
-              Revisar
-            </Button>
-          )}
           <Button variant="outline" onClick={onBack}>Volver</Button>
         </div>
       </div>
@@ -570,6 +563,7 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+
         <Card>
           <CardContent className="pt-4">
             <div className="text-2xl font-bold">{manuscript.totalChapters || 0}</div>
@@ -619,6 +613,26 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
           </CardContent>
         </Card>
       </div>
+
+      {(manuscript.processedChapters ?? 0) > 0 && (
+        <div className="mt-2 pt-4 border-t border-border/50">
+          <button
+            type="button"
+            onClick={() => setShowExternalReview(true)}
+            className="w-full flex items-center justify-between gap-2 text-sm font-medium hover-elevate p-2 rounded-md"
+            data-testid="button-external-review-detail"
+          >
+            <span className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-purple-500" />
+              Revisión Editorial Externa
+            </span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </button>
+          <p className="text-xs text-muted-foreground px-2 mt-0.5">
+            Aplica una crítica de lector externo con agentes especializados (poda, siembra, cirugía)
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-1">
