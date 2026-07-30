@@ -319,36 +319,38 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
           </TabsList>
 
           {/* ── TAB 1: PLANTILLA ─────────────────────────────────── */}
-          <TabsContent value="plantilla" className="flex-1 flex flex-col gap-3 min-h-0 mt-3">
-            <p className="text-sm text-muted-foreground shrink-0">
-              Rellena la plantilla o pega directamente la crítica completa. Cuanto más detallada, más preciso será el plan.
-            </p>
-            <Textarea
-              className="flex-1 font-mono text-xs resize-none min-h-[320px]"
-              value={critiqueText}
-              onChange={e => setCritiqueText(e.target.value)}
-              placeholder="Escribe o pega la crítica aquí..."
-            />
-            <div className="flex items-center justify-between shrink-0">
-              <span className="text-xs text-muted-foreground">{critiqueText.length.toLocaleString()} caracteres</span>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setCritiqueText(CRITIQUE_TEMPLATE)}>
-                  Restaurar plantilla
-                </Button>
-                <Button size="sm" onClick={handleParse} disabled={parsing}>
-                  {parsing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-                  {parsing ? "Analizando..." : "Analizar crítica"}
-                </Button>
+          <TabsContent value="plantilla" className="mt-3">
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-muted-foreground">
+                Rellena la plantilla o pega directamente la crítica completa. Cuanto más detallada, más preciso será el plan.
+              </p>
+              <Textarea
+                className="font-mono text-xs resize-none h-[340px]"
+                value={critiqueText}
+                onChange={e => setCritiqueText(e.target.value)}
+                placeholder="Escribe o pega la crítica aquí..."
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{critiqueText.length.toLocaleString()} caracteres</span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setCritiqueText(CRITIQUE_TEMPLATE)}>
+                    Restaurar plantilla
+                  </Button>
+                  <Button size="sm" onClick={handleParse} disabled={parsing}>
+                    {parsing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                    {parsing ? "Analizando..." : "Analizar crítica"}
+                  </Button>
+                </div>
               </div>
             </div>
           </TabsContent>
 
           {/* ── TAB 2: PLAN ──────────────────────────────────────── */}
-          <TabsContent value="plan" className="flex-1 flex flex-col gap-3 min-h-0 mt-3">
+          <TabsContent value="plan" className="mt-3">
             {plan && (
-              <>
+              <div className="flex flex-col gap-3">
                 {/* Summary */}
-                <div className="bg-muted/50 rounded-md p-3 text-sm space-y-1 shrink-0">
+                <div className="bg-muted/50 rounded-md p-3 text-sm space-y-1">
                   <p>{plan.overallSummary}</p>
                   {(plan.currentScore || plan.potentialScore) && (
                     <p className="text-xs text-muted-foreground">
@@ -360,7 +362,7 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
                 </div>
 
                 {/* Select all / none */}
-                <div className="flex items-center justify-between shrink-0">
+                <div className="flex items-center justify-between">
                   <Button variant="ghost" size="sm" onClick={() => {
                     const pending = plan.interventions.filter(i => i.status === "pending");
                     setSelectedIds(selectedIds.size === pending.length ? new Set() : new Set(pending.map(i => i.id)));
@@ -370,8 +372,8 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
                   <span className="text-xs text-muted-foreground">{selectedIds.size} seleccionadas</span>
                 </div>
 
-                <ScrollArea className="flex-1 min-h-0">
-                  <div className="space-y-2 pr-1">
+                <ScrollArea className="h-[320px] border rounded-md">
+                  <div className="space-y-2 p-1">
                     {plan.interventions.map(iv => {
                       const expanded = expandedIds.has(iv.id);
                       const isDone = iv.status === "done";
@@ -431,13 +433,14 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
                   {running ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
                   {running ? "Ejecutando..." : `Aplicar ${selectedIds.size} intervención(es)`}
                 </Button>
-              </>
+              </div>
             )}
           </TabsContent>
 
           {/* ── TAB 3: EJECUCIÓN ─────────────────────────────────── */}
-          <TabsContent value="ejecucion" className="flex-1 flex flex-col gap-3 min-h-0 mt-3">
-            <ScrollArea className="flex-1 border rounded-md bg-black/90 min-h-0">
+          <TabsContent value="ejecucion" className="mt-3">
+            <div className="flex flex-col gap-3">
+            <ScrollArea className="h-[320px] border rounded-md bg-black/90">
               <div className="p-3 font-mono text-xs space-y-0.5">
                 {logs.length === 0 && (
                   <p className="text-gray-500">Esperando inicio de ejecución...</p>
@@ -468,7 +471,6 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
             {!running && plan?.interventions.some(i => i.status === "failed") && (
               <Button
                 variant="outline"
-                className="shrink-0"
                 onClick={() => {
                   setSelectedIds(new Set(plan.interventions.filter(i => i.status === "failed").map(i => i.id)));
                   setTab("plan");
@@ -478,6 +480,7 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
                 Reintentar fallidas
               </Button>
             )}
+            </div>
           </TabsContent>
         </Tabs>
 
