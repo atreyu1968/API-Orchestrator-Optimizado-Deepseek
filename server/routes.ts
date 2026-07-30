@@ -14750,8 +14750,10 @@ CRITERIOS:
 
       const sources: any[] = [];
 
+      const terminalWithChapters = ["cancelled", "paused", "error", "failed", "failed_final_review"];
       for (const p of allProjects) {
-        if (isProjectCompletedStatus(p.status)) {
+        const hasChapters = (p.chapterCount || 0) > 0;
+        if (isProjectCompletedStatus(p.status) || (hasChapters && terminalWithChapters.includes(p.status))) {
           sources.push({ sourceType: "project", sourceId: p.id, title: p.title, chapters: p.chapterCount || 0, language: "es", genre: p.genre, pseudonymId: p.pseudonymId });
         }
       }
