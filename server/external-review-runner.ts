@@ -2,8 +2,8 @@
  * external-review-runner.ts
  * -------------------------
  * Orquesta la ejecución de un plan de revisión editorial externa sobre un
- * proyecto completado. Funciona de forma completamente independiente del
- * pipeline principal de generación.
+ * proyecto completado O un manuscrito importado. Funciona de forma
+ * completamente independiente del pipeline principal de generación.
  *
  * ORDEN DE EJECUCIÓN (seguro):
  *   1. puntual      — correcciones localizadas (SurgicalPatcher existente)
@@ -19,35 +19,84 @@ import { SurgicalPatcherAgent } from "./agents/surgical-patcher";
 import { ChapterRewriteAgent } from "./agents/chapter-rewriter";
 import { OccurrenceScannerAgent } from "./agents/occurrence-scanner";
 import type { ReviewIntervention, ExternalReviewPlan } from "./agents/critique-classifier";
-import type { Project } from "@shared/schema";
+
 type SendFn = (data: Record<string, unknown>) => void;
 
+// ─── adapter (abstrae proyectos normales vs importados) ───────────────────────
+
+export interface ChapterLike {
+  id: number;
+  chapterNumber: number;
+  title: string | null;
+  content: string | null;
+}
+
+/**
+ * Abstracción que permite que el runner trabaje con proyectos normales
+ * (chapters) y con manuscritos importados (imported_chapters) sin cambiar
+ * la lógica de las intervenciones.
+ */
+export interface ReviewAdapter {
+  plan: ExternalReviewPlan;
+  persistPlan(plan: ExternalReviewPlan): Promise<void>;
+  setStatus(status: string): Promise<void>;
+  getChapters(): Promise<ChapterLike[]>;
+  /** Guarda el contenido nuevo. preEditContent es opcional (backup). */
+  saveChapter(id: number, newContent: string, preEditContent?: string): Promise<void>;
+}
+
+/** Crea un adapter para proyectos normales. */
+export function projectAdapter(project: { id: number; pendingExternalReview: unknown }): ReviewAdapter {
+  const projectId = project.id;
+  const plan = project.pendingExternalReview as ExternalReviewPlan;
+  return {
+    plan,
+    async persistPlan(p) {
+      await storage.updateProject(projectId, { pendingExternalReview: p as any });
+    },
+    async setStatus(status) {
+      await storage.updateProject(projectId, { externalReviewStatus: status } as any);
+    },
+    async getChapters() {
+      const chs = await storage.getChaptersByProject(projectId);
+      return chs.map(c => ({ id: c.id, chapterNumber: c.chapterNumber, title: c.title ?? null, content: (c as any).content ?? null }));
+    },
+    async saveChapter(id, newContent, preEditContent) {
+      const upd: Record<string, unknown> = { content: newContent };
+      if (preEditContent !== undefined) upd.preEditContent = preEditContent;
+      await storage.updateChapter(id, upd as any);
+    },
+  };
+}
+
+/** Crea un adapter para manuscritos importados con estado en memoria. */
+export function manuscriptAdapter(
+  manuscriptId: number,
+  plan: ExternalReviewPlan,
+  persistPlanFn: (p: ExternalReviewPlan) => Promise<void>,
+  setStatusFn: (s: string) => Promise<void>
+): ReviewAdapter {
+  return {
+    plan,
+    persistPlan: persistPlanFn,
+    setStatus: setStatusFn,
+    async getChapters() {
+      const chs = await storage.getImportedChaptersByManuscript(manuscriptId);
+      return chs.map(c => ({
+        id: c.id,
+        chapterNumber: c.chapterNumber,
+        title: c.title ?? null,
+        // Los capítulos importados usan editedContent si existe, si no originalContent
+        content: (c.editedContent ?? c.originalContent) ?? null,
+      }));
+    },
+    async saveChapter(id, newContent, _preEditContent) {
+      await storage.updateImportedChapter(id, { editedContent: newContent });
+    },
+  };
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
-
-function applyFindReplace(
-  content: string,
-  ops: Array<{ find_exact?: string; anchor_after?: string; replace_with?: string; seed_text?: string }>
-): string {
-  let result = content;
-  for (const op of ops) {
-    const find = op.find_exact ?? op.anchor_after ?? "";
-    const replacement = op.replace_with !== undefined ? op.replace_with : (op.seed_text ? `${find}\n${op.seed_text}` : find);
-    if (!find) continue;
-    const idx = result.indexOf(find);
-    if (idx === -1) continue;
-    if (op.anchor_after !== undefined && op.seed_text !== undefined) {
-      // Insertar DESPUÉS del ancla
-      result = result.substring(0, idx + find.length) + "\n" + op.seed_text + result.substring(idx + find.length);
-    } else {
-      result = result.substring(0, idx) + replacement + result.substring(idx + find.length);
-    }
-  }
-  return result;
-}
-
-function persistPlan(projectId: number, plan: ExternalReviewPlan): Promise<unknown> {
-  return storage.updateProject(projectId, { pendingExternalReview: plan as any });
-}
 
 function updateInterventionStatus(
   plan: ExternalReviewPlan,
@@ -68,15 +117,11 @@ function updateInterventionStatus(
 // ─── main runner ──────────────────────────────────────────────────────────────
 
 export async function runExternalReview(
-  project: Project,
+  adapter: ReviewAdapter,
   interventionIds: string[] | null, // null = all pending
   send: SendFn
 ): Promise<void> {
-  const projectId = project.id;
-  const rawPlan = project.pendingExternalReview as ExternalReviewPlan | null;
-  if (!rawPlan) throw new Error("No hay plan de revisión externo pendiente para este proyecto");
-
-  let plan: ExternalReviewPlan = { ...rawPlan, interventions: rawPlan.interventions.map(i => ({ ...i })) };
+  let plan: ExternalReviewPlan = { ...adapter.plan, interventions: adapter.plan.interventions.map(i => ({ ...i })) };
 
   // Filtrar qué intervenciones ejecutar
   const toRun = plan.interventions.filter(i => {
@@ -90,7 +135,7 @@ export async function runExternalReview(
     return;
   }
 
-  await storage.updateProject(projectId, { externalReviewStatus: "running" });
+  await adapter.setStatus("running");
   send({ type: "external_review_started", count: toRun.length });
 
   const typeOrder: ReviewIntervention["type"][] = ["puntual", "densidad", "siembra", "estructural"];
@@ -120,32 +165,32 @@ export async function runExternalReview(
   for (const intervention of sorted) {
     // Mark running
     plan = updateInterventionStatus(plan, intervention.id, "running");
-    await persistPlan(projectId, plan);
+    await adapter.persistPlan(plan);
     send({ type: "intervention_start", id: intervention.id, interventionType: intervention.type, titulo: intervention.titulo });
 
     try {
       if (intervention.type === "puntual") {
-        await runPuntual(projectId, intervention, surgicalAgent, scannerAgent, send);
+        await runPuntual(adapter, intervention, surgicalAgent, scannerAgent, send);
 
       } else if (intervention.type === "densidad") {
-        await runDensidad(projectId, intervention, densityAgent, knownTics, send);
+        await runDensidad(adapter, intervention, densityAgent, knownTics, send);
 
       } else if (intervention.type === "siembra") {
-        await runSiembra(projectId, intervention, seederAgent, send);
+        await runSiembra(adapter, intervention, seederAgent, send);
 
       } else if (intervention.type === "estructural") {
-        await runEstructural(projectId, intervention, rewriterAgent, send);
+        await runEstructural(adapter, intervention, rewriterAgent, send);
       }
 
       plan = updateInterventionStatus(plan, intervention.id, "done");
-      await persistPlan(projectId, plan);
+      await adapter.persistPlan(plan);
       send({ type: "intervention_done", id: intervention.id });
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[ExternalReview] Intervención ${intervention.id} falló:`, msg);
       plan = updateInterventionStatus(plan, intervention.id, "failed", { errorMsg: msg });
-      await persistPlan(projectId, plan);
+      await adapter.persistPlan(plan);
       send({ type: "intervention_failed", id: intervention.id, error: msg });
     }
   }
@@ -153,23 +198,21 @@ export async function runExternalReview(
   const allDone = plan.interventions.every(i => i.status === "done" || i.status === "skipped");
   const finalStatus = allDone ? "completed" : (plan.interventions.some(i => i.status === "failed") ? "failed" : "completed");
   plan = { ...plan };
-  await storage.updateProject(projectId, {
-    externalReviewStatus: finalStatus,
-    pendingExternalReview: plan as any,
-  });
+  await adapter.persistPlan(plan);
+  await adapter.setStatus(finalStatus);
   send({ type: "external_review_done", status: finalStatus });
 }
 
 // ─── puntual ─────────────────────────────────────────────────────────────────
 
 async function runPuntual(
-  projectId: number,
+  adapter: ReviewAdapter,
   intervention: ReviewIntervention,
   agent: SurgicalPatcherAgent,
   scanner: OccurrenceScannerAgent,
   send: SendFn
 ): Promise<void> {
-  const chapters = await storage.getChaptersByProject(projectId);
+  const chapters = await adapter.getChapters();
   const targets = chapters
     .filter(c => intervention.capitulosAfectados.includes(c.chapterNumber))
     .sort((a, b) => a.chapterNumber - b.chapterNumber);
@@ -177,10 +220,6 @@ async function runPuntual(
   if (targets.length === 0) return;
 
   // ── Ruta A: intervención multi-capítulo → escáner semántico global ──────────
-  // Para problemas que aparecen en varios capítulos con distintas fórmulas
-  // (Ej: "Kincaid presentado como culpable" en prólogo + cap 2 + cap 3),
-  // primero escaneamos todos juntos para encontrar TODAS las ocurrencias,
-  // luego las aplicamos capítulo a capítulo con el patcher normalizado.
   if (targets.length > 1) {
     send({ type: "intervention_progress", id: intervention.id, message: `Escaneando ${targets.length} capítulos en busca de todas las ocurrencias...` });
 
@@ -194,14 +233,12 @@ async function runPuntual(
     });
 
     if (scanResult.matches.length > 0) {
-      // Agrupar ocurrencias por capítulo
       const byChapter = new Map<number, typeof scanResult.matches>();
       for (const m of scanResult.matches) {
         if (!byChapter.has(m.chapterNumber)) byChapter.set(m.chapterNumber, []);
         byChapter.get(m.chapterNumber)!.push(m);
       }
 
-      // Aplicar por capítulo con el patcher normalizado (Fix212)
       for (const chapter of targets) {
         const matches = byChapter.get(chapter.chapterNumber);
         if (!matches?.length) continue;
@@ -215,7 +252,7 @@ async function runPuntual(
 
         const report = agent.applyOperations(chapter.content || "", patchOps);
         if (report.applied.length > 0) {
-          await storage.updateChapter(chapter.id, { content: report.finalContent });
+          await adapter.saveChapter(chapter.id, report.finalContent);
           const fuzzyNote = (report.fuzzyApplied ?? 0) > 0 ? ` (${report.fuzzyApplied} fuzzy)` : "";
           send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: ${report.applied.length}/${matches.length} ocurrencias corregidas${fuzzyNote}` });
         } else if (report.failed.length > 0) {
@@ -225,20 +262,19 @@ async function runPuntual(
       send({ type: "intervention_progress", id: intervention.id, message: `Total: ${scanResult.matches.length} ocurrencias identificadas` });
 
     } else {
-      // Escáner no encontró nada — caer a la ruta individual por si el scanner erró
       send({ type: "intervention_progress", id: intervention.id, message: `Escáner global sin resultados${scanResult.not_found_reason ? ": " + scanResult.not_found_reason : ""}. Aplicando cirugía individual...` });
-      await runPuntualPerChapter(targets, intervention, agent, send);
+      await runPuntualPerChapter(targets, adapter, intervention, agent, send);
     }
 
   } else {
-    // ── Ruta B: un solo capítulo → cirugía directa ───────────────────────────
-    await runPuntualPerChapter(targets, intervention, agent, send);
+    await runPuntualPerChapter(targets, adapter, intervention, agent, send);
   }
 }
 
 /** Cirugía capítulo a capítulo (ruta fallback o single-chapter). */
 async function runPuntualPerChapter(
-  targets: Array<{ id: number; chapterNumber: number; title: string | null; content: string | null }>,
+  targets: ChapterLike[],
+  adapter: ReviewAdapter,
   intervention: ReviewIntervention,
   agent: SurgicalPatcherAgent,
   send: SendFn
@@ -258,7 +294,7 @@ async function runPuntualPerChapter(
     if (result.result?.operations?.length) {
       const report = agent.applyOperations(chapter.content || "", result.result.operations);
       if (report.applied.length > 0) {
-        await storage.updateChapter(chapter.id, { content: report.finalContent });
+        await adapter.saveChapter(chapter.id, report.finalContent);
         send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: ${report.applied.length} operaciones aplicadas` });
       }
     }
@@ -268,13 +304,13 @@ async function runPuntualPerChapter(
 // ─── densidad ────────────────────────────────────────────────────────────────
 
 async function runDensidad(
-  projectId: number,
+  adapter: ReviewAdapter,
   intervention: ReviewIntervention,
   agent: DensityPrunerAgent,
   knownTics: string[],
   send: SendFn
 ): Promise<void> {
-  const chapters = await storage.getChaptersByProject(projectId);
+  const chapters = await adapter.getChapters();
   const targets = chapters
     .filter(c => intervention.capitulosAfectados.includes(c.chapterNumber))
     .sort((a, b) => a.chapterNumber - b.chapterNumber);
@@ -299,11 +335,10 @@ async function runDensidad(
     });
 
     if (result.operations.length > 0) {
-      // Reutilizamos el applyOperations del SurgicalPatcher (mismo formato find/replace)
       const patcher = new SurgicalPatcherAgent();
       const report = patcher.applyOperations(chapter.content || "", result.operations as any);
       if (report.applied.length > 0) {
-        await storage.updateChapter(chapter.id, { content: report.finalContent });
+        await adapter.saveChapter(chapter.id, report.finalContent);
         const pct = Math.round(((report.originalLength - report.finalLength) / report.originalLength) * 100);
         send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: −${pct}% (${report.applied.length} podas)` });
       }
@@ -316,7 +351,7 @@ async function runDensidad(
 // ─── siembra ─────────────────────────────────────────────────────────────────
 
 async function runSiembra(
-  projectId: number,
+  adapter: ReviewAdapter,
   intervention: ReviewIntervention,
   agent: RetroactiveSeederAgent,
   send: SendFn
@@ -325,7 +360,7 @@ async function runSiembra(
     throw new Error("La intervención de siembra no tiene 'sembraRevelacion' definida");
   }
 
-  const chapters = await storage.getChaptersByProject(projectId);
+  const chapters = await adapter.getChapters();
   const targets = chapters
     .filter(c => intervention.capitulosAfectados.includes(c.chapterNumber))
     .sort((a, b) => a.chapterNumber - b.chapterNumber);
@@ -345,8 +380,6 @@ async function runSiembra(
     });
 
     if (result.operations.length > 0) {
-      // Convertir a formato find/replace y aplicar con el patcher normalizado
-      // (Fix212: maneja tildes, comillas tipográficas, espacios distintos).
       const patcher = new SurgicalPatcherAgent();
       const patchOps = result.operations.map(op => ({
         type: "find_exact_and_replace" as const,
@@ -357,12 +390,11 @@ async function runSiembra(
       const report = patcher.applyOperations(chapter.content || "", patchOps);
 
       if (report.applied.length > 0) {
-        await storage.updateChapter(chapter.id, { content: report.finalContent });
+        await adapter.saveChapter(chapter.id, report.finalContent);
         for (const op of result.operations) previousSeeds.push(op.justification);
         const skipped = report.failed.length > 0 ? ` (${report.failed.length} ancla(s) no encontrada(s))` : "";
         send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: ${report.applied.length} semilla(s) plantada(s)${skipped}` });
       } else {
-        // Ningún ancla encontrada: loguear pero no fallar la intervención entera
         send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: anclas no encontradas — omitido` });
       }
     } else if (result.not_applicable_reason) {
@@ -374,18 +406,14 @@ async function runSiembra(
 // ─── estructural ─────────────────────────────────────────────────────────────
 
 async function runEstructural(
-  projectId: number,
+  adapter: ReviewAdapter,
   intervention: ReviewIntervention,
   rewriter: ChapterRewriteAgent,
   send: SendFn
 ): Promise<void> {
-  // Usa ChapterRewriteAgent (ARE) en lugar de applyEditorialNotes.
-  // La diferencia clave: el ARE recibe las contradicciones a eliminar
-  // explícitamente y reescribe el capítulo completo desde cero, sin dejar
-  // restos del texto anterior que sean incompatibles con la corrección.
   send({ type: "intervention_progress", id: intervention.id, message: "Iniciando reescritura estructural..." });
 
-  const chapters = await storage.getChaptersByProject(projectId);
+  const chapters = await adapter.getChapters();
   const targets = chapters
     .filter(c => intervention.capitulosAfectados.includes(c.chapterNumber))
     .sort((a, b) => a.chapterNumber - b.chapterNumber);
@@ -412,11 +440,7 @@ async function runEstructural(
       throw new Error(`Cap ${chapter.chapterNumber}: el rewriter devolvió contenido vacío o demasiado corto`);
     }
 
-    // Guardar con backup en pre_edit_content
-    await storage.updateChapter(chapter.id, {
-      content: result.rewrittenContent,
-      preEditContent: chapter.content ?? undefined,
-    });
+    await adapter.saveChapter(chapter.id, result.rewrittenContent, chapter.content ?? undefined);
 
     const wordCount = result.rewrittenContent.split(/\s+/).length;
     const summary = result.changeSummary ? ` — ${result.changeSummary.substring(0, 80)}` : "";

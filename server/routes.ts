@@ -79,6 +79,16 @@ const updateSeriesSchema = z.object({
 const activeStreams = new Map<number, Set<Response>>();
 const activeManuscriptAnalysis = new Map<number, AbortController>();
 
+// ── Estado en memoria para revisión editorial de manuscritos importados ───────
+// (los manuscritos no tienen columnas externalReviewStatus/pendingExternalReview
+//  en la BD, así que guardamos el estado en memoria durante la sesión)
+const manuscriptReviewStreams = new Map<number, Set<Response>>();
+type ManuscriptReviewState = {
+  status: "idle" | "parsing" | "parsed" | "running" | "completed" | "failed";
+  plan: import("./agents/critique-classifier").ExternalReviewPlan | null;
+};
+const manuscriptReviewState = new Map<number, ManuscriptReviewState>();
+
 function splitLongParagraphs(content: string): string {
   const blocks = content.split(/\n\n+/);
   const result: string[] = [];
@@ -1777,9 +1787,10 @@ export async function registerRoutes(
         }
       };
 
-      const { runExternalReview } = await import("./external-review-runner");
+      const { runExternalReview, projectAdapter } = await import("./external-review-runner");
+      const adapter = projectAdapter(project as any);
       runExternalReview(
-        project,
+        adapter,
         Array.isArray(interventionIds) ? interventionIds : null,
         sendToStreams
       ).catch(async (err) => {
@@ -1806,6 +1817,135 @@ export async function registerRoutes(
       });
     } catch (error) {
       res.status(500).json({ error: "Error al obtener revisión" });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Revisión editorial externa para MANUSCRITOS IMPORTADOS
+  // Misma lógica que para proyectos, pero usa imported_chapters y estado en memoria.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/imported-manuscripts/:id/external-review", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const manuscript = await storage.getImportedManuscript(id);
+      if (!manuscript) return res.status(404).json({ error: "Manuscrito no encontrado" });
+      const state = manuscriptReviewState.get(id) ?? { status: "idle", plan: null };
+      res.json({ externalReviewStatus: state.status, pendingExternalReview: state.plan });
+    } catch (err) {
+      res.status(500).json({ error: "Error al obtener revisión" });
+    }
+  });
+
+  app.post("/api/imported-manuscripts/:id/external-review/parse", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { critiqueText } = req.body || {};
+      const manuscript = await storage.getImportedManuscript(id);
+      if (!manuscript) return res.status(404).json({ error: "Manuscrito no encontrado" });
+      if (!critiqueText || typeof critiqueText !== "string" || !critiqueText.trim())
+        return res.status(400).json({ error: "Debes proporcionar 'critiqueText'" });
+      if (critiqueText.length > 300_000)
+        return res.status(400).json({ error: "La crítica es demasiado larga (máx 300.000 caracteres)" });
+
+      manuscriptReviewState.set(id, { status: "parsing", plan: null });
+      res.status(202).json({ accepted: true, manuscriptId: id });
+
+      const sendToStreams = (data: any) => {
+        const streams = manuscriptReviewStreams.get(id);
+        if (streams) {
+          const msg = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(s => { try { s.write(msg); } catch {} });
+        }
+      };
+
+      const { CritiqueClassifierAgent } = await import("./agents/critique-classifier");
+      const classifier = new CritiqueClassifierAgent();
+      const chapters = await storage.getImportedChaptersByManuscript(id);
+      const chapterIndex = chapters.map(c => ({ numero: c.chapterNumber, titulo: c.title || `Capítulo ${c.chapterNumber}` }));
+
+      classifier.classify({ critiqueText, chapterIndex, projectTitle: manuscript.title })
+        .then(async (result) => {
+          const plan = { critiqueText, parsedAt: new Date().toISOString(), overallSummary: result.overallSummary, currentScore: result.currentScore, potentialScore: result.potentialScore, interventions: result.interventions };
+          manuscriptReviewState.set(id, { status: "parsed", plan });
+          sendToStreams({ type: "external_review_parsed", plan });
+        })
+        .catch(async (err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          manuscriptReviewState.set(id, { status: "failed", plan: null });
+          sendToStreams({ type: "external_review_parse_error", message: msg });
+        });
+    } catch (error) {
+      console.error("Error parsing manuscript critique:", error);
+      if (!res.headersSent) res.status(500).json({ error: "Error al analizar la crítica" });
+    }
+  });
+
+  app.post("/api/imported-manuscripts/:id/external-review/run", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { interventionIds } = req.body || {};
+      const manuscript = await storage.getImportedManuscript(id);
+      if (!manuscript) return res.status(404).json({ error: "Manuscrito no encontrado" });
+      const state = manuscriptReviewState.get(id);
+      if (!state?.plan) return res.status(400).json({ error: "No hay plan de revisión. Parsea primero la crítica." });
+      if (state.status === "running") return res.status(409).json({ error: "Ya hay una revisión en curso" });
+
+      res.status(202).json({ accepted: true, manuscriptId: id });
+
+      const sendToStreams = (data: any) => {
+        const streams = manuscriptReviewStreams.get(id);
+        if (streams) {
+          const msg = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(s => { try { s.write(msg); } catch {} });
+        }
+      };
+
+      const { runExternalReview, manuscriptAdapter } = await import("./external-review-runner");
+      const adapter = manuscriptAdapter(
+        id,
+        state.plan,
+        async (plan) => { const s = manuscriptReviewState.get(id); if (s) manuscriptReviewState.set(id, { ...s, plan }); },
+        async (status) => { const s = manuscriptReviewState.get(id); manuscriptReviewState.set(id, { status: status as any, plan: s?.plan ?? null }); }
+      );
+
+      runExternalReview(adapter, Array.isArray(interventionIds) ? interventionIds : null, sendToStreams).catch(async (err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        manuscriptReviewState.set(id, { status: "failed", plan: state.plan });
+        sendToStreams({ type: "external_review_done", status: "failed", error: msg });
+      });
+    } catch (error) {
+      console.error("Error running manuscript external review:", error);
+      if (!res.headersSent) res.status(500).json({ error: "Error al iniciar la revisión" });
+    }
+  });
+
+  // SSE stream para revisión editorial de manuscritos importados
+  app.get("/api/imported-manuscripts/:id/external-review/stream", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const manuscript = await storage.getImportedManuscript(id);
+      if (!manuscript) return res.status(404).json({ error: "Manuscrito no encontrado" });
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+
+      if (!manuscriptReviewStreams.has(id)) manuscriptReviewStreams.set(id, new Set());
+      manuscriptReviewStreams.get(id)!.add(res);
+      res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
+
+      const heartbeat = setInterval(() => { try { res.write(`: heartbeat\n\n`); } catch { clearInterval(heartbeat); } }, 15000);
+
+      req.on("close", () => {
+        clearInterval(heartbeat);
+        const streams = manuscriptReviewStreams.get(id);
+        if (streams) { streams.delete(res); if (streams.size === 0) manuscriptReviewStreams.delete(id); }
+      });
+    } catch (error) {
+      if (!res.headersSent) res.status(500).json({ error: "Failed to setup stream" });
     }
   });
 

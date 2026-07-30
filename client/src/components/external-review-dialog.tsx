@@ -134,11 +134,31 @@ Nota potencial tras revisión: [ej: 8,5–9/10]
 export interface ExternalReviewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  projectId: number;
-  projectTitle: string;
+  /** ID del proyecto normal. Mutuamente excluyente con manuscriptId. */
+  projectId?: number;
+  projectTitle?: string;
+  /** ID del manuscrito importado. Mutuamente excluyente con projectId. */
+  manuscriptId?: number;
+  manuscriptTitle?: string;
 }
 
-export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTitle }: ExternalReviewDialogProps) {
+export function ExternalReviewDialog({
+  open,
+  onOpenChange,
+  projectId,
+  projectTitle,
+  manuscriptId,
+  manuscriptTitle,
+}: ExternalReviewDialogProps) {
+  // Derivar las URLs base según el tipo de fuente
+  const isManuscript = manuscriptId != null;
+  const baseUrl = isManuscript
+    ? `/api/imported-manuscripts/${manuscriptId}/external-review`
+    : `/api/projects/${projectId}/external-review`;
+  const streamUrl = isManuscript
+    ? `/api/imported-manuscripts/${manuscriptId}/external-review/stream`
+    : `/api/projects/${projectId}/stream`;
+  const displayTitle = isManuscript ? manuscriptTitle : projectTitle;
   const { toast } = useToast();
   const qc = useQueryClient();
   const [tab, setTab] = useState<"plantilla" | "plan" | "ejecucion">("plantilla");
@@ -151,7 +171,7 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const { data: reviewState, refetch: refetchState } = useQuery<ExternalReviewState>({
-    queryKey: [`/api/projects/${projectId}/external-review`],
+    queryKey: [baseUrl],
     enabled: open,
     refetchInterval: running ? 3000 : false,
   });
@@ -178,7 +198,7 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
   // SSE listener
   useEffect(() => {
     if (!open) return;
-    const es = new EventSource(`/api/projects/${projectId}/stream`);
+    const es = new EventSource(streamUrl);
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
@@ -213,12 +233,13 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
           setRunning(false);
           refetchState();
           qc.invalidateQueries({ queryKey: ["/api/projects"] });
+          qc.invalidateQueries({ queryKey: ["/api/imported-manuscripts"] });
           toast({ title: data.status === "completed" ? "Revisión completada" : "Revisión con errores", description: data.status === "completed" ? "Todas las intervenciones aplicadas" : "Algunas intervenciones fallaron" });
         }
       } catch {}
     };
     return () => es.close();
-  }, [open, projectId]);
+  }, [open, streamUrl]);
 
   const handleParse = async () => {
     if (!critiqueText.trim() || critiqueText === CRITIQUE_TEMPLATE) {
@@ -227,7 +248,7 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
     }
     setParsing(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/external-review/parse`, {
+      const res = await fetch(`${baseUrl}/parse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ critiqueText }),
@@ -251,7 +272,7 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
     setRunning(true);
     setLogs([]);
     try {
-      const res = await fetch(`/api/projects/${projectId}/external-review/run`, {
+      const res = await fetch(`${baseUrl}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ interventionIds: [...selectedIds] }),
@@ -298,7 +319,7 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
             Revisión Editorial Externa
           </DialogTitle>
           <DialogDescription>
-            <span className="font-medium text-foreground">{projectTitle}</span> — Aplica una crítica de lector externo con agentes especializados
+            <span className="font-medium text-foreground">{displayTitle}</span> — Aplica una crítica de lector externo con agentes especializados
           </DialogDescription>
         </DialogHeader>
 

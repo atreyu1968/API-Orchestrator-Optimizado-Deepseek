@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -29,7 +29,9 @@ import {
   Send,
   BookOpen,
   User,
+  FileEdit,
 } from "lucide-react";
+import { ExternalReviewDialog } from "@/components/external-review-dialog";
 import type { ImportedManuscript, ImportedChapter, Pseudonym } from "@shared/schema";
 
 const SUPPORTED_LANGUAGES = [
@@ -283,10 +285,11 @@ function parseChaptersFromText(text: string): { chapterNumber: number; title: st
   return chapters.map(({ chapterNumber, title, content }) => ({ chapterNumber, title, content }));
 }
 
-function ManuscriptCard({ manuscript, onSelect, onDelete }: { 
+function ManuscriptCard({ manuscript, onSelect, onDelete, onExternalReview }: { 
   manuscript: ImportedManuscript; 
   onSelect: () => void;
   onDelete: () => void;
+  onExternalReview: () => void;
 }) {
   const progress = manuscript.totalChapters ? (manuscript.processedChapters || 0) / manuscript.totalChapters * 100 : 0;
   const totalCost = calculateCost(
@@ -346,6 +349,18 @@ function ManuscriptCard({ manuscript, onSelect, onDelete }: {
             <DollarSign className="h-3 w-3 text-muted-foreground" />
             <span className="font-mono">${totalCost.toFixed(4)}</span>
           </div>
+          {(manuscript.processedChapters ?? 0) > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={(e) => { e.stopPropagation(); onExternalReview(); }}
+              data-testid={`button-external-review-manuscript-${manuscript.id}`}
+              title="Aplicar revisión editorial externa"
+            >
+              <FileEdit className="h-3.5 w-3.5 mr-1" />
+              Revisar
+            </Button>
+          )}
           <Button 
             size="icon" 
             variant="ghost" 
@@ -694,6 +709,7 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
 export default function ImportPage() {
   const { toast } = useToast();
   const [selectedManuscriptId, setSelectedManuscriptId] = useState<number | null>(null);
+  const [externalReviewManuscriptId, setExternalReviewManuscriptId] = useState<number | null>(null);
   const [importSource, setImportSource] = useState<"upload" | "server">("server");
   const [uploadState, setUploadState] = useState<{
     file: File | null;
@@ -1054,6 +1070,7 @@ export default function ImportPage() {
                       manuscript={m}
                       onSelect={() => setSelectedManuscriptId(m.id)}
                       onDelete={() => deleteManuscriptMutation.mutate(m.id)}
+                      onExternalReview={() => setExternalReviewManuscriptId(m.id)}
                     />
                   ))}
                 </div>
@@ -1062,6 +1079,15 @@ export default function ImportPage() {
           </CardContent>
         </Card>
       </div>
+
+      {externalReviewManuscriptId != null && (
+        <ExternalReviewDialog
+          open={true}
+          onOpenChange={(open) => { if (!open) setExternalReviewManuscriptId(null); }}
+          manuscriptId={externalReviewManuscriptId}
+          manuscriptTitle={manuscripts.find(m => m.id === externalReviewManuscriptId)?.title ?? "Manuscrito"}
+        />
+      )}
     </div>
   );
 }
