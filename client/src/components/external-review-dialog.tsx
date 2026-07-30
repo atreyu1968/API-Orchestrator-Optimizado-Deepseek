@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Sparkles, Play, ChevronDown, ChevronRight, CheckCircle2, XCircle, Clock, AlertTriangle, FileText } from "lucide-react";
+import { Loader2, Sparkles, Play, ChevronDown, ChevronRight, CheckCircle2, XCircle, Clock, AlertTriangle, FileText, Brain } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── types ───────────────────────────────────────────────────────────────────
@@ -289,9 +289,11 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
     return <Clock className="h-4 w-4 text-muted-foreground shrink-0" />;
   };
 
+  const isBusy = parsing || running;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+    <Dialog open={open} onOpenChange={(v) => { if (!isBusy) onOpenChange(v); }}>
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col relative overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-purple-500" />
@@ -302,7 +304,25 @@ export function ExternalReviewDialog({ open, onOpenChange, projectId, projectTit
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="flex-1 flex flex-col min-h-0">
+        {/* ── Overlay bloqueante mientras el LLM trabaja ────────────── */}
+        {isBusy && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-background/90 backdrop-blur-sm rounded-lg">
+            <div className="flex items-center gap-3">
+              <Brain className="h-8 w-8 text-purple-500 animate-pulse" />
+              <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
+            </div>
+            <p className="text-base font-semibold text-foreground">
+              {parsing ? "Analizando crítica…" : "Aplicando intervenciones…"}
+            </p>
+            <p className="text-sm text-muted-foreground max-w-xs text-center">
+              {parsing
+                ? "El clasificador está leyendo la crítica y generando el plan de intervenciones. Puede tardar hasta un minuto."
+                : "Los agentes están reescribiendo los capítulos. No cierres esta ventana."}
+            </p>
+          </div>
+        )}
+
+        <Tabs value={tab} onValueChange={(v) => { if (!isBusy) setTab(v as any); }} className="flex-1 flex flex-col min-h-0">
           <TabsList className="w-full shrink-0">
             <TabsTrigger value="plantilla" className="flex-1">
               <FileText className="h-4 w-4 mr-2" />
