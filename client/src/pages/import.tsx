@@ -378,6 +378,7 @@ function ManuscriptCard({ manuscript, onSelect, onDelete, onExternalReview }: {
 function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBack: () => void }) {
   const { toast } = useToast();
   const [selectedChapter, setSelectedChapter] = useState<ImportedChapter | null>(null);
+  const [showExternalReview, setShowExternalReview] = useState(false);
 
   const { data: manuscript, isLoading: isLoadingManuscript, refetch: refetchManuscript } = useQuery<ImportedManuscript>({
     queryKey: ['/api/imported-manuscripts', manuscriptId],
@@ -545,9 +546,28 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
             <Download className="h-4 w-4 mr-2" />
             Exportar MD
           </Button>
+          {(manuscript.processedChapters ?? 0) > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => setShowExternalReview(true)}
+              data-testid="button-external-review-detail"
+            >
+              <FileEdit className="h-4 w-4 mr-2" />
+              Revisar
+            </Button>
+          )}
           <Button variant="outline" onClick={onBack}>Volver</Button>
         </div>
       </div>
+
+      {showExternalReview && (
+        <ExternalReviewDialog
+          open={showExternalReview}
+          onOpenChange={setShowExternalReview}
+          manuscriptId={manuscriptId}
+          manuscriptTitle={manuscript.title}
+        />
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
