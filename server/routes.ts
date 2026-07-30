@@ -14921,6 +14921,25 @@ CRITERIOS:
     }
   });
 
+  // Reset un job atascado: marca capítulos "processing" como "error" y permite relanzar
+  app.post("/api/proofreading/:id/reset", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProofreadingProject(id);
+      if (!project) return res.status(404).json({ error: "Not found" });
+      const chapters = await storage.getProofreadingChaptersByProject(id);
+      for (const ch of chapters) {
+        if (ch.status === "processing") {
+          await storage.updateProofreadingChapter(ch.id, { status: "error", summary: "Reiniciado manualmente" });
+        }
+      }
+      await storage.updateProofreadingProject(id, { status: "error" });
+      res.json({ reset: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/proofreading/:id/start", async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
@@ -14949,14 +14968,21 @@ CRITERIOS:
         await storage.updateProofreadingProject(projectId, { processedChapters: i });
 
         try {
-          const result = await proofreader.execute({
-            chapterContent: chapter.originalContent,
-            chapterNumber: chapter.chapterNumber,
-            genre: project.genre || undefined,
-            authorStyle: project.authorStyle || undefined,
-            language: project.language || "es",
-            projectId,
-          });
+          const CHAPTER_TIMEOUT_MS = 5 * 60 * 1000; // 5 min por capítulo
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Cap ${chapter.chapterNumber}: timeout (>5 min)`)), CHAPTER_TIMEOUT_MS)
+          );
+          const result = await Promise.race([
+            proofreader.execute({
+              chapterContent: chapter.originalContent,
+              chapterNumber: chapter.chapterNumber,
+              genre: project.genre || undefined,
+              authorStyle: project.authorStyle || undefined,
+              language: project.language || "es",
+              projectId,
+            }),
+            timeoutPromise,
+          ]);
 
           if (result.error || !result.result) {
             await storage.updateProofreadingChapter(chapter.id, {

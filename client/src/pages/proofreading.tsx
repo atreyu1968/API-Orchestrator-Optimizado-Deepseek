@@ -141,6 +141,20 @@ export default function ProofreadingPage() {
     },
   });
 
+  const resetMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("POST", `/api/proofreading/${id}/reset`);
+      await apiRequest("POST", `/api/proofreading/${id}/start`);
+    },
+    onSuccess: () => {
+      toast({ title: "Reiniciando", description: "Retomando desde el capítulo fallido" });
+      queryClient.invalidateQueries({ queryKey: ["/api/proofreading"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error al reiniciar", description: err.message, variant: "destructive" });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/proofreading/${id}`);
@@ -262,6 +276,19 @@ export default function ProofreadingPage() {
                       <span className="text-xs text-muted-foreground">{p.processedChapters}/{p.totalChapters}</span>
                     )}
                     {statusBadge(p.status)}
+                    {p.status === "processing" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => { e.stopPropagation(); resetMutation.mutate(p.id); }}
+                        disabled={resetMutation.isPending}
+                        data-testid={`button-reset-${p.id}`}
+                        title="El job parece atascado — reinicia desde el capítulo fallido"
+                      >
+                        {resetMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4 mr-1" />}
+                        Reiniciar
+                      </Button>
+                    )}
                     {(p.status === "completed" || p.status === "completed_with_errors") && (
                       <Button
                         size="sm"
