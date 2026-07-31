@@ -65,6 +65,7 @@ const configSchema = z.object({
   hasAuthorNote: z.boolean().default(false),
   autoBetaLoop: z.boolean().default(false),
   autoBetaLoopMaxIterations: z.number().min(1).max(10).default(3),
+  enablePostFinalizationPolish: z.boolean().default(false),
   deferPolishToCure: z.boolean().default(false),
   pseudonymId: z.number().nullable().optional(),
   styleGuideId: z.number().nullable().optional(),
@@ -112,6 +113,7 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
       hasAuthorNote: defaultValues?.hasAuthorNote || false,
       autoBetaLoop: (defaultValues as any)?.autoBetaLoop || false,
       autoBetaLoopMaxIterations: (defaultValues as any)?.autoBetaLoopMaxIterations || 3,
+      enablePostFinalizationPolish: (defaultValues as any)?.enablePostFinalizationPolish ?? false,
       deferPolishToCure: (defaultValues as any)?.deferPolishToCure || false,
       pseudonymId: defaultValues?.pseudonymId || null,
       styleGuideId: defaultValues?.styleGuideId || null,
@@ -1220,6 +1222,33 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
                   )}
                 />
               )}
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="enablePostFinalizationPolish"
+          render={({ field }) => (
+            <FormItem className="flex flex-col gap-3 space-y-0 rounded-md border p-3">
+              <div className="flex items-center gap-3">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    data-testid="checkbox-enable-post-finalization-polish"
+                  />
+                </FormControl>
+                <div className="flex items-center gap-2 flex-1">
+                  <Repeat className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <FormLabel className="font-medium cursor-pointer">Pulido automático al finalizar</FormLabel>
+                    <FormDescription className="text-xs">
+                      Al completar la novela, lanza automáticamente el ciclo <strong>Holístico+Beta</strong> y la <strong>corrección ortotipográfica</strong>. Desactívalo (recomendado) si prefieres aplicar primero una revisión editorial externa y ahorrar coste.
+                    </FormDescription>
+                  </div>
+                </div>
+              </div>
             </FormItem>
           )}
         />

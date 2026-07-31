@@ -19860,6 +19860,17 @@ RESPONDE ÚNICAMENTE CON JSON:
     // flag activo, NO lanzamos el bucle advisory (ni la ortotipografica que
     // corre dentro). El paso "polish" de la Cura de Serie lo ejecutara con
     // forcePolishResume cuando toque, con la saga completa como contexto.
+    // [Fix266] Si el usuario no habilitó el pulido post-finalización (default OFF),
+    // saltamos el ciclo Holístico+Beta y la ortotipográfica. El usuario puede
+    // lanzarlo manualmente desde el dashboard o aplicar primero una revisión
+    // editorial externa y después pulir.
+    if (!(project as any).enablePostFinalizationPolish) {
+      await storage.createActivityLog({
+        projectId: project.id, level: "info", agentRole: "orchestrator",
+        message: `Pulido post-finalización OMITIDO (enable_post_finalization_polish=false). El manuscrito queda completed. Lanza el pulido manualmente desde el dashboard o aplica primero una revisión editorial externa.`,
+      });
+      return;
+    }
     if ((project as any).deferPolishToCure) {
       await storage.createActivityLog({
         projectId: project.id, level: "info", agentRole: "orchestrator",

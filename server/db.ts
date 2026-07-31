@@ -46,6 +46,7 @@ const SCHEMA_PATCHES: string[] = [
   `ALTER TABLE "queue_state" ADD COLUMN IF NOT EXISTS "pause_on_peak_hours" boolean NOT NULL DEFAULT false`,
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "auto_polish_pending" boolean NOT NULL DEFAULT false`,
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "auto_polish_resume_count" integer NOT NULL DEFAULT 0`,
+  `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "enable_post_finalization_polish" boolean NOT NULL DEFAULT false`,
 ];
 
 let schemaEnsured = false;

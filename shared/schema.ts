@@ -229,6 +229,10 @@ export const projects = pgTable("projects", {
   // de la Cura de Serie (forcePolishResume), que lo ejecuta con la saga
   // completa como contexto y sin duplicar coste.
   deferPolishToCure: boolean("defer_polish_to_cure").notNull().default(false),
+  // Si false (default), el ciclo Holístico+Beta + ortotipográfica NO se lanza
+  // automáticamente al terminar la generación. El usuario lo activa si quiere
+  // pulido automático en vez de pasar primero por revisión editorial externa.
+  enablePostFinalizationPolish: boolean("enable_post_finalization_polish").notNull().default(false),
   autoPolishResumeCount: integer("auto_polish_resume_count").notNull().default(0),
   // [Fix108] Voz narrativa canónica del proyecto (POV + tiempo verbal + tipo
   // de narrador opcional). Antes de Fix108 la voz se inferia con regex de
