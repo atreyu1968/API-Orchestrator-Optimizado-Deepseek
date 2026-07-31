@@ -82,7 +82,7 @@ export class DensityPrunerAgent extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 6000,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384, // presupuesto COMBINADO thinking+salida; 16384 deja ~10k para el JSON
     });
   }
 

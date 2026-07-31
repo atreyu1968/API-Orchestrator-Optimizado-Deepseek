@@ -315,14 +315,6 @@ async function runDensidad(
     .filter(c => intervention.capitulosAfectados.includes(c.chapterNumber))
     .sort((a, b) => a.chapterNumber - b.chapterNumber);
 
-  const alreadyEstablished = [
-    "Linnea preparó a Sloane durante años",
-    "La señal de Linnea lleva esperando",
-    "Kincaid controla la base",
-    "Sloane ha sido entrenada para esto",
-    "La tormenta impide escapar",
-  ];
-
   for (const chapter of targets) {
     send({ type: "intervention_progress", id: intervention.id, message: `Podando cap ${chapter.chapterNumber}...` });
 
@@ -331,7 +323,6 @@ async function runDensidad(
       chapterTitle: chapter.title || "",
       content: chapter.content || "",
       knownGesturalTics: knownTics,
-      alreadyEstablishedFacts: alreadyEstablished,
     });
 
     if (result.operations.length > 0) {
