@@ -276,14 +276,14 @@ export default function ProofreadingPage() {
                       <span className="text-xs text-muted-foreground">{p.processedChapters}/{p.totalChapters}</span>
                     )}
                     {statusBadge(p.status)}
-                    {p.status === "processing" && (
+                    {(p.status === "processing" || p.status === "error") && (
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={(e) => { e.stopPropagation(); resetMutation.mutate(p.id); }}
                         disabled={resetMutation.isPending}
                         data-testid={`button-reset-${p.id}`}
-                        title="El job parece atascado — reinicia desde el capítulo fallido"
+                        title="Reinicia desde el capítulo fallido"
                       >
                         {resetMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4 mr-1" />}
                         Reiniciar
