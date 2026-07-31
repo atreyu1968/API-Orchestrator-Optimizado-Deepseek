@@ -1815,6 +1815,32 @@ export async function registerRoutes(
     }
   });
 
+  // Reanuda una revisión que quedó colgada en "running" o "parsing" tras un
+  // reinicio del servidor. Vuelve a "parsed" conservando el plan y reseteando
+  // a "pending" cualquier intervención que quedó en estado "running", para
+  // que el usuario pueda relanzar desde donde lo dejó.
+  app.post("/api/projects/:id/external-review/reset", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProject(id);
+      if (!project) return res.status(404).json({ error: "Proyecto no encontrado" });
+      let plan = (project as any).pendingExternalReview as any;
+      if (plan?.interventions) {
+        plan = {
+          ...plan,
+          interventions: plan.interventions.map((iv: any) =>
+            iv.status === "running" ? { ...iv, status: "pending" } : iv
+          ),
+        };
+      }
+      const newStatus = plan ? "parsed" : "idle";
+      await storage.updateProject(id, { externalReviewStatus: newStatus, pendingExternalReview: plan } as any);
+      res.json({ ok: true, status: newStatus });
+    } catch (error) {
+      res.status(500).json({ error: "Error al reanudar revisión" });
+    }
+  });
+
   app.get("/api/projects/:id/external-review", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
@@ -1928,6 +1954,31 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error running manuscript external review:", error);
       if (!res.headersSent) res.status(500).json({ error: "Error al iniciar la revisión" });
+    }
+  });
+
+  // Reanuda una revisión de manuscrito importado colgada en "running"/"parsing".
+  // Restaura el estado a "parsed" y resetea a "pending" las intervenciones que
+  // quedaron a medias, conservando las ya completadas como "done".
+  app.post("/api/imported-manuscripts/:id/external-review/reset", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const manuscript = await storage.getImportedManuscript(id);
+      if (!manuscript) return res.status(404).json({ error: "Manuscrito no encontrado" });
+      let plan = manuscript.pendingExternalReview as any;
+      if (plan?.interventions) {
+        plan = {
+          ...plan,
+          interventions: plan.interventions.map((iv: any) =>
+            iv.status === "running" ? { ...iv, status: "pending" } : iv
+          ),
+        };
+      }
+      const newStatus = plan ? "parsed" : "idle";
+      await storage.updateImportedManuscript(id, { externalReviewStatus: newStatus, pendingExternalReview: plan });
+      res.json({ ok: true, status: newStatus });
+    } catch (error) {
+      res.status(500).json({ error: "Error al reanudar revisión" });
     }
   });
 

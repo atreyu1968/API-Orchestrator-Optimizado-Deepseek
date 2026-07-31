@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Sparkles, Play, ChevronDown, ChevronRight, CheckCircle2, XCircle, Clock, AlertTriangle, FileText } from "lucide-react";
+import { Loader2, Sparkles, Play, ChevronDown, ChevronRight, CheckCircle2, XCircle, Clock, AlertTriangle, FileText, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── types ───────────────────────────────────────────────────────────────────
@@ -264,6 +264,21 @@ export function ExternalReviewDialog({
     }
   };
 
+  const isStaleRunning =
+    (reviewState?.externalReviewStatus === "running" || reviewState?.externalReviewStatus === "parsing") &&
+    !running && !parsing;
+
+  const handleResume = async () => {
+    try {
+      const res = await fetch(`${baseUrl}/reset`, { method: "POST" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Error");
+      await refetchState();
+      toast({ title: "Revisión reanudable", description: "Ya puedes seleccionar las intervenciones pendientes y relanzar." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
   const handleRun = async () => {
     if (selectedIds.size === 0) {
       toast({ title: "Sin selección", description: "Selecciona al menos una intervención", variant: "destructive" });
@@ -322,6 +337,20 @@ export function ExternalReviewDialog({
             <span className="font-medium text-foreground">{displayTitle}</span> — Aplica una crítica de lector externo con agentes especializados
           </DialogDescription>
         </DialogHeader>
+
+        {/* Banner de proceso interrumpido — aparece cuando el servidor registra
+            "running"/"parsing" pero el proceso ya no está activo (reinicio del
+            servidor). El usuario puede reanudar desde donde lo dejó. */}
+        {isStaleRunning && (
+          <div className="flex items-center gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400 shrink-0">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span className="flex-1">La revisión quedó interrumpida (el servidor se reinició). Las intervenciones ya completadas se conservan.</span>
+            <Button size="sm" variant="outline" className="shrink-0 border-amber-500/50" onClick={handleResume}>
+              <RotateCcw className="h-3 w-3 mr-1" />
+              Reanudar
+            </Button>
+          </div>
+        )}
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="flex-1 flex flex-col min-h-0">
           <TabsList className="w-full shrink-0">
