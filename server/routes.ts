@@ -242,6 +242,20 @@ export async function registerRoutes(
     console.error("[Fix43] Error limpiando jobs zombi al arrancar:", e);
   }
 
+  // [Task42] Igual que Fix43 pero para revisiones editoriales de manuscritos
+  // importados: si el servidor se reinicia mientras external_review_status es
+  // 'parsing' o 'running', el row queda atascado y el frontend muestra un
+  // spinner sin salida. Marcamos esas filas como 'failed' para que el usuario
+  // pueda volver a pegar la crítica y parsearla.
+  try {
+    const staleReviews = await storage.cleanupStaleManuscriptReviewJobs();
+    if (staleReviews > 0) {
+      console.log(`[Task42] Marcadas ${staleReviews} revisiones de manuscrito como failed (servidor reiniciado).`);
+    }
+  } catch (e) {
+    console.error("[Task42] Error limpiando revisiones de manuscrito zombi al arrancar:", e);
+  }
+
   app.get("/api/projects", async (req: Request, res: Response) => {
     try {
       const projects = await storage.getAllProjects();

@@ -216,6 +216,8 @@ export interface IStorage {
   getGuideGenerationJob(id: number): Promise<GuideGenerationJob | undefined>;
   updateGuideGenerationJob(id: number, data: Partial<GuideGenerationJob>): Promise<GuideGenerationJob | undefined>;
   cleanupStaleGuideGenerationJobs(): Promise<number>;
+  // [Task42] Reset imported manuscript review rows stuck in 'parsing'/'running' after a mid-job server restart.
+  cleanupStaleManuscriptReviewJobs(): Promise<number>;
   getAllGeneratedGuides(): Promise<GeneratedGuide[]>;
   updateGeneratedGuide(id: number, data: Partial<GeneratedGuide>): Promise<GeneratedGuide | undefined>;
   deleteGeneratedGuide(id: number): Promise<void>;
@@ -1404,6 +1406,20 @@ export class DatabaseStorage implements IStorage {
       })
       .where(or(eq(guideGenerationJobs.status, "pending"), eq(guideGenerationJobs.status, "running")))
       .returning({ id: guideGenerationJobs.id });
+    return result.length;
+  }
+
+  async cleanupStaleManuscriptReviewJobs(): Promise<number> {
+    // [Task42] On server restart, any imported_manuscripts row left in
+    // 'parsing' or 'running' will spin forever. Reset them to 'failed' so
+    // the user can re-paste the critique and parse again.
+    const result = await db.update(importedManuscripts)
+      .set({ externalReviewStatus: "failed" })
+      .where(or(
+        eq(importedManuscripts.externalReviewStatus, "parsing"),
+        eq(importedManuscripts.externalReviewStatus, "running"),
+      ))
+      .returning({ id: importedManuscripts.id });
     return result.length;
   }
 
