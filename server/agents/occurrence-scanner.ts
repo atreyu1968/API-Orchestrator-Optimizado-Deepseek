@@ -65,7 +65,7 @@ export class OccurrenceScannerAgent extends BaseAgent {
       model: "deepseek-v4-flash",
       useThinking: true,
       thinkingBudget: 8000,
-      maxOutputTokens: 8000,
+      maxOutputTokens: 16384,
     });
   }
 
