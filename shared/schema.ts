@@ -323,6 +323,11 @@ export const importedManuscripts = pgTable("imported_manuscripts", {
   totalWordCount: integer("total_word_count").default(0),
   continuitySnapshot: jsonb("continuity_snapshot"),
   continuityAnalysisStatus: text("continuity_analysis_status").default("pending"),
+  // Revisión editorial externa — plan generado por el CritiqueClassifierAgent.
+  // Shape: ExternalReviewPlan (see server/agents/critique-classifier.ts).
+  // null = sin revisión activa.
+  externalReviewStatus: text("external_review_status"), // "parsing"|"parsed"|"running"|"completed"|"failed"|null
+  pendingExternalReview: jsonb("pending_external_review"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

@@ -79,15 +79,10 @@ const updateSeriesSchema = z.object({
 const activeStreams = new Map<number, Set<Response>>();
 const activeManuscriptAnalysis = new Map<number, AbortController>();
 
-// ── Estado en memoria para revisión editorial de manuscritos importados ───────
-// (los manuscritos no tienen columnas externalReviewStatus/pendingExternalReview
-//  en la BD, así que guardamos el estado en memoria durante la sesión)
+// ── Streams SSE para revisión editorial de manuscritos importados ─────────────
+// El estado (status + plan) se persiste ahora en las columnas
+// external_review_status / pending_external_review de imported_manuscripts.
 const manuscriptReviewStreams = new Map<number, Set<Response>>();
-type ManuscriptReviewState = {
-  status: "idle" | "parsing" | "parsed" | "running" | "completed" | "failed";
-  plan: import("./agents/critique-classifier").ExternalReviewPlan | null;
-};
-const manuscriptReviewState = new Map<number, ManuscriptReviewState>();
 
 function splitLongParagraphs(content: string): string {
   const blocks = content.split(/\n\n+/);
@@ -1830,8 +1825,10 @@ export async function registerRoutes(
       const id = parseInt(req.params.id);
       const manuscript = await storage.getImportedManuscript(id);
       if (!manuscript) return res.status(404).json({ error: "Manuscrito no encontrado" });
-      const state = manuscriptReviewState.get(id) ?? { status: "idle", plan: null };
-      res.json({ externalReviewStatus: state.status, pendingExternalReview: state.plan });
+      res.json({
+        externalReviewStatus: manuscript.externalReviewStatus ?? "idle",
+        pendingExternalReview: manuscript.pendingExternalReview ?? null,
+      });
     } catch (err) {
       res.status(500).json({ error: "Error al obtener revisión" });
     }
@@ -1848,7 +1845,7 @@ export async function registerRoutes(
       if (critiqueText.length > 300_000)
         return res.status(400).json({ error: "La crítica es demasiado larga (máx 300.000 caracteres)" });
 
-      manuscriptReviewState.set(id, { status: "parsing", plan: null });
+      await storage.updateImportedManuscript(id, { externalReviewStatus: "parsing", pendingExternalReview: null });
       res.status(202).json({ accepted: true, manuscriptId: id });
 
       const sendToStreams = (data: any) => {
@@ -1867,12 +1864,12 @@ export async function registerRoutes(
       classifier.classify({ critiqueText, chapterIndex, projectTitle: manuscript.title })
         .then(async (result) => {
           const plan = { critiqueText, parsedAt: new Date().toISOString(), overallSummary: result.overallSummary, currentScore: result.currentScore, potentialScore: result.potentialScore, interventions: result.interventions };
-          manuscriptReviewState.set(id, { status: "parsed", plan });
+          await storage.updateImportedManuscript(id, { externalReviewStatus: "parsed", pendingExternalReview: plan });
           sendToStreams({ type: "external_review_parsed", plan });
         })
         .catch(async (err) => {
           const msg = err instanceof Error ? err.message : String(err);
-          manuscriptReviewState.set(id, { status: "failed", plan: null });
+          await storage.updateImportedManuscript(id, { externalReviewStatus: "failed", pendingExternalReview: null });
           sendToStreams({ type: "external_review_parse_error", message: msg });
         });
     } catch (error) {
@@ -1887,9 +1884,9 @@ export async function registerRoutes(
       const { interventionIds } = req.body || {};
       const manuscript = await storage.getImportedManuscript(id);
       if (!manuscript) return res.status(404).json({ error: "Manuscrito no encontrado" });
-      const state = manuscriptReviewState.get(id);
-      if (!state?.plan) return res.status(400).json({ error: "No hay plan de revisión. Parsea primero la crítica." });
-      if (state.status === "running") return res.status(409).json({ error: "Ya hay una revisión en curso" });
+      const currentPlan = manuscript.pendingExternalReview as any;
+      if (!currentPlan) return res.status(400).json({ error: "No hay plan de revisión. Parsea primero la crítica." });
+      if (manuscript.externalReviewStatus === "running") return res.status(409).json({ error: "Ya hay una revisión en curso" });
 
       res.status(202).json({ accepted: true, manuscriptId: id });
 
@@ -1904,14 +1901,14 @@ export async function registerRoutes(
       const { runExternalReview, manuscriptAdapter } = await import("./external-review-runner");
       const adapter = manuscriptAdapter(
         id,
-        state.plan,
-        async (plan) => { const s = manuscriptReviewState.get(id); if (s) manuscriptReviewState.set(id, { ...s, plan }); },
-        async (status) => { const s = manuscriptReviewState.get(id); manuscriptReviewState.set(id, { status: status as any, plan: s?.plan ?? null }); }
+        currentPlan,
+        async (plan) => { await storage.updateImportedManuscript(id, { pendingExternalReview: plan }); },
+        async (status) => { await storage.updateImportedManuscript(id, { externalReviewStatus: status }); }
       );
 
       runExternalReview(adapter, Array.isArray(interventionIds) ? interventionIds : null, sendToStreams).catch(async (err) => {
         const msg = err instanceof Error ? err.message : String(err);
-        manuscriptReviewState.set(id, { status: "failed", plan: state.plan });
+        await storage.updateImportedManuscript(id, { externalReviewStatus: "failed" });
         sendToStreams({ type: "external_review_done", status: "failed", error: msg });
       });
     } catch (error) {

@@ -47,6 +47,10 @@ const SCHEMA_PATCHES: string[] = [
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "auto_polish_pending" boolean NOT NULL DEFAULT false`,
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "auto_polish_resume_count" integer NOT NULL DEFAULT 0`,
   `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "enable_post_finalization_polish" boolean NOT NULL DEFAULT false`,
+  // [Task39] Persiste el estado de revisión editorial externa para manuscritos
+  // importados, de modo que un reinicio del servidor no pierda el plan parseado.
+  `ALTER TABLE "imported_manuscripts" ADD COLUMN IF NOT EXISTS "external_review_status" text`,
+  `ALTER TABLE "imported_manuscripts" ADD COLUMN IF NOT EXISTS "pending_external_review" jsonb`,
 ];
 
 let schemaEnsured = false;
