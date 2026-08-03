@@ -21594,7 +21594,9 @@ RESPONDE ÚNICAMENTE CON JSON:
       continuityState: c.continuityState || {},
     }));
 
-    const SENTINEL_TIMEOUT_MS = 5 * 60 * 1000;
+    // [Fix268] Timeout subido de 5 → 10 min: novelas históricas con dossier
+    // documental grande + DeepSeek thinking superaban los 5 min sistemáticamente.
+    const SENTINEL_TIMEOUT_MS = 10 * 60 * 1000;
     
     let result: Awaited<ReturnType<typeof this.continuitySentinel.execute>>;
     
@@ -21602,13 +21604,23 @@ RESPONDE ÚNICAMENTE CON JSON:
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error("Sentinel timeout")), SENTINEL_TIMEOUT_MS);
       });
-      
+
+      // [Fix268] Extraer el dossier de investigación y residuos estructurales del
+      // world bible antes de pasarlo al Centinela: son voluminosos (76+ hechos
+      // históricos) y el Centinela verifica continuidad NARRATIVA, no precisión
+      // histórica ni instrucciones de prosa. Quitarlos reduce el prompt ~30–40%
+      // y es la causa principal del timeout en novelas históricas.
+      const fullWB = await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible);
+      const sentinelWB = { ...fullWB };
+      delete sentinelWB._dossier_documental;
+      delete sentinelWB._residuos_estructurales;
+
       result = await Promise.race([
         this.continuitySentinel.execute({
           projectTitle: project.title,
           checkpointNumber,
           chaptersInScope: chaptersData,
-          worldBible: await this.getEnrichedWorldBible(project.id, worldBibleData.world_bible),
+          worldBible: sentinelWB,
           previousCheckpointIssues: previousIssues,
         }),
         timeoutPromise
