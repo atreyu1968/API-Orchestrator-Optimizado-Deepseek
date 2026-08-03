@@ -98,7 +98,8 @@ export function ConsoleOutput({ logs, projectId }: ConsoleOutputProps) {
 
   const handleExportLogs = () => {
     if (projectId) {
-      window.open(`/api/projects/${projectId}/export-logs-pdf`, "_blank");
+      const tz = encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone);
+      window.open(`/api/projects/${projectId}/export-logs-pdf?tz=${tz}`, "_blank");
     }
   };
 

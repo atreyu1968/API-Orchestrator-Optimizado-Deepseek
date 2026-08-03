@@ -889,7 +889,9 @@ export async function registerRoutes(
 
       doc.fontSize(18).font("Helvetica-Bold").text(`Registro de Actividad`, { align: "center" });
       doc.fontSize(14).font("Helvetica").text(`Proyecto: ${project.title}`, { align: "center" });
-      doc.fontSize(10).text(`Exportado: ${new Date().toLocaleString("es-ES")}`, { align: "center" });
+      const clientTz = (req.query.tz as string) || "Europe/Madrid";
+      const safeClientTz = (() => { try { Intl.DateTimeFormat(undefined, { timeZone: clientTz }); return clientTz; } catch { return "Europe/Madrid"; } })();
+      doc.fontSize(10).text(`Exportado: ${new Date().toLocaleString("es-ES", { timeZone: safeClientTz })}`, { align: "center" });
       doc.moveDown(2);
 
       const agentNames: Record<string, string> = {
@@ -917,6 +919,7 @@ export async function registerRoutes(
       
       for (const log of logs.reverse()) {
         const timestamp = new Date(log.createdAt).toLocaleString("es-ES", {
+          timeZone: safeClientTz,
           day: "2-digit",
           month: "2-digit",
           hour: "2-digit",
