@@ -33,6 +33,9 @@ export interface CopyEditorResult {
   cliches_ia_eliminados?: string[];
   frases_hechas_eliminadas?: string[];
   negaciones_accion_reescritas?: string[];
+  redundancias_suprimidas?: string[];
+  transiciones_ajustadas?: string[];
+  reflexivos_compactados?: string[];
   idioma_detectado: string;
 }
 
@@ -318,11 +321,84 @@ DIRECTRICES MAESTRAS DE HUMANIZACIÓN LITERARIA (PRIORIDAD MÁXIMA)
    - La narración debe sentirse "sucia" y humana, no una crónica aséptica de eventos.
    - El lector debe inferir las emociones, no que se las digan.
 
+5.b SUPRESIÓN DE REDUNDANCIAS EXPRESIVAS FINAS:
+   Las pleonasmos tácitos son invisibles para el autor pero el lector los nota
+   como peso muerto. Detecta y elimina cualquier combinación donde el segundo
+   elemento ya está contenido en el primero:
+
+   PATRONES HABITUALES (no lista cerrada — detecta variantes análogas):
+   • Gestos con su soporte implícito: "asintió con la cabeza" → "asintió",
+     "encogió los hombros" (los hombros es el soporte del gesto), "parpadeó
+     con los ojos", "señaló con el dedo", "escuchó con los oídos".
+   • Dirección redundante: "subió hacia arriba", "bajó hacia abajo", "entró
+     hacia adentro", "salió hacia afuera", "volvió de regreso".
+   • Pensamiento declarado: "pensó para sus adentros", "se dijo a sí mismo",
+     "reflexionó internamente", "sintió en su interior".
+   • Volumen con verbo que ya lo implica: "murmuró en voz baja", "gritó en
+     voz alta", "susurró suavemente", "bramó con fuerza".
+   • Adjetivo que repite el sustantivo: "sonrisa sonriente", "silencio
+     silencioso", "oscuridad oscura", "luz brillante" (cuando la luz ya
+     implica brillo en ese contexto).
+   • Verbos que se solapan: "se levantó y se puso de pie", "se sentó y
+     tomó asiento", "durmió y se quedó dormido".
+
+   CRITERIO DE INTERVENCIÓN: la supresión debe dejar la oración
+   semánticamente idéntica y no perder ningún matiz. Si el segundo elemento
+   añade algún énfasis intencional (estilo marcado, voz del narrador),
+   conservarlo. Reporta en "mejoras_fluidez".
+
+5.c AJUSTE DE TRANSICIONES:
+   Las transiciones mecánicas o abruptas rompen la ilusión narrativa.
+   Intervén en dos casos:
+
+   A) TRANSICIONES MECÁNICAS: fórmulas de enlace prefabricadas que no
+      aportan información ni ritmo:
+      • "De repente / De pronto" al inicio de párrafo como único marcador
+        de cambio — sustituye por la acción abrupta directa.
+      • "En ese momento exacto", "Justo entonces", "Fue en ese instante"
+        como introducción pura de tiempo sin anclaje sensorial.
+      • "Mientras tanto" cuando el corte temporal está claro por contexto.
+      • "Por otro lado / Por otra parte" en narrativa de ficción (son
+        conectores de ensayo, no de prosa literaria).
+      Sustituye por el hecho que viene a continuación, sin mediador.
+
+   B) TRANSICIONES ABRUPTAS ENTRE PÁRRAFOS: cuando dos párrafos
+      consecutivos cambian de foco (espacio, personaje, tiempo) sin puente,
+      añade un elemento de cierre en el párrafo anterior o de apertura en
+      el siguiente — un detalle sensorial, un gesto, un pensamiento breve —
+      que amortice el salto. El puente debe ser DE UNA FRASE máximo y
+      tomado del universo físico ya establecido en la escena.
+
+   PRUDENCIA: no fuerces transición donde un corte limpio (o incluso un
+   asterisco de escena) es la opción literariamente correcta. Si el salto
+   es un elipsis intencionado, respétalo. Reporta en "mejoras_fluidez".
+
+5.d COMPACTACIÓN DE PASAJES REFLEXIVOS (excepción controlada a la regla 6):
+   Los pasajes de reflexión interna o monólogo interior pierden tensión
+   cuando el personaje rumiea la misma idea en tres formulaciones distintas.
+   DETECTA tramos donde:
+   • El mismo pensamiento se enuncia, se amplía y se reitera sin añadir
+     ángulo nuevo (variación de vocabulario ≠ ángulo nuevo).
+   • Hay más de 3 párrafos consecutivos de introspección sin anclaje en
+     acción física, diálogo o detalle sensorial.
+   • La reflexión llega a una conclusión y luego la vuelve a enunciar
+     como si el lector no la hubiera captado.
+
+   INTERVENCIÓN: conserva la formulación más precisa o la que va en la
+   posición de mayor impacto (inicio o cierre del tramo); elimina o funde
+   las versiones redundantes. NO toques el contenido emocional ni el arco
+   del pensamiento — solo el exceso de palabras que repiten lo mismo.
+
+   LÍMITE: la compactación no debe superar el 20% de las palabras del
+   tramo reflexivo. Si para sanear habría que cortar más del 20%, detente
+   y limítate a refundir las dos formulaciones más repetidas. Reporta
+   en "mejoras_fluidez" con el fragmento original y el resultado.
+
 ═══════════════════════════════════════════════════════════════════
 REGLAS DE INTERVENCIÓN TÉCNICA
 ═══════════════════════════════════════════════════════════════════
 
-6. INTEGRIDAD TOTAL: Prohibido resumir o condensar. El volumen de palabras debe mantenerse o aumentar ligeramente.
+6. INTEGRIDAD TOTAL: Prohibido resumir o condensar el texto narrativo. El volumen de palabras debe mantenerse o aumentar ligeramente. EXCEPCIÓN ÚNICA: los pasajes reflexivos redundantes identificados en la regla 5.d pueden compactarse dentro del límite del 20% declarado allí.
 6.b NARRATIVA DIEGÉTICA — META-REFERENCIAS PROHIBIDAS: La novela NO sabe que es una novela. ELIMINA o REESCRIBE cualquier mención dentro de la prosa a "el Capítulo X", "el cap. N", "el prólogo", "el epílogo", "la primera parte", "la segunda parte", "este capítulo", "el capítulo anterior", "más adelante en el libro", "en páginas anteriores" o cualquier referencia a la estructura del manuscrito. Si el texto evoca un suceso pasado y lo etiqueta con un número de capítulo, sustituye esa etiqueta por una referencia diegética interna a la ficción (lugar, personaje, fecha, suceso concreto: "aquella noche en la cripta", "lo que descubrió en Plasencia", "la última conversación con Vasco"). Esta corrección NO se considera traducción ni alteración de sentido: es restauración de la inmersión narrativa.
 7. PRESERVAR IDIOMA: Mantén el texto en su idioma original. NO traduzcas bajo ninguna circunstancia.
 8. PRESERVAR SENTIDO: El significado y la trama deben mantenerse intactos.
@@ -396,6 +472,9 @@ SALIDA REQUERIDA (JSON):
   "cliches_ia_eliminados": ["Lista de clichés de IA sustituidos por expresiones originales"],
   "frases_hechas_eliminadas": ["Lista de metáforas-cliché de estatismo/silencio sustituidas (Fix98)"],
   "negaciones_accion_reescritas": ["Lista de negaciones en escenas de acción reescritas como afirmaciones físicas (Fix98)"],
+  "redundancias_suprimidas": ["Lista de pleonasmos tácitos eliminados (regla 5.b)"],
+  "transiciones_ajustadas": ["Lista de transiciones mecánicas o abruptas corregidas (regla 5.c)"],
+  "reflexivos_compactados": ["Lista de pasajes reflexivos compactados con original→resultado (regla 5.d)"],
   "idioma_detectado": "código ISO del idioma (es, en, fr, de, it, pt, ca)"
 }
 `;
