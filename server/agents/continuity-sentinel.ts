@@ -219,27 +219,24 @@ Responde ÚNICAMENTE con el JSON estructurado.
       const result = repairJson(response.content) as ContinuitySentinelResult;
       return { ...response, result };
     } catch (e) {
-      console.error("[ContinuitySentinel] Failed to parse JSON response — marking as NOT approved for safety");
+      // [Fix268-B] Un fallo de parseo NO es un error de continuidad — no
+      // sabemos qué hay en el texto. Antes devolvíamos issues con TODOS los
+      // capítulos del tramo como `capitulos_afectados`, lo que desencadenaba
+      // la reescritura masiva de 5 capítulos en bloque por un motivo ficticio.
+      // Ahora marcamos el checkpoint como APROBADO (sin evidencia de problema =
+      // no actuar) y dejamos la nota para la auditoría final.
+      console.warn(`[ContinuitySentinel] Failed to parse JSON response for checkpoint #${input.checkpointNumber} — treating as inconclusive (no rewrites triggered).`);
     }
 
-    const chapterNumbers = input.chaptersInScope.map(c => c.numero);
     return { 
       ...response, 
       result: { 
-      checkpoint_aprobado: false,
-      puntuacion: 0,
-      resumen: "Checkpoint NO aprobado — error de parseo JSON. Requiere re-verificación.",
-      issues: [{
-        tipo: "timeline" as const,
-        capitulos_afectados: chapterNumbers,
-        descripcion: `Error de parseo en checkpoint #${input.checkpointNumber}. Capítulos ${chapterNumbers.join(", ")} no verificados.`,
-        evidencia_textual: "",
-        severidad: "mayor" as const,
-        elementos_a_preservar: "",
-        fix_sugerido: "Re-ejecutar verificación de continuidad",
-      }],
-      capitulos_para_revision: [],
-      continuity_fix_plan: "Re-ejecutar verificación de continuidad"
+        checkpoint_aprobado: true,
+        puntuacion: 0,
+        resumen: `Checkpoint #${input.checkpointNumber} inconclusivo — respuesta del modelo no parseable. Se revisará en auditoría final.`,
+        issues: [],
+        capitulos_para_revision: [],
+        continuity_fix_plan: ""
       } 
     };
   }

@@ -6570,6 +6570,48 @@ Este es el intento #${wordCountRetries} de ${MAX_WORD_COUNT_RETRIES}.`;
       
       const characterStates: Map<string, { alive: boolean; location: string; injuries: string[]; lastSeen: number }> = new Map();
 
+      // [Fix268-A] Catch-up de checkpoints saltados por Fix64.
+      // Fix64 acepta capítulos-en-pulido como completed sin ejecutar la lógica
+      // de checkpoint (que vive al final del bucle de escritura). Si al aceptar
+      // esos caps el completedCount toca un múltiplo de 5, el checkpoint queda
+      // huérfano. Aquí ejecutamos solo los checkpoints pendientes y acumulamos
+      // sus issues — las reescrituras ocurrirán normalmente dentro del bucle de
+      // reanudación a medida que se completen nuevos capítulos.
+      const accumulatedContinuityIssuesResume: string[] = [];
+      if (polishingChapters.length > 0) {
+        const allCompletedNow = existingChapters.filter(c => c.status === "completed");
+        const completedCountNow = allCompletedNow.length;
+        const expectedLastCheckpoint = Math.floor(completedCountNow / this.continuityCheckpointInterval);
+        const completedBeforeFix64 = allCompletedNow.filter(
+          c => !polishingChapters.some(p => p.id === c.id)
+        ).length;
+        const lastCheckpointBeforeFix64 = Math.floor(completedBeforeFix64 / this.continuityCheckpointInterval);
+
+        if (expectedLastCheckpoint > lastCheckpointBeforeFix64) {
+          for (let cpNum = lastCheckpointBeforeFix64 + 1; cpNum <= expectedLastCheckpoint; cpNum++) {
+            if (this.aborted) break;
+            const scopeStart = (cpNum - 1) * this.continuityCheckpointInterval;
+            const catchupScope = allCompletedNow
+              .filter(c => c.chapterNumber > 0)
+              .sort((a, b) => a.chapterNumber - b.chapterNumber)
+              .slice(scopeStart, scopeStart + this.continuityCheckpointInterval);
+            if (catchupScope.length < this.continuityCheckpointInterval) continue;
+
+            console.log(`[Orchestrator Resume] [Fix268-A] Checkpoint catch-up #${cpNum} (caps ${catchupScope.map(c => c.chapterNumber).join(",")}).`);
+            await storage.createActivityLog({
+              projectId: project.id, level: "info", agentRole: "orchestrator",
+              message: `[Fix268-A] Checkpoint de continuidad #${cpNum} recuperado (omitido en reinicio anterior). Caps: ${catchupScope.map(c => c.chapterNumber).join(", ")}.`,
+            });
+            const catchupResult = await this.runContinuityCheckpoint(
+              project, cpNum, catchupScope, worldBibleData, accumulatedContinuityIssuesResume
+            );
+            if (!catchupResult.passed) {
+              accumulatedContinuityIssuesResume.push(...catchupResult.issues);
+            }
+          }
+        }
+      }
+
       for (const chapter of pendingChapters) {
         if (this.aborted) {
           console.log(`[Orchestrator] Aborted in resume loop before chapter ${chapter.chapterNumber} (project ${project.id}). Exiting silently.`);
