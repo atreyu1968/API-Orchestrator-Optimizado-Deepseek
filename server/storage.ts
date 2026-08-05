@@ -76,6 +76,7 @@ export interface IStorage {
   getAllChapters(): Promise<Chapter[]>;
   updateChapter(id: number, data: Partial<Chapter>): Promise<Chapter | undefined>;
   deleteChapter(id: number): Promise<void>;
+  deleteImportedChapter(id: number): Promise<void>;
 
   createWorldBible(data: InsertWorldBible): Promise<WorldBible>;
   getWorldBibleByProject(projectId: number): Promise<WorldBible | undefined>;
@@ -644,6 +645,10 @@ export class DatabaseStorage implements IStorage {
 
   async deleteImportedManuscript(id: number): Promise<void> {
     await db.delete(importedManuscripts).where(eq(importedManuscripts.id, id));
+  }
+
+  async deleteImportedChapter(id: number): Promise<void> {
+    await db.delete(importedChapters).where(eq(importedChapters.id, id));
   }
 
   async createImportedChapter(data: InsertImportedChapter): Promise<ImportedChapter> {

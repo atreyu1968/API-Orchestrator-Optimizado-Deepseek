@@ -18,6 +18,7 @@ import { RetroactiveSeederAgent } from "./agents/retroactive-seeder";
 import { SurgicalPatcherAgent } from "./agents/surgical-patcher";
 import { ChapterRewriteAgent } from "./agents/chapter-rewriter";
 import { OccurrenceScannerAgent } from "./agents/occurrence-scanner";
+import { renumberChaptersSequential, remapPendingAdminActionsForRenumber } from "./utils/renumber-chapters";
 import type { ReviewIntervention, ExternalReviewPlan } from "./agents/critique-classifier";
 
 type SendFn = (data: Record<string, unknown>) => void;
@@ -43,6 +44,11 @@ export interface ReviewAdapter {
   getChapters(): Promise<ChapterLike[]>;
   /** Guarda el contenido nuevo. preEditContent es opcional (backup). */
   saveChapter(id: number, newContent: string, preEditContent?: string): Promise<void>;
+  /** Elimina un capítulo por su número (usado por fusionar y eliminar). */
+  deleteChapter(chapterNumber: number): Promise<void>;
+  /** Renumera todos los capítulos positivos para cerrar huecos tras borrar.
+   *  Recibe los números VIEJOS eliminados para remapar también las acciones admin (proyectos). */
+  renumberAll(deletedNumbers: number[]): Promise<void>;
 }
 
 /** Crea un adapter para proyectos normales. */
@@ -65,6 +71,21 @@ export function projectAdapter(project: { id: number; pendingExternalReview: unk
       const upd: Record<string, unknown> = { content: newContent };
       if (preEditContent !== undefined) upd.preEditContent = preEditContent;
       await storage.updateChapter(id, upd as any);
+    },
+    async deleteChapter(chapterNumber) {
+      const chs = await storage.getChaptersByProject(projectId);
+      const ch = chs.find(c => c.chapterNumber === chapterNumber);
+      if (ch) await storage.deleteChapter(ch.id);
+    },
+    async renumberAll(deletedNumbers) {
+      // Remapar acciones admin pendientes antes de renumerar
+      const proj = await storage.getProject(projectId);
+      const rawActions = (proj as any)?.pendingAdminActions;
+      if (Array.isArray(rawActions) && rawActions.length > 0) {
+        const { actions } = remapPendingAdminActionsForRenumber(rawActions, { deleted: deletedNumbers });
+        await storage.updateProject(projectId, { pendingAdminActions: actions as any });
+      }
+      await renumberChaptersSequential(projectId);
     },
   };
 }
@@ -92,6 +113,24 @@ export function manuscriptAdapter(
     },
     async saveChapter(id, newContent, _preEditContent) {
       await storage.updateImportedChapter(id, { editedContent: newContent });
+    },
+    async deleteChapter(chapterNumber) {
+      const chs = await storage.getImportedChaptersByManuscript(manuscriptId);
+      const ch = chs.find(c => c.chapterNumber === chapterNumber);
+      if (ch) await storage.deleteImportedChapter(ch.id);
+    },
+    async renumberAll(_deletedNumbers) {
+      // Renumerar capítulos positivos del manuscrito
+      const chs = await storage.getImportedChaptersByManuscript(manuscriptId);
+      const positives = chs
+        .filter(c => c.chapterNumber > 0)
+        .sort((a, b) => a.chapterNumber - b.chapterNumber);
+      for (let i = 0; i < positives.length; i++) {
+        const desired = i + 1;
+        if (positives[i].chapterNumber !== desired) {
+          await storage.updateImportedChapter(positives[i].id, { chapterNumber: desired });
+        }
+      }
     },
   };
 }
@@ -138,7 +177,11 @@ export async function runExternalReview(
   await adapter.setStatus("running");
   send({ type: "external_review_started", count: toRun.length });
 
-  const typeOrder: ReviewIntervention["type"][] = ["puntual", "densidad", "siembra", "estructural"];
+  // fusionar y eliminar van al final: son destructivos y deben ejecutarse
+  // después de que las demás intervenciones hayan terminado de modificar el
+  // contenido. eliminar se ejecuta después de fusionar para no borrar un
+  // capítulo que todavía podría estar siendo absorbido.
+  const typeOrder: ReviewIntervention["type"][] = ["puntual", "densidad", "siembra", "estructural", "fusionar", "eliminar"];
   const sorted = [...toRun].sort((a, b) => typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type));
 
   const densityAgent = new DensityPrunerAgent();
@@ -180,6 +223,12 @@ export async function runExternalReview(
 
       } else if (intervention.type === "estructural") {
         await runEstructural(adapter, intervention, rewriterAgent, send);
+
+      } else if (intervention.type === "fusionar") {
+        await runFusionar(adapter, intervention, rewriterAgent, send);
+
+      } else if (intervention.type === "eliminar") {
+        await runEliminar(adapter, intervention, send);
       }
 
       plan = updateInterventionStatus(plan, intervention.id, "done");
@@ -392,6 +441,108 @@ async function runSiembra(
       send({ type: "intervention_progress", id: intervention.id, message: `Cap ${chapter.chapterNumber}: ${result.not_applicable_reason}` });
     }
   }
+}
+
+// ─── fusionar ────────────────────────────────────────────────────────────────
+
+async function runFusionar(
+  adapter: ReviewAdapter,
+  intervention: ReviewIntervention,
+  rewriter: ChapterRewriteAgent,
+  send: SendFn
+): Promise<void> {
+  const caps = [...intervention.capitulosAfectados].sort((a, b) => a - b);
+  if (caps.length < 2) {
+    throw new Error("La intervención 'fusionar' requiere exactamente 2 capítulos en capitulosAfectados");
+  }
+  const [capA, capB] = caps;
+  const survivor = typeof intervention.mergeIntoChapter === "number"
+    ? intervention.mergeIntoChapter
+    : capA;
+  const absorbed = caps.find(c => c !== survivor) ?? capB;
+
+  send({ type: "intervention_progress", id: intervention.id, message: `Leyendo caps ${capA} y ${capB}...` });
+
+  const chapters = await adapter.getChapters();
+  const chA = chapters.find(c => c.chapterNumber === capA);
+  const chB = chapters.find(c => c.chapterNumber === capB);
+  if (!chA) throw new Error(`Capítulo ${capA} no encontrado`);
+  if (!chB) throw new Error(`Capítulo ${capB} no encontrado`);
+  const survivorCh = chapters.find(c => c.chapterNumber === survivor);
+  const absorbedCh = chapters.find(c => c.chapterNumber === absorbed);
+  if (!survivorCh || !absorbedCh) throw new Error(`No se encontró el capítulo superviviente (${survivor}) o el absorbido (${absorbed})`);
+
+  send({ type: "intervention_progress", id: intervention.id, message: `Fusionando cap ${capA} + cap ${capB} → cap ${survivor} (el cap ${absorbed} desaparece)...` });
+
+  // Pasar ambos capítulos al rewriter como un único bloque con separador claro
+  const combinedContent =
+    `# CAPÍTULO ${capA}: ${chA.title || `Capítulo ${capA}`}\n\n${chA.content || ""}\n\n` +
+    `---\n\n` +
+    `# CAPÍTULO ${capB}: ${chB.title || `Capítulo ${capB}`}\n\n${chB.content || ""}`;
+
+  const result = await rewriter.rewrite({
+    chapterNumber: survivor,
+    chapterTitle: survivorCh.title || `Capítulo ${survivor}`,
+    content: combinedContent,
+    instruction:
+      `Este bloque contiene DOS capítulos separados por "---". ` +
+      `Fusiónales en un único capítulo coherente y bien estructurado. ` +
+      `Elimina la duplicación, mantén los beats narrativos esenciales de ambos y produce ` +
+      `una sola unidad de lectura. ` +
+      intervention.instruccion,
+    contradictionsToRemove: [],
+  });
+
+  if (!result.rewrittenContent || result.rewrittenContent.trim().length < 200) {
+    throw new Error(`El agente de fusión devolvió contenido vacío o demasiado corto (${result.rewrittenContent?.length ?? 0} chars)`);
+  }
+
+  const oldContent = survivorCh.content ?? undefined;
+  await adapter.saveChapter(survivorCh.id, result.rewrittenContent, oldContent);
+
+  send({ type: "intervention_progress", id: intervention.id, message: `Contenido fusionado guardado en cap ${survivor} (${result.rewrittenContent.split(/\s+/).length} palabras). Eliminando cap ${absorbed}...` });
+
+  await adapter.deleteChapter(absorbed);
+  await adapter.renumberAll([absorbed]);
+
+  const summary = result.changeSummary ? ` — ${result.changeSummary.substring(0, 100)}` : "";
+  send({ type: "intervention_progress", id: intervention.id, message: `Cap ${absorbed} eliminado. Capítulos renumerados${summary}` });
+}
+
+// ─── eliminar ────────────────────────────────────────────────────────────────
+
+async function runEliminar(
+  adapter: ReviewAdapter,
+  intervention: ReviewIntervention,
+  send: SendFn
+): Promise<void> {
+  if (intervention.capitulosAfectados.length === 0) {
+    throw new Error("La intervención 'eliminar' requiere al menos 1 capítulo en capitulosAfectados");
+  }
+
+  // Procesamos en orden descendente para que la renumeración de cada borrado
+  // no desplace los números de los siguientes dentro de la misma intervención.
+  // Luego llamamos renumberAll una sola vez al final con todos los borrados.
+  const toDelete = [...intervention.capitulosAfectados]
+    .filter(n => Number.isFinite(n) && n > 0)
+    .sort((a, b) => b - a); // descendente
+
+  send({ type: "intervention_progress", id: intervention.id, message: `Eliminando ${toDelete.length > 1 ? `caps ${toDelete.join(", ")}` : `cap ${toDelete[0]}`}...` });
+
+  for (const capNum of toDelete) {
+    const chapters = await adapter.getChapters();
+    const ch = chapters.find(c => c.chapterNumber === capNum);
+    if (!ch) {
+      send({ type: "intervention_progress", id: intervention.id, message: `Cap ${capNum} no encontrado — ya pudo haberse borrado, omitiendo` });
+      continue;
+    }
+    await adapter.deleteChapter(capNum);
+    send({ type: "intervention_progress", id: intervention.id, message: `Cap ${capNum} eliminado` });
+  }
+
+  const ascendingDeleted = [...toDelete].sort((a, b) => a - b);
+  await adapter.renumberAll(ascendingDeleted);
+  send({ type: "intervention_progress", id: intervention.id, message: `Capítulos renumerados (${ascendingDeleted.length} hueco(s) cerrado(s))` });
 }
 
 // ─── estructural ─────────────────────────────────────────────────────────────

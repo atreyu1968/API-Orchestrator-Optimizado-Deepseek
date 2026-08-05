@@ -17,12 +17,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Sparkles, Play, ChevronDown, ChevronRight, CheckCircle2, XCircle, Clock, AlertTriangle, FileText, RotateCcw } from "lucide-react";
+import { Loader2, Sparkles, Play, ChevronDown, ChevronRight, CheckCircle2, XCircle, Clock, AlertTriangle, FileText, RotateCcw, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
-type InterventionType = "puntual" | "densidad" | "siembra" | "estructural";
+type InterventionType = "puntual" | "densidad" | "siembra" | "estructural" | "fusionar" | "eliminar";
 type InterventionStatus = "pending" | "running" | "done" | "skipped" | "failed";
 
 interface ReviewIntervention {
@@ -34,6 +34,7 @@ interface ReviewIntervention {
   instruccion: string;
   sembraRevelacion?: string;
   sembraContextoLector?: string;
+  mergeIntoChapter?: number;
   prioridad: "alta" | "media" | "baja";
   status: InterventionStatus;
   completedAt?: string;
@@ -61,6 +62,8 @@ const TYPE_LABEL: Record<InterventionType, string> = {
   densidad: "Densidad",
   siembra: "Siembra",
   estructural: "Estructural",
+  fusionar: "⚠ Fusionar",
+  eliminar: "⚠ Eliminar",
 };
 
 const TYPE_COLOR: Record<InterventionType, string> = {
@@ -68,7 +71,11 @@ const TYPE_COLOR: Record<InterventionType, string> = {
   densidad: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
   siembra: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
   estructural: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+  fusionar: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+  eliminar: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
 };
+
+const DESTRUCTIVE_TYPES: InterventionType[] = ["fusionar", "eliminar"];
 
 const PRIORITY_COLOR: Record<string, string> = {
   alta: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
@@ -121,6 +128,23 @@ REESCRITURAS ESTRUCTURALES
 Capítulo(s) afectado(s): [números]
 Qué cambiar: [descripción del cambio estructural]
 Por qué: [justificación narrativa]
+
+
+CAPÍTULOS A FUSIONAR ⚠ DESTRUCTIVO (elimina un capítulo)
+────────────────────────────────────
+[Solo si la crítica pide EXPLÍCITAMENTE UNIR o FUSIONAR dos capítulos]
+
+Capítulos a fusionar: [ej: 7 y 8]
+Capítulo superviviente: [ej: el cap 7 absorbe el 8 — el cap 8 desaparece]
+Cómo fusionarlos: [descripción de qué partes conservar de cada uno y qué eliminar]
+
+
+CAPÍTULOS A ELIMINAR ⚠ DESTRUCTIVO (borra el capítulo)
+────────────────────────────────────
+[Solo si la crítica pide EXPLÍCITAMENTE ELIMINAR o BORRAR un capítulo completo]
+
+Capítulo a eliminar: [número]
+Por qué: [justificación de por qué sobra por completo]
 
 
 NOTA ACTUAL / POTENCIAL
@@ -422,6 +446,17 @@ export function ExternalReviewDialog({
                   <span className="text-xs text-muted-foreground">{selectedIds.size} seleccionadas</span>
                 </div>
 
+                {/* Aviso destructivo — solo si hay fusionar/eliminar seleccionados */}
+                {plan.interventions.some(iv => DESTRUCTIVE_TYPES.includes(iv.type) && selectedIds.has(iv.id)) && (
+                  <div className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-400">
+                    <Trash2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Operaciones destructivas seleccionadas.</strong> Las intervenciones "Fusionar" y "Eliminar" borran capítulos de forma irreversible y renumeran el resto.
+                      Verifica que el plan es correcto antes de ejecutar. El contenido previo se guarda como backup en la base de datos.
+                    </span>
+                  </div>
+                )}
+
                 <ScrollArea className="h-[320px] border rounded-md">
                   <div className="space-y-2 p-1">
                     {plan.interventions.map(iv => {
@@ -463,6 +498,12 @@ export function ExternalReviewDialog({
                               <p><span className="font-medium">Instrucción:</span> {iv.instruccion}</p>
                               {iv.sembraRevelacion && (
                                 <p><span className="font-medium">Revelación:</span> {iv.sembraRevelacion}</p>
+                              )}
+                              {iv.type === "fusionar" && iv.mergeIntoChapter != null && (
+                                <p><span className="font-medium">Superviviente:</span> cap. {iv.mergeIntoChapter} (el otro se elimina)</p>
+                              )}
+                              {iv.type === "fusionar" && iv.mergeIntoChapter == null && (
+                                <p className="text-muted-foreground">Superviviente: el capítulo con número menor</p>
                               )}
                               {iv.errorMsg && (
                                 <p className="text-destructive"><span className="font-medium">Error:</span> {iv.errorMsg}</p>
